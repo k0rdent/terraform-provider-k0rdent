@@ -21,7 +21,7 @@ concurrency:
 env:
   # Same as ci.yml. The tool is standard library only, so no client checkout
   # and no secret.
-  GO_VERSION: "1.26.9"
+  GO_VERSION: "1.26.10"
 
 jobs:
   changelog:
