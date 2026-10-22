@@ -1,0 +1,73 @@
+# Provider binary. The name is provisional, so match any suffix.
+terraform-provider-*
+# `go build ./internal/tools/fakeapi` from the root.
+/fakeapi
+!terraform-provider-*.json
+dist/
+.tools/
+# make bench's results. docs/performance.md publishes the ones that count.
+.bench/
+
+# Terraform working files
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+# A saved plan is not a lesser artifact than state: `terraform show -json
+# tfplan` renders back every variable value and the whole prior state.
+tfplan
+*.tfplan
+crash.log
+crash.*.log
+*.tfvars
+# The walkthrough's, shipped empty for the reader to fill in.
+!examples/walkthrough/*/terraform.tfvars
+*.tfvars.json
+# TF_LOG_PATH output. At TRACE this is the plugin protocol, request and
+# response bodies included.
+*.log
+.env
+*.env
+
+terraform.rc
+.terraformrc
+
+# Everything `scripts/demo.sh` builds and runs: the provider binary it installs
+# for dev_overrides, the fake control plane, its request log, and the CLI config.
+.demo/
+
+# `scripts/capture-live-fixtures.sh` writes what it fetched from a real
+# landscape under .conformance/fixtures by default. Redacted, but still real.
+.conformance/
+
+# `scripts/live.sh`: the provider binary it builds, the CLI config, Terraform
+# state for a run against a real landscape, and the PASS/FAIL results file. The
+# state in here describes real resources, so it must never be committed.
+.live/
+
+# Go
+*.test
+*.out
+coverage.txt
+
+# Editors
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Go build, module, and lint caches. `scripts/check-tracked-ignored.sh` fails
+# CI if any tracked file matches a rule in this file.
+**/go-cache/
+**/build-cache/
+**/lint-cache/
+**/gocache/
+**/gomodcache/
+**/.gocache/
+**/.gomodcache/
+**/.golangci-cache/
+**/.cache/
+
+# A local go.work, for building against a checkout of the client.
+go.work
+go.work.sum

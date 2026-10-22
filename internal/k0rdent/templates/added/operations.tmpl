@@ -1,0 +1,73 @@
+{{/*
+  Not a stock template: client.tmpl includes it. It renders once, over every
+  operation the client is generated for, so the table below and the client
+  methods above it are built from the same list and cannot disagree.
+*/}}
+type operationKey struct{}
+
+// withOperation returns ctx carrying the operationId of the call being made.
+func withOperation(ctx context.Context, id string) context.Context {
+	return context.WithValue(ctx, operationKey{}, id)
+}
+
+// OperationIDFromContext returns the operationId of the generated call that
+// built a request, read from its context. A RoundTripper or request editor
+// can look the id up in [Operations] instead of matching the URL. It is
+// false for a request no generated method made.
+//
+//	id, ok := k0rdent.OperationIDFromContext(req.Context())
+func OperationIDFromContext(ctx context.Context) (string, bool) {
+	id, ok := ctx.Value(operationKey{}).(string)
+	return id, ok
+}
+
+// OperationInfo is what the contract says about one operation. It is not
+// called Operation because the contract has a schema by that name.
+type OperationInfo struct {
+	// Method is the HTTP method, upper case.
+	Method string
+	// Path is the path template as the contract writes it, with each
+	// parameter in braces, e.g. /v1/regions/{region}/projects.
+	Path string
+	// Deprecated is the operation's deprecated flag.
+	Deprecated bool
+	// Responses holds every response the contract documents for an exact
+	// status. A "default" response or a range such as "4XX" has no status to
+	// key it by, and is left out.
+	Responses map[int]ResponseInfo
+}
+
+// ResponseInfo is one documented response of a [OperationInfo].
+type ResponseInfo struct {
+	// Description is the response's description, for a status outside 2xx.
+	// For a shared response it is the shared component's. It is "" for a
+	// 2xx, to keep the table small: it is there to decide on failures, and
+	// a success's description is in the contract.
+	Description string
+	// Ref is the $ref the operation names the response by, such as
+	// "#/components/responses/Conflict", or "" when the operation describes
+	// the response itself.
+	Ref string
+}
+
+// Operations is every operation of the client, keyed by operationId: the id
+// [OperationIDFromContext] returns.
+var Operations = map[string]OperationInfo{
+{{range . -}}
+	{{toGoString .SpecOperationId}}: {
+		Method:     {{toGoString .Method}},
+		Path:       {{toGoString .Path}},
+		Deprecated: {{.Spec.Deprecated}},
+		Responses: map[int]ResponseInfo{
+{{- range $status, $r := .Spec.Responses.Map}}
+{{- /* Only exact statuses: "default" and an "NXX" range are not Go ints. */ -}}
+{{- if and (ne $status "default") (ne (slice $status 1) "XX")}}
+			{{$status}}: {
+{{- if ne (slice $status 0 1) "2"}}Description: {{toGoString $r.Value.Description}}, {{end -}}
+			Ref: {{toGoString $r.Ref}}},
+{{- end}}
+{{- end}}
+		},
+	},
+{{end -}}
+}

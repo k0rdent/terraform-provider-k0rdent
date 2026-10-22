@@ -1,0 +1,34 @@
+# Types only. Split from the client config so a client-generator change cannot
+# reshuffle the model file, and so the diff on a spec sync reads as "what
+# changed in the data" separately from "what changed in the calls".
+package: k0rdent
+output: types.gen.go
+generate:
+  models: true
+  # Off on purpose: the embedded gzipped spec would double as a second copy of
+  # the contract inside the binary, drifting from spec/openapi.yaml and
+  # pulling kin-openapi into the provider's build. It is off by default,
+  # and set here so that stays a decision rather than an accident.
+  embedded-spec: false
+output-options:
+  # clientspec already cut the spec to the provider's operations and pruned
+  # unreachable components. Letting the generator prune again would hide a
+  # clientspec bug behind a second, differently-scoped pass.
+  skip-prune: true
+  # gofmt the output, so client-check compares formatted code with formatted
+  # code and a hand-run gofmt can never show up as drift.
+  skip-fmt: false
+  # Overrides two stock templates. constants adds a XxxValues() list beside
+  # each enum's Valid(). request-bodies declares a body over a union as an
+  # alias of the union type, keeping its MarshalJSON. Same path rules and
+  # drift check as the client config's overrides; see templates/README.md.
+  user-templates:
+    constants.tmpl: templates/constants.tmpl
+    request-bodies.tmpl: templates/request-bodies.tmpl
+compatibility:
+  # Every enum constant carries its type's name. Without this the generator
+  # prefixes a member only when two enums would collide, so a new enum with a
+  # member called "available" anywhere in the contract silently renames
+  # k0rdent.Available in the same regenerate, with no change to the enum that
+  # owns it. A prefixed name changes only when its own type or member does.
+  always-prefix-enum-values: true

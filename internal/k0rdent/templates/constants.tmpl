@@ -1,0 +1,46 @@
+{{- if and (gt (len .SecuritySchemeProviders) 0) opts.Compatibility.EnableAuthScopesOnContext }}
+const (
+{{range $Provider := .SecuritySchemeProviders}}
+    {{- if $Provider.ImportedScopes}}
+    {{- $Provider.Name | sanitizeGoIdentity | ucFirst}}Scopes = {{$Provider.ImportedScopes}}
+    {{- else}}
+    {{- $Provider.Name | sanitizeGoIdentity | ucFirst}}Scopes {{$Provider.Name | schemaNameToTypeName | lcFirst}}ContextKey = "{{$Provider.Name}}.Scopes"
+    {{- end}}
+{{end}}
+)
+{{end}}
+{{range $Enum := .EnumDefinitions}}
+// Defines values for {{$Enum.TypeName}}.
+const (
+{{range $name, $value := $Enum.GetValues}}
+  {{$name}} {{$Enum.TypeName}} = {{if $Enum.ValueWrapper}}{{$value | toGoString}}{{else}}{{$value}}{{end -}}
+{{end}}
+)
+{{if not $.SkipEnumValidate}}
+// Valid indicates whether the value is a known member of the {{$Enum.TypeName}} enum.
+func (e {{$Enum.TypeName}}) Valid() bool {
+    switch e {
+    {{range $name, $value := $Enum.GetValues}}case {{$name}}:
+        return true
+    {{end}}default:
+        return false
+    }
+}
+
+// {{$Enum.TypeName}}Values returns every member of the enum, in the contract's
+// order. A null member is left out: the generator turns it into a "<nil>"
+// constant that Valid accepts, and no client ever sends that string. The slice
+// is new on each call, so a caller may keep or change it.
+func {{$Enum.TypeName}}Values() []{{$Enum.TypeName}} {
+    return []{{$Enum.TypeName}}{
+    {{- if and $Enum.Schema.OAPISchema $Enum.Schema.OAPISchema.Enum}}
+    {{range $item := $Enum.Schema.OAPISchema.Enum}}{{if ne (printf "%T" $item) "<nil>"}}{{$found := false}}{{range $name, $value := $Enum.GetValues}}{{if eq $value (printf "%v" $item)}}{{$found = true}}{{$name}},
+    {{end}}{{end}}{{if not $found}}{{$Enum.TypeName}}SpecValueWithNoConstant,
+    {{end}}{{end}}{{end}}
+    {{- else}}
+    {{range $name, $value := $Enum.GetValues}}{{$name}},
+    {{end}}
+    {{- end}}}
+}
+{{end}}
+{{end}}

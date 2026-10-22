@@ -1,0 +1,24 @@
+# Client only; the models come from oapi-codegen.types.yaml into the same package.
+package: k0rdent
+output: client.gen.go
+generate:
+  client: true
+output-options:
+  skip-prune: true
+  skip-fmt: false
+  # Overrides two stock templates. client-with-responses adds HTTPResult, a
+  # nil-safe accessor the stock value-receiver getters cannot provide. client
+  # adds the path parameter check to every request builder, tags each request
+  # with its operationId, and includes operations.tmpl, which renders the
+  # Operations table. operations.tmpl has no stock counterpart, so it lives in
+  # templates/added/, where template-check only makes sure no stock template
+  # shares its name. The paths are read relative to this directory, which is
+  # where `go generate` runs. A path that does not resolve is not an error:
+  # oapi-codegen falls back to fetching the string as a URL, so a typo here
+  # fails late and confusingly.
+  # `make client-template-check` proves each vendored copy still matches the pinned
+  # generator.
+  user-templates:
+    client-with-responses.tmpl: templates/client-with-responses.tmpl
+    client.tmpl: templates/client.tmpl
+    operations.tmpl: templates/added/operations.tmpl

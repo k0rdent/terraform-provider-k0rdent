@@ -1,0 +1,17 @@
+{{range .}}{{$opid := .OperationId}}
+{{range .Bodies}}
+{{if .IsSupported -}}
+{{$contentType := .ContentType -}}
+{{with .TypeDef $opid}}
+// {{.TypeName}} defines body for {{$opid}} for {{$contentType}} ContentType.
+{{- with .DeprecationComment}}
+//
+{{.}}
+{{- end}}
+{{- /* k0rdent: alias a body over a union or a map, so it keeps the
+     MarshalJSON its underlying type carries. See templates/README.md. */}}
+type {{.TypeName}} {{if or .IsAlias .Schema.UnionElements .Schema.HasAdditionalProperties}}={{end}} {{.Schema.TypeDecl}}
+{{end}}
+{{end}}
+{{end}}
+{{end}}
