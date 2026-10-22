@@ -126,7 +126,7 @@ jobs:
       # No cache. Other jobs on main write the module and build caches, and
       # Go trusts a build cache entry without rebuilding it, so a restored
       # cache would let a job that never held this key shape what it signs.
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff  # v5.6.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
         with:
           go-version-file: .go-release-version
           cache: false
