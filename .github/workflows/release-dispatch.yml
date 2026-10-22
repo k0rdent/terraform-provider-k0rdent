@@ -30,7 +30,7 @@ jobs:
       # The one checkout that keeps its token: the step below fetches main and
       # the tag from this internal repository, which needs it. This job holds
       # no other secret. scripts/check-workflow-actions.sh lists the exception.
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           ref: main
           fetch-depth: 0
@@ -98,7 +98,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           ref: ${{ needs.validate-release-tag.outputs.tag_commit }}
           fetch-depth: 1
