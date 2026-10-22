@@ -1,0 +1,11 @@
+```release-note:bug
+resource/k0rdent_kubernetes_cluster: An apply interrupted while the platform refused a scale now reports the interrupt, not the platform's last refusal
+```
+
+```release-note:bug
+resource/k0rdent_instance_group: An apply interrupted between scale requests the platform refused now reports the interrupt, not the platform's last refusal
+```
+
+```release-note:bug
+resource/k0rdent_file_store: A destroy interrupted while the platform refused the delete now reports the interrupt, not the platform's last refusal
+```

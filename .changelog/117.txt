@@ -1,0 +1,11 @@
+```release-note:bug
+resource/k0rdent_webhook_subscription: Fix a list answer without `subscriptions` dropping the subscription from state, so the next apply created a second one. It's now an error, and state is kept
+```
+
+```release-note:bug
+data-source/k0rdent_webhook_subscriptions: Fix a list answer without `subscriptions` reading as no subscriptions. It's now an error
+```
+
+```release-note:bug
+list-resource/k0rdent_webhook_subscription: Fix a list answer without `subscriptions` reading as no subscriptions. It's now an error
+```

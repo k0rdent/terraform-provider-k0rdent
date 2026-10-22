@@ -1,0 +1,15 @@
+```release-note:bug
+provider: An error the provider logs to `TF_LOG` is redacted like a diagnostic, so a credential an endpoint echoes in its error text doesn't reach the log
+```
+
+```release-note:bug
+resource/k0rdent_webhook_subscription: A create or rotate the platform refuses no longer prints `secret_wo` if the refusal quotes it
+```
+
+```release-note:bug
+resource/k0rdent_file_store: An update that sends `consumers` reads the store first and refuses a group the platform no longer grants, instead of judging it from the last refresh
+```
+
+```release-note:bug
+provider: Control characters in a display name, tag key or kubeconfig CA path the platform returns are shown escaped in warnings and `terraform query` results
+```

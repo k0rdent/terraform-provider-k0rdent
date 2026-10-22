@@ -1,0 +1,3 @@
+```release-note:enhancement
+resource/k0rdent_kubernetes_cluster: Follow the runtime event log while a delete waits, and name the operation's execution id when any cluster wait fails or times out
+```

@@ -1,0 +1,11 @@
+```release-note:enhancement
+resource/k0rdent_vpc_peering: `remote_vpc` takes a VPC id for a VPC in the peering's own region and project, such as a cluster's or instance group's `vpc`. Moving between an id and the `self_link` of the same VPC replaces nothing
+```
+
+```release-note:enhancement
+resource/k0rdent_network: Plan `type` from the fabric block set, rather than as known after apply
+```
+
+```release-note:bug
+resource/k0rdent_vpc_peering: Fix a rename of the cluster or instance group behind a peering replacing the peering. Name the far VPC by id, which stays known at plan, as `examples/walkthrough/full` now does
+```

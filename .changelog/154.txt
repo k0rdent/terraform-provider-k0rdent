@@ -1,0 +1,7 @@
+```release-note:bug
+resource/k0rdent_webhook_subscription: Fix `secret_wo_version` from a variable being refused as unknown. A value only the apply works out is still refused, at plan time
+```
+
+```release-note:bug
+list-resource/k0rdent_service_account_credential: Fix `scope` or `service_account_id` from a variable being refused beside the other before its value is known
+```

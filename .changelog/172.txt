@@ -1,0 +1,3 @@
+```release-note:bug
+resource/k0rdent_security_group: Fix the `A tag on this resource is not a string` warning being dropped on read when the group also holds string tags or has no prior tags
+```

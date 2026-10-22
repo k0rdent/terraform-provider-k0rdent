@@ -54,7 +54,7 @@ help: ## List targets
 		| awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
 
 .PHONY: check
-check: doc-commands fmt-check vet lint test name-audit client-check docs-check vulncheck ## Everything CI runs
+check: doc-commands fmt-check vet lint test name-audit client-check docs-check vulncheck changelog-check ## Everything CI runs
 
 .PHONY: vulncheck
 vulncheck: ## Gate S6: reachable known vulnerabilities, under the CI Go and the release Go
@@ -239,7 +239,11 @@ lint-install: ## Install the pinned golangci-lint, built with this module's Go v
 	GOTOOLCHAIN=$(GOLANGCI_LINT_GOTOOLCHAIN) go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
 
 .PHONY: tools
-tools: $(TFPLUGINDOCS) ## Install the pinned docs generator
+tools: $(GORELEASER) $(TFPLUGINDOCS) ## Install pinned release and docs tools
+
+$(GORELEASER):
+	mkdir -p $(TOOLS_BIN)
+	GOBIN="$(TOOLS_BIN)" go install github.com/goreleaser/goreleaser/v2@$(GORELEASER_VERSION)
 
 $(TFPLUGINDOCS):
 	mkdir -p $(TOOLS_BIN)
@@ -279,6 +283,44 @@ docs-check: $(TFPLUGINDOCS) ## Fail when generated provider documentation is sta
 		git status --short -- docs templates; \
 		exit 1; \
 	fi
+
+# Release notes are one .changelog/<pull request>.txt per pull request, in
+# go-changelog's block format, and .changelog/README.md is how to write one.
+# The check refuses a malformed entry anywhere in the directory, and that's
+# all it does locally. With CHANGELOG_PR and CHANGELOG_BASE set, as
+# .github/workflows/changelog.yml sets them from the pull request event, it
+# also diffs the directory against the base and requires the pull request's
+# own entry, unless CHANGELOG_LABELS holds no-changelog-needed. The tool is in
+# this module and needs only the standard library, so there's nothing to pin
+# and the workflow needs no client checkout.
+CHANGELOG_REPO ?= https://github.com/k0rdent/terraform-provider-$(PROVIDER_NAME)
+CHANGELOG_DATE ?=
+
+.PHONY: changelog-check
+changelog-check: ## Refuse a malformed .changelog/ entry. With CHANGELOG_PR and CHANGELOG_BASE, judge that pull request's changes too
+	go run ./internal/tools/changelog -check -prefix $(PROVIDER_NAME)_
+
+.PHONY: changelog
+changelog: ## Print .changelog/ as a CHANGELOG.md section. VERSION=x.y.z, and CHANGELOG_DATE=YYYY-MM-DD for a release
+	@go run ./internal/tools/changelog -prefix $(PROVIDER_NAME)_ -version "$(VERSION)" -date "$(CHANGELOG_DATE)" -repo "$(CHANGELOG_REPO)"
+
+.PHONY: release-snapshot
+release-snapshot: $(GORELEASER) ## Build unsigned, endpoint-neutral release artifacts
+	$(GORELEASER) release --snapshot --clean --skip=sign
+	./scripts/place-manifest.sh dist
+
+.PHONY: release
+release: $(GORELEASER) ## Build endpoint-neutral artifacts from a release tag
+	$(GORELEASER) release --clean
+	./scripts/place-manifest.sh dist
+
+.PHONY: release-validate
+release-validate: release-snapshot ## Build a snapshot and verify its provider archive layout
+	REQUIRE_SIGNATURE=false ./scripts/validate-release-artifacts.sh dist
+
+.PHONY: major-release-gate-test
+major-release-gate-test: ## Verify the major version gate refuses and explains
+	./scripts/tests/test-major-release-gate.sh
 
 .PHONY: mod
 mod: ## Download module dependencies that can actually be resolved
@@ -393,4 +435,4 @@ name-audit: ## Print every place the provisional provider name is written
 .PHONY: clean
 clean: ## Remove build output
 	rm -f $(BINARY)
-	rm -rf .tools
+	rm -rf dist .tools

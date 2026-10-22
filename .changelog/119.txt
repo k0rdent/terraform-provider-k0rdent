@@ -1,0 +1,3 @@
+```release-note:enhancement
+ephemeral-resource/k0rdent_cluster_kubeconfig: Warn when the kubeconfig's cluster sets `insecure-skip-tls-verify`, `tls-server-name` or `proxy-url`, which no parsed attribute carries, and name the kubernetes and helm provider argument that takes each
+```

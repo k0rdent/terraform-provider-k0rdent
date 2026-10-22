@@ -1,0 +1,23 @@
+```release-note:breaking-change
+resource/k0rdent_service_account: Removed. Only a person can create a service account, so the resource could never apply with the provider's credentials. Read accounts with `k0rdent_service_account` or `k0rdent_service_accounts`. Before upgrading, take any you manage out of state without deleting them: replace each block with `removed { from = k0rdent_service_account.<name> lifecycle { destroy = false } }` and apply (Terraform 1.7 or later), or run `terraform state rm`
+```
+
+```release-note:breaking-change
+resource/k0rdent_service_account_credential: Removed, for the same reason. Read credentials and when they expire with `k0rdent_service_account_credentials`. Take a managed one out of state the same way, with a `removed` block and `destroy = false`, so the credential keeps working
+```
+
+```release-note:breaking-change
+list-resource/k0rdent_service_account: Removed with the resource it adopted into
+```
+
+```release-note:breaking-change
+list-resource/k0rdent_service_account_credential: Removed with the resource it adopted into
+```
+
+```release-note:new-data-source
+k0rdent_service_accounts
+```
+
+```release-note:new-data-source
+k0rdent_service_account_credentials
+```

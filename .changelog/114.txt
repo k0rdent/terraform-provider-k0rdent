@@ -1,0 +1,11 @@
+```release-note:new-action
+k0rdent_cluster_cancel_operation
+```
+
+```release-note:enhancement
+resource/k0rdent_kubernetes_cluster: Name the `k0rdent_cluster_cancel_operation` action, as the way to cancel an operation and keep the cluster, in the error a timed-out change gives, in the error a destroy that waited out its timeout gives, and in the resource's description
+```
+
+```release-note:note
+action/k0rdent_cluster_cancel_operation: Cancels the create, scale or upgrade a cluster is running and keeps the cluster, which the platform settles `failed`. Left unpinned it cancels whatever is running when the invoke runs, which can be an operation that started after the plan, and with `execution_id` set it cancels only that operation and refuses any other. A cluster with nothing in flight succeeds with a warning, a plan that invokes it warns what it will cancel, and the invoke streams each state it reads. Actions need Terraform 1.14, and a configuration that uses none runs where it ran before, OpenTofu included
+```

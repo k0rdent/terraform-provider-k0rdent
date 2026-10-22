@@ -1,0 +1,3 @@
+```release-note:enhancement
+resource/k0rdent_kubernetes_cluster: Log each new line of the platform's runtime event log at INFO while waiting, and name the last one when a wait times out
+```

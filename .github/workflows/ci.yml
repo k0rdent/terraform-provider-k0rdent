@@ -167,6 +167,61 @@ jobs:
       - name: refresh-only plans find nothing, and plans stay within the unknown budget
         run: make plan-quality
 
+  release-validation:
+    name: release artifact validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      # Nothing else runs these two.
+      - name: verify the major version gate
+        run: make major-release-gate-test
+      - name: verify the setup doctor
+        run: make doctor-script-test
+      # The rehearsal takes most of this workflow's time, and a pull request
+      # that touches no release input cannot change its result. The build job
+      # still compiles every platform. Pushes and tags always rehearse.
+      - name: did this change a release input
+        id: inputs
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          # The diff is taken first, so a git failure fails the step instead
+          # of reading as "nothing changed" and skipping the rehearsal.
+          rehearse=true
+          if [ -n "$BASE" ]; then
+            changed="$(git diff --name-only "$BASE" HEAD)"
+            if ! echo "$changed" |
+              grep -E '^(\.goreleaser\.yaml|\.go-release-version|terraform-registry-manifest\.json|main\.go|go\.(mod|sum|work)|\.syft\.ya?ml|Makefile|scripts/.*(release|manifest).*|\.github/)' >/dev/null; then
+              rehearse=false
+            fi
+          fi
+          if [ "$rehearse" = false ]; then
+            echo "No release input changed, so the release rehearsal is skipped."
+            echo "rehearse=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "rehearse=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff  # v5.6.0
+        if: steps.inputs.outputs.rehearse == 'true'
+        with:
+          go-version-file: .go-release-version
+          cache: true
+      # goreleaser shells out to syft for the SBOMs, so this job needs it as
+      # much as the signing job does. Without it `make release-validate` fails
+      # at the catalog step, which is the one thing about a release this job
+      # exists to rehearse. Same commit pin as release-dispatch.yml, for the
+      # same reason: an SBOM generator that changes underneath a release
+      # changes the release.
+      - uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610  # v0.24.0
+        if: steps.inputs.outputs.rehearse == 'true'
+      - name: build and verify unsigned release artifacts
+        if: steps.inputs.outputs.rehearse == 'true'
+        run: make release-validate
+
   # Branch protection requires a context named CI, and GitHub publishes one per
   # job, not per workflow. A skipped required check satisfies protection, so a
   # bare needs would pass here.
@@ -183,6 +238,7 @@ jobs:
       - docs
       - against-fake
       - plan-quality
+      - release-validation
     steps:
       - name: require every job to have succeeded
         env:

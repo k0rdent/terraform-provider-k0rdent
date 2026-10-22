@@ -1,0 +1,3 @@
+```release-note:enhancement
+provider: The hardware walkthrough's `full/` plans a change in place, such as a new display name or one security group rule, with no values known after apply
+```

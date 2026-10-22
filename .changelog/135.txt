@@ -1,0 +1,3 @@
+```release-note:bug
+resource/k0rdent_webhook_subscription: Fix a create whose answer failed to decode not finding the subscription it made
+```

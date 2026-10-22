@@ -1,0 +1,3 @@
+```release-note:enhancement
+resource/k0rdent_kubernetes_cluster: Read `ssh_access` from the platform on refresh, so an import fills it in and a difference from the configuration shows in the plan. Where the platform doesn't report it, state keeps what was sent
+```

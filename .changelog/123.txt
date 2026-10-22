@@ -1,0 +1,7 @@
+```release-note:bug
+resource/k0rdent_service_account_credential: Fix every plan failing once `pgp_key` expired. A key now has to be able to encrypt only on a create or a replacement
+```
+
+```release-note:bug
+resource/k0rdent_service_account_credential: Fix re-exporting the same `pgp_key` with a later expiry replacing the credential. Keys are compared by fingerprint whether or not they can encrypt now
+```

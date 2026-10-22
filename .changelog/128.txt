@@ -1,0 +1,3 @@
+```release-note:bug
+provider: Fix a create whose wait times out recording only the id and scope, so that after `terraform untaint` the refresh read the resource as an import would: a `k0rdent_kubernetes_cluster` adopted every node pool and planned dropping the ones its configuration never named. The tainted row now holds the plan
+```

@@ -1,0 +1,47 @@
+```release-note:enhancement
+resource/k0rdent_network: Plan `state`, `vpc` and `cluster_id` as their current values on an in-place change, rather than as known after apply
+```
+
+```release-note:enhancement
+resource/k0rdent_security_group: Plan `state` and `owner_kind` as their current values on an in-place change, and `rule_count` as the number of `ingress` and `egress` rules
+```
+
+```release-note:enhancement
+resource/k0rdent_kubernetes_cluster: Plan `state` as `active` on an in-place change to an `active` cluster, and `node_count` as known unless the change scales or upgrades the cluster
+```
+
+```release-note:enhancement
+resource/k0rdent_instance_group: Plan `state` as `active` on an in-place change to an `active` group, and keep `node_pool` known when the configuration leaves it out
+```
+
+```release-note:enhancement
+resource/k0rdent_file_store: Plan `state` as `active` on an in-place change to an `active` store, `etag` as known when nothing is sent, and `consumer_status`, `export_locations` and `preferred_export_location` as known when `consumers` and `capacity_gib` don't change
+```
+
+```release-note:enhancement
+resource/k0rdent_subnet: Plan `state` as `active` when a change to `timeouts` or a recorded value is applied in place
+```
+
+```release-note:enhancement
+resource/k0rdent_vpc_peering: Plan `state` as `active` when a change to `timeouts` is applied in place
+```
+
+```release-note:enhancement
+resource/k0rdent_vpc_security_groups: Plan `state` as `active` on a change to an `active` VPC, and `attached` as `security_groups` when that names any group
+```
+
+```release-note:enhancement
+resource/k0rdent_webhook_subscription: Plan `secret_version`, `is_active` and `rotated_at` as their current values on a change that doesn't rotate the secret
+```
+
+```release-note:enhancement
+provider: An update that reads a resource busy again after waiting for it, because the platform took the change up late, waits for it to settle before it returns
+```
+
+```release-note:bug
+resource/k0rdent_subnet: Fix a change to a subnet imported while `creating` planning `cidr`, `gateway` and `ip_version` as the empty values the import found
+```
+
+```release-note:bug
+resource/k0rdent_network: Fix a change to a network imported while `creating` planning `vlan_id_resolved` and `pkey_allocated` as the values the import found
+```

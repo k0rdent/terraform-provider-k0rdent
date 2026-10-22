@@ -1,0 +1,3 @@
+```release-note:enhancement
+provider: Word a timed-out wait as "waited 30m0s for the cluster to finish creating", instead of "the cluster to finish creating did not settle after 30m0s"
+```

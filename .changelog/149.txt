@@ -1,0 +1,3 @@
+```release-note:note
+provider: The hardware walkthrough is now directories to copy from `examples/walkthrough`, each with one `terraform.tfvars` to fill in, and adds a `nodes/` directory that prints an `ssh` command for each node
+```

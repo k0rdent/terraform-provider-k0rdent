@@ -1,0 +1,3 @@
+```release-note:note
+provider: The hardware walkthrough adds `network/`, a network, a subnet and a security group with no cluster, and `full/`, nearly every tenant resource in one apply with a switch for each part a deployment may lack
+```

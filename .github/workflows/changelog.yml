@@ -1,0 +1,49 @@
+name: Changelog
+
+# Every pull request adds or edits .changelog/<its number>.txt, or carries the
+# no-changelog-needed label. .changelog/README.md is the convention, and
+# internal/tools/changelog is the check.
+#
+# Its own workflow rather than a job in ci.yml because it reads the labels:
+# a label added after a red run has to rerun it, and labeled and unlabeled on
+# ci.yml would rerun every job there too.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Same as ci.yml. The tool is standard library only, so no client checkout
+  # and no secret.
+  GO_VERSION: "1.26.9"
+
+jobs:
+  changelog:
+    name: changelog entry
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+        with:
+          # The check diffs .changelog/ against the base commit, so it needs
+          # the history back to where the branch left it.
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff  # v5.6.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+      # The number, base and labels come from the event through env, never
+      # pasted into the script, so a label's text can't become a command.
+      - name: the pull request's own entry, and every entry's format
+        env:
+          CHANGELOG_PR: ${{ github.event.pull_request.number }}
+          CHANGELOG_BASE: ${{ github.event.pull_request.base.sha }}
+          CHANGELOG_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+        run: make changelog-check

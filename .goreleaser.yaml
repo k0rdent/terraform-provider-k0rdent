@@ -1,0 +1,112 @@
+version: 2
+
+project_name: terraform-provider-k0rdent
+
+builds:
+  - id: terraform-provider-k0rdent
+    main: .
+    binary: terraform-provider-k0rdent_v{{ .Version }}
+    env:
+      - CGO_ENABLED=0
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+    goos:
+      - darwin
+      - linux
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+
+archives:
+  - id: terraform-provider-k0rdent
+    ids:
+      - terraform-provider-k0rdent
+    formats:
+      - zip
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: "{{ .ProjectName }}_{{ .Version }}_SHA256SUMS"
+  # The registry reads the protocol versions from this file. Without it a
+  # protocol 6 provider is assumed to speak 5. scripts/place-manifest.sh puts
+  # the file itself in dist/ under the same name.
+  extra_files:
+    - glob: terraform-registry-manifest.json
+      name_template: "{{ .ProjectName }}_{{ .Version }}_manifest.json"
+
+# One SBOM per archive, alongside it in dist/. A consumer of a provider binary
+# has no other way to learn what is inside it: the archive is a single stripped
+# Go binary, so `go version -m` is the only alternative and it is not a format
+# anything ingests.
+#
+# Named .sbom.json rather than the default .sbom, because the content is SPDX
+# JSON and the registry validator globs on extension.
+sboms:
+  - id: archive
+    artifacts: archive
+    documents:
+      - "${artifact}.sbom.json"
+
+signs:
+  - id: checksum
+    artifacts: checksum
+    signature: "${artifact}.sig"
+    cmd: gpg
+    args:
+      - --batch
+      - --yes
+      - --pinentry-mode
+      - loopback
+      - --passphrase-file
+      - "{{ .Env.GPG_PASSPHRASE_FILE }}"
+      - --local-user
+      - "{{ .Env.GPG_KEY_FINGERPRINT }}"
+      - --output
+      - "${signature}"
+      - --detach-sign
+      - "${artifact}"
+  # The SBOMs get their own detached signatures. Only the checksum manifest was
+  # signed, and validate-release-artifacts.sh asserts that manifest covers
+  # exactly the five archives and nothing else, so the SBOMs were reachable
+  # through no hash and no signature at all.
+  - id: sbom
+    artifacts: sbom
+    signature: "${artifact}.sig"
+    cmd: gpg
+    args:
+      - --batch
+      - --yes
+      - --pinentry-mode
+      - loopback
+      - --passphrase-file
+      - "{{ .Env.GPG_PASSPHRASE_FILE }}"
+      - --local-user
+      - "{{ .Env.GPG_KEY_FINGERPRINT }}"
+      - --output
+      - "${signature}"
+      - --detach-sign
+      - "${artifact}"
+
+changelog:
+  disable: true
+
+# The GitHub Release is where the Terraform and OpenTofu registries download
+# a version from: the zips, the signed SHA256SUMS and its .sig, and the
+# manifest. goreleaser creates it as a draft. The registry reads a release
+# once it's published, and an immutable release's assets lock at that moment,
+# so release-dispatch.yml publishes the draft only after it has validated the
+# artifacts and checked the draft holds exactly those files.
+release:
+  draft: true
+  # A rerun after a failed one replaces that run's draft, rather than leaving
+  # two drafts for the same tag.
+  replace_existing_draft: true
+  # The manifest is in SHA256SUMS through checksum.extra_files above, and this
+  # puts the file itself on the release.
+  extra_files:
+    - glob: terraform-registry-manifest.json
+      name_template: "{{ .ProjectName }}_{{ .Version }}_manifest.json"

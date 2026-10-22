@@ -1,0 +1,3 @@
+```release-note:note
+provider: Each version is published as a GitHub Release holding the zips, the signed `SHA256SUMS` and its `.sig`, and the registry manifest. The Terraform and OpenTofu registries download it from there
+```

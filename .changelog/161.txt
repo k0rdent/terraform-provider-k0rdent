@@ -1,0 +1,3 @@
+```release-note:bug
+resource/k0rdent_kubernetes_cluster: Keep each user's `ssh_public_keys` from state when the platform answers with SSH key credential references instead of the keys, so a refresh doesn't plan a replacement
+```

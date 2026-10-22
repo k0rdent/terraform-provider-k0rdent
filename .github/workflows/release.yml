@@ -1,0 +1,16 @@
+name: Retired tag release workflow
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  retired:
+    name: Refuse retired workflow dispatch
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo "::error title=Retired release workflow::Use 'Dispatch signed provider release' from protected main instead."
+          exit 1

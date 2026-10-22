@@ -1,0 +1,3 @@
+```release-note:bug
+resource/k0rdent_kubernetes_cluster: Keep `ssh_access` through a teardown the platform failed, so `terraform destroy` can run again instead of stopping on a planned replacement
+```

@@ -1,0 +1,7 @@
+```release-note:note
+provider: Release notes now follow HashiCorp's changelog format, with BREAKING CHANGES, NOTES, FEATURES, ENHANCEMENTS and BUG FIXES sections and each line naming the resource it changes
+```
+
+```release-note:note
+provider: A deprecated resource, data source or attribute now warns on every plan that uses it and is kept until the next major version, as `docs/public-compatibility.md` sets out
+```

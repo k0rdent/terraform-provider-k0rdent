@@ -1,0 +1,27 @@
+```release-note:breaking-change
+resource/k0rdent_kubernetes_cluster: `id` is required. The provider no longer generates a `tf-` id, so that a plan to create a cluster can read it first. To upgrade a configuration that left it out, add `id = "<the id in state>"`, read from `terraform state show k0rdent_kubernetes_cluster.<name>`, and the plan shows no change
+```
+
+```release-note:breaking-change
+resource/k0rdent_instance_group: `id` is required, for the same reason. Add `id = "<the id in state>"`, read from `terraform state show k0rdent_instance_group.<name>`
+```
+
+```release-note:enhancement
+resource/k0rdent_kubernetes_cluster: A create whose wait times out or is interrupted fails saying the cluster is still being created on the platform and how far it got, with the next step: `terraform untaint <address>` then `terraform apply`, which waits for the same cluster without creating another. The same for every resource that waits on its create
+```
+
+```release-note:enhancement
+resource/k0rdent_kubernetes_cluster: A plan to create a cluster whose `id` the platform already holds, and isn't deleting, is refused, so the replacement Terraform plans for a tainted cluster can't cancel a create still running. `allow_replace = true` lets a deliberate replacement through. The same for `k0rdent_instance_group`
+```
+
+```release-note:enhancement
+resource/k0rdent_kubernetes_cluster: A destroy that stopped waiting is picked up by the next `terraform destroy`, which waits for the same delete without sending a second DELETE. The same for every resource that waits on its delete
+```
+
+```release-note:enhancement
+resource/k0rdent_kubernetes_cluster: Create and delete default to 3h, because building or freeing hardware can take more than 2 hours. `operation_timeout`, once set, still applies. The same for `k0rdent_instance_group`
+```
+
+```release-note:enhancement
+provider: A wait that stops says whether it timed out or was interrupted, the state the object was last read in, and the command to run next
+```

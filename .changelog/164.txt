@@ -1,0 +1,11 @@
+```release-note:enhancement
+provider: A delete the platform fails now says what to do next: run `terraform destroy` again, then report it and stop managing the object with a `removed` block, with no `terraform state rm`. A security group held by a failed cluster says the same
+```
+
+```release-note:bug
+resource/k0rdent_kubernetes_cluster: Fix `terraform destroy` refusing at plan after the platform failed the create, with `terraform untaint` the only way past. A cluster this provider made that the platform reports `failed` now plans a replacement or a destroy as usual
+```
+
+```release-note:bug
+resource/k0rdent_instance_group: Fix `terraform destroy` refusing at plan after the platform failed the create, with `terraform untaint` the only way past. A group the platform reports `failed` now plans a replacement or a destroy as usual
+```

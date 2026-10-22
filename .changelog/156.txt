@@ -1,0 +1,7 @@
+```release-note:enhancement
+resource/k0rdent_subnet: A `prefix_length` outside its address pool's range, or larger than any prefix the pool holds, fails the plan instead of the create
+```
+
+```release-note:enhancement
+provider: An error the platform refuses with a known reason, a 5xx, or a refusal about an object only the platform builds now ends with what to do next, ahead of the request id
+```

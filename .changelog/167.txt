@@ -1,0 +1,7 @@
+```release-note:enhancement
+resource/k0rdent_kubernetes_cluster: A plan that replaces a cluster the platform failed now warns that applying it deletes the failed cluster first, that the delete can fail too, and that `terraform destroy` only removes it
+```
+
+```release-note:enhancement
+resource/k0rdent_instance_group: A plan that replaces an instance group the platform failed now warns that applying it deletes the failed group first, that the delete can fail too, and that `terraform destroy` only removes it
+```

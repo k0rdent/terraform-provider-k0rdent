@@ -1,0 +1,3 @@
+```release-note:bug
+resource/k0rdent_subnet: Importing a subnet whose address pool is in another region now records `allocate_gateway`. The pool is read in the region its URI names, once per run
+```

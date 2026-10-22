@@ -1,0 +1,3 @@
+```release-note:bug
+resource/k0rdent_kubernetes_cluster: Fix an update that sends nothing, such as a `node_pool` that stops naming a pool after an import, waiting for a busy cluster's operation to finish
+```
