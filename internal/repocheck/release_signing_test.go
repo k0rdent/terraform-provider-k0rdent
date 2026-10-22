@@ -77,8 +77,14 @@ func validateProtectedReleaseSigning(workflows map[string]string) error {
 	if !strings.Contains(dispatch, `git merge-base --is-ancestor "$tag_commit" origin/main`) {
 		return fmt.Errorf("%s does not verify tag ancestry from main", dispatcher)
 	}
-	if !strings.Contains(dispatch, `git rev-list --first-parent origin/main`) {
+	if !strings.Contains(dispatch, "release_base=origin/main") ||
+		!strings.Contains(dispatch, `git rev-list --first-parent "$release_base"`) {
 		return fmt.Errorf("%s accepts a tag on a merged branch, not only on main's own history", dispatcher)
+	}
+	if !strings.Contains(dispatch, `release_branch="release-v${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.x"`) ||
+		!strings.Contains(dispatch, `rules/branches/$release_branch`) ||
+		!strings.Contains(dispatch, "for rule in pull_request non_fast_forward deletion; do") {
+		return fmt.Errorf("%s builds from a release branch without checking it is protected", dispatcher)
 	}
 	if strings.Contains(dispatch, "push:") || workflowTagTrigger.MatchString(dispatch) {
 		return fmt.Errorf("%s must not be tag-triggered", dispatcher)
@@ -256,12 +262,24 @@ func TestProtectedReleaseSigningRejectsSecurityRegressions(t *testing.T) {
 			mutate: func(workflows map[string]string) {
 				workflows["release-dispatch.yml"] = strings.Replace(
 					workflows["release-dispatch.yml"],
-					`git rev-list --first-parent origin/main`,
+					`git rev-list --first-parent "$release_base"`,
 					"# first-parent check removed",
 					1,
 				)
 			},
 			want: "accepts a tag on a merged branch",
+		},
+		{
+			name: "release branch accepted without protection",
+			mutate: func(workflows map[string]string) {
+				workflows["release-dispatch.yml"] = strings.Replace(
+					workflows["release-dispatch.yml"],
+					"for rule in pull_request non_fast_forward deletion; do",
+					"for rule in; do",
+					1,
+				)
+			},
+			want: "without checking it is protected",
 		},
 		{
 			name: "retired workflow triggered by tags",

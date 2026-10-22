@@ -11,6 +11,7 @@ check each setting. Publishing to the registries is in
 | Control | What it stops |
 | --- | --- |
 | `main` needs a reviewed pull request and passing checks, and refuses force pushes | Unreviewed code reaching a release. The workflow only checks the tag is on `main`, so `main` has to be protected |
+| `release-v*` branches have the same rules, and refuse deletion | Unreviewed code reaching a candidate or a patch. The workflow refuses a release branch without them |
 | A `release-signing` environment with required reviewers, no self-review and no admin bypass | One person signing a release alone |
 | The environment deploys from protected branches only | A signing job started from another branch |
 | A ruleset on `v*` tags that refuses delete and update | A released tag being moved to other code |
@@ -39,10 +40,12 @@ and `make workflow-actions-test` proves it still does. CI runs it.
 
 ## What a dispatch does
 
-1. A maintainer pushes a release tag on `main`. That alone signs nothing.
+1. A maintainer pushes a release tag on `main`, or on the version's release
+   branch. That alone signs nothing.
 2. A maintainer runs **Dispatch signed provider release** from `main`, with
    the tag as input.
-3. A job with no secrets checks the tag is a valid version on `main`, and
+3. A job with no secrets checks the tag is a valid version on `main`'s own
+   history, or on a protected `release-vMAJOR.MINOR.x` branch for its version, and
    records its commit. It refuses a new major until the dispatch sets
    `allow_major`.
 4. A required reviewer approves. Only then does the signing job get the key,

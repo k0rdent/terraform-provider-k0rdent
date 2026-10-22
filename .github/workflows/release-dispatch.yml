@@ -27,17 +27,18 @@ jobs:
       tag: ${{ steps.validate.outputs.tag }}
       tag_commit: ${{ steps.validate.outputs.tag_commit }}
     steps:
-      # The one checkout that keeps its token: the step below fetches main and
-      # the tag from this internal repository, which needs it. This job holds
+      # The one checkout that keeps its token: the step below fetches main, a
+      # release branch and the tag from this repository, which needs it. This job holds
       # no other secret. scripts/check-workflow-actions.sh lists the exception.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           ref: main
           fetch-depth: 0
       - id: validate
-        name: Validate SemVer tag and protected-main ancestry
+        name: Validate SemVer tag and protected-branch ancestry
         shell: bash
         env:
+          GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ inputs.tag }}
           ALLOW_MAJOR: ${{ inputs.allow_major && '1' || '0' }}
         run: |
@@ -61,17 +62,36 @@ jobs:
           git fetch --no-tags origin main
           git fetch --force --no-tags origin "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"
           tag_commit="$(git rev-parse "refs/tags/${RELEASE_TAG}^{}")"
+          # A tag is built from main, or from its own minor's release branch:
+          # v0.1.0-rc.2 and v0.1.1 from release-v0.1.x. A release branch takes
+          # backports of reviewed main commits through pull requests, so it has
+          # to be protected like main before anything is built from it.
+          release_base=origin/main
           if ! git merge-base --is-ancestor "$tag_commit" origin/main; then
-            echo "::error title=Release tag is not on protected main::$RELEASE_TAG resolves to $tag_commit, which is not reachable from origin/main."
-            exit 1
+            [[ "$RELEASE_TAG" =~ ^v([0-9]+)\.([0-9]+)\. ]]
+            release_branch="release-v${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.x"
+            if ! git fetch --no-tags origin "refs/heads/$release_branch:refs/remotes/origin/$release_branch" ||
+              ! git merge-base --is-ancestor "$tag_commit" "origin/$release_branch"; then
+              echo "::error title=Release tag is not on a protected branch::$RELEASE_TAG resolves to $tag_commit, which is reachable from neither origin/main nor origin/$release_branch."
+              exit 1
+            fi
+            rules=" $(gh api "repos/$GITHUB_REPOSITORY/rules/branches/$release_branch" --jq '[.[].type] | join(" ")') "
+            for rule in pull_request non_fast_forward deletion; do
+              if [[ "$rules" != *" $rule "* ]]; then
+                echo "::error title=Release branch is not protected::$release_branch has no $rule rule. Protect it like main before releasing from it."
+                exit 1
+              fi
+            done
+            release_base="origin/$release_branch"
           fi
-          # Reachable isn't reviewed. main takes merge commits, so every commit
-          # on a merged branch is reachable, including one a later commit on
-          # that branch undid before review saw the result. A release is built
-          # only from main's own history: a merge, or a commit made on main.
-          first_parent="$(git rev-list --first-parent origin/main)"
+          # Reachable isn't reviewed. Both branches take merge commits, so every
+          # commit on a merged branch is reachable, including one a later commit
+          # on that branch undid before review saw the result. A release is
+          # built only from the branch's own history: a merge, or a commit made
+          # on it.
+          first_parent="$(git rev-list --first-parent "$release_base")"
           if ! grep -qxF "$tag_commit" <<< "$first_parent"; then
-            echo "::error title=Release tag is not a main commit::$RELEASE_TAG resolves to $tag_commit, which is on a branch merged into main rather than on main's own history. Tag the merge commit instead."
+            echo "::error title=Release tag is not a commit of its branch::$RELEASE_TAG resolves to $tag_commit, which is on a branch merged into ${release_base#origin/} rather than on its own history. Tag the merge commit instead."
             exit 1
           fi
 
