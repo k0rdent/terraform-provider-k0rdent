@@ -18,7 +18,7 @@ env:
   # v0.60.0 declares `go 1.26.0`, and Go will not build a module against a
   # dependency that requires a newer language version than the main module
   # declares.
-  GO_VERSION: "1.26.9"
+  GO_VERSION: "1.26.10"
 
 jobs:
   # Keeps build and module caches from being committed.
