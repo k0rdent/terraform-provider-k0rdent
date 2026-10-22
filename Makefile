@@ -183,6 +183,38 @@ unknown-budget-update: ## Rewrite ci/unknown-budget.json from the walkthrough pl
 walkthrough-api-test: ## Follow docs/walkthrough-api.md against the fake, from the commands the page shows
 	./ci/walkthrough-api-against-fake.sh
 
+.PHONY: doctor
+doctor: ## Check this machine can run the tests, before anything long fails halfway
+	./scripts/doctor.sh
+
+# `live` targets talk to a real control plane, configured entirely from the
+# K0RDENT_* environment. `live-preflight` is read-only and safe anywhere;
+# `live` creates real resources and requires LIVE_CONFIRM=<endpoint host>.
+.PHONY: live-preflight
+live-preflight: ## Read-only check against a real API: mint, list regions, list cluster types, plan
+	./scripts/live.sh preflight
+
+.PHONY: live
+live: ## The full lifecycle against a real API. Creates real resources. Needs LIVE_CONFIRM
+	./scripts/live.sh run
+
+# A volume claim binds through a cluster's own storage class, reached through
+# the kubeconfig the provider hands over. It needs a real deployment, since a
+# MOCK_MODE kind stack has no cluster behind its kubeconfig.
+# The validate target needs no endpoint, only the registry for the kubernetes
+# provider.
+.PHONY: live-storage
+live-storage: ## A claim binds through the handed-over kubeconfig on a real deployment. Creates real resources. Needs LIVE_CONFIRM
+	./scripts/live-storage.sh run
+
+.PHONY: live-storage-validate
+live-storage-validate: ## Init and validate examples/live/storage. Creates nothing
+	./scripts/live-storage.sh validate
+
+.PHONY: doctor-script-test
+doctor-script-test: ## Verify doctor rejects golangci-lint v1 and a too-old linter Go
+	./scripts/tests/test-doctor.sh
+
 # The module's tracked sources, so `make fmt` and `make fmt-check` read the
 # same files.
 GO_SOURCE_FILES := $(shell git ls-files '*.go')
@@ -225,6 +257,18 @@ doc-commands: ## Refuse a # comment in a Markdown shell block, which breaks when
 .PHONY: doc-commands-test
 doc-commands-test: ## Prove doc-commands fails on each kind of comment and passes clean blocks
 	./scripts/tests/test-doc-commands.sh
+
+.PHONY: script-credentials-test
+script-credentials-test: ## Prove the live scripts keep credentials on https and off the command line
+	./scripts/tests/test-script-credentials.sh
+
+.PHONY: live-storage-script-test
+live-storage-script-test: ## Prove make live-storage keeps KUBE_* away from Terraform and destroys a cluster whose kubeconfig won't open
+	./scripts/tests/test-live-storage.sh
+
+.PHONY: script-lib-test
+script-lib-test: ## Test the helpers every script sources from scripts/lib
+	./scripts/tests/test-script-lib.sh
 
 .PHONY: docs-check
 docs-check: $(TFPLUGINDOCS) ## Fail when generated provider documentation is stale
