@@ -1,0 +1,25 @@
+[
+  "object",
+  {
+    "attached": [
+      "list",
+      "string"
+    ],
+    "project": "string",
+    "region": "string",
+    "security_groups": [
+      "list",
+      "string"
+    ],
+    "state": "string",
+    "timeouts": [
+      "object",
+      {
+        "create": "string",
+        "delete": "string",
+        "update": "string"
+      }
+    ],
+    "vpc": "string"
+  }
+]

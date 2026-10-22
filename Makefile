@@ -54,7 +54,7 @@ help: ## List targets
 		| awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
 
 .PHONY: check
-check: fmt-check vet lint test client-check vulncheck ## Everything CI runs
+check: fmt-check vet lint test name-audit client-check vulncheck ## Everything CI runs
 
 .PHONY: vulncheck
 vulncheck: ## Gate S6: reachable known vulnerabilities, under the CI Go and the release Go
@@ -69,6 +69,26 @@ vulncheck: ## Gate S6: reachable known vulnerabilities, under the CI Go and the 
 	# with go1.27.1, which CI never scanned. GOTOOLCHAIN downloads it if
 	# it isn't installed.
 	GOTOOLCHAIN=go$(RELEASE_GO_VERSION) go run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION) ./...
+
+.PHONY: build
+build: ## Compile the provider binary
+	go build $(LDFLAGS) -o $(BINARY) .
+
+# Every platform .goreleaser.yaml ships, so a break that only shows on one of
+# them fails a pull request without the full release rehearsal.
+RELEASE_PLATFORMS := darwin/amd64 darwin/arm64 linux/amd64 linux/arm64 windows/amd64
+
+.PHONY: cross-build
+cross-build: ## Compile for every release platform without building archives
+	@for p in $(RELEASE_PLATFORMS); do \
+		echo "go build $$p"; \
+		CGO_ENABLED=0 GOOS=$${p%/*} GOARCH=$${p#*/} go build -o /dev/null . || exit 1; \
+	done
+
+.PHONY: install
+install: build ## Install into the local plugin mirror for dev_overrides
+	mkdir -p ~/.terraform.d/plugins/$(REGISTRY)/$(NAMESPACE)/$(PROVIDER_NAME)/$(VERSION)/$(OS_ARCH)
+	mv $(BINARY) ~/.terraform.d/plugins/$(REGISTRY)/$(NAMESPACE)/$(PROVIDER_NAME)/$(VERSION)/$(OS_ARCH)
 
 .PHONY: test
 test: ## Unit tests
@@ -206,6 +226,10 @@ client-sync: ## Re-cut the client's spec from a k0rdent-clients checkout (CLIENT
 	cd $(CLIENT_DIR) && go run ../tools/clientspec -from "$(abspath $(CLIENTS_GO))" \
 		-commit "$$(git -C "$(abspath $(CLIENTS_GO))" rev-parse HEAD)"
 	@$(MAKE) --no-print-directory client-generate
+
+.PHONY: name-audit
+name-audit: ## Print every place the provisional provider name is written
+	@go run ./internal/tools/nameaudit
 
 .PHONY: clean
 clean: ## Remove build output

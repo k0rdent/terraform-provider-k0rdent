@@ -1,0 +1,19 @@
+[
+  "object",
+  {
+    "allow_replace": "bool",
+    "description": "string",
+    "display_name": "string",
+    "id": "string",
+    "organization_id": "string",
+    "region": "string",
+    "self_link": "string",
+    "status": "string",
+    "timeouts": [
+      "object",
+      {
+        "delete": "string"
+      }
+    ]
+  }
+]

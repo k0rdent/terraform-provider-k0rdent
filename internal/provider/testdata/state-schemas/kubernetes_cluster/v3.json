@@ -1,0 +1,44 @@
+[
+  "object",
+  {
+    "allow_replace": "bool",
+    "cluster_type": "string",
+    "cluster_type_resolved": "string",
+    "description": "string",
+    "display_name": "string",
+    "id": "string",
+    "kubernetes_version": "string",
+    "node_count": "number",
+    "node_pool": [
+      "map",
+      [
+        "object",
+        {
+          "node_count": "number"
+        }
+      ]
+    ],
+    "project": "string",
+    "region": "string",
+    "security_groups": [
+      "list",
+      "string"
+    ],
+    "self_link": "string",
+    "state": "string",
+    "storage_ceiling_gib": "number",
+    "tags": [
+      "map",
+      "string"
+    ],
+    "timeouts": [
+      "object",
+      {
+        "create": "string",
+        "delete": "string",
+        "update": "string"
+      }
+    ],
+    "vpc": "string"
+  }
+]

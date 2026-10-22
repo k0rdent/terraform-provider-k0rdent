@@ -1,0 +1,19 @@
+[
+  "object",
+  {
+    "created_at": "string",
+    "event_types": [
+      "set",
+      "string"
+    ],
+    "id": "string",
+    "is_active": "bool",
+    "previous_secret_expires_at": "string",
+    "rotated_at": "string",
+    "rotation_overlap": "bool",
+    "secret_version": "number",
+    "secret_wo": "string",
+    "secret_wo_version": "number",
+    "url": "string"
+  }
+]

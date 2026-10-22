@@ -1,0 +1,58 @@
+[
+  "object",
+  {
+    "allow_replace": "bool",
+    "cluster_id": "string",
+    "description": "string",
+    "display_name": "string",
+    "evpn": [
+      "object",
+      {
+        "dhcp_enabled": "bool",
+        "dns_servers": [
+          "list",
+          "string"
+        ],
+        "mtu": "number",
+        "service_type": "string",
+        "vlan_id": "string",
+        "vlan_id_resolved": "string"
+      }
+    ],
+    "id": "string",
+    "infiniband": [
+      "object",
+      {
+        "index0": "bool",
+        "ip_over_ib": "bool",
+        "partition": "string",
+        "pkey": "string",
+        "pkey_allocated": "string"
+      }
+    ],
+    "nvlink": [
+      "object",
+      {
+        "partition": "string"
+      }
+    ],
+    "project": "string",
+    "region": "string",
+    "self_link": "string",
+    "state": "string",
+    "tags": [
+      "map",
+      "string"
+    ],
+    "timeouts": [
+      "object",
+      {
+        "create": "string",
+        "delete": "string",
+        "update": "string"
+      }
+    ],
+    "type": "string",
+    "vpc": "string"
+  }
+]

@@ -1,0 +1,48 @@
+[
+  "object",
+  {
+    "allow_replace": "bool",
+    "cluster_type": "string",
+    "cluster_type_resolved": "string",
+    "description": "string",
+    "display_name": "string",
+    "id": "string",
+    "node_pool": [
+      "map",
+      [
+        "object",
+        {
+          "size": "number"
+        }
+      ]
+    ],
+    "project": "string",
+    "region": "string",
+    "self_link": "string",
+    "ssh_access": [
+      "set",
+      [
+        "object",
+        {
+          "display_name": "string",
+          "ssh_public_keys": [
+            "list",
+            "string"
+          ],
+          "sudo": "string",
+          "username": "string"
+        }
+      ]
+    ],
+    "state": "string",
+    "timeouts": [
+      "object",
+      {
+        "create": "string",
+        "delete": "string",
+        "update": "string"
+      }
+    ],
+    "vpc": "string"
+  }
+]

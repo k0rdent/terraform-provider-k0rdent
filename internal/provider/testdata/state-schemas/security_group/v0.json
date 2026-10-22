@@ -1,0 +1,56 @@
+[
+  "object",
+  {
+    "description": "string",
+    "display_name": "string",
+    "egress": [
+      "list",
+      [
+        "object",
+        {
+          "action": "string",
+          "destination_port_range": "string",
+          "destination_prefix": "string",
+          "name": "string",
+          "protocol": "string",
+          "source_port_range": "string",
+          "source_prefix": "string"
+        }
+      ]
+    ],
+    "id": "string",
+    "ingress": [
+      "list",
+      [
+        "object",
+        {
+          "action": "string",
+          "destination_port_range": "string",
+          "destination_prefix": "string",
+          "name": "string",
+          "protocol": "string",
+          "source_port_range": "string",
+          "source_prefix": "string"
+        }
+      ]
+    ],
+    "owner_kind": "string",
+    "project": "string",
+    "region": "string",
+    "rule_count": "number",
+    "self_link": "string",
+    "state": "string",
+    "tags": [
+      "map",
+      "string"
+    ],
+    "timeouts": [
+      "object",
+      {
+        "create": "string",
+        "delete": "string",
+        "update": "string"
+      }
+    ]
+  }
+]

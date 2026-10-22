@@ -1,0 +1,80 @@
+[
+  "object",
+  {
+    "allow_replace": "bool",
+    "capacity_gib": "number",
+    "consumer_status": [
+      "map",
+      [
+        "object",
+        {
+          "resolved_addresses": [
+            "set",
+            "string"
+          ],
+          "state": "string",
+          "state_reason": "string"
+        }
+      ]
+    ],
+    "consumers": [
+      "map",
+      [
+        "object",
+        {
+          "access_level": "string",
+          "mount_path": "string",
+          "network": [
+            "object",
+            {
+              "guid": "string",
+              "mac_address": "string",
+              "type": "string"
+            }
+          ],
+          "type": "string"
+        }
+      ]
+    ],
+    "description": "string",
+    "display_name": "string",
+    "etag": "string",
+    "export_locations": [
+      "list",
+      [
+        "object",
+        {
+          "admin_only": "bool",
+          "options": "string",
+          "path": "string",
+          "preferred": "bool",
+          "protocol": "string",
+          "server": "string"
+        }
+      ]
+    ],
+    "id": "string",
+    "preferred_export_location": [
+      "object",
+      {
+        "options": "string",
+        "path": "string",
+        "protocol": "string",
+        "server": "string"
+      }
+    ],
+    "project": "string",
+    "region": "string",
+    "self_link": "string",
+    "share_type": "string",
+    "state": "string",
+    "timeouts": [
+      "object",
+      {
+        "create": "string",
+        "delete": "string",
+        "update": "string"
+      }
+    ]
+  }
+]

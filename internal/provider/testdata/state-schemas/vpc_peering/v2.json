@@ -1,0 +1,30 @@
+[
+  "object",
+  {
+    "description": "string",
+    "display_name": "string",
+    "id": "string",
+    "local_vpc": "string",
+    "project": "string",
+    "region": "string",
+    "remote_vpc": "string",
+    "self_link": "string",
+    "state": "string",
+    "tags": [
+      "map",
+      "string"
+    ],
+    "tags_all": [
+      "map",
+      "string"
+    ],
+    "timeouts": [
+      "object",
+      {
+        "create": "string",
+        "delete": "string"
+      }
+    ],
+    "vpc": "string"
+  }
+]

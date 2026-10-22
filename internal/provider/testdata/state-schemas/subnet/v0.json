@@ -1,0 +1,32 @@
+[
+  "object",
+  {
+    "address_pool": "string",
+    "allocate_gateway": "bool",
+    "allow_replace": "bool",
+    "cidr": "string",
+    "cluster_id": "string",
+    "description": "string",
+    "display_name": "string",
+    "exclude_ranges": [
+      "list",
+      "string"
+    ],
+    "gateway": "string",
+    "id": "string",
+    "ip_version": "string",
+    "network": "string",
+    "prefix_length": "number",
+    "project": "string",
+    "region": "string",
+    "self_link": "string",
+    "state": "string",
+    "timeouts": [
+      "object",
+      {
+        "create": "string",
+        "delete": "string"
+      }
+    ]
+  }
+]
