@@ -1,0 +1,39 @@
+# gitleaks configuration, read by scripts/check-secrets.sh: the default rules,
+# plus an allowlist for each test value this repository means to hold. Keep
+# each one as narrow as its reason: a path and the exact value where there is
+# one, never a whole directory or a whole rule.
+
+title = "terraform-provider-k0rdent"
+
+[extend]
+useDefault = true
+
+# The local fake's credentials. internal/tools/fakeapi/guard.go mints each
+# one behind a k0r_fake_ prefix, and only the fake accepts them. Today the
+# default generic-api-key rule already skips them, because "fake" is one of
+# its stopwords. This keeps them passing if an upgrade drops that stopword,
+# and scripts/tests/test-secrets.sh checks they pass either way.
+[[allowlists]]
+description = "the fake API's k0r_fake_ credentials"
+regexTarget = "secret"
+regexes = ['''^k0r_fake_[A-Za-z0-9_]*$''']
+
+# Nothing here for the kubeconfig tests' NOT-A-REAL-KEY PEM: the default
+# private-key rule needs 64 characters between the armour lines, so it never
+# fires on it, and an entry that can't fire can't be tested either.
+
+# The log-redaction test's secret, a fixed placeholder the test then looks
+# for in the log.
+[[allowlists]]
+description = "the log-redaction test's placeholder secret"
+condition = "AND"
+paths = ['''(^|/)internal/provider/log_redaction_echo_internal_test\.go$''']
+regexes = ['''^dummy-secret-123$''']
+
+# Not a secret: the generic-api-key rule reads the path after the port in
+# https://api.k0rdent.example:8443/v1/anything as one.
+[[allowlists]]
+description = "a test URL's path on the reserved example domain"
+condition = "AND"
+paths = ['''(^|/)internal/k0rdent/client_test\.go$''']
+regexes = ['''^8443/v1/anything$''']

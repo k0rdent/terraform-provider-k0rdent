@@ -1,0 +1,23 @@
+# Weekly update pull requests for the Go modules and the pinned actions.
+# Action updates move the commit pin and its "# vX.Y.Z" comment together, which
+# is the form scripts/check-workflow-actions.sh requires. A bump needs no
+# changelog entry unless it changes what a configuration sees: then take the
+# label off and add one.
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    labels: [dependencies, no-changelog-needed]
+    groups:
+      # HashiCorp's terraform-plugin-* modules in one pull request rather
+      # than one each.
+      terraform-plugin:
+        patterns:
+          - github.com/hashicorp/terraform-plugin-*
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    labels: [dependencies, no-changelog-needed]

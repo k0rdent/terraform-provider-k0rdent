@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+#
+# Optional. `make hooks` turns it on for this clone, and `git config --unset
+# core.hooksPath` turns it off. It runs the two checks CI runs on text, on
+# what this commit adds only: the public-text deny-list, then gitleaks.
+# `git commit --no-verify` skips it, and CI still runs both.
+set -euo pipefail
+
+scripts="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+"$scripts/check-public-text.sh" --staged
+"$scripts/check-secrets.sh" --staged

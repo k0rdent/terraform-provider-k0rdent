@@ -54,7 +54,7 @@ help: ## List targets
 		| awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
 
 .PHONY: check
-check: doc-commands fmt-check vet lint test name-audit client-check docs-check vulncheck changelog-check ## Everything CI runs
+check: hygiene public-text-check secrets-check doc-commands fmt-check vet lint test name-audit client-check docs-check vulncheck changelog-check ## Everything CI runs
 
 .PHONY: vulncheck
 vulncheck: ## Gate S6: reachable known vulnerabilities, under the CI Go and the release Go
@@ -254,6 +254,35 @@ docs: $(TFPLUGINDOCS) ## Generate committed provider registry documentation
 	TF_BIN="$(TF_BIN)" TF_REGISTRY_HOST="$(TF_REGISTRY_HOST)" \
 		PROVIDER_NAME="$(PROVIDER_NAME)" ./scripts/generate-provider-docs.sh "$(TFPLUGINDOCS)"
 
+.PHONY: hygiene
+hygiene: ## Refuse a tree that has grown a cache, an archive or a build output
+	./scripts/repo-hygiene.sh
+
+# The text a public repository mustn't hold, from .github/public-text/. The
+# pre-commit hook runs the same two checks on what a commit adds. `make hooks`
+# sets core.hooksPath in the clone's config, so every worktree of the clone
+# runs the hook its own branch carries, and a branch without one runs none.
+.PHONY: public-text-check
+public-text-check: ## Refuse ticket keys, internal links, people and other text that isn't for a public repo
+	./scripts/check-public-text.sh
+
+.PHONY: public-text-test
+public-text-test: ## Prove public-text-check fails on a planted hit, passes an allowlisted one and exits non-zero when it can't run
+	./scripts/tests/test-public-text.sh
+
+.PHONY: secrets-check
+secrets-check: ## Scan the tracked files for secrets with the pinned gitleaks
+	./scripts/check-secrets.sh
+
+.PHONY: secrets-test
+secrets-test: ## Prove secrets-check fails on a planted token and passes the fake's credentials
+	./scripts/tests/test-secrets.sh
+
+.PHONY: hooks
+hooks: ## Opt in to the pre-commit hook in scripts/hooks for this clone
+	git config core.hooksPath scripts/hooks
+	@echo "pre-commit hook on. 'git config --unset core.hooksPath' turns it off."
+
 .PHONY: doc-commands
 doc-commands: ## Refuse a # comment in a Markdown shell block, which breaks when pasted into zsh
 	./scripts/check-doc-commands.sh
@@ -261,6 +290,10 @@ doc-commands: ## Refuse a # comment in a Markdown shell block, which breaks when
 .PHONY: doc-commands-test
 doc-commands-test: ## Prove doc-commands fails on each kind of comment and passes clean blocks
 	./scripts/tests/test-doc-commands.sh
+
+.PHONY: hygiene-test
+hygiene-test: ## Prove each hygiene gate still fires
+	./scripts/tests/test-repo-hygiene.sh
 
 .PHONY: script-credentials-test
 script-credentials-test: ## Prove the live scripts keep credentials on https and off the command line
@@ -273,6 +306,17 @@ live-storage-script-test: ## Prove make live-storage keeps KUBE_* away from Terr
 .PHONY: script-lib-test
 script-lib-test: ## Test the helpers every script sources from scripts/lib
 	./scripts/tests/test-script-lib.sh
+
+# Every tracked script under scripts/ and ci/, at warning and above. Notes are
+# left out because most are single quotes around text another program
+# expands, which is the point. .shellcheckrc lets -x follow `. lib/common.sh`
+# relative to the script that sources it. Not part of `check`, because
+# shellcheck isn't a tool every machine has. CI runs it.
+SHELL_SCRIPTS = $(shell git ls-files 'scripts/*.sh' 'scripts/hooks/*' 'ci/*.sh' 'examples/walkthrough/*.sh')
+
+.PHONY: shellcheck
+shellcheck: ## Shellcheck every script under scripts/, ci/ and examples/walkthrough/
+	shellcheck -x -S warning $(SHELL_SCRIPTS)
 
 .PHONY: docs-check
 docs-check: $(TFPLUGINDOCS) ## Fail when generated provider documentation is stale
@@ -317,6 +361,14 @@ release: $(GORELEASER) ## Build endpoint-neutral artifacts from a release tag
 .PHONY: release-validate
 release-validate: release-snapshot ## Build a snapshot and verify its provider archive layout
 	REQUIRE_SIGNATURE=false ./scripts/validate-release-artifacts.sh dist
+
+.PHONY: release-config-test
+release-config-test: ## Verify the README dev_overrides selector; go test checks the release workflows
+	./scripts/tests/test-release-dispatch-config.sh
+
+.PHONY: workflow-actions-test
+workflow-actions-test: ## Refuse an unpinned action, a kept token or keyring, or a vulncheck that skips the release Go
+	./scripts/tests/test-workflow-actions.sh
 
 .PHONY: major-release-gate-test
 major-release-gate-test: ## Verify the major version gate refuses and explains

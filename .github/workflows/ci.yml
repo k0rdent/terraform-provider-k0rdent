@@ -21,6 +21,124 @@ env:
   GO_VERSION: "1.26.9"
 
 jobs:
+  # Keeps build and module caches from being committed.
+  tracked-ignored:
+    name: no tracked ignored files
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+        with:
+          persist-credentials: false
+      - name: check that no tracked file matches .gitignore
+        run: scripts/check-tracked-ignored.sh
+
+  # What tracked-ignored above does not cover. That job answers "is anything
+  # here already forbidden"; this one answers "has the tree grown in a way
+  # nobody meant", which is the question the 1.6 GB push would have failed
+  # first: the cache averaged 38 KB a file, so no size rule caught it and
+  # counting did.
+  #
+  # Like tracked-ignored, it needs no client checkout and no App token, so it
+  # cannot be taken down by the thing that took every other job in this
+  # repository's history down.
+  hygiene:
+    name: repo hygiene and signatures
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+        with:
+          # rev-list needs the history, and the signature check walks the range
+          # this event introduced.
+          fetch-depth: 0
+          persist-credentials: false
+      - name: repository hygiene
+        run: ./scripts/repo-hygiene.sh
+      - name: the hygiene gates can still fail
+        run: make hygiene-test
+      - name: shell blocks in the docs paste into zsh
+        run: make doc-commands
+      - name: the doc-commands gate can still fail
+        run: make doc-commands-test
+      - name: the public-text gate can still fail
+        run: make public-text-test
+      # Needs bash, python3 and jq, and no client checkout: curl and go are
+      # shims, and the only server is on 127.0.0.1.
+      - name: the live scripts keep credentials on https and off the command line
+        run: make script-credentials-test
+      - name: the storage run cleans up and ignores KUBE_* settings
+        run: make live-storage-script-test
+      - name: the helpers the scripts share
+        run: make script-lib-test
+      # shellcheck comes with the ubuntu-latest image.
+      - name: shellcheck the scripts
+        run: make shellcheck
+      - name: work out what this event added
+        id: range
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD: ${{ github.sha }}
+        run: |
+          # A first push to a branch reports an all-zero base, and a
+          # workflow_dispatch reports none at all. Both mean "no range to
+          # compare", so check the head commit alone rather than the whole
+          # history of the repository.
+          if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
+            echo "range=${HEAD}~1..${HEAD}" >> "$GITHUB_OUTPUT"
+          else
+            echo "range=${BASE}..${HEAD}" >> "$GITHUB_OUTPUT"
+          fi
+      - name: every commit is signed
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./scripts/verify-signatures.sh "${{ steps.range.outputs.range }}"
+
+  # The deny-list in .github/public-text/: ticket keys, internal links and
+  # hosts, people, home paths, deal names and AI trailers. GitHub's secret
+  # scanning can't hold custom patterns on a public repository, so this is
+  # the only gate for them.
+  public-text:
+    name: public text
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+        with:
+          persist-credentials: false
+      - name: no text that isn't for a public repository
+        run: make public-text-check
+
+  # gitleaks over the tracked tree, and over every commit this event adds, so
+  # a secret added then removed inside one pull request is still caught. The
+  # CLI, pinned and checksum-checked by scripts/check-secrets.sh, not
+  # gitleaks-action, which needs a license on an organization's repositories.
+  secrets:
+    name: secrets
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: the secrets gate can still fail
+        run: make secrets-test
+      - name: no secrets in the tracked files
+        run: make secrets-check
+      - name: no secrets in the commits this event adds
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD: ${{ github.sha }}
+        run: |
+          # The same range as the signature check in the hygiene job. No base,
+          # or an all-zero one, means a first push or a dispatch: the tree
+          # scan above is the whole check then.
+          if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
+            echo "No range for this event. The tree scan covers it."
+            exit 0
+          fi
+          ./scripts/check-secrets.sh --range "${BASE}..${HEAD}"
+
   build:
     name: build
     runs-on: ubuntu-latest
@@ -176,6 +294,12 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - name: verify release dispatcher configuration
+        run: make release-config-test
+      # Every job that holds a secret also runs actions from other
+      # repositories, so this keeps each of them pinned to a commit.
+      - name: verify action pins and checkout credentials
+        run: make workflow-actions-test
       # Nothing else runs these two.
       - name: verify the major version gate
         run: make major-release-gate-test
@@ -231,6 +355,10 @@ jobs:
     timeout-minutes: 20
     if: always()
     needs:
+      - tracked-ignored
+      - hygiene
+      - public-text
+      - secrets
       - build
       - test
       - lint

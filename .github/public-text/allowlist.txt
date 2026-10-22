@@ -1,0 +1,57 @@
+# Exceptions to denylist.txt. One per line: PATH_REGEX:MATCH_REGEX
+#   PATH_REGEX   searched in the file's path from the repository root
+#   MATCH_REGEX  searched in the matched text. Anchor it with ^ and $
+# A hit is dropped when both match. Keep each line as narrow as the reason
+# for it, and say the reason in a comment above it.
+
+# The rules themselves, and this file's reasons
+^\.github/public-text/(denylist|allowlist)\.txt$:.
+
+# ticket: standards and encodings, not tickets
+.:^(SHA|UTF|RFC|ISO|HTTP|CVE|TLS|AES|ECDSA|RSA|PKCS|X|LICENSE|GPL|BSD|MIT|EC|P|ARM|AMD|ED|IPV|IPv|CP|DES|SHA3|HMAC|ECMA|DNS)-[0-9]+$
+
+# email: noreply, the reserved example and test domains, git remotes
+.:^noreply@
+.:@(example\.(com|org|net|test|invalid)|[A-Za-z0-9.-]+\.(example|test|invalid|localhost))$
+.:^git@github\.com$
+.:@[A-Za-z0-9-]+\.iam$
+.:@users\.noreply\.github\.com$
+
+# private-ip: documentation CIDRs used anywhere (10.0.x.x, the kube service range)
+.:^(10\.0\.[0-9]+\.[0-9]+|10\.96\.0\.0)$
+# private-ip: generic CIDRs and addresses in examples, tests and the fake
+^(examples|docs|templates)/:^(10\.0\.[0-9]+\.[0-9]+|10\.[0-9]+\.0\.0|172\.16\.[0-9]+\.[0-9]+|192\.168\.[0-9]+\.[0-9]+)$
+_test\.go$:^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$
+^internal/tools/fakeapi/:^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$
+
+# home-path: the placeholder user
+.:^/Users/you$
+
+# ai-tool: the API's pagination field, not the editor
+^internal/provider/cluster_events\.go$:^Cursor$
+^internal/tools/fakeapi/pager\.go$:^Cursor$
+^internal/k0rdent/(spec/openapi\.yaml|types\.gen\.go)$:^Cursor$
+# ai-trailer: "generated with the request builders", copied client prose
+^internal/k0rdent/error\.go$:^generated with$
+
+# staging: a generic environment name in an example's validation message
+^examples/walkthrough/full/variables\.tf$:^staging$
+# staging: the cp-staging project name in the list-resource example
+^(docs/list-resources/kubernetes_cluster\.md|examples/list-resources/k0rdent_kubernetes_cluster/):^staging$
+
+# gh-login: the maintainers, in CODEOWNERS only
+^\.github/CODEOWNERS$:^(jeremypruitt|retrospct)$
+
+# The pre-release provider address a migrating state may still name
+^docs/public-compatibility\.md$:^retrospct$
+
+# A test that bans the word from guidance text has to spell it
+^internal/provider/error_guidance_internal_test\.go$:^customer$
+
+# The API's own descriptions, copied unchanged so the client matches its spec
+^internal/k0rdent/(spec/openapi\.yaml|[a-z]+\.gen\.go)$:^([Cc]ustomer|partner|MVP|NVIDIA)$
+^internal/k0rdent/(spec/openapi\.yaml|[a-z]+\.gen\.go)$:^(10\.[0-9.]+|172\.(1[6-9]|2[0-9]|3[01])\.[0-9.]+|192\.168\.[0-9.]+)$
+^internal/k0rdent/spec/openapi\.yaml$:^(ops@vendor\.example\.com|k0smotron@db\.example\.internal)$
+
+# machine-type: the API's GPU platform enum, copied unchanged from its spec
+^internal/k0rdent/(spec/openapi\.yaml|[a-z]+\.gen\.go)$:^GB300$
