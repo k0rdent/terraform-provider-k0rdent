@@ -1,0 +1,2415 @@
+{
+ "operations": {
+  "acceptOrganizationInvitation": [
+   "internal",
+   "public"
+  ],
+  "addAddressPoolPrefix": [
+   "internal"
+  ],
+  "addClusterTypeVersion": [
+   "internal"
+  ],
+  "addGroupMember": [
+   "internal",
+   "public"
+  ],
+  "addReservationServers": [
+   "internal"
+  ],
+  "batchCreateServers": [
+   "internal"
+  ],
+  "bulkCreateOrganizationInvitations": [
+   "internal",
+   "public"
+  ],
+  "cancelCluster": [
+   "internal",
+   "public"
+  ],
+  "cancelPlatformCiamProviderSecretRotation": [
+   "internal"
+  ],
+  "cancelProviderSecretRotation": [
+   "internal",
+   "public"
+  ],
+  "checkPermissions": [
+   "internal",
+   "public"
+  ],
+  "confirmFileStoreRemoval": [
+   "internal"
+  ],
+  "confirmPlatformCiamProviderSecretRotation": [
+   "internal"
+  ],
+  "confirmProviderSecretRotation": [
+   "internal",
+   "public"
+  ],
+  "createAddressPool": [
+   "internal"
+  ],
+  "createApiKey": [
+   "internal",
+   "public"
+  ],
+  "createCluster": [
+   "internal",
+   "public"
+  ],
+  "createClusterType": [
+   "internal"
+  ],
+  "createFileStore": [
+   "internal",
+   "public"
+  ],
+  "createGlobalQuotaProfile": [
+   "internal"
+  ],
+  "createGroup": [
+   "internal",
+   "public"
+  ],
+  "createInstanceGroup": [
+   "internal",
+   "public"
+  ],
+  "createMachineType": [
+   "internal"
+  ],
+  "createNetwork": [
+   "internal",
+   "public"
+  ],
+  "createNotificationCatalogEntry": [
+   "internal"
+  ],
+  "createNotificationSubscription": [
+   "public"
+  ],
+  "createOrganization": [
+   "internal"
+  ],
+  "createOrganizationInvitation": [
+   "internal",
+   "public"
+  ],
+  "createPlatformCiamProvider": [
+   "internal"
+  ],
+  "createPlatformPolicy": [
+   "internal"
+  ],
+  "createPolicy": [
+   "internal",
+   "public"
+  ],
+  "createProjectInOrg": [
+   "internal",
+   "public"
+  ],
+  "createProvider": [
+   "internal",
+   "public"
+  ],
+  "createQuotaOverride": [
+   "internal"
+  ],
+  "createQuotaProfileInOrg": [
+   "internal"
+  ],
+  "createReservation": [
+   "internal"
+  ],
+  "createRole": [
+   "internal",
+   "public"
+  ],
+  "createSecurityGroup": [
+   "internal",
+   "public"
+  ],
+  "createServiceAccount": [
+   "internal",
+   "public"
+  ],
+  "createServiceAccountCredential": [
+   "internal",
+   "public"
+  ],
+  "createShareType": [
+   "internal"
+  ],
+  "createStorageBackend": [
+   "internal"
+  ],
+  "createSubnet": [
+   "internal",
+   "public"
+  ],
+  "createTemplate": [
+   "internal"
+  ],
+  "createVPCPeering": [
+   "internal",
+   "public"
+  ],
+  "createWebhookSubscription": [
+   "public"
+  ],
+  "deactivateTemplate": [
+   "internal"
+  ],
+  "decommissionServer": [
+   "internal"
+  ],
+  "deleteAddressPool": [
+   "internal"
+  ],
+  "deleteApiKey": [
+   "internal",
+   "public"
+  ],
+  "deleteCluster": [
+   "internal",
+   "public"
+  ],
+  "deleteClusterType": [
+   "internal"
+  ],
+  "deleteFileStore": [
+   "internal",
+   "public"
+  ],
+  "deleteGlobalQuotaProfile": [
+   "internal"
+  ],
+  "deleteGroup": [
+   "internal",
+   "public"
+  ],
+  "deleteInboxNotification": [
+   "public"
+  ],
+  "deleteInstance": [
+   "internal",
+   "public"
+  ],
+  "deleteInstanceGroup": [
+   "internal",
+   "public"
+  ],
+  "deleteMachineType": [
+   "internal"
+  ],
+  "deleteNetwork": [
+   "internal",
+   "public"
+  ],
+  "deleteNotificationSubscription": [
+   "public"
+  ],
+  "deleteOrganization": [
+   "internal"
+  ],
+  "deletePlatformCiamProvider": [
+   "internal"
+  ],
+  "deletePlatformCredential": [
+   "public"
+  ],
+  "deletePlatformPolicy": [
+   "internal"
+  ],
+  "deletePolicy": [
+   "internal",
+   "public"
+  ],
+  "deleteProjectCredential": [
+   "public"
+  ],
+  "deleteProjectInOrg": [
+   "internal",
+   "public"
+  ],
+  "deleteProvider": [
+   "internal",
+   "public"
+  ],
+  "deleteQuotaAssignmentInOrg": [
+   "internal"
+  ],
+  "deleteQuotaProfileInOrg": [
+   "internal"
+  ],
+  "deleteReservationSshAccessPublicKeys": [
+   "internal"
+  ],
+  "deleteRole": [
+   "internal",
+   "public"
+  ],
+  "deleteSecurityGroup": [
+   "internal",
+   "public"
+  ],
+  "deleteServerCloudConfig": [
+   "internal"
+  ],
+  "deleteServerSshAccessPublicKeys": [
+   "internal"
+  ],
+  "deleteServiceAccount": [
+   "internal",
+   "public"
+  ],
+  "deleteServiceAccountCredential": [
+   "internal",
+   "public"
+  ],
+  "deleteShareType": [
+   "internal"
+  ],
+  "deleteStorageBackend": [
+   "internal"
+  ],
+  "deleteSubnet": [
+   "internal",
+   "public"
+  ],
+  "deleteUser": [
+   "internal",
+   "public"
+  ],
+  "deleteVPCPeering": [
+   "internal",
+   "public"
+  ],
+  "deleteWebhookSubscription": [
+   "public"
+  ],
+  "deprovisionInstanceGroupInstances": [
+   "internal",
+   "public"
+  ],
+  "deprovisionReservationServers": [
+   "internal"
+  ],
+  "designateDefaultQuotaProfile": [
+   "internal"
+  ],
+  "disableNotificationCatalogEntry": [
+   "internal"
+  ],
+  "disableOrgUser": [
+   "internal",
+   "public"
+  ],
+  "disablePlatformUser": [
+   "internal"
+  ],
+  "downloadClusterRuntimeEvents": [
+   "internal",
+   "public"
+  ],
+  "downloadKubeconfig": [
+   "internal",
+   "public"
+  ],
+  "enableOrgUser": [
+   "internal",
+   "public"
+  ],
+  "enablePlatformUser": [
+   "internal"
+  ],
+  "executeInstancePowerAction": [
+   "internal",
+   "public"
+  ],
+  "executeServerAction": [
+   "internal"
+  ],
+  "forceTeardownReservation": [
+   "internal"
+  ],
+  "getAddressPool": [
+   "internal",
+   "public"
+  ],
+  "getApiKey": [
+   "internal",
+   "public"
+  ],
+  "getCluster": [
+   "internal",
+   "public"
+  ],
+  "getClusterKubeconfig": [
+   "internal",
+   "public"
+  ],
+  "getClusterType": [
+   "internal",
+   "public"
+  ],
+  "getClusterTypeVersion": [
+   "internal",
+   "public"
+  ],
+  "getFileStore": [
+   "internal",
+   "public"
+  ],
+  "getGlobalQuotaProfile": [
+   "internal"
+  ],
+  "getGroup": [
+   "internal",
+   "public"
+  ],
+  "getGroupMember": [
+   "internal",
+   "public"
+  ],
+  "getInboxNotification": [
+   "public"
+  ],
+  "getInboxNotificationStatus": [
+   "public"
+  ],
+  "getInstance": [
+   "internal",
+   "public"
+  ],
+  "getInstanceGroup": [
+   "internal",
+   "public"
+  ],
+  "getInvitationSettings": [
+   "internal",
+   "public"
+  ],
+  "getJWKS": [
+   "internal",
+   "public"
+  ],
+  "getKubeconfig": [
+   "internal",
+   "public"
+  ],
+  "getMachineType": [
+   "internal"
+  ],
+  "getMachineTypeInventoryOptions": [
+   "internal"
+  ],
+  "getNetwork": [
+   "internal",
+   "public"
+  ],
+  "getNotificationCatalogEntry": [
+   "internal"
+  ],
+  "getOIDCDiscovery": [
+   "internal",
+   "public"
+  ],
+  "getOrgCallbackURL": [
+   "internal",
+   "public"
+  ],
+  "getOrganization": [
+   "internal",
+   "public"
+  ],
+  "getOrganizationMember": [
+   "internal",
+   "public"
+  ],
+  "getOrganizationStats": [
+   "internal",
+   "public"
+  ],
+  "getPlatformCiamProvider": [
+   "internal"
+  ],
+  "getPlatformCredential": [
+   "public"
+  ],
+  "getPlatformPolicy": [
+   "internal"
+  ],
+  "getPolicy": [
+   "internal",
+   "public"
+  ],
+  "getProjectCredential": [
+   "public"
+  ],
+  "getProjectInOrg": [
+   "internal",
+   "public"
+  ],
+  "getProjectQuota": [
+   "internal",
+   "public"
+  ],
+  "getProjectQuotaHistory": [
+   "internal",
+   "public"
+  ],
+  "getProvider": [
+   "internal",
+   "public"
+  ],
+  "getQuotaProfileInOrg": [
+   "internal"
+  ],
+  "getReservation": [
+   "internal"
+  ],
+  "getReservationProviderSpecificData": [
+   "internal"
+  ],
+  "getReservationProvision": [
+   "internal"
+  ],
+  "getReservationSshAccessPublicKeys": [
+   "internal"
+  ],
+  "getRole": [
+   "internal",
+   "public"
+  ],
+  "getSecurityGroup": [
+   "internal",
+   "public"
+  ],
+  "getServer": [
+   "internal"
+  ],
+  "getServerBatch": [
+   "internal"
+  ],
+  "getServerCloudConfig": [
+   "internal"
+  ],
+  "getServerLogs": [
+   "internal"
+  ],
+  "getServerProviderSpecificData": [
+   "internal"
+  ],
+  "getServerSshAccessPublicKeys": [
+   "internal"
+  ],
+  "getServersSummary": [
+   "internal"
+  ],
+  "getServiceAccount": [
+   "internal",
+   "public"
+  ],
+  "getServiceAccountCredential": [
+   "internal",
+   "public"
+  ],
+  "getShareType": [
+   "internal",
+   "public"
+  ],
+  "getStorageBackend": [
+   "internal"
+  ],
+  "getStorageBackendCapacity": [
+   "internal"
+  ],
+  "getSubnet": [
+   "internal",
+   "public"
+  ],
+  "getTemplate": [
+   "internal"
+  ],
+  "getTenantQuota": [
+   "internal",
+   "public"
+  ],
+  "getTenantQuotaHistory": [
+   "internal",
+   "public"
+  ],
+  "getUser": [
+   "internal",
+   "public"
+  ],
+  "getUserProfile": [
+   "internal",
+   "public"
+  ],
+  "getVPC": [
+   "internal",
+   "public"
+  ],
+  "getVPCPeering": [
+   "internal",
+   "public"
+  ],
+  "initiateLogin": [
+   "internal",
+   "public"
+  ],
+  "introspectToken": [
+   "internal",
+   "public"
+  ],
+  "issuePlatformCredential": [
+   "public"
+  ],
+  "issueProjectCredential": [
+   "public"
+  ],
+  "listAddressPools": [
+   "internal",
+   "public"
+  ],
+  "listApiKeys": [
+   "internal",
+   "public"
+  ],
+  "listClusterRuntimeEvents": [
+   "internal",
+   "public"
+  ],
+  "listClusterSshAccess": [
+   "internal",
+   "public"
+  ],
+  "listClusterTypeVersions": [
+   "internal",
+   "public"
+  ],
+  "listClusterTypes": [
+   "internal",
+   "public"
+  ],
+  "listClusters": [
+   "internal",
+   "public"
+  ],
+  "listDeliveryStatus": [
+   "public"
+  ],
+  "listFileStores": [
+   "internal",
+   "public"
+  ],
+  "listGlobalQuotaProfiles": [
+   "internal"
+  ],
+  "listGrantableApiKeyRoles": [
+   "internal",
+   "public"
+  ],
+  "listGroupMembers": [
+   "internal",
+   "public"
+  ],
+  "listGroups": [
+   "internal",
+   "public"
+  ],
+  "listInboxNotifications": [
+   "public"
+  ],
+  "listInstanceGroupSshAccess": [
+   "internal",
+   "public"
+  ],
+  "listInstanceGroups": [
+   "internal",
+   "public"
+  ],
+  "listInstances": [
+   "internal",
+   "public"
+  ],
+  "listKubeconfigs": [
+   "internal",
+   "public"
+  ],
+  "listMachineTypes": [
+   "internal"
+  ],
+  "listNetworks": [
+   "internal",
+   "public"
+  ],
+  "listNotificationCatalog": [
+   "internal"
+  ],
+  "listNotificationPreferences": [
+   "public"
+  ],
+  "listNotificationSubscriptions": [
+   "public"
+  ],
+  "listOrganizationInvitations": [
+   "internal",
+   "public"
+  ],
+  "listOrganizationMembers": [
+   "internal",
+   "public"
+  ],
+  "listOrganizations": [
+   "internal",
+   "public"
+  ],
+  "listPlatformApiKeys": [
+   "internal"
+  ],
+  "listPlatformCredentials": [
+   "public"
+  ],
+  "listPlatformEvents": [
+   "internal",
+   "public"
+  ],
+  "listPlatformPolicies": [
+   "internal"
+  ],
+  "listPlatformServiceAccountCredentials": [
+   "internal"
+  ],
+  "listPlatformServiceAccounts": [
+   "internal"
+  ],
+  "listPolicies": [
+   "internal",
+   "public"
+  ],
+  "listProjectCredentials": [
+   "public"
+  ],
+  "listProjectMembers": [
+   "internal",
+   "public"
+  ],
+  "listProjects": [
+   "internal",
+   "public"
+  ],
+  "listProjectsInOrg": [
+   "internal",
+   "public"
+  ],
+  "listProviders": [
+   "internal",
+   "public"
+  ],
+  "listQuotaAssignmentsInOrg": [
+   "internal"
+  ],
+  "listQuotaDimensions": [
+   "internal"
+  ],
+  "listQuotaOverrides": [
+   "internal"
+  ],
+  "listQuotaProfileAssignments": [
+   "internal"
+  ],
+  "listQuotaProfilesInOrg": [
+   "internal"
+  ],
+  "listQuotaScopeUsage": [
+   "internal"
+  ],
+  "listRegions": [
+   "internal",
+   "public"
+  ],
+  "listReservations": [
+   "internal"
+  ],
+  "listRoles": [
+   "internal",
+   "public"
+  ],
+  "listSecurityGroupAttachments": [
+   "internal",
+   "public"
+  ],
+  "listSecurityGroups": [
+   "internal",
+   "public"
+  ],
+  "listSecurityGroupsEffective": [
+   "internal",
+   "public"
+  ],
+  "listServerBatches": [
+   "internal"
+  ],
+  "listServers": [
+   "internal"
+  ],
+  "listServiceAccountCredentials": [
+   "internal",
+   "public"
+  ],
+  "listServiceAccounts": [
+   "internal",
+   "public"
+  ],
+  "listShareTypes": [
+   "internal",
+   "public"
+  ],
+  "listStorageBackends": [
+   "internal"
+  ],
+  "listSubnets": [
+   "internal",
+   "public"
+  ],
+  "listTemplates": [
+   "internal"
+  ],
+  "listUsers": [
+   "internal",
+   "public"
+  ],
+  "listVPCPeerings": [
+   "internal",
+   "public"
+  ],
+  "listVPCs": [
+   "internal",
+   "public"
+  ],
+  "listWebhookDeliveries": [
+   "public"
+  ],
+  "listWebhookSubscriptions": [
+   "public"
+  ],
+  "logoutSession": [
+   "internal",
+   "public"
+  ],
+  "markAllInboxNotificationsRead": [
+   "public"
+  ],
+  "markInboxNotificationRead": [
+   "public"
+  ],
+  "markInboxNotificationUnread": [
+   "public"
+  ],
+  "mintToken": [
+   "internal",
+   "public"
+  ],
+  "patchReservationProviderSpecificData": [
+   "internal"
+  ],
+  "patchServerProviderSpecificData": [
+   "internal"
+  ],
+  "previewGlobalQuotaProfileUpdate": [
+   "internal"
+  ],
+  "previewPlatformCredentialRevocation": [
+   "public"
+  ],
+  "previewPlatformCredentialRotation": [
+   "public"
+  ],
+  "previewProjectCredentialRevocation": [
+   "public"
+  ],
+  "previewProjectCredentialRotation": [
+   "public"
+  ],
+  "previewQuotaProfileUpdateInOrg": [
+   "internal"
+  ],
+  "previewTemplate": [
+   "internal"
+  ],
+  "provisionReservation": [
+   "internal"
+  ],
+  "provisionSingleServer": [
+   "internal"
+  ],
+  "putQuotaAssignmentInOrg": [
+   "internal"
+  ],
+  "readPlatformCredentialMaterial": [
+   "public"
+  ],
+  "readProjectCredentialMaterial": [
+   "public"
+  ],
+  "reconcileOrganizationMemberRoles": [
+   "internal",
+   "public"
+  ],
+  "reconcileProjectMemberRoles": [
+   "internal",
+   "public"
+  ],
+  "registerServer": [
+   "internal"
+  ],
+  "reissuePlatformCiamProviderRotationVerification": [
+   "internal"
+  ],
+  "reissueProviderRotationVerification": [
+   "internal",
+   "public"
+  ],
+  "releaseReservation": [
+   "internal"
+  ],
+  "removeAddressPoolPrefix": [
+   "internal"
+  ],
+  "removeGroupMember": [
+   "internal",
+   "public"
+  ],
+  "removeOrganizationMember": [
+   "internal",
+   "public"
+  ],
+  "removeProjectMember": [
+   "internal",
+   "public"
+  ],
+  "removeReservationServers": [
+   "internal"
+  ],
+  "reportServerExternalState": [
+   "internal"
+  ],
+  "resendOrganizationInvitation": [
+   "internal",
+   "public"
+  ],
+  "resumeOrganization": [
+   "internal"
+  ],
+  "revokeOrganizationInvitation": [
+   "internal",
+   "public"
+  ],
+  "revokePlatformApiKey": [
+   "internal"
+  ],
+  "revokePlatformCredential": [
+   "public"
+  ],
+  "revokePlatformServiceAccountCredential": [
+   "internal"
+  ],
+  "revokeProjectCredential": [
+   "public"
+  ],
+  "revokeQuotaOverride": [
+   "internal"
+  ],
+  "revokeToken": [
+   "internal",
+   "public"
+  ],
+  "rotateApiKey": [
+   "internal",
+   "public"
+  ],
+  "rotatePlatformCiamProviderSecret": [
+   "internal"
+  ],
+  "rotatePlatformCredential": [
+   "public"
+  ],
+  "rotateProjectCredential": [
+   "public"
+  ],
+  "rotateProviderSecret": [
+   "internal",
+   "public"
+  ],
+  "rotateWebhookSubscriptionSecret": [
+   "public"
+  ],
+  "scaleCluster": [
+   "internal",
+   "public"
+  ],
+  "scaleInstanceGroup": [
+   "internal",
+   "public"
+  ],
+  "searchAuditEvents": [
+   "public"
+  ],
+  "searchAuditEventsAggregate": [
+   "public"
+  ],
+  "setClusterTypeVersionStatus": [
+   "internal"
+  ],
+  "setReservationSshAccessPublicKeys": [
+   "internal"
+  ],
+  "setServerCloudConfig": [
+   "internal"
+  ],
+  "setServerEffectiveHostname": [
+   "internal"
+  ],
+  "setServerSshAccessPublicKeys": [
+   "internal"
+  ],
+  "setVPCSecurityGroups": [
+   "internal",
+   "public"
+  ],
+  "startPlatformCiamProviderSignInTest": [
+   "internal"
+  ],
+  "startProviderSignInTest": [
+   "internal",
+   "public"
+  ],
+  "streamInboxNotifications": [
+   "public"
+  ],
+  "suspendOrganization": [
+   "internal"
+  ],
+  "terminatePlatformUserSessions": [
+   "internal"
+  ],
+  "testNotification": [
+   "public"
+  ],
+  "unsubscribe": [
+   "public"
+  ],
+  "unsubscribeOneClick": [
+   "public"
+  ],
+  "updateAddressPool": [
+   "internal"
+  ],
+  "updateApiKey": [
+   "internal",
+   "public"
+  ],
+  "updateCluster": [
+   "internal",
+   "public"
+  ],
+  "updateFileStore": [
+   "internal",
+   "public"
+  ],
+  "updateGlobalQuotaProfile": [
+   "internal"
+  ],
+  "updateGroup": [
+   "internal",
+   "public"
+  ],
+  "updateInstanceGroup": [
+   "internal",
+   "public"
+  ],
+  "updateInvitationSettings": [
+   "internal",
+   "public"
+  ],
+  "updateMachineType": [
+   "internal"
+  ],
+  "updateNetwork": [
+   "internal",
+   "public"
+  ],
+  "updateNotificationCatalogEntry": [
+   "internal"
+  ],
+  "updateOrganization": [
+   "internal",
+   "public"
+  ],
+  "updatePlatformCiamProvider": [
+   "internal"
+  ],
+  "updatePolicy": [
+   "internal",
+   "public"
+  ],
+  "updateProjectInOrg": [
+   "internal",
+   "public"
+  ],
+  "updateProvider": [
+   "internal",
+   "public"
+  ],
+  "updateQuotaDimensionEnforcement": [
+   "internal"
+  ],
+  "updateQuotaProfileInOrg": [
+   "internal"
+  ],
+  "updateRole": [
+   "internal",
+   "public"
+  ],
+  "updateSecurityGroup": [
+   "internal",
+   "public"
+  ],
+  "updateServer": [
+   "internal"
+  ],
+  "updateServiceAccount": [
+   "internal",
+   "public"
+  ],
+  "updateShareType": [
+   "internal"
+  ],
+  "updateStorageBackend": [
+   "internal"
+  ],
+  "updateUser": [
+   "internal",
+   "public"
+  ],
+  "updateUserProfile": [
+   "internal",
+   "public"
+  ],
+  "upgradeCluster": [
+   "internal",
+   "public"
+  ],
+  "upsertNotificationPreference": [
+   "public"
+  ],
+  "validateProvider": [
+   "internal",
+   "public"
+  ],
+  "validateProviderById": [
+   "internal",
+   "public"
+  ],
+  "validateServer": [
+   "internal"
+  ]
+ },
+ "routes": {
+  "acceptOrganizationInvitation": {
+   "method": "POST",
+   "path": "/v1/regions/global/organizations/{id}/invitations/{invitationId}/accept"
+  },
+  "addAddressPoolPrefix": {
+   "method": "POST",
+   "path": "/v1/regions/{region}/networking/address-pools/{id}/prefixes"
+  },
+  "addClusterTypeVersion": {
+   "method": "POST",
+   "path": "/v1/regions/{region}/compute/cluster-types/{id}/versions"
+  },
+  "addGroupMember": {
+   "method": "POST",
+   "path": "/v1/regions/global/organizations/{orgId}/iam/groups/{groupId}/members"
+  },
+  "addReservationServers": {
+   "method": "POST",
+   "path": "/v1/regions/{region}/infrastructure/reservations/{reservationId}/addServers"
+  },
+  "batchCreateServers": {
+   "method": "POST",
+   "path": "/v1/regions/{region}/infrastructure/servers/batchCreate"
+  },
+  "bulkCreateOrganizationInvitations": {
+   "method": "POST",
+   "path": "/v1/regions/global/organizations/{id}/invitations/bulk"
+  },
+  "cancelCluster": {
+   "method": "POST",
+   "path": "/v1/regions/{region}/projects/{project}/compute/clusters/{id}/cancel"
+  },
+  "cancelPlatformCiamProviderSecretRotation": {
+   "method": "POST",
+   "path": "/v1/regions/global/iam/platform/ciam-provider/rotate-secret/cancel"
+  },
+  "cancelProviderSecretRotation": {
+   "method": "POST",
+   "path": "/v1/regions/global/organizations/{orgId}/iam/providers/{id}/rotate-secret/cancel"
+  },
+  "checkPermissions": {
+   "method": "POST",
+   "path": "/v1/regions/global/auth/check"
+  },
+  "confirmFileStoreRemoval": {
+   "method": "POST",
+   "path": "/v1/regions/{region}/projects/{project}/storage/file-stores/{id}/confirm-removal"
+  },
+  "confirmPlatformCiamProviderSecretRotation": {
+   "method": "POST",
+   "path": "/v1/regions/global/iam/platform/ciam-provider/rotate-secret/confirm"
+  },
+  "confirmProviderSecretRotation": {
+   "method": "POST",
+   "path": "/v1/regions/global/organizations/{orgId}/iam/providers/{id}/rotate-secret/confirm"
+  },
+  "createAddressPool": {
+   "method": "POST",
+   "path": "/v1/regions/{region}/networking/address-pools"
+  },
+  "createApiKey": {
+   "method": "POST",
+   "path": "/v1/regions/global/iam/apikeys"
+  },
+  "createCluster": {
+   "method": "POST",
+   "path": "/v1/regions/{region}/projects/{project}/compute/clusters"
+  },
+  "createClusterType": {
+   "method": "POST",
+   "path": "/v1/regions/{region}/compute/cluster-types"
+  },
+  "createFileStore": {
+   "method": "POST",
+   "path": "/v1/regions/{region}/projects/{project}/storage/file-stores"
+  },
+  "createGlobalQuotaProfile": {
+   "method": "POST",
+   "path": "/v1/regions/global/quota-profiles"
+  },
+  "createGroup": {
+   "method": "POST",
+   "path": "/v1/regions/global/organizations/{orgId}/iam/groups"
+  },
+  "createInstanceGroup": {
+   "method": "POST",
+   "path": "/v1/regions/{region}/projects/{project}/compute/instance-groups"
+  },
+  "createMachineType": {
+   "method": "POST",
+   "path": "/v1/regions/{region}/infrastructure/machine-types"
+  },
+  "createNetwork": {
+   "method": "POST",
+   "path": "/v1/regions/{region}/projects/{project}/networking/networks"
+  },
+  "createNotificationCatalogEntry": {
+   "method": "POST",
+   "path": "/v1/regions/global/notifications/catalog"
+  },
+  "createNotificationSubscription": {
+   "method": "POST",
+   "path": "/v1/regions/global/notifications/users/me/subscriptions"
+  },
+  "createOrganization": {
+   "method": "POST",
+   "path": "/v1/regions/global/organizations"
+  },
+  "createOrganizationInvitation": {
+   "method": "POST",
+   "path": "/v1/regions/global/organizations/{id}/invitations"
+  },
+  "createPlatformCiamProvider": {
+   "method": "POST",
+   "path": "/v1/regions/global/iam/platform/ciam-provider"
+  },
+  "createPlatformPolicy": {
+   "method": "POST",
+   "path": "/v1/regions/global/iam/platform/policies"
+  },
+  "createPolicy": {
+   "method": "POST",
+   "path": "/v1/regions/global/organizations/{orgId}/iam/policies"
+  },
+  "createProjectInOrg": {
+   "method": "POST",
+   "path": "/v1/regions/global/organizations/{orgId}/projects"
+  },
+  "createProvider": {
+   "method": "POST",
+   "path": "/v1/regions/global/organizations/{orgId}/iam/providers"
+  },
+  "createQuotaOverride": {
+   "method": "POST",
+   "path": "/v1/regions/global/organizations/{orgId}/quota-overrides"
+  },
+  "createQuotaProfileInOrg": {
+   "method": "POST",
+   "path": "/v1/regions/global/organizations/{orgId}/quota-profiles"
+  },
+  "createReservation": {
+   "method": "POST",
+   "path": "/v1/regions/{region}/infrastructure/reservations"
+  },
+  "createRole": {
+   "method": "POST",
+   "path": "/v1/regions/global/organizations/{orgId}/iam/roles"
+  },
+  "createSecurityGroup": {
+   "method": "POST",
+   "path": "/v1/regions/{region}/projects/{project}/networking/security-groups"
+  },
+  "createServiceAccount": {
+   "method": "POST",
+   "path": "/v1/regions/global/organizations/{orgId}/iam/service-accounts"
+  },
+  "createServiceAccountCredential": {
+   "method": "POST",
+   "path": "/v1/regions/global/organizations/{orgId}/iam/service-accounts/{serviceAccountId}/credentials"
+  },
+  "createShareType": {
+   "method": "POST",
+   "path": "/v1/regions/{region}/storage/share-types"
+  },
+  "createStorageBackend": {
+   "method": "POST",
+   "path": "/v1/regions/{region}/storage/backends"
+  },
+  "createSubnet": {
+   "method": "POST",
+   "path": "/v1/regions/{region}/projects/{project}/networking/networks/{networkId}/subnets"
+  },
+  "createTemplate": {
+   "method": "POST",
+   "path": "/v1/regions/global/notifications/templates"
+  },
+  "createVPCPeering": {
+   "method": "POST",
+   "path": "/v1/regions/{region}/projects/{project}/networking/vpcs/{vpcId}/peerings"
+  },
+  "createWebhookSubscription": {
+   "method": "POST",
+   "path": "/v1/regions/global/notifications/webhooks"
+  },
+  "deactivateTemplate": {
+   "method": "DELETE",
+   "path": "/v1/regions/global/notifications/templates/{id}"
+  },
+  "decommissionServer": {
+   "method": "DELETE",
+   "path": "/v1/regions/{region}/infrastructure/servers/{id}"
+  },
+  "deleteAddressPool": {
+   "method": "DELETE",
+   "path": "/v1/regions/{region}/networking/address-pools/{id}"
+  },
+  "deleteApiKey": {
+   "method": "DELETE",
+   "path": "/v1/regions/global/iam/apikeys/{id}"
+  },
+  "deleteCluster": {
+   "method": "DELETE",
+   "path": "/v1/regions/{region}/projects/{project}/compute/clusters/{id}"
+  },
+  "deleteClusterType": {
+   "method": "DELETE",
+   "path": "/v1/regions/{region}/compute/cluster-types/{id}"
+  },
+  "deleteFileStore": {
+   "method": "DELETE",
+   "path": "/v1/regions/{region}/projects/{project}/storage/file-stores/{id}"
+  },
+  "deleteGlobalQuotaProfile": {
+   "method": "DELETE",
+   "path": "/v1/regions/global/quota-profiles/{id}"
+  },
+  "deleteGroup": {
+   "method": "DELETE",
+   "path": "/v1/regions/global/organizations/{orgId}/iam/groups/{id}"
+  },
+  "deleteInboxNotification": {
+   "method": "DELETE",
+   "path": "/v1/regions/global/notifications/inbox/{id}"
+  },
+  "deleteInstance": {
+   "method": "DELETE",
+   "path": "/v1/regions/{region}/projects/{project}/compute/instances/{id}"
+  },
+  "deleteInstanceGroup": {
+   "method": "DELETE",
+   "path": "/v1/regions/{region}/projects/{project}/compute/instance-groups/{id}"
+  },
+  "deleteMachineType": {
+   "method": "DELETE",
+   "path": "/v1/regions/{region}/infrastructure/machine-types/{name}"
+  },
+  "deleteNetwork": {
+   "method": "DELETE",
+   "path": "/v1/regions/{region}/projects/{project}/networking/networks/{id}"
+  },
+  "deleteNotificationSubscription": {
+   "method": "DELETE",
+   "path": "/v1/regions/global/notifications/users/me/subscriptions/{category}"
+  },
+  "deleteOrganization": {
+   "method": "DELETE",
+   "path": "/v1/regions/global/organizations/{id}"
+  },
+  "deletePlatformCiamProvider": {
+   "method": "DELETE",
+   "path": "/v1/regions/global/iam/platform/ciam-provider"
+  },
+  "deletePlatformCredential": {
+   "method": "DELETE",
+   "path": "/v1/regions/{region}/credentials/{id}"
+  },
+  "deletePlatformPolicy": {
+   "method": "DELETE",
+   "path": "/v1/regions/global/iam/platform/policies/{policyId}"
+  },
+  "deletePolicy": {
+   "method": "DELETE",
+   "path": "/v1/regions/global/organizations/{orgId}/iam/policies/{id}"
+  },
+  "deleteProjectCredential": {
+   "method": "DELETE",
+   "path": "/v1/regions/{region}/projects/{project}/credentials/{id}"
+  },
+  "deleteProjectInOrg": {
+   "method": "DELETE",
+   "path": "/v1/regions/global/organizations/{orgId}/projects/{id}"
+  },
+  "deleteProvider": {
+   "method": "DELETE",
+   "path": "/v1/regions/global/organizations/{orgId}/iam/providers/{id}"
+  },
+  "deleteQuotaAssignmentInOrg": {
+   "method": "DELETE",
+   "path": "/v1/regions/global/organizations/{orgId}/quota-assignments"
+  },
+  "deleteQuotaProfileInOrg": {
+   "method": "DELETE",
+   "path": "/v1/regions/global/organizations/{orgId}/quota-profiles/{id}"
+  },
+  "deleteReservationSshAccessPublicKeys": {
+   "method": "DELETE",
+   "path": "/v1/regions/{region}/infrastructure/reservations/{reservationId}/sshAccessPublicKeys"
+  },
+  "deleteRole": {
+   "method": "DELETE",
+   "path": "/v1/regions/global/organizations/{orgId}/iam/roles/{id}"
+  },
+  "deleteSecurityGroup": {
+   "method": "DELETE",
+   "path": "/v1/regions/{region}/projects/{project}/networking/security-groups/{id}"
+  },
+  "deleteServerCloudConfig": {
+   "method": "DELETE",
+   "path": "/v1/regions/{region}/infrastructure/servers/{id}/cloudConfig"
+  },
+  "deleteServerSshAccessPublicKeys": {
+   "method": "DELETE",
+   "path": "/v1/regions/{region}/infrastructure/servers/{id}/sshAccessPublicKeys"
+  },
+  "deleteServiceAccount": {
+   "method": "DELETE",
+   "path": "/v1/regions/global/organizations/{orgId}/iam/service-accounts/{id}"
+  },
+  "deleteServiceAccountCredential": {
+   "method": "DELETE",
+   "path": "/v1/regions/global/organizations/{orgId}/iam/service-accounts/{serviceAccountId}/credentials/{id}"
+  },
+  "deleteShareType": {
+   "method": "DELETE",
+   "path": "/v1/regions/{region}/storage/share-types/{id}"
+  },
+  "deleteStorageBackend": {
+   "method": "DELETE",
+   "path": "/v1/regions/{region}/storage/backends/{id}"
+  },
+  "deleteSubnet": {
+   "method": "DELETE",
+   "path": "/v1/regions/{region}/projects/{project}/networking/networks/{networkId}/subnets/{id}"
+  },
+  "deleteUser": {
+   "method": "DELETE",
+   "path": "/v1/regions/global/organizations/{orgId}/iam/users/{id}"
+  },
+  "deleteVPCPeering": {
+   "method": "DELETE",
+   "path": "/v1/regions/{region}/projects/{project}/networking/vpcs/{vpcId}/peerings/{id}"
+  },
+  "deleteWebhookSubscription": {
+   "method": "DELETE",
+   "path": "/v1/regions/global/notifications/webhooks/{id}"
+  },
+  "deprovisionInstanceGroupInstances": {
+   "method": "POST",
+   "path": "/v1/regions/{region}/projects/{project}/compute/instance-groups/{id}/deprovision"
+  },
+  "deprovisionReservationServers": {
+   "method": "POST",
+   "path": "/v1/regions/{region}/infrastructure/reservations/{reservationId}/deprovisionServers"
+  },
+  "designateDefaultQuotaProfile": {
+   "method": "PUT",
+   "path": "/v1/regions/global/quota-profiles/{id}/default"
+  },
+  "disableNotificationCatalogEntry": {
+   "method": "DELETE",
+   "path": "/v1/regions/global/notifications/catalog/{event_type}"
+  },
+  "disableOrgUser": {
+   "method": "POST",
+   "path": "/v1/regions/global/organizations/{orgId}/iam/users/{id}/disable"
+  },
+  "disablePlatformUser": {
+   "method": "POST",
+   "path": "/v1/regions/global/iam/platform/users/{id}/disable"
+  },
+  "downloadClusterRuntimeEvents": {
+   "method": "GET",
+   "path": "/v1/regions/{region}/projects/{project}/compute/clusters/{id}/runtime/events/download"
+  },
+  "downloadKubeconfig": {
+   "method": "GET",
+   "path": "/v1/regions/{region}/projects/{project}/compute/clusters/{clusterId}/kubeconfigs/{id}/download"
+  },
+  "enableOrgUser": {
+   "method": "POST",
+   "path": "/v1/regions/global/organizations/{orgId}/iam/users/{id}/enable"
+  },
+  "enablePlatformUser": {
+   "method": "POST",
+   "path": "/v1/regions/global/iam/platform/users/{id}/enable"
+  },
+  "executeInstancePowerAction": {
+   "method": "POST",
+   "path": "/v1/regions/{region}/projects/{project}/compute/instances/{id}/{action}"
+  },
+  "executeServerAction": {
+   "method": "POST",
+   "path": "/v1/regions/{region}/infrastructure/servers/{id}/{action}"
+  },
+  "forceTeardownReservation": {
+   "method": "POST",
+   "path": "/v1/regions/{region}/infrastructure/reservations/{reservationId}/force-teardown"
+  },
+  "getAddressPool": {
+   "method": "GET",
+   "path": "/v1/regions/{region}/networking/address-pools/{id}"
+  },
+  "getApiKey": {
+   "method": "GET",
+   "path": "/v1/regions/global/iam/apikeys/{id}"
+  },
+  "getCluster": {
+   "method": "GET",
+   "path": "/v1/regions/{region}/projects/{project}/compute/clusters/{id}"
+  },
+  "getClusterKubeconfig": {
+   "method": "GET",
+   "path": "/v1/regions/{region}/projects/{project}/compute/clusters/{clusterId}/kubeconfig"
+  },
+  "getClusterType": {
+   "method": "GET",
+   "path": "/v1/regions/{region}/compute/cluster-types/{id}"
+  },
+  "getClusterTypeVersion": {
+   "method": "GET",
+   "path": "/v1/regions/{region}/compute/cluster-types/{id}/versions/{versionId}"
+  },
+  "getFileStore": {
+   "method": "GET",
+   "path": "/v1/regions/{region}/projects/{project}/storage/file-stores/{id}"
+  },
+  "getGlobalQuotaProfile": {
+   "method": "GET",
+   "path": "/v1/regions/global/quota-profiles/{id}"
+  },
+  "getGroup": {
+   "method": "GET",
+   "path": "/v1/regions/global/organizations/{orgId}/iam/groups/{id}"
+  },
+  "getGroupMember": {
+   "method": "GET",
+   "path": "/v1/regions/global/organizations/{orgId}/iam/groups/{groupId}/members/{id}"
+  },
+  "getInboxNotification": {
+   "method": "GET",
+   "path": "/v1/regions/global/notifications/inbox/{id}"
+  },
+  "getInboxNotificationStatus": {
+   "method": "GET",
+   "path": "/v1/regions/global/notifications/inbox/{id}/status"
+  },
+  "getInstance": {
+   "method": "GET",
+   "path": "/v1/regions/{region}/projects/{project}/compute/instances/{id}"
+  },
+  "getInstanceGroup": {
+   "method": "GET",
+   "path": "/v1/regions/{region}/projects/{project}/compute/instance-groups/{id}"
+  },
+  "getInvitationSettings": {
+   "method": "GET",
+   "path": "/v1/regions/global/organizations/{id}/invitations/settings"
+  },
+  "getJWKS": {
+   "method": "GET",
+   "path": "/v1/regions/global/auth/.well-known/jwks.json"
+  },
+  "getKubeconfig": {
+   "method": "GET",
+   "path": "/v1/regions/{region}/projects/{project}/compute/clusters/{clusterId}/kubeconfigs/{id}"
+  },
+  "getMachineType": {
+   "method": "GET",
+   "path": "/v1/regions/{region}/infrastructure/machine-types/{name}"
+  },
+  "getMachineTypeInventoryOptions": {
+   "method": "POST",
+   "path": "/v1/regions/{region}/infrastructure/machine-types/getInventoryOptions"
+  },
+  "getNetwork": {
+   "method": "GET",
+   "path": "/v1/regions/{region}/projects/{project}/networking/networks/{id}"
+  },
+  "getNotificationCatalogEntry": {
+   "method": "GET",
+   "path": "/v1/regions/global/notifications/catalog/{event_type}"
+  },
+  "getOIDCDiscovery": {
+   "method": "GET",
+   "path": "/v1/regions/global/auth/.well-known/openid-configuration"
+  },
+  "getOrgCallbackURL": {
+   "method": "GET",
+   "path": "/v1/regions/global/organizations/{orgId}/auth/callback-url"
+  },
+  "getOrganization": {
+   "method": "GET",
+   "path": "/v1/regions/global/organizations/{id}"
+  },
+  "getOrganizationMember": {
+   "method": "GET",
+   "path": "/v1/regions/global/organizations/{id}/members/{memberId}"
+  },
+  "getOrganizationStats": {
+   "method": "GET",
+   "path": "/v1/regions/global/organizations/stats"
+  },
+  "getPlatformCiamProvider": {
+   "method": "GET",
+   "path": "/v1/regions/global/iam/platform/ciam-provider"
+  },
+  "getPlatformCredential": {
+   "method": "GET",
+   "path": "/v1/regions/{region}/credentials/{id}"
+  },
+  "getPlatformPolicy": {
+   "method": "GET",
+   "path": "/v1/regions/global/iam/platform/policies/{policyId}"
+  },
+  "getPolicy": {
+   "method": "GET",
+   "path": "/v1/regions/global/organizations/{orgId}/iam/policies/{id}"
+  },
+  "getProjectCredential": {
+   "method": "GET",
+   "path": "/v1/regions/{region}/projects/{project}/credentials/{id}"
+  },
+  "getProjectInOrg": {
+   "method": "GET",
+   "path": "/v1/regions/global/organizations/{orgId}/projects/{id}"
+  },
+  "getProjectQuota": {
+   "method": "GET",
+   "path": "/v1/regions/global/organizations/{orgId}/projects/{id}/quota"
+  },
+  "getProjectQuotaHistory": {
+   "method": "GET",
+   "path": "/v1/regions/global/organizations/{orgId}/projects/{id}/quota-history"
+  },
+  "getProvider": {
+   "method": "GET",
+   "path": "/v1/regions/global/organizations/{orgId}/iam/providers/{id}"
+  },
+  "getQuotaProfileInOrg": {
+   "method": "GET",
+   "path": "/v1/regions/global/organizations/{orgId}/quota-profiles/{id}"
+  },
+  "getReservation": {
+   "method": "GET",
+   "path": "/v1/regions/{region}/infrastructure/reservations/{reservationId}"
+  },
+  "getReservationProviderSpecificData": {
+   "method": "GET",
+   "path": "/v1/regions/{region}/infrastructure/reservations/{reservationId}/providerSpecificData"
+  },
+  "getReservationProvision": {
+   "method": "GET",
+   "path": "/v1/regions/{region}/infrastructure/reservations/{reservationId}/provision"
+  },
+  "getReservationSshAccessPublicKeys": {
+   "method": "GET",
+   "path": "/v1/regions/{region}/infrastructure/reservations/{reservationId}/sshAccessPublicKeys"
+  },
+  "getRole": {
+   "method": "GET",
+   "path": "/v1/regions/global/organizations/{orgId}/iam/roles/{id}"
+  },
+  "getSecurityGroup": {
+   "method": "GET",
+   "path": "/v1/regions/{region}/projects/{project}/networking/security-groups/{id}"
+  },
+  "getServer": {
+   "method": "GET",
+   "path": "/v1/regions/{region}/infrastructure/servers/{id}"
+  },
+  "getServerBatch": {
+   "method": "GET",
+   "path": "/v1/regions/{region}/infrastructure/server-batches/{batchId}"
+  },
+  "getServerCloudConfig": {
+   "method": "GET",
+   "path": "/v1/regions/{region}/infrastructure/servers/{id}/cloudConfig"
+  },
+  "getServerLogs": {
+   "method": "GET",
+   "path": "/v1/regions/{region}/infrastructure/servers/{id}/logs"
+  },
+  "getServerProviderSpecificData": {
+   "method": "GET",
+   "path": "/v1/regions/{region}/infrastructure/servers/{id}/providerSpecificData"
+  },
+  "getServerSshAccessPublicKeys": {
+   "method": "GET",
+   "path": "/v1/regions/{region}/infrastructure/servers/{id}/sshAccessPublicKeys"
+  },
+  "getServersSummary": {
+   "method": "GET",
+   "path": "/v1/regions/{region}/infrastructure/servers/summary"
+  },
+  "getServiceAccount": {
+   "method": "GET",
+   "path": "/v1/regions/global/organizations/{orgId}/iam/service-accounts/{id}"
+  },
+  "getServiceAccountCredential": {
+   "method": "GET",
+   "path": "/v1/regions/global/organizations/{orgId}/iam/service-accounts/{serviceAccountId}/credentials/{id}"
+  },
+  "getShareType": {
+   "method": "GET",
+   "path": "/v1/regions/{region}/storage/share-types/{id}"
+  },
+  "getStorageBackend": {
+   "method": "GET",
+   "path": "/v1/regions/{region}/storage/backends/{id}"
+  },
+  "getStorageBackendCapacity": {
+   "method": "GET",
+   "path": "/v1/regions/{region}/storage/backends/{id}/capacity"
+  },
+  "getSubnet": {
+   "method": "GET",
+   "path": "/v1/regions/{region}/projects/{project}/networking/networks/{networkId}/subnets/{id}"
+  },
+  "getTemplate": {
+   "method": "GET",
+   "path": "/v1/regions/global/notifications/templates/{id}"
+  },
+  "getTenantQuota": {
+   "method": "GET",
+   "path": "/v1/regions/global/organizations/{orgId}/quota"
+  },
+  "getTenantQuotaHistory": {
+   "method": "GET",
+   "path": "/v1/regions/global/organizations/{orgId}/quota-history"
+  },
+  "getUser": {
+   "method": "GET",
+   "path": "/v1/regions/global/organizations/{orgId}/iam/users/{id}"
+  },
+  "getUserProfile": {
+   "method": "GET",
+   "path": "/v1/regions/global/iam/users/profile"
+  },
+  "getVPC": {
+   "method": "GET",
+   "path": "/v1/regions/{region}/projects/{project}/networking/vpcs/{id}"
+  },
+  "getVPCPeering": {
+   "method": "GET",
+   "path": "/v1/regions/{region}/projects/{project}/networking/vpcs/{vpcId}/peerings/{id}"
+  },
+  "initiateLogin": {
+   "method": "POST",
+   "path": "/v1/regions/global/auth/login/initiate"
+  },
+  "introspectToken": {
+   "method": "POST",
+   "path": "/v1/regions/global/auth/introspect"
+  },
+  "issuePlatformCredential": {
+   "method": "POST",
+   "path": "/v1/regions/{region}/credentials"
+  },
+  "issueProjectCredential": {
+   "method": "POST",
+   "path": "/v1/regions/{region}/projects/{project}/credentials"
+  },
+  "listAddressPools": {
+   "method": "GET",
+   "path": "/v1/regions/{region}/networking/address-pools"
+  },
+  "listApiKeys": {
+   "method": "GET",
+   "path": "/v1/regions/global/iam/apikeys"
+  },
+  "listClusterRuntimeEvents": {
+   "method": "GET",
+   "path": "/v1/regions/{region}/projects/{project}/compute/clusters/{id}/runtime/events"
+  },
+  "listClusterSshAccess": {
+   "method": "GET",
+   "path": "/v1/regions/{region}/projects/{project}/compute/clusters/{clusterId}/ssh-access"
+  },
+  "listClusterTypeVersions": {
+   "method": "GET",
+   "path": "/v1/regions/{region}/compute/cluster-types/{id}/versions"
+  },
+  "listClusterTypes": {
+   "method": "GET",
+   "path": "/v1/regions/{region}/compute/cluster-types"
+  },
+  "listClusters": {
+   "method": "GET",
+   "path": "/v1/regions/{region}/projects/{project}/compute/clusters"
+  },
+  "listDeliveryStatus": {
+   "method": "GET",
+   "path": "/v1/regions/global/notifications/deliveries"
+  },
+  "listFileStores": {
+   "method": "GET",
+   "path": "/v1/regions/{region}/projects/{project}/storage/file-stores"
+  },
+  "listGlobalQuotaProfiles": {
+   "method": "GET",
+   "path": "/v1/regions/global/quota-profiles"
+  },
+  "listGrantableApiKeyRoles": {
+   "method": "GET",
+   "path": "/v1/regions/global/iam/apikeys/grantable-roles"
+  },
+  "listGroupMembers": {
+   "method": "GET",
+   "path": "/v1/regions/global/organizations/{orgId}/iam/groups/{groupId}/members"
+  },
+  "listGroups": {
+   "method": "GET",
+   "path": "/v1/regions/global/organizations/{orgId}/iam/groups"
+  },
+  "listInboxNotifications": {
+   "method": "GET",
+   "path": "/v1/regions/global/notifications/inbox"
+  },
+  "listInstanceGroupSshAccess": {
+   "method": "GET",
+   "path": "/v1/regions/{region}/projects/{project}/compute/instance-groups/{id}/ssh-access"
+  },
+  "listInstanceGroups": {
+   "method": "GET",
+   "path": "/v1/regions/{region}/projects/{project}/compute/instance-groups"
+  },
+  "listInstances": {
+   "method": "GET",
+   "path": "/v1/regions/{region}/projects/{project}/compute/instances"
+  },
+  "listKubeconfigs": {
+   "method": "GET",
+   "path": "/v1/regions/{region}/projects/{project}/compute/clusters/{clusterId}/kubeconfigs"
+  },
+  "listMachineTypes": {
+   "method": "GET",
+   "path": "/v1/regions/{region}/infrastructure/machine-types"
+  },
+  "listNetworks": {
+   "method": "GET",
+   "path": "/v1/regions/{region}/projects/{project}/networking/networks"
+  },
+  "listNotificationCatalog": {
+   "method": "GET",
+   "path": "/v1/regions/global/notifications/catalog"
+  },
+  "listNotificationPreferences": {
+   "method": "GET",
+   "path": "/v1/regions/global/notifications/users/me/preferences"
+  },
+  "listNotificationSubscriptions": {
+   "method": "GET",
+   "path": "/v1/regions/global/notifications/users/me/subscriptions"
+  },
+  "listOrganizationInvitations": {
+   "method": "GET",
+   "path": "/v1/regions/global/organizations/{id}/invitations"
+  },
+  "listOrganizationMembers": {
+   "method": "GET",
+   "path": "/v1/regions/global/organizations/{id}/members"
+  },
+  "listOrganizations": {
+   "method": "GET",
+   "path": "/v1/regions/global/organizations"
+  },
+  "listPlatformApiKeys": {
+   "method": "GET",
+   "path": "/v1/regions/global/iam/platform/apikeys"
+  },
+  "listPlatformCredentials": {
+   "method": "GET",
+   "path": "/v1/regions/{region}/credentials"
+  },
+  "listPlatformEvents": {
+   "method": "GET",
+   "path": "/v1/regions/global/notifications/events"
+  },
+  "listPlatformPolicies": {
+   "method": "GET",
+   "path": "/v1/regions/global/iam/platform/policies"
+  },
+  "listPlatformServiceAccountCredentials": {
+   "method": "GET",
+   "path": "/v1/regions/global/iam/platform/service-accounts/{saId}/credentials"
+  },
+  "listPlatformServiceAccounts": {
+   "method": "GET",
+   "path": "/v1/regions/global/iam/platform/service-accounts"
+  },
+  "listPolicies": {
+   "method": "GET",
+   "path": "/v1/regions/global/organizations/{orgId}/iam/policies"
+  },
+  "listProjectCredentials": {
+   "method": "GET",
+   "path": "/v1/regions/{region}/projects/{project}/credentials"
+  },
+  "listProjectMembers": {
+   "method": "GET",
+   "path": "/v1/regions/global/organizations/{orgId}/projects/{id}/members"
+  },
+  "listProjects": {
+   "method": "GET",
+   "path": "/v1/regions/global/projects"
+  },
+  "listProjectsInOrg": {
+   "method": "GET",
+   "path": "/v1/regions/global/organizations/{orgId}/projects"
+  },
+  "listProviders": {
+   "method": "GET",
+   "path": "/v1/regions/global/organizations/{orgId}/iam/providers"
+  },
+  "listQuotaAssignmentsInOrg": {
+   "method": "GET",
+   "path": "/v1/regions/global/organizations/{orgId}/quota-assignments"
+  },
+  "listQuotaDimensions": {
+   "method": "GET",
+   "path": "/v1/regions/global/quota-dimensions"
+  },
+  "listQuotaOverrides": {
+   "method": "GET",
+   "path": "/v1/regions/global/organizations/{orgId}/quota-overrides"
+  },
+  "listQuotaProfileAssignments": {
+   "method": "GET",
+   "path": "/v1/regions/global/quota-profiles/{id}/assignments"
+  },
+  "listQuotaProfilesInOrg": {
+   "method": "GET",
+   "path": "/v1/regions/global/organizations/{orgId}/quota-profiles"
+  },
+  "listQuotaScopeUsage": {
+   "method": "GET",
+   "path": "/v1/regions/global/organizations/quota-usage"
+  },
+  "listRegions": {
+   "method": "GET",
+   "path": "/v1/regions"
+  },
+  "listReservations": {
+   "method": "GET",
+   "path": "/v1/regions/{region}/infrastructure/reservations"
+  },
+  "listRoles": {
+   "method": "GET",
+   "path": "/v1/regions/global/organizations/{orgId}/iam/roles"
+  },
+  "listSecurityGroupAttachments": {
+   "method": "GET",
+   "path": "/v1/regions/{region}/projects/{project}/networking/security-groups/{id}/attachments"
+  },
+  "listSecurityGroups": {
+   "method": "GET",
+   "path": "/v1/regions/{region}/projects/{project}/networking/security-groups"
+  },
+  "listSecurityGroupsEffective": {
+   "method": "GET",
+   "path": "/v1/regions/{region}/projects/{project}/networking/security-groups-effective"
+  },
+  "listServerBatches": {
+   "method": "GET",
+   "path": "/v1/regions/{region}/infrastructure/server-batches"
+  },
+  "listServers": {
+   "method": "GET",
+   "path": "/v1/regions/{region}/infrastructure/servers"
+  },
+  "listServiceAccountCredentials": {
+   "method": "GET",
+   "path": "/v1/regions/global/organizations/{orgId}/iam/service-accounts/{serviceAccountId}/credentials"
+  },
+  "listServiceAccounts": {
+   "method": "GET",
+   "path": "/v1/regions/global/organizations/{orgId}/iam/service-accounts"
+  },
+  "listShareTypes": {
+   "method": "GET",
+   "path": "/v1/regions/{region}/storage/share-types"
+  },
+  "listStorageBackends": {
+   "method": "GET",
+   "path": "/v1/regions/{region}/storage/backends"
+  },
+  "listSubnets": {
+   "method": "GET",
+   "path": "/v1/regions/{region}/projects/{project}/networking/networks/{networkId}/subnets"
+  },
+  "listTemplates": {
+   "method": "GET",
+   "path": "/v1/regions/global/notifications/templates"
+  },
+  "listUsers": {
+   "method": "GET",
+   "path": "/v1/regions/global/organizations/{orgId}/iam/users"
+  },
+  "listVPCPeerings": {
+   "method": "GET",
+   "path": "/v1/regions/{region}/projects/{project}/networking/vpcs/{vpcId}/peerings"
+  },
+  "listVPCs": {
+   "method": "GET",
+   "path": "/v1/regions/{region}/projects/{project}/networking/vpcs"
+  },
+  "listWebhookDeliveries": {
+   "method": "GET",
+   "path": "/v1/regions/global/notifications/webhooks/{id}/deliveries"
+  },
+  "listWebhookSubscriptions": {
+   "method": "GET",
+   "path": "/v1/regions/global/notifications/webhooks"
+  },
+  "logoutSession": {
+   "method": "POST",
+   "path": "/v1/regions/global/auth/logout"
+  },
+  "markAllInboxNotificationsRead": {
+   "method": "POST",
+   "path": "/v1/regions/global/notifications/inbox/read-all"
+  },
+  "markInboxNotificationRead": {
+   "method": "POST",
+   "path": "/v1/regions/global/notifications/inbox/{id}/read"
+  },
+  "markInboxNotificationUnread": {
+   "method": "DELETE",
+   "path": "/v1/regions/global/notifications/inbox/{id}/read"
+  },
+  "mintToken": {
+   "method": "POST",
+   "path": "/v1/regions/global/auth/token"
+  },
+  "patchReservationProviderSpecificData": {
+   "method": "PATCH",
+   "path": "/v1/regions/{region}/infrastructure/reservations/{reservationId}/providerSpecificData"
+  },
+  "patchServerProviderSpecificData": {
+   "method": "PATCH",
+   "path": "/v1/regions/{region}/infrastructure/servers/{id}/providerSpecificData"
+  },
+  "previewGlobalQuotaProfileUpdate": {
+   "method": "POST",
+   "path": "/v1/regions/global/quota-profiles/{id}/preview"
+  },
+  "previewPlatformCredentialRevocation": {
+   "method": "POST",
+   "path": "/v1/regions/{region}/credentials/{id}/preview-revocation"
+  },
+  "previewPlatformCredentialRotation": {
+   "method": "POST",
+   "path": "/v1/regions/{region}/credentials/{id}/preview-rotation"
+  },
+  "previewProjectCredentialRevocation": {
+   "method": "POST",
+   "path": "/v1/regions/{region}/projects/{project}/credentials/{id}/preview-revocation"
+  },
+  "previewProjectCredentialRotation": {
+   "method": "POST",
+   "path": "/v1/regions/{region}/projects/{project}/credentials/{id}/preview-rotation"
+  },
+  "previewQuotaProfileUpdateInOrg": {
+   "method": "POST",
+   "path": "/v1/regions/global/organizations/{orgId}/quota-profiles/{id}/preview"
+  },
+  "previewTemplate": {
+   "method": "POST",
+   "path": "/v1/regions/global/notifications/templates/preview"
+  },
+  "provisionReservation": {
+   "method": "POST",
+   "path": "/v1/regions/{region}/infrastructure/reservations/{reservationId}/provision"
+  },
+  "provisionSingleServer": {
+   "method": "POST",
+   "path": "/v1/regions/{region}/infrastructure/servers/{id}/provision"
+  },
+  "putQuotaAssignmentInOrg": {
+   "method": "PUT",
+   "path": "/v1/regions/global/organizations/{orgId}/quota-assignments"
+  },
+  "readPlatformCredentialMaterial": {
+   "method": "GET",
+   "path": "/v1/regions/{region}/credentials/{id}/material"
+  },
+  "readProjectCredentialMaterial": {
+   "method": "GET",
+   "path": "/v1/regions/{region}/projects/{project}/credentials/{id}/material"
+  },
+  "reconcileOrganizationMemberRoles": {
+   "method": "PUT",
+   "path": "/v1/regions/global/organizations/{id}/members/{memberId}/roles"
+  },
+  "reconcileProjectMemberRoles": {
+   "method": "PUT",
+   "path": "/v1/regions/global/organizations/{orgId}/projects/{id}/members/{memberId}/roles"
+  },
+  "registerServer": {
+   "method": "POST",
+   "path": "/v1/regions/{region}/infrastructure/servers"
+  },
+  "reissuePlatformCiamProviderRotationVerification": {
+   "method": "POST",
+   "path": "/v1/regions/global/iam/platform/ciam-provider/rotate-secret/verify"
+  },
+  "reissueProviderRotationVerification": {
+   "method": "POST",
+   "path": "/v1/regions/global/organizations/{orgId}/iam/providers/{id}/rotate-secret/verify"
+  },
+  "releaseReservation": {
+   "method": "POST",
+   "path": "/v1/regions/{region}/infrastructure/reservations/{reservationId}/release"
+  },
+  "removeAddressPoolPrefix": {
+   "method": "POST",
+   "path": "/v1/regions/{region}/networking/address-pools/{id}/prefixes/remove"
+  },
+  "removeGroupMember": {
+   "method": "DELETE",
+   "path": "/v1/regions/global/organizations/{orgId}/iam/groups/{groupId}/members/{id}"
+  },
+  "removeOrganizationMember": {
+   "method": "DELETE",
+   "path": "/v1/regions/global/organizations/{id}/members/{memberId}"
+  },
+  "removeProjectMember": {
+   "method": "DELETE",
+   "path": "/v1/regions/global/organizations/{orgId}/projects/{id}/members/{memberId}"
+  },
+  "removeReservationServers": {
+   "method": "POST",
+   "path": "/v1/regions/{region}/infrastructure/reservations/{reservationId}/removeServers"
+  },
+  "reportServerExternalState": {
+   "method": "POST",
+   "path": "/v1/regions/{region}/infrastructure/servers/{id}/externalState"
+  },
+  "resendOrganizationInvitation": {
+   "method": "POST",
+   "path": "/v1/regions/global/organizations/{id}/invitations/{invitationId}/resend"
+  },
+  "resumeOrganization": {
+   "method": "POST",
+   "path": "/v1/regions/global/organizations/{id}/resume"
+  },
+  "revokeOrganizationInvitation": {
+   "method": "DELETE",
+   "path": "/v1/regions/global/organizations/{id}/invitations/{invitationId}"
+  },
+  "revokePlatformApiKey": {
+   "method": "DELETE",
+   "path": "/v1/regions/global/iam/platform/apikeys/{id}"
+  },
+  "revokePlatformCredential": {
+   "method": "POST",
+   "path": "/v1/regions/{region}/credentials/{id}/revoke"
+  },
+  "revokePlatformServiceAccountCredential": {
+   "method": "DELETE",
+   "path": "/v1/regions/global/iam/platform/service-accounts/{saId}/credentials/{credentialId}"
+  },
+  "revokeProjectCredential": {
+   "method": "POST",
+   "path": "/v1/regions/{region}/projects/{project}/credentials/{id}/revoke"
+  },
+  "revokeQuotaOverride": {
+   "method": "DELETE",
+   "path": "/v1/regions/global/organizations/{orgId}/quota-overrides/{id}"
+  },
+  "revokeToken": {
+   "method": "POST",
+   "path": "/v1/regions/global/auth/revoke"
+  },
+  "rotateApiKey": {
+   "method": "POST",
+   "path": "/v1/regions/global/iam/apikeys/{id}/rotate"
+  },
+  "rotatePlatformCiamProviderSecret": {
+   "method": "POST",
+   "path": "/v1/regions/global/iam/platform/ciam-provider/rotate-secret"
+  },
+  "rotatePlatformCredential": {
+   "method": "POST",
+   "path": "/v1/regions/{region}/credentials/{id}/rotate"
+  },
+  "rotateProjectCredential": {
+   "method": "POST",
+   "path": "/v1/regions/{region}/projects/{project}/credentials/{id}/rotate"
+  },
+  "rotateProviderSecret": {
+   "method": "POST",
+   "path": "/v1/regions/global/organizations/{orgId}/iam/providers/{id}/rotate-secret"
+  },
+  "rotateWebhookSubscriptionSecret": {
+   "method": "POST",
+   "path": "/v1/regions/global/notifications/webhooks/{id}/rotate"
+  },
+  "scaleCluster": {
+   "method": "POST",
+   "path": "/v1/regions/{region}/projects/{project}/compute/clusters/{id}/scale"
+  },
+  "scaleInstanceGroup": {
+   "method": "POST",
+   "path": "/v1/regions/{region}/projects/{project}/compute/instance-groups/{id}/scale"
+  },
+  "searchAuditEvents": {
+   "method": "GET",
+   "path": "/v1/regions/{region}/audit-events"
+  },
+  "searchAuditEventsAggregate": {
+   "method": "GET",
+   "path": "/v1/audit-events"
+  },
+  "setClusterTypeVersionStatus": {
+   "method": "PATCH",
+   "path": "/v1/regions/{region}/compute/cluster-types/{id}/versions/{versionId}"
+  },
+  "setReservationSshAccessPublicKeys": {
+   "method": "POST",
+   "path": "/v1/regions/{region}/infrastructure/reservations/{reservationId}/sshAccessPublicKeys"
+  },
+  "setServerCloudConfig": {
+   "method": "POST",
+   "path": "/v1/regions/{region}/infrastructure/servers/{id}/cloudConfig"
+  },
+  "setServerEffectiveHostname": {
+   "method": "POST",
+   "path": "/v1/regions/{region}/infrastructure/servers/{id}/effectiveHostname"
+  },
+  "setServerSshAccessPublicKeys": {
+   "method": "POST",
+   "path": "/v1/regions/{region}/infrastructure/servers/{id}/sshAccessPublicKeys"
+  },
+  "setVPCSecurityGroups": {
+   "method": "POST",
+   "path": "/v1/regions/{region}/projects/{project}/networking/vpcs/{id}"
+  },
+  "startPlatformCiamProviderSignInTest": {
+   "method": "POST",
+   "path": "/v1/regions/global/iam/platform/ciam-provider/test-signin"
+  },
+  "startProviderSignInTest": {
+   "method": "POST",
+   "path": "/v1/regions/global/organizations/{orgId}/iam/providers/{id}/test-signin"
+  },
+  "streamInboxNotifications": {
+   "method": "GET",
+   "path": "/v1/regions/global/notifications/inbox/stream"
+  },
+  "suspendOrganization": {
+   "method": "POST",
+   "path": "/v1/regions/global/organizations/{id}/suspend"
+  },
+  "terminatePlatformUserSessions": {
+   "method": "POST",
+   "path": "/v1/regions/global/auth/platform/sessions/terminate"
+  },
+  "testNotification": {
+   "method": "POST",
+   "path": "/v1/regions/global/notifications/users/me/preferences/test"
+  },
+  "unsubscribe": {
+   "method": "GET",
+   "path": "/v1/regions/global/notifications/unsubscribe/{token}"
+  },
+  "unsubscribeOneClick": {
+   "method": "POST",
+   "path": "/v1/regions/global/notifications/unsubscribe/{token}"
+  },
+  "updateAddressPool": {
+   "method": "PATCH",
+   "path": "/v1/regions/{region}/networking/address-pools/{id}"
+  },
+  "updateApiKey": {
+   "method": "PATCH",
+   "path": "/v1/regions/global/iam/apikeys/{id}"
+  },
+  "updateCluster": {
+   "method": "PATCH",
+   "path": "/v1/regions/{region}/projects/{project}/compute/clusters/{id}"
+  },
+  "updateFileStore": {
+   "method": "PATCH",
+   "path": "/v1/regions/{region}/projects/{project}/storage/file-stores/{id}"
+  },
+  "updateGlobalQuotaProfile": {
+   "method": "PATCH",
+   "path": "/v1/regions/global/quota-profiles/{id}"
+  },
+  "updateGroup": {
+   "method": "PATCH",
+   "path": "/v1/regions/global/organizations/{orgId}/iam/groups/{id}"
+  },
+  "updateInstanceGroup": {
+   "method": "PATCH",
+   "path": "/v1/regions/{region}/projects/{project}/compute/instance-groups/{id}"
+  },
+  "updateInvitationSettings": {
+   "method": "PATCH",
+   "path": "/v1/regions/global/organizations/{id}/invitations/settings"
+  },
+  "updateMachineType": {
+   "method": "PUT",
+   "path": "/v1/regions/{region}/infrastructure/machine-types/{name}"
+  },
+  "updateNetwork": {
+   "method": "PATCH",
+   "path": "/v1/regions/{region}/projects/{project}/networking/networks/{id}"
+  },
+  "updateNotificationCatalogEntry": {
+   "method": "PATCH",
+   "path": "/v1/regions/global/notifications/catalog/{event_type}"
+  },
+  "updateOrganization": {
+   "method": "PATCH",
+   "path": "/v1/regions/global/organizations/{id}"
+  },
+  "updatePlatformCiamProvider": {
+   "method": "PATCH",
+   "path": "/v1/regions/global/iam/platform/ciam-provider"
+  },
+  "updatePolicy": {
+   "method": "PATCH",
+   "path": "/v1/regions/global/organizations/{orgId}/iam/policies/{id}"
+  },
+  "updateProjectInOrg": {
+   "method": "PATCH",
+   "path": "/v1/regions/global/organizations/{orgId}/projects/{id}"
+  },
+  "updateProvider": {
+   "method": "PATCH",
+   "path": "/v1/regions/global/organizations/{orgId}/iam/providers/{id}"
+  },
+  "updateQuotaDimensionEnforcement": {
+   "method": "PUT",
+   "path": "/v1/regions/global/quota-dimensions/{dimension}/enforcement"
+  },
+  "updateQuotaProfileInOrg": {
+   "method": "PATCH",
+   "path": "/v1/regions/global/organizations/{orgId}/quota-profiles/{id}"
+  },
+  "updateRole": {
+   "method": "PATCH",
+   "path": "/v1/regions/global/organizations/{orgId}/iam/roles/{id}"
+  },
+  "updateSecurityGroup": {
+   "method": "PATCH",
+   "path": "/v1/regions/{region}/projects/{project}/networking/security-groups/{id}"
+  },
+  "updateServer": {
+   "method": "PATCH",
+   "path": "/v1/regions/{region}/infrastructure/servers/{id}"
+  },
+  "updateServiceAccount": {
+   "method": "PATCH",
+   "path": "/v1/regions/global/organizations/{orgId}/iam/service-accounts/{id}"
+  },
+  "updateShareType": {
+   "method": "PATCH",
+   "path": "/v1/regions/{region}/storage/share-types/{id}"
+  },
+  "updateStorageBackend": {
+   "method": "PATCH",
+   "path": "/v1/regions/{region}/storage/backends/{id}"
+  },
+  "updateUser": {
+   "method": "PATCH",
+   "path": "/v1/regions/global/organizations/{orgId}/iam/users/{id}"
+  },
+  "updateUserProfile": {
+   "method": "PATCH",
+   "path": "/v1/regions/global/iam/users/profile"
+  },
+  "upgradeCluster": {
+   "method": "POST",
+   "path": "/v1/regions/{region}/projects/{project}/compute/clusters/{id}/upgrade"
+  },
+  "upsertNotificationPreference": {
+   "method": "PATCH",
+   "path": "/v1/regions/global/notifications/users/me/preferences"
+  },
+  "validateProvider": {
+   "method": "POST",
+   "path": "/v1/regions/global/organizations/{orgId}/iam/providers/validate"
+  },
+  "validateProviderById": {
+   "method": "POST",
+   "path": "/v1/regions/global/organizations/{orgId}/iam/providers/{id}/validate"
+  },
+  "validateServer": {
+   "method": "POST",
+   "path": "/v1/regions/{region}/infrastructure/servers/{id}/validate"
+  }
+ },
+ "source": {
+  "releaseTag": "v1.3.0-dev.4",
+  "sha256": "35901e2a487c9cfe95fc4b1d37b57494ca7c19c03d29aaf069fbb348ba84f604"
+ }
+}

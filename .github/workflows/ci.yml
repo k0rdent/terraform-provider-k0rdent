@@ -60,6 +60,12 @@ jobs:
           cache: true
       - name: go test
         run: make test
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd  # v3.1.2
+        with:
+          terraform_version: "1.16.3"
+          terraform_wrapper: false
+      - name: acceptance
+        run: make testacc
 
   lint:
     name: lint
@@ -115,6 +121,52 @@ jobs:
       - name: verify generated provider documentation
         run: make docs-check
 
+  against-fake:
+    name: against the fake
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff  # v5.6.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd  # v3.1.2
+        with:
+          terraform_version: "1.16.3"
+          terraform_wrapper: false
+      - name: plan the examples against the fake, over both tiers
+        run: make plan-fake
+
+      - name: the hardware walkthrough works as written
+        run: make walkthrough-test
+
+      - name: the curl walkthrough works as written
+        run: make walkthrough-api-test
+
+  # Its own job because the walkthrough already takes most of that job's
+  # time, and this applies the same directories again.
+  plan-quality:
+    name: plan quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff  # v5.6.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd  # v3.1.2
+        with:
+          terraform_version: "1.16.3"
+          terraform_wrapper: false
+      - name: refresh-only plans find nothing, and plans stay within the unknown budget
+        run: make plan-quality
+
   # Branch protection requires a context named CI, and GitHub publishes one per
   # job, not per workflow. A skipped required check satisfies protection, so a
   # bare needs would pass here.
@@ -129,6 +181,8 @@ jobs:
       - lint
       - vulncheck
       - docs
+      - against-fake
+      - plan-quality
     steps:
       - name: require every job to have succeeded
         env:

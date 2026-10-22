@@ -1,0 +1,618 @@
+{
+  "about": [
+    "How many values each walkthrough plan shows as known after apply, and why each one can't be known at plan.",
+    "make plan-quality fails when a count rises, a path appears or a reason is missing, and when a count falls, so this stays the measurement.",
+    "make unknown-budget-update rewrites the counts and paths and keeps the reasons. TESTING.md has the rest."
+  ],
+  "scenarios": {
+    "cluster": {
+      "plan": "examples/walkthrough/cluster, first plan",
+      "resources": {
+        "k0rdent_kubernetes_cluster": {
+          "count": 8,
+          "unknown": {
+            "cluster_type_resolved": "the platform may resolve an unversioned cluster_type to a pinned version",
+            "kubernetes_version": "read from the ClusterType version the platform binds on create",
+            "node_count": "counted across the node pools the platform materializes",
+            "security_groups": "the groups the platform applies when the configuration names none",
+            "self_link": "the platform-defined reference, assigned on create",
+            "state": "the lifecycle state the create settles on, read back after it",
+            "storage_ceiling_gib": "the platform's default, since the configuration leaves it out",
+            "vpc": "the VPC the platform materializes with the cluster"
+          }
+        }
+      }
+    },
+    "cluster-own-project": {
+      "plan": "examples/walkthrough/cluster-own-project, first plan",
+      "resources": {
+        "k0rdent_kubernetes_cluster": {
+          "count": 8,
+          "unknown": {
+            "cluster_type_resolved": "the platform may resolve an unversioned cluster_type to a pinned version",
+            "kubernetes_version": "read from the ClusterType version the platform binds on create",
+            "node_count": "counted across the node pools the platform materializes",
+            "security_groups": "the groups the platform applies when the configuration names none",
+            "self_link": "the platform-defined reference, assigned on create",
+            "state": "the lifecycle state the create settles on, read back after it",
+            "storage_ceiling_gib": "the platform's default, since the configuration leaves it out",
+            "vpc": "the VPC the platform materializes with the cluster"
+          }
+        },
+        "k0rdent_project": {
+          "count": 2,
+          "unknown": {
+            "self_link": "the platform-defined reference, assigned on create",
+            "status": "the status the create settles on. active, suspended and disabled are all steady"
+          }
+        }
+      }
+    },
+    "full": {
+      "plan": "examples/walkthrough/full with terraform.tfvars as shipped, first plan",
+      "resources": {
+        "data.k0rdent_cluster_kubeconfig": {
+          "count": 4,
+          "unknown": {
+            "available": "read during the apply, because it waits for terraform_data.made, which this plan creates",
+            "id": "read during the apply, because it waits for terraform_data.made, which this plan creates",
+            "issued_for": "read during the apply, because it waits for terraform_data.made, which this plan creates",
+            "status": "read during the apply, because it waits for terraform_data.made, which this plan creates"
+          }
+        },
+        "data.k0rdent_effective_security_groups": {
+          "count": 2,
+          "unknown": {
+            "region": "read during the apply, because it waits for terraform_data.made, which this plan creates",
+            "vpcs": "read during the apply, because it waits for terraform_data.made, which this plan creates"
+          }
+        },
+        "data.k0rdent_kubernetes_cluster": {
+          "count": 25,
+          "unknown": {
+            "api_endpoint": "read during the apply, because it waits for terraform_data.made, which this plan creates",
+            "cluster_type": "read during the apply, because it waits for terraform_data.made, which this plan creates",
+            "cluster_type_name": "read during the apply, because it waits for terraform_data.made, which this plan creates",
+            "control_plane_desired_replicas": "read during the apply, because it waits for terraform_data.made, which this plan creates",
+            "control_plane_message": "read during the apply, because it waits for terraform_data.made, which this plan creates",
+            "control_plane_ready_replicas": "read during the apply, because it waits for terraform_data.made, which this plan creates",
+            "control_plane_state": "read during the apply, because it waits for terraform_data.made, which this plan creates",
+            "control_plane_version": "read during the apply, because it waits for terraform_data.made, which this plan creates",
+            "description": "read during the apply, because it waits for terraform_data.made, which this plan creates",
+            "display_name": "read during the apply, because it waits for terraform_data.made, which this plan creates",
+            "health_reason": "read during the apply, because it waits for terraform_data.made, which this plan creates",
+            "health_state": "read during the apply, because it waits for terraform_data.made, which this plan creates",
+            "kubernetes_version": "read during the apply, because it waits for terraform_data.made, which this plan creates",
+            "next_available_cluster_type_version": "read during the apply, because it waits for terraform_data.made, which this plan creates",
+            "node_count": "read during the apply, because it waits for terraform_data.made, which this plan creates",
+            "node_pools": "read during the apply, because it waits for terraform_data.made, which this plan creates",
+            "operation": "read during the apply, because it waits for terraform_data.made, which this plan creates",
+            "region": "read during the apply, because it waits for terraform_data.made, which this plan creates",
+            "security_groups": "read during the apply, because it waits for terraform_data.made, which this plan creates",
+            "self_link": "read during the apply, because it waits for terraform_data.made, which this plan creates",
+            "state": "read during the apply, because it waits for terraform_data.made, which this plan creates",
+            "state_message": "read during the apply, because it waits for terraform_data.made, which this plan creates",
+            "state_reason": "read during the apply, because it waits for terraform_data.made, which this plan creates",
+            "tags": "read during the apply, because it waits for terraform_data.made, which this plan creates",
+            "upgrade_target_version_id": "read during the apply, because it waits for terraform_data.made, which this plan creates"
+          }
+        },
+        "data.k0rdent_network": {
+          "count": 14,
+          "unknown": {
+            "cluster_id": "read during the apply, because its arguments come from a resource this plan creates",
+            "description": "read during the apply, because its arguments come from a resource this plan creates",
+            "display_name": "read during the apply, because its arguments come from a resource this plan creates",
+            "mtu": "read during the apply, because its arguments come from a resource this plan creates",
+            "partition": "read during the apply, because its arguments come from a resource this plan creates",
+            "pkey": "read during the apply, because its arguments come from a resource this plan creates",
+            "region": "read during the apply, because its arguments come from a resource this plan creates",
+            "self_link": "read during the apply, because its arguments come from a resource this plan creates",
+            "state": "read during the apply, because its arguments come from a resource this plan creates",
+            "state_message": "read during the apply, because its arguments come from a resource this plan creates",
+            "tags": "read during the apply, because its arguments come from a resource this plan creates",
+            "type": "read during the apply, because its arguments come from a resource this plan creates",
+            "vlan_id": "read during the apply, because its arguments come from a resource this plan creates",
+            "vpc": "read during the apply, because its arguments come from a resource this plan creates"
+          }
+        },
+        "data.k0rdent_networks": {
+          "count": 3,
+          "unknown": {
+            "ids": "read during the apply, because it waits for terraform_data.made, which this plan creates",
+            "networks": "read during the apply, because it waits for terraform_data.made, which this plan creates",
+            "region": "read during the apply, because it waits for terraform_data.made, which this plan creates"
+          }
+        },
+        "data.k0rdent_security_groups": {
+          "count": 3,
+          "unknown": {
+            "ids": "read during the apply, because it waits for terraform_data.made, which this plan creates",
+            "region": "read during the apply, because it waits for terraform_data.made, which this plan creates",
+            "security_groups": "read during the apply, because it waits for terraform_data.made, which this plan creates"
+          }
+        },
+        "data.k0rdent_subnets": {
+          "count": 3,
+          "unknown": {
+            "cidrs": "read during the apply, because its arguments come from a resource this plan creates",
+            "region": "read during the apply, because its arguments come from a resource this plan creates",
+            "subnets": "read during the apply, because its arguments come from a resource this plan creates"
+          }
+        },
+        "data.k0rdent_vpc": {
+          "count": 10,
+          "unknown": {
+            "backend": "read during the apply, because its arguments come from a resource this plan creates",
+            "display_name": "read during the apply, because its arguments come from a resource this plan creates",
+            "id": "read during the apply, because its arguments come from a resource this plan creates",
+            "owner_id": "read during the apply, because its arguments come from a resource this plan creates",
+            "owner_kind": "read during the apply, because its arguments come from a resource this plan creates",
+            "region": "read during the apply, because its arguments come from a resource this plan creates",
+            "security_groups": "read during the apply, because its arguments come from a resource this plan creates",
+            "self_link": "read during the apply, because its arguments come from a resource this plan creates",
+            "state": "read during the apply, because its arguments come from a resource this plan creates",
+            "ufo_cr_name": "read during the apply, because its arguments come from a resource this plan creates"
+          }
+        },
+        "data.k0rdent_vpcs": {
+          "count": 3,
+          "unknown": {
+            "ids": "read during the apply, because it waits for terraform_data.made, which this plan creates",
+            "region": "read during the apply, because it waits for terraform_data.made, which this plan creates",
+            "vpcs": "read during the apply, because it waits for terraform_data.made, which this plan creates"
+          }
+        },
+        "data.k0rdent_webhook_subscriptions": {
+          "count": 1,
+          "unknown": {
+            "subscriptions": "read during the apply, because it waits for terraform_data.made, which this plan creates"
+          }
+        },
+        "k0rdent_kubernetes_cluster": {
+          "count": 7,
+          "unknown": {
+            "cluster_type_resolved": "the platform may resolve an unversioned cluster_type to a pinned version",
+            "kubernetes_version": "read from the ClusterType version the platform binds on create",
+            "node_count": "counted across the node pools the platform materializes",
+            "self_link": "the platform-defined reference, assigned on create",
+            "state": "the lifecycle state the create settles on, read back after it",
+            "storage_ceiling_gib": "the platform's default, since the configuration leaves it out",
+            "vpc": "the VPC the platform materializes with the cluster"
+          }
+        },
+        "k0rdent_network": {
+          "count": 7,
+          "unknown": {
+            "cluster_id": "set by the platform, and only on a network the cluster lifecycle owns",
+            "evpn.dns_servers": "the platform's resolvers, since the configuration leaves them out",
+            "evpn.mtu": "the platform applies its own MTU when unset",
+            "evpn.vlan_id_resolved": "the VLAN id the platform allocates during the create for vlan_id = auto",
+            "self_link": "the platform-defined reference, assigned on create",
+            "state": "the lifecycle state the create settles on, read back after it",
+            "vpc": "set by the platform, and only on a cluster-provisioned network"
+          }
+        },
+        "k0rdent_security_group": {
+          "count": 4,
+          "unknown": {
+            "owner_kind": "set by the platform, and only on a VPC's default group",
+            "rule_count": "the platform's own count of the rules it stores",
+            "self_link": "the platform-defined reference, assigned on create",
+            "state": "the lifecycle state the create settles on, read back after it"
+          }
+        },
+        "k0rdent_subnet": {
+          "count": 14,
+          "unknown": {
+            "cidr": "the platform chooses the block from the address pool",
+            "cluster_id": "set by the platform, and only on a subnet the cluster lifecycle owns",
+            "exclude_ranges": "left out, it reports what the platform applied",
+            "gateway": "the platform resolves the gateway address, or leaves it null",
+            "ip_version": "the family of the CIDR the platform allocates",
+            "self_link": "the platform-defined reference, assigned on create",
+            "state": "the lifecycle state the create settles on, read back after it"
+          }
+        },
+        "k0rdent_vpc_security_groups": {
+          "count": 3,
+          "unknown": {
+            "attached": "what the platform reports attached after the write",
+            "state": "the VPC's state after the write",
+            "vpc": "the cluster's VPC, which the platform materializes with it"
+          }
+        },
+        "k0rdent_webhook_subscription": {
+          "count": 6,
+          "unknown": {
+            "created_at": "set by the platform on create",
+            "id": "a UUID the platform assigns",
+            "is_active": "whether the platform delivers, read back after the create",
+            "previous_secret_expires_at": "set by the platform, and only while a rotation's overlap is open",
+            "rotated_at": "set by the platform when the secret rotates",
+            "secret_version": "the platform's count of signing secrets"
+          }
+        },
+        "terraform_data": {
+          "count": 7,
+          "unknown": {
+            "id": "assigned by Terraform on create",
+            "input.cluster": "the cluster's self_link, assigned on create",
+            "input.network[*].link": "the network's self_link, assigned on create",
+            "input.security_group[*].link": "the security group's self_link, assigned on create",
+            "input.security_group[*].rules": "the security group's rule_count, as the platform counts it on create",
+            "input.webhook[*]": "the subscription's id, a UUID the platform assigns on create",
+            "output": "a copy of input, which holds values the platform assigns on create"
+          }
+        }
+      }
+    },
+    "full-change": {
+      "plan": "examples/walkthrough/full as shipped, after its apply, with the cluster's display_name changed",
+      "changed": "k0rdent_kubernetes_cluster.this",
+      "resources": {
+        "k0rdent_kubernetes_cluster": {
+          "count": 0,
+          "unknown": {}
+        }
+      }
+    },
+    "full-everything": {
+      "plan": "examples/walkthrough/full with every build switch on, first plan",
+      "resources": {
+        "data.k0rdent_cluster_kubeconfig": {
+          "count": 4,
+          "unknown": {
+            "available": "read during the apply, because it waits for terraform_data.made, which this plan creates",
+            "id": "read during the apply, because it waits for terraform_data.made, which this plan creates",
+            "issued_for": "read during the apply, because it waits for terraform_data.made, which this plan creates",
+            "status": "read during the apply, because it waits for terraform_data.made, which this plan creates"
+          }
+        },
+        "data.k0rdent_effective_security_groups": {
+          "count": 4,
+          "unknown": {
+            "region": "read during the apply, because it waits for terraform_data.made, which this plan creates",
+            "vpcs": "read during the apply, because it waits for terraform_data.made, which this plan creates"
+          }
+        },
+        "data.k0rdent_file_store": {
+          "count": 13,
+          "unknown": {
+            "capacity_gib": "read during the apply, because its arguments come from a resource this plan creates",
+            "consumer_status": "read during the apply, because its arguments come from a resource this plan creates",
+            "description": "read during the apply, because its arguments come from a resource this plan creates",
+            "display_name": "read during the apply, because its arguments come from a resource this plan creates",
+            "export_locations": "read during the apply, because its arguments come from a resource this plan creates",
+            "preferred_export_location": "read during the apply, because its arguments come from a resource this plan creates",
+            "reconciling": "read during the apply, because its arguments come from a resource this plan creates",
+            "region": "read during the apply, because its arguments come from a resource this plan creates",
+            "self_link": "read during the apply, because its arguments come from a resource this plan creates",
+            "share_type": "read during the apply, because its arguments come from a resource this plan creates",
+            "state": "read during the apply, because its arguments come from a resource this plan creates",
+            "state_message": "read during the apply, because its arguments come from a resource this plan creates",
+            "state_reason": "read during the apply, because its arguments come from a resource this plan creates"
+          }
+        },
+        "data.k0rdent_instance_group": {
+          "count": 13,
+          "unknown": {
+            "cluster_type": "read during the apply, because its arguments come from a resource this plan creates",
+            "description": "read during the apply, because its arguments come from a resource this plan creates",
+            "display_name": "read during the apply, because its arguments come from a resource this plan creates",
+            "execution_id": "read during the apply, because its arguments come from a resource this plan creates",
+            "node_pools": "read during the apply, because its arguments come from a resource this plan creates",
+            "progress_updated_at": "read during the apply, because its arguments come from a resource this plan creates",
+            "region": "read during the apply, because its arguments come from a resource this plan creates",
+            "security_groups": "read during the apply, because its arguments come from a resource this plan creates",
+            "self_link": "read during the apply, because its arguments come from a resource this plan creates",
+            "ssh_access": "read during the apply, because its arguments come from a resource this plan creates",
+            "state": "read during the apply, because its arguments come from a resource this plan creates",
+            "state_message": "read during the apply, because its arguments come from a resource this plan creates",
+            "state_reason": "read during the apply, because its arguments come from a resource this plan creates"
+          }
+        },
+        "data.k0rdent_instances": {
+          "count": 3,
+          "unknown": {
+            "ids": "read during the apply, because its arguments come from a resource this plan creates",
+            "instances": "read during the apply, because its arguments come from a resource this plan creates",
+            "region": "read during the apply, because its arguments come from a resource this plan creates"
+          }
+        },
+        "data.k0rdent_kubernetes_cluster": {
+          "count": 25,
+          "unknown": {
+            "api_endpoint": "read during the apply, because it waits for terraform_data.made, which this plan creates",
+            "cluster_type": "read during the apply, because it waits for terraform_data.made, which this plan creates",
+            "cluster_type_name": "read during the apply, because it waits for terraform_data.made, which this plan creates",
+            "control_plane_desired_replicas": "read during the apply, because it waits for terraform_data.made, which this plan creates",
+            "control_plane_message": "read during the apply, because it waits for terraform_data.made, which this plan creates",
+            "control_plane_ready_replicas": "read during the apply, because it waits for terraform_data.made, which this plan creates",
+            "control_plane_state": "read during the apply, because it waits for terraform_data.made, which this plan creates",
+            "control_plane_version": "read during the apply, because it waits for terraform_data.made, which this plan creates",
+            "description": "read during the apply, because it waits for terraform_data.made, which this plan creates",
+            "display_name": "read during the apply, because it waits for terraform_data.made, which this plan creates",
+            "health_reason": "read during the apply, because it waits for terraform_data.made, which this plan creates",
+            "health_state": "read during the apply, because it waits for terraform_data.made, which this plan creates",
+            "kubernetes_version": "read during the apply, because it waits for terraform_data.made, which this plan creates",
+            "next_available_cluster_type_version": "read during the apply, because it waits for terraform_data.made, which this plan creates",
+            "node_count": "read during the apply, because it waits for terraform_data.made, which this plan creates",
+            "node_pools": "read during the apply, because it waits for terraform_data.made, which this plan creates",
+            "operation": "read during the apply, because it waits for terraform_data.made, which this plan creates",
+            "region": "read during the apply, because it waits for terraform_data.made, which this plan creates",
+            "security_groups": "read during the apply, because it waits for terraform_data.made, which this plan creates",
+            "self_link": "read during the apply, because it waits for terraform_data.made, which this plan creates",
+            "state": "read during the apply, because it waits for terraform_data.made, which this plan creates",
+            "state_message": "read during the apply, because it waits for terraform_data.made, which this plan creates",
+            "state_reason": "read during the apply, because it waits for terraform_data.made, which this plan creates",
+            "tags": "read during the apply, because it waits for terraform_data.made, which this plan creates",
+            "upgrade_target_version_id": "read during the apply, because it waits for terraform_data.made, which this plan creates"
+          }
+        },
+        "data.k0rdent_network": {
+          "count": 14,
+          "unknown": {
+            "cluster_id": "read during the apply, because its arguments come from a resource this plan creates",
+            "description": "read during the apply, because its arguments come from a resource this plan creates",
+            "display_name": "read during the apply, because its arguments come from a resource this plan creates",
+            "mtu": "read during the apply, because its arguments come from a resource this plan creates",
+            "partition": "read during the apply, because its arguments come from a resource this plan creates",
+            "pkey": "read during the apply, because its arguments come from a resource this plan creates",
+            "region": "read during the apply, because its arguments come from a resource this plan creates",
+            "self_link": "read during the apply, because its arguments come from a resource this plan creates",
+            "state": "read during the apply, because its arguments come from a resource this plan creates",
+            "state_message": "read during the apply, because its arguments come from a resource this plan creates",
+            "tags": "read during the apply, because its arguments come from a resource this plan creates",
+            "type": "read during the apply, because its arguments come from a resource this plan creates",
+            "vlan_id": "read during the apply, because its arguments come from a resource this plan creates",
+            "vpc": "read during the apply, because its arguments come from a resource this plan creates"
+          }
+        },
+        "data.k0rdent_networks": {
+          "count": 3,
+          "unknown": {
+            "ids": "read during the apply, because it waits for terraform_data.made, which this plan creates",
+            "networks": "read during the apply, because it waits for terraform_data.made, which this plan creates",
+            "region": "read during the apply, because it waits for terraform_data.made, which this plan creates"
+          }
+        },
+        "data.k0rdent_security_groups": {
+          "count": 3,
+          "unknown": {
+            "ids": "read during the apply, because it waits for terraform_data.made, which this plan creates",
+            "region": "read during the apply, because it waits for terraform_data.made, which this plan creates",
+            "security_groups": "read during the apply, because it waits for terraform_data.made, which this plan creates"
+          }
+        },
+        "data.k0rdent_subnets": {
+          "count": 3,
+          "unknown": {
+            "cidrs": "read during the apply, because its arguments come from a resource this plan creates",
+            "region": "read during the apply, because its arguments come from a resource this plan creates",
+            "subnets": "read during the apply, because its arguments come from a resource this plan creates"
+          }
+        },
+        "data.k0rdent_vpc": {
+          "count": 20,
+          "unknown": {
+            "backend": "read during the apply, because its arguments come from a resource this plan creates",
+            "display_name": "read during the apply, because its arguments come from a resource this plan creates",
+            "id": "read during the apply, because its arguments come from a resource this plan creates",
+            "owner_id": "read during the apply, because its arguments come from a resource this plan creates",
+            "owner_kind": "read during the apply, because its arguments come from a resource this plan creates",
+            "region": "read during the apply, because its arguments come from a resource this plan creates",
+            "security_groups": "read during the apply, because its arguments come from a resource this plan creates",
+            "self_link": "read during the apply, because its arguments come from a resource this plan creates",
+            "state": "read during the apply, because its arguments come from a resource this plan creates",
+            "ufo_cr_name": "read during the apply, because its arguments come from a resource this plan creates"
+          }
+        },
+        "data.k0rdent_vpc_peerings": {
+          "count": 3,
+          "unknown": {
+            "peerings": "read during the apply, because its arguments come from a resource this plan creates",
+            "region": "read during the apply, because its arguments come from a resource this plan creates",
+            "vpc": "read during the apply, because its arguments come from a resource this plan creates"
+          }
+        },
+        "data.k0rdent_vpcs": {
+          "count": 3,
+          "unknown": {
+            "ids": "read during the apply, because it waits for terraform_data.made, which this plan creates",
+            "region": "read during the apply, because it waits for terraform_data.made, which this plan creates",
+            "vpcs": "read during the apply, because it waits for terraform_data.made, which this plan creates"
+          }
+        },
+        "data.k0rdent_webhook_subscriptions": {
+          "count": 1,
+          "unknown": {
+            "subscriptions": "read during the apply, because it waits for terraform_data.made, which this plan creates"
+          }
+        },
+        "k0rdent_file_store": {
+          "count": 6,
+          "unknown": {
+            "consumer_status": "the platform's observed state of each grant, read back after the create",
+            "etag": "the revision the platform assigns",
+            "export_locations": "where the platform exports the store",
+            "preferred_export_location": "the location the platform marks preferred, once the store is active",
+            "self_link": "the platform-defined reference, assigned on create",
+            "state": "the lifecycle state the create settles on, read back after it"
+          }
+        },
+        "k0rdent_instance_group": {
+          "count": 4,
+          "unknown": {
+            "cluster_type_resolved": "the platform may answer with a different form of the cluster_type reference",
+            "self_link": "the platform-defined reference, assigned on create",
+            "state": "the lifecycle state the create settles on, read back after it",
+            "vpc": "the VPC the platform materializes with the group"
+          }
+        },
+        "k0rdent_kubernetes_cluster": {
+          "count": 7,
+          "unknown": {
+            "cluster_type_resolved": "the platform may resolve an unversioned cluster_type to a pinned version",
+            "kubernetes_version": "read from the ClusterType version the platform binds on create",
+            "node_count": "counted across the node pools the platform materializes",
+            "self_link": "the platform-defined reference, assigned on create",
+            "state": "the lifecycle state the create settles on, read back after it",
+            "storage_ceiling_gib": "the platform's default, since the configuration leaves it out",
+            "vpc": "the VPC the platform materializes with the cluster"
+          }
+        },
+        "k0rdent_network": {
+          "count": 7,
+          "unknown": {
+            "cluster_id": "set by the platform, and only on a network the cluster lifecycle owns",
+            "evpn.dns_servers": "the platform's resolvers, since the configuration leaves them out",
+            "evpn.mtu": "the platform applies its own MTU when unset",
+            "evpn.vlan_id_resolved": "the VLAN id the platform allocates during the create for vlan_id = auto",
+            "self_link": "the platform-defined reference, assigned on create",
+            "state": "the lifecycle state the create settles on, read back after it",
+            "vpc": "set by the platform, and only on a cluster-provisioned network"
+          }
+        },
+        "k0rdent_project": {
+          "count": 2,
+          "unknown": {
+            "self_link": "the platform-defined reference, assigned on create",
+            "status": "the status the create settles on. active, suspended and disabled are all steady"
+          }
+        },
+        "k0rdent_security_group": {
+          "count": 4,
+          "unknown": {
+            "owner_kind": "set by the platform, and only on a VPC's default group",
+            "rule_count": "the platform's own count of the rules it stores",
+            "self_link": "the platform-defined reference, assigned on create",
+            "state": "the lifecycle state the create settles on, read back after it"
+          }
+        },
+        "k0rdent_subnet": {
+          "count": 14,
+          "unknown": {
+            "cidr": "the platform chooses the block from the address pool",
+            "cluster_id": "set by the platform, and only on a subnet the cluster lifecycle owns",
+            "exclude_ranges": "left out, it reports what the platform applied",
+            "gateway": "the platform resolves the gateway address, or leaves it null",
+            "ip_version": "the family of the CIDR the platform allocates",
+            "self_link": "the platform-defined reference, assigned on create",
+            "state": "the lifecycle state the create settles on, read back after it"
+          }
+        },
+        "k0rdent_vpc_peering": {
+          "count": 10,
+          "unknown": {
+            "local_vpc": "the URI the platform resolves from vpc",
+            "remote_vpc": "the other side's VPC id, which the cluster or the instance group materializes",
+            "self_link": "the platform-defined reference, assigned on create",
+            "state": "the lifecycle state the create settles on, read back after it",
+            "vpc": "the VPC the cluster or the instance group materializes"
+          }
+        },
+        "k0rdent_vpc_security_groups": {
+          "count": 6,
+          "unknown": {
+            "attached": "what the platform reports attached after the write",
+            "state": "the VPC's state after the write",
+            "vpc": "the cluster's VPC, which the platform materializes with it"
+          }
+        },
+        "k0rdent_webhook_subscription": {
+          "count": 6,
+          "unknown": {
+            "created_at": "set by the platform on create",
+            "id": "a UUID the platform assigns",
+            "is_active": "whether the platform delivers, read back after the create",
+            "previous_secret_expires_at": "set by the platform, and only while a rotation's overlap is open",
+            "rotated_at": "set by the platform when the secret rotates",
+            "secret_version": "the platform's count of signing secrets"
+          }
+        },
+        "terraform_data": {
+          "count": 8,
+          "unknown": {
+            "id": "assigned by Terraform on create",
+            "input.cluster": "the cluster's self_link, assigned on create",
+            "input.hosts[*]": "the instance group's self_link, assigned on create",
+            "input.network[*].link": "the network's self_link, assigned on create",
+            "input.security_group[*].link": "the security group's self_link, assigned on create",
+            "input.security_group[*].rules": "the security group's rule_count, as the platform counts it on create",
+            "input.webhook[*]": "the subscription's id, a UUID the platform assigns on create",
+            "output": "a copy of input, which holds values the platform assigns on create"
+          }
+        }
+      }
+    },
+    "full-everything-change": {
+      "plan": "examples/walkthrough/full with every build switch on, after its apply, with the cluster's display_name changed",
+      "changed": "k0rdent_kubernetes_cluster.this",
+      "resources": {
+        "k0rdent_kubernetes_cluster": {
+          "count": 0,
+          "unknown": {}
+        }
+      }
+    },
+    "full-everything-rule-change": {
+      "plan": "examples/walkthrough/full with every build switch on, after its display_name change, with one security group rule edited",
+      "changed": "k0rdent_security_group.this[0]",
+      "resources": {
+        "k0rdent_security_group": {
+          "count": 0,
+          "unknown": {}
+        }
+      }
+    },
+    "full-rule-change": {
+      "plan": "examples/walkthrough/full as shipped, after its display_name change, with one security group rule edited",
+      "changed": "k0rdent_security_group.this[0]",
+      "resources": {
+        "k0rdent_security_group": {
+          "count": 0,
+          "unknown": {}
+        }
+      }
+    },
+    "network": {
+      "plan": "examples/walkthrough/network, first plan",
+      "resources": {
+        "k0rdent_network": {
+          "count": 7,
+          "unknown": {
+            "cluster_id": "set by the platform, and only on a network the cluster lifecycle owns",
+            "evpn.dns_servers": "the platform's resolvers, since the configuration leaves them out",
+            "evpn.mtu": "the platform applies its own MTU when unset",
+            "evpn.vlan_id_resolved": "the VLAN id the platform allocates during the create for vlan_id = auto",
+            "self_link": "the platform-defined reference, assigned on create",
+            "state": "the lifecycle state the create settles on, read back after it",
+            "vpc": "set by the platform, and only on a cluster-provisioned network"
+          }
+        },
+        "k0rdent_security_group": {
+          "count": 4,
+          "unknown": {
+            "owner_kind": "set by the platform, and only on a VPC's default group",
+            "rule_count": "the platform's own count of the rules it stores",
+            "self_link": "the platform-defined reference, assigned on create",
+            "state": "the lifecycle state the create settles on, read back after it"
+          }
+        },
+        "k0rdent_subnet": {
+          "count": 7,
+          "unknown": {
+            "cidr": "the platform chooses the block from the address pool",
+            "cluster_id": "set by the platform, and only on a subnet the cluster lifecycle owns",
+            "exclude_ranges": "left out, it reports what the platform applied",
+            "gateway": "the platform resolves the gateway address, or leaves it null",
+            "ip_version": "the family of the CIDR the platform allocates",
+            "self_link": "the platform-defined reference, assigned on create",
+            "state": "the lifecycle state the create settles on, read back after it"
+          }
+        }
+      }
+    }
+  }
+}

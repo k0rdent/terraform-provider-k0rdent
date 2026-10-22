@@ -1,0 +1,91 @@
+name: Nightly
+
+# The end-to-end run, against both CLIs.
+#
+# OpenTofu is a fork, not a rename, and a provider that only ever runs under
+# terraform finds out about the differences from whoever files the issue. The
+# demo drives the whole lifecycle against a local fake and needs no credential,
+# so there is no reason not to run it on both every night.
+on:
+  schedule:
+    # 02:30 UTC, off the hour so it does not queue behind everything else.
+    - cron: "30 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  GO_VERSION: "1.26.9"
+
+jobs:
+  demo:
+    name: demo (${{ matrix.cli }})
+    runs-on: ubuntu-latest
+    strategy:
+      # Both CLIs always run. Without this one failure hides the other, which
+      # is the one case this job exists to catch.
+      fail-fast: false
+      matrix:
+        cli: [terraform, tofu]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff  # v5.6.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      # Both CLIs pinned, as ci.yml pins terraform, so a nightly that turns
+      # red is the provider's change or the fake's and not a CLI that shipped
+      # that day. scripts/check-workflow-actions.sh holds every job to one
+      # version of each. Raise them deliberately, in every workflow at once.
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd  # v3.1.2
+        id: setup-terraform
+        if: matrix.cli == 'terraform'
+        with:
+          terraform_version: "1.16.3"
+          terraform_wrapper: false
+      - uses: opentofu/setup-opentofu@9d84900f3238fab8cd84ce47d658d25dd008be2f  # v1.0.8
+        if: matrix.cli == 'tofu'
+        with:
+          tofu_version: "1.12.6"
+          tofu_wrapper: false
+      - name: demo
+        env:
+          TF_BIN: ${{ matrix.cli }}
+        run: make demo
+      # terraform only. terraform-plugin-testing builds a
+      # registry.terraform.io provider address and relies on terraform's
+      # reattach behaviour, so under tofu it tries to download the provider
+      # from registry.opentofu.org and fails. Tofu's coverage is the demo
+      # above, which drives the same lifecycle.
+      - name: acceptance
+        if: matrix.cli == 'terraform'
+        run: make testacc
+      # A perpetual difference is a defect, and the check for it runs
+      # on a schedule. `make testacc` above already includes it. This runs it
+      # again on its own, whether or not the demo or acceptance step
+      # passed, so a failure names the requirement rather than hiding
+      # among the rest of the suite. It needs the setup, though: it runs only
+      # once setup-terraform has succeeded, which it can't do after anything
+      # before it failed. Terraform only, for the same reason as the
+      # acceptance step. How the same check runs against a live stack is in
+      # TESTING.md under `make drift`.
+      - name: perpetual diff
+        if: ${{ !cancelled() && matrix.cli == 'terraform' && steps.setup-terraform.outcome == 'success' }}
+        run: make drift
+      # The published performance figures, held to account. It
+      # runs the benchmark docs/performance.md describes at the sizes and the
+      # -parallelism the published limit rests on, and fails when a figure
+      # breaks internal/tools/bench/budget.json: more requests a resource, a
+      # list read per resource that wasn't there, plan or refresh time a
+      # resource that grows with the size of the configuration, or a time
+      # past the limit's headroom. The figures are printed in the log either way. Terraform
+      # only, since the published figures and the budget are Terraform's, and
+      # most of a large apply's time is the CLI's own work rather than the
+      # provider's. On its own condition like the step above, so a red
+      # benchmark names itself.
+      - name: performance budget
+        if: ${{ !cancelled() && matrix.cli == 'terraform' && steps.setup-terraform.outcome == 'success' }}
+        run: make bench BENCH_SIZES=100,500,1000 BENCH_PARALLELISM=10 BENCH_BUDGET=internal/tools/bench/budget.json

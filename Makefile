@@ -94,9 +94,94 @@ install: build ## Install into the local plugin mirror for dev_overrides
 test: ## Unit tests
 	go test -race -count=1 ./...
 
+.PHONY: testacc
+testacc: ## Acceptance tests: each resource's own lifecycle against the local fake
+	TF_ACC=1 TF_ACC_TERRAFORM_PATH="$$(command -v $(TF_BIN))" go test ./internal/acceptance/ -count=1 -timeout 20m
+
+# The perpetual-diff check on its own, so the nightly can name it when it
+# fails: every managed resource applied, then planned, refreshed and planned
+# again, against a fake that varies what the platform varies between reads.
+# `make testacc` runs it too.
+.PHONY: drift
+drift: ## The perpetual-diff check alone: every resource, plan and refresh against a fake that moves what the platform moves
+	TF_ACC=1 TF_ACC_TERRAFORM_PATH="$$(command -v $(TF_BIN))" go test ./internal/acceptance/ -count=1 -timeout 20m -v \
+		-run '^(TestAccPerpetualDiff|TestPerpetualDiffCoversEveryResource)$$'
+
+# The performance benchmark: plan, refresh-only plan, apply and destroy at each
+# size in BENCH_SIZES and each -parallelism in BENCH_PARALLELISM, against a
+# fake of its own on a free port with BENCH_LATENCY added to every request.
+# docs/performance.md is the method and the published figures. With
+# BENCH_BUDGET it fails when a figure breaks that file's limits, which is
+# how the nightly holds the published figures to account. Results land in
+# .bench/.
+BENCH_SIZES       ?= 10,100,500,1000
+BENCH_PARALLELISM ?= 10,4,32
+BENCH_LATENCY     ?= 3ms
+BENCH_BUDGET      ?=
+.PHONY: bench
+bench: ## Time plan, refresh and apply at 10 to 1000 resources against the fake. BENCH_BUDGET=<file> gates
+	go run ./internal/tools/bench -sizes "$(BENCH_SIZES)" -parallelism "$(BENCH_PARALLELISM)" \
+		-latency "$(BENCH_LATENCY)" -terraform "$(TF_BIN)" -out .bench \
+		$(if $(BENCH_BUDGET),-budget "$(BENCH_BUDGET)")
+
+# The sweepers delete what a killed acceptance run left on a real API: every
+# object whose id starts with `acc-`, and nothing else, children first. The
+# endpoint, project and credential come from the same environment the
+# provider reads. SWEEP_CONFIRM has to name the endpoint's
+# host, as LIVE_CONFIRM does for `make live`. `-run '^$$'` is belt and braces:
+# a sweep runs no test.
+SWEEP_REGION ?=
+.PHONY: sweep
+sweep: ## Delete leaked acc- test objects. Needs SWEEP_REGION and SWEEP_CONFIRM=<endpoint host>
+	@test -n "$(SWEEP_REGION)" || { echo "make sweep needs SWEEP_REGION, the region (or comma-separated regions) to sweep"; exit 2; }
+	go test ./internal/acceptance/ -count=1 -timeout 60m -run '^$$' -v -sweep="$(SWEEP_REGION)"
+
 .PHONY: vet
 vet: ## go vet
 	go vet ./...
+
+.PHONY: demo
+demo: ## The whole provider working end to end against a local fake. Needs nothing secret
+	./scripts/demo.sh
+
+.PHONY: demo-up
+demo-up: ## Start the fake and build the provider, then leave both up for hand-editing
+	./scripts/demo.sh up
+
+.PHONY: demo-down
+demo-down: ## Stop a fake left running by demo-up
+	./scripts/demo.sh down
+
+.PHONY: demo-env
+demo-env: ## Print the exports a new shell needs to drive examples/demo by hand
+	@./scripts/demo.sh env
+
+.PHONY: demo-session
+demo-session: ## Keep a fake and interactive shell together for tool runners
+	./scripts/demo.sh session
+
+.PHONY: plan-fake
+plan-fake: ## The configuration-layer harness: authentication and error paths only
+	./ci/plan-against-fake.sh
+
+.PHONY: walkthrough-test
+walkthrough-test: ## Follow docs/walkthrough-hardware.md against the fake, with the directories in examples/walkthrough
+	./ci/walkthrough-against-fake.sh
+
+# Each walkthrough directory against the fake: a refresh-only plan after the
+# apply finds nothing, and its plans' "known after apply" values stay within
+# ci/unknown-budget.json. TESTING.md has how to update the budget.
+.PHONY: plan-quality
+plan-quality: ## Refresh-only plans find nothing, and plans stay within ci/unknown-budget.json, for every walkthrough directory
+	./ci/plan-quality-against-fake.sh
+
+.PHONY: unknown-budget-update
+unknown-budget-update: ## Rewrite ci/unknown-budget.json from the walkthrough plans, keeping its reasons
+	UNKNOWN_BUDGET_WRITE=1 ./ci/plan-quality-against-fake.sh
+
+.PHONY: walkthrough-api-test
+walkthrough-api-test: ## Follow docs/walkthrough-api.md against the fake, from the commands the page shows
+	./ci/walkthrough-api-against-fake.sh
 
 # The module's tracked sources, so `make fmt` and `make fmt-check` read the
 # same files.
