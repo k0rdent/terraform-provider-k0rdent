@@ -89,3 +89,34 @@ jobs:
       - name: performance budget
         if: ${{ !cancelled() && matrix.cli == 'terraform' && steps.setup-terraform.outcome == 'success' }}
         run: make bench BENCH_SIZES=100,500,1000 BENCH_PARALLELISM=10 BENCH_BUDGET=internal/tools/bench/budget.json
+
+  # A failed scheduled run only emails whoever last touched the schedule, so
+  # nobody else hears of it. One open issue says the nightly is red: a failure
+  # opens it, or comments on it when it's already open, and a pass closes it.
+  # A cancelled or skipped run says nothing either way.
+  report:
+    name: report the result
+    needs: demo
+    if: ${{ always() && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: open, update or close the "Nightly is failing" issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RESULT: ${{ needs.demo.result }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="Nightly is failing"
+          number="$(gh issue list --state open --search "in:title \"$title\"" --json number,title \
+            --jq "map(select(.title == \"$title\")) | .[0].number // empty")"
+          case "$RESULT" in
+            success) [[ -z "$number" ]] || gh issue close "$number" --comment "Passing again: $RUN_URL" ;;
+            failure) if [[ -z "$number" ]]; then
+                gh issue create --title "$title" --body "The nightly failed: $RUN_URL"
+              else
+                gh issue comment "$number" --body "Still failing: $RUN_URL"
+              fi ;;
+          esac
