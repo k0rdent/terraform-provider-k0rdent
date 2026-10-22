@@ -1,0 +1,70 @@
+name: Bug report
+description: Something the provider does wrong.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Remove secrets before you submit: client secrets, tokens, kubeconfigs and webhook secrets.
+        Security problems go through the Security tab, not here.
+  - type: input
+    id: provider-version
+    attributes:
+      label: Provider version
+      placeholder: "0.1.0"
+    validations:
+      required: true
+  - type: input
+    id: cli-version
+    attributes:
+      label: Terraform or OpenTofu version
+      description: The output of `terraform version` or `tofu version`.
+    validations:
+      required: true
+  - type: dropdown
+    id: stage
+    attributes:
+      label: Where it fails
+      options:
+        - plan
+        - apply
+        - destroy
+        - import
+        - refresh, or a plan after a successful apply shows changes
+        - other
+    validations:
+      required: true
+  - type: textarea
+    id: config
+    attributes:
+      label: Configuration
+      description: The smallest configuration that shows the problem.
+      render: hcl
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened
+      description: The full error, with the diagnostic's detail.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. terraform apply
+        2. terraform plan
+  - type: textarea
+    id: log
+    attributes:
+      label: Debug log
+      description: From `TF_LOG=DEBUG`, trimmed to the failing request.
+      render: text

@@ -1,0 +1,32 @@
+name: Feature request
+description: Something the provider should do.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: What you're trying to do
+      description: The outcome, not only the attribute you'd add.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you'd like
+      description: A resource, data source, attribute or behaviour. An example configuration helps.
+      render: hcl
+  - type: dropdown
+    id: api
+    attributes:
+      label: Can the k0rdent API do it today?
+      options:
+        - "Yes"
+        - "No"
+        - Not sure
+    validations:
+      required: true
+  - type: textarea
+    id: workaround
+    attributes:
+      label: What you do now
+      description: Any workaround you use.
