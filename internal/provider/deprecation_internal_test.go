@@ -34,7 +34,7 @@ func TestEveryDeprecationNamesTheVersionItIsRemovedIn(t *testing.T) {
 
 func TestReleasedMajorReadsBothHeadingStyles(t *testing.T) {
 	for body, want := range map[string]int{
-		"# Changelog\n\n## [Unreleased]\n\n## [0.1.0-beta] - planned, not published\n":      0,
+		"# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - planned, not published\n":           0,
 		"## [Unreleased]\n\n## [0.3.0] - 2026-10-20\n":                                      0,
 		"## 1.1.0 (Unreleased)\n\n## 1.0.0 (November 3, 2026)\n\n## [0.3.0] - 2026-10-20\n": 1,
 		"## 2.0.0-beta.1 (January 5, 2027)\n\n## 1.4.2 (December 1, 2026)\n":                2,

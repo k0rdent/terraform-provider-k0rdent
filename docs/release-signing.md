@@ -61,7 +61,7 @@ and `make workflow-actions-test` proves it still does. CI runs it.
 
 ## Tags
 
-`vMAJOR.MINOR.PATCH`, or a prerelease such as `v0.1.0-beta.1`. Build metadata
+`vMAJOR.MINOR.PATCH`, or a candidate such as `v0.1.0-rc.1`. Build metadata
 (`+...`) is refused, so each tag names one build.
 
 ## The API client

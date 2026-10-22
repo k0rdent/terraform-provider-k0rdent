@@ -623,9 +623,9 @@ written and ship with the first release, under a heading of their own that
   configuration that meant "no limit" got 30 minutes. Set a positive
   duration, such as `45m` or `2h`, or leave the value out for the default.
 
-## [0.1.0-beta] - planned, not published
+## [0.1.0] - planned, not published
 
-This section is reserved for the first beta release. It is not a tag, an
+This section is reserved for the first release. It is not a tag, an
 artifact, or a published provider version.
 
 ## Release procedure
