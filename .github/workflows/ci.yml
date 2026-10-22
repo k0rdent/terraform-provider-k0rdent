@@ -97,6 +97,24 @@ jobs:
       - name: reachable known vulnerabilities
         run: make vulncheck
 
+  docs:
+    name: generated docs
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff  # v5.6.0
+        with:
+          go-version-file: .go-release-version
+          cache: true
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd  # v3.1.2
+        with:
+          terraform_version: "1.16.3"
+      - name: verify generated provider documentation
+        run: make docs-check
+
   # Branch protection requires a context named CI, and GitHub publishes one per
   # job, not per workflow. A skipped required check satisfies protection, so a
   # bare needs would pass here.
@@ -110,6 +128,7 @@ jobs:
       - test
       - lint
       - vulncheck
+      - docs
     steps:
       - name: require every job to have succeeded
         env:

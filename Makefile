@@ -54,7 +54,7 @@ help: ## List targets
 		| awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
 
 .PHONY: check
-check: fmt-check vet lint test name-audit client-check vulncheck ## Everything CI runs
+check: doc-commands fmt-check vet lint test name-audit client-check docs-check vulncheck ## Everything CI runs
 
 .PHONY: vulncheck
 vulncheck: ## Gate S6: reachable known vulnerabilities, under the CI Go and the release Go
@@ -120,6 +120,36 @@ lint: ## golangci-lint
 .PHONY: lint-install
 lint-install: ## Install the pinned golangci-lint, built with this module's Go version
 	GOTOOLCHAIN=$(GOLANGCI_LINT_GOTOOLCHAIN) go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
+
+.PHONY: tools
+tools: $(TFPLUGINDOCS) ## Install the pinned docs generator
+
+$(TFPLUGINDOCS):
+	mkdir -p $(TOOLS_BIN)
+	GOBIN="$(TOOLS_BIN)" go install github.com/hashicorp/terraform-plugin-docs/cmd/tfplugindocs@$(TFPLUGINDOCS_VERSION)
+
+.PHONY: docs
+docs: $(TFPLUGINDOCS) ## Generate committed provider registry documentation
+	TF_BIN="$(TF_BIN)" TF_REGISTRY_HOST="$(TF_REGISTRY_HOST)" \
+		PROVIDER_NAME="$(PROVIDER_NAME)" ./scripts/generate-provider-docs.sh "$(TFPLUGINDOCS)"
+
+.PHONY: doc-commands
+doc-commands: ## Refuse a # comment in a Markdown shell block, which breaks when pasted into zsh
+	./scripts/check-doc-commands.sh
+
+.PHONY: doc-commands-test
+doc-commands-test: ## Prove doc-commands fails on each kind of comment and passes clean blocks
+	./scripts/tests/test-doc-commands.sh
+
+.PHONY: docs-check
+docs-check: $(TFPLUGINDOCS) ## Fail when generated provider documentation is stale
+	@$(MAKE) --no-print-directory docs; \
+	if ! git diff --quiet -- docs templates || \
+		[ -n "$$(git ls-files --others --exclude-standard -- docs templates)" ]; then \
+		echo "generated provider documentation is stale; run 'make docs' and commit docs/ and templates/"; \
+		git status --short -- docs templates; \
+		exit 1; \
+	fi
 
 .PHONY: mod
 mod: ## Download module dependencies that can actually be resolved
