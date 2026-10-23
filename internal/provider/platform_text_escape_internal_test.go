@@ -28,3 +28,16 @@ func TestPlatformTextReachesWarningsEscaped(t *testing.T) {
 		}
 	}
 }
+
+// The region list is platform text too, and the no-region error names its
+// ids.
+func TestTheNoRegionErrorEscapesTheRegionList(t *testing.T) {
+	api := &regionsAPI{regions: []map[string]any{region("r1\x1b]0;pwn\x07", true)}}
+	resp := planProject(t, regionsMeta(t, api, ""), nil, nil)
+	if !resp.Diagnostics.HasError() {
+		t.Fatal("a project with no region planned")
+	}
+	if d := resp.Diagnostics.Errors()[0].Detail(); !strings.Contains(d, "r1") || strings.ContainsAny(d, "\x1b\x07") {
+		t.Errorf("detail = %q", d)
+	}
+}

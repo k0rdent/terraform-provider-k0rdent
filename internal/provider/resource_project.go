@@ -230,8 +230,8 @@ func (r *projectResource) planRegion(ctx context.Context, req resource.ModifyPla
 	case !out.Write && creating:
 		// Local: decided from the configuration and the provider block.
 		resp.Diagnostics.AddAttributeError(at, "A project needs a region",
-			"A project is created in one region and locked to it, and neither this resource's `region` "+
-				"nor the provider's `region` is set. Set one of them. "+whereProjectsGo(ctx, r.meta))
+			redactDiagnosticText("A project is created in one region and locked to it, and neither this "+
+				"resource's `region` nor the provider's `region` is set. Set one of them. "+whereProjectsGo(ctx, r.meta)))
 		return
 	case !out.Write:
 		resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, at, state)...)
