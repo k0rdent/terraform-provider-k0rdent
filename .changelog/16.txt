@@ -25,3 +25,7 @@ resource/k0rdent_kubernetes_cluster: Fix a destroy saying it cancelled the clust
 ```release-note:bug
 action/k0rdent_cluster_cancel_operation: Fix the action saying it cancelled the operation when the operation finished or failed before the cancel took effect, or when the cluster was deleted or gone before it could be read. It now says what happened, with a warning when nothing was cancelled or the outcome can't be read
 ```
+
+```release-note:bug
+provider: Fix an update to a resource with `display_name = ""` or `description = ""` failing with "Provider produced inconsistent result after apply" when the platform's answer leaves the empty field out
+```

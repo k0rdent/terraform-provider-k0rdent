@@ -112,7 +112,9 @@ func (m tenantMetadata) patch(ctx context.Context, state tenantMetadata) (metada
 // as "" rather than leaving it out, and that is null to a configuration that
 // never set it. Tags are the same with {}, and the other way round as well: a
 // platform that answers an empty map by leaving it out has not contradicted a
-// configuration that wrote `tags = {}`.
+// configuration that wrote `tags = {}`. Strings are the same both ways too: a
+// PATCH that sends "" can come back with the field left out, and that hasn't
+// contradicted a configuration that wrote "".
 //
 // Tags are split first: tags_all is the whole answer, and tags is the part
 // the configuration wrote (tags.go says how that's decided).
@@ -140,8 +142,12 @@ func sameTags(a, b types.Map) bool {
 }
 
 func answeredString(p *string, prior types.String) types.String {
-	if p != nil && *p == "" && prior.IsNull() {
+	empty := p == nil || *p == ""
+	switch {
+	case empty && prior.IsNull():
 		return types.StringNull()
+	case empty && !prior.IsUnknown() && prior.ValueString() == "":
+		return prior
 	}
 	return stringOrNull(p)
 }
