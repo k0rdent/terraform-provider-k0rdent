@@ -81,6 +81,10 @@ type clusterModel struct {
 	StorageCeilingGiB   types.Int64    `tfsdk:"storage_ceiling_gib"`
 	SSHAccess           types.Set      `tfsdk:"ssh_access"`
 	Timeouts            timeouts.Value `tfsdk:"timeouts"`
+
+	// uid is the platform's uid for the cluster read, which own_object.go
+	// keeps in private state. Not an attribute.
+	uid string
 }
 
 func (m clusterModel) metadata() tenantMetadata {
@@ -555,7 +559,7 @@ func (r *clusterResource) Create(ctx context.Context, req resource.CreateRequest
 		},
 		timeoutID: timeoutMetadataID("clusterId"),
 	}
-	createFinish[clusterModel]{
+	created, found := createFinish[clusterModel]{
 		operation: "createCluster", target: target,
 		wait: func(ctx context.Context, id string) error {
 			return r.waitForSettled(ctx, target, id, "the cluster to finish creating")
@@ -566,6 +570,9 @@ func (r *clusterResource) Create(ctx context.Context, req resource.CreateRequest
 	}.run(ctx, create, req.Plan, &resp.State, &resp.Diagnostics)
 	if resp.Diagnostics.HasError() {
 		keepDestroySettings(ctx, plan, &resp.State, &resp.Diagnostics)
+	}
+	if found {
+		resp.Diagnostics.Append(recordUID(ctx, resp.Private, created.uid)...)
 	}
 	// Recorded whenever the cluster is in state, tainted included, since the
 	// create carried the users either way.
@@ -589,6 +596,9 @@ func (r *clusterResource) Read(ctx context.Context, req resource.ReadRequest, re
 	state, found, diags := r.read(ctx, target, prior.ID.ValueString(), prior)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
+		return
+	}
+	if found && !refreshedOwnObject(ctx, req.Private, resp, "cluster", prior.ID.ValueString(), state.uid) {
 		return
 	}
 	if found && prior.ClusterType.IsNull() {
@@ -1014,6 +1024,7 @@ func (r *clusterResource) read(ctx context.Context, target clusterTarget, id str
 	out.VPC = types.StringNull()
 	if got.JSON200.Uid != nil {
 		uid := got.JSON200.Uid.String()
+		out.uid = uid
 		out.VPC, d = ownedVPC(ctx, r.meta, target, k0rdent.ListVPCsParams{ClusterId: &uid})
 		diags.Append(d...)
 	}
