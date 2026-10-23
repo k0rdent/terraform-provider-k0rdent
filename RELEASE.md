@@ -10,11 +10,11 @@ The flow:
 2. Dispatch `release-dispatch.yml` from `main`.
 3. A job with no secrets checks the tag.
 4. A second maintainer approves the `release-signing` environment.
-5. The signing job builds, signs and checks the release, and uploads it as a
-   workflow artifact.
-6. You attach the files to a GitHub Release, where the Terraform and OpenTofu
-   registries read them. This step is by hand for now
-   (`.goreleaser.yaml` has `release: disable: true`).
+5. The signing job builds, signs and checks the release, and uploads it to a
+   draft GitHub Release.
+6. The same job checks the draft holds exactly the checked files, then
+   publishes it. The Terraform and OpenTofu registries read the published
+   release.
 
 The commands below use this shorthand for the repository's API path:
 
@@ -63,6 +63,27 @@ Set each one like this, reading the value from a file:
 gh secret set TERRAFORM_PROVIDER_GPG_PRIVATE_KEY --env release-signing < private-key.asc
 ```
 
+## Versions
+
+- **Spelling.** `vMAJOR.MINOR.PATCH` for a release. A release candidate adds
+  `-rc.N`: `v0.1.0-rc.1`, `v0.1.0-rc.2`, then `v0.1.0`. The dot makes `rc.10`
+  sort after `rc.9`.
+- **Candidates are opt-in.** Terraform and OpenTofu never choose a
+  prerelease for a constraint such as `~> 0.1`. Only an exact
+  `version = "0.1.0-rc.1"` installs one, so a candidate on the registry reaches
+  only the people testing it.
+- **Every version is permanent.** A published release can't be replaced, and
+  users' lock files and caches hold its checksums. If one is wrong, fix
+  forward with the next version.
+- **Only the newest final version is Latest.** GitHub marks a release Latest
+  by date unless told otherwise, and `/releases/latest` and the repository
+  page point people to it. The release job publishes a candidate, and a
+  patch to an older minor, with `make_latest=false`. The version's `-rc.N`,
+  not any GitHub setting, is what Terraform and OpenTofu read.
+- **A tag push starts nothing.** A release is built only when someone
+  dispatches the release workflow from `main` and a second maintainer
+  approves it.
+
 ## Release branches
 
 Release candidates and patches for a minor version come from its release
@@ -102,26 +123,37 @@ branch, `release-vMAJOR.MINOR.x`, so `main` can take new work meanwhile.
 
 `VERSION` is the version without the leading `v`, for example `0.1.0`.
 
-1. **Pick the version.** `vMAJOR.MINOR.PATCH`, or a prerelease such as
-   `v0.1.0-beta.1`. Build metadata (`+...`) is refused. A new major is
+1. **Pick the version.** `vMAJOR.MINOR.PATCH`, or a candidate such as
+   `v0.1.0-rc.1`. See [Versions](#versions). Build metadata (`+...`) is refused. A new major is
    refused until the dispatch sets `allow_major` (step 5).
 
-2. **Update `CHANGELOG.md` in a pull request.** Render the section from
-   `.changelog/`:
+2. **Update `CHANGELOG.md`, for a final version only.** A candidate doesn't
+   change it: skip to step 3. Every candidate for `0.1.0` ships the same
+   entries, and they all belong in the `0.1.0` section.
+
+   For the final version, render the section on the release branch, whose
+   `.changelog/` holds exactly what ships. `main` may already hold entries
+   for the next minor.
 
    ```sh
+   git switch --detach origin/release-v0.1.x
    make changelog VERSION="$VERSION" CHANGELOG_DATE=YYYY-MM-DD
    ```
 
-   - Put it under the preamble, above the previous release.
-   - Delete the `.changelog/<number>.txt` files it used, in the same pull
-     request. Keep `.changelog/README.md`.
+   Then, like any fix, `main` first:
+
+   - Open a pull request to `main` that adds that section under the preamble,
+     above the previous release, and deletes the `.changelog/<number>.txt`
+     files it used. Keep `.changelog/README.md`, and keep any entry the
+     release branch doesn't have.
+   - Backport it to the release branch with `git cherry-pick -x`, so both
+     branches carry the same section and neither renders those entries again.
    - A new major also needs a migration in `docs/public-compatibility.md` for
      each BREAKING CHANGES line.
-   - First release only: rename the hand-written `## [Unreleased]` section to
-     `## [VERSION] - YYYY-MM-DD, recorded before .changelog/` and keep its
-     text. The first beta replaces the
-     `[0.1.0-beta] - planned, not published` placeholder.
+   - First final release only: rename the hand-written `## [Unreleased]`
+     section to `## [VERSION] - YYYY-MM-DD, recorded before .changelog/` and
+     keep its text. It replaces the `[0.1.0] - planned, not published`
+     placeholder, which candidates leave in place.
    - A dated heading makes `TestNoReleaseIsRecordedInTheChangelog` fail on
      purpose. Rewrite `docs/distribution.md`, which says nothing is published,
      in the same pull request.
@@ -135,8 +167,10 @@ branch, `release-vMAJOR.MINOR.x`, so `main` can take new work meanwhile.
 
    `release-validate` builds an unsigned snapshot and checks its files.
 
-4. **Tag the merged commit and push the tag.** Use the release branch for a
-   candidate or a patch, or `main`. `-s` signs the tag.
+4. **Tag the merged commit and push the tag.** `-s` signs the tag. `BRANCH`
+   is the release branch for a candidate, the final version and its patches.
+   It's `main` only for a version released straight from `main`, with no
+   release branch.
 
    ```sh
    BRANCH=release-v0.1.x
@@ -165,13 +199,14 @@ branch, `release-vMAJOR.MINOR.x`, so `main` can take new work meanwhile.
    artifacts" waits for approval. A required reviewer who didn't dispatch the
    run approves it under "Review deployments".
 
-7. **Download the artifact** straight away, since workflow artifacts expire:
+7. **Download the published release:**
 
    ```sh
-   gh run download <run-id> -n "terraform-provider-k0rdent-v$VERSION" -D "release-v$VERSION"
+   gh release download "v$VERSION" -D "release-v$VERSION"
    ```
 
-   It holds:
+   The job publishes it only after checking the draft holds exactly the files
+   it built and validated. It holds:
 
    - five archives: `terraform-provider-k0rdent_VERSION_{darwin,linux}_{amd64,arm64}.zip`
      and `..._windows_amd64.zip`
@@ -196,9 +231,9 @@ branch, `release-vMAJOR.MINOR.x`, so `main` can take new work meanwhile.
    EXPECTED_VERSION="$VERSION" GPG_KEY_FINGERPRINT=<fingerprint> ./scripts/validate-release-artifacts.sh "release-v$VERSION"
    ```
 
-9. **Publish.** Attach exactly these files to a GitHub Release for the tag.
-   Never replace a published file. Then check `terraform init` and `tofu init`
-   install it on a clean machine. See [docs/distribution.md](docs/distribution.md)
+9. **Check it installs.** Never replace a published file. Check
+   `terraform init` and `tofu init` install it on a clean machine, a candidate
+   with an exact `version`. See [docs/distribution.md](docs/distribution.md)
    and [docs/install.md](docs/install.md).
 
 The release is built with the Go version in `.go-release-version`. To change

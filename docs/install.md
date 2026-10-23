@@ -24,6 +24,15 @@ Then run `terraform init`, or `tofu init`.
 - No registry account or token is needed.
 - `init` checks each download against the release's signed checksums and
   records them in `.terraform.lock.hcl`. Commit that file.
+- `~> 0.1` never installs a release candidate such as `0.1.0-rc.1`. To try
+  one, set `version = "0.1.0-rc.1"` exactly.
+- The registry only says where each version is. The files themselves download
+  from the provider's GitHub Releases, so a GitHub outage stops a fresh
+  `init`. A directory that already ran `init` keeps working. If that would
+  hurt, for example in CI, install from a mirror: `terraform providers mirror`
+  into a directory or bucket you serve as a `filesystem_mirror` or
+  `network_mirror`, as in [Air-gapped sites](#air-gapped-sites), or a registry
+  proxy such as Artifactory. The signatures still check out from a mirror.
 
 ## Air-gapped sites
 

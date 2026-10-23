@@ -50,7 +50,7 @@ func TestNoReleaseIsRecordedInTheChangelog(t *testing.T) {
 const unreleasedChangelog = "# Changelog\n\n## [Unreleased]\n\n### Added\n\n- something\n"
 
 func TestNoReleaseRecordedPassesWhileNothingIsDated(t *testing.T) {
-	if err := noReleaseRecorded([]byte(unreleasedChangelog + "\n## [0.1.0-beta] - planned, not published\n")); err != nil {
+	if err := noReleaseRecorded([]byte(unreleasedChangelog + "\n## [0.1.0] - planned, not published\n")); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -62,7 +62,7 @@ func TestNoReleaseRecordedSeesAReleaseInEitherFormat(t *testing.T) {
 	for _, heading := range []string{
 		"## [0.1.0] - 2026-10-20",
 		"## 0.1.0 (October 20, 2026)",
-		"## 0.1.0-beta.1 (October 20, 2026)",
+		"## 0.1.0-rc.1 (October 20, 2026)",
 	} {
 		body := "# Changelog\n\n" + heading + "\n\nNOTES:\n\n" + unreleasedChangelog[len("# Changelog\n\n"):]
 		if err := noReleaseRecorded([]byte(body)); err == nil {
