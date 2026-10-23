@@ -424,7 +424,10 @@ func (r *webhookSubscriptionResource) Update(ctx context.Context, req resource.U
 		rotated, err := r.meta.Client.RotateWebhookSubscriptionSecretWithResponse(ctx, subscription,
 			k0rdent.RotateWebhookSubscriptionSecretJSONRequestBody{Secret: optionalString(secret), Overlap: &overlap})
 		r.meta.webhookList.forget()
-		if err != nil {
+		// A body that doesn't decode comes back with its error, and a 2xx is
+		// still a rotation. Only a rotation with no answer at all is a
+		// transport failure.
+		if rotated == nil {
 			addAPIErrorHiding(&resp.Diagnostics, secret.ValueString(), "rotate the webhook subscription's secret", nil, nil, err)
 			return
 		}
