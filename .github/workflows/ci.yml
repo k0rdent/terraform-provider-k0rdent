@@ -14,10 +14,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # Raised from 1.24 by lane 1c, and not a preference: golang.org/x/net
-  # v0.60.0 declares `go 1.26.0`, and Go will not build a module against a
-  # dependency that requires a newer language version than the main module
-  # declares.
+  # The minimum go.mod declares, and not a preference: 1.26.10 is the first
+  # 1.26 with the crypto/x509 fix, and golang.org/x/net v0.60.0 needs 1.26.
   GO_VERSION: "1.26.10"
 
 jobs:

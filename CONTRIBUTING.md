@@ -29,7 +29,7 @@ attribute you'd add. If the k0rdent API can't do it yet, say so.
 
 ## For maintainers
 
-You need Go 1.26 or later and Terraform or OpenTofu. See
+You need Go 1.26.10 or later and Terraform or OpenTofu. See
 [TESTING.md](TESTING.md) and [RELEASE.md](RELEASE.md).
 
 ```sh

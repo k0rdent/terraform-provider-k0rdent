@@ -1,0 +1,3 @@
+```release-note:note
+provider: Building from source now needs Go 1.26.10 or later, the first 1.26 with the crypto/x509 certificate validation fix. Released binaries are unaffected
+```

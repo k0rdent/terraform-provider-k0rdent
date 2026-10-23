@@ -43,35 +43,28 @@ os_kind() {
 
 OS="$(os_kind)"
 
-# Compare dotted versions on major.minor only. Strips a leading "v" or "go".
-# Returns 0 when $1 >= $2.
+# Compare dotted versions on major.minor.patch. A missing part counts as 0.
+# Strips a leading "v" or "go". Returns 0 when $1 >= $2.
 semver_ge() {
   local left="${1#v}"
   local right="${2#v}"
   left="${left#go}"
   right="${right#go}"
-  local lmaj lmin rmaj rmin
-  lmaj="${left%%.*}"
-  if [ "$left" = "$lmaj" ]; then
-    lmin=0
-  else
-    lmin="${left#*.}"
-    lmin="${lmin%%.*}"
-  fi
-  rmaj="${right%%.*}"
-  if [ "$right" = "$rmaj" ]; then
-    rmin=0
-  else
-    rmin="${right#*.}"
-    rmin="${rmin%%.*}"
-  fi
-  lmaj="${lmaj:-0}"
-  lmin="${lmin:-0}"
-  rmaj="${rmaj:-0}"
-  rmin="${rmin:-0}"
-  [ "$lmaj" -gt "$rmaj" ] 2>/dev/null && return 0
-  [ "$lmaj" -eq "$rmaj" ] 2>/dev/null && [ "$lmin" -ge "$rmin" ] 2>/dev/null && return 0
-  return 1
+  local l r i
+  local -a lp rp
+  IFS=. read -r -a lp <<< "$left"
+  IFS=. read -r -a rp <<< "$right"
+  for i in 0 1 2; do
+    l="${lp[$i]:-0}"
+    r="${rp[$i]:-0}"
+    l="${l%%[!0-9]*}"
+    r="${r%%[!0-9]*}"
+    l="${l:-0}"
+    r="${r:-0}"
+    [ "$l" -gt "$r" ] 2>/dev/null && return 0
+    [ "$l" -lt "$r" ] 2>/dev/null && return 1
+  done
+  return 0
 }
 
 hint_make() {
@@ -85,8 +78,8 @@ hint_make() {
 hint_go() {
   case "$OS" in
     darwin) note "install: brew install go" ;;
-    linux) note "install: https://go.dev/doc/install  (need ${GO_MIN_MAJOR}.${GO_MIN_MINOR}+; apt's golang-go is often too old)" ;;
-    *) note "install Go ${GO_MIN_MAJOR}.${GO_MIN_MINOR}+ from https://go.dev/doc/install" ;;
+    linux) note "install: https://go.dev/doc/install  (need ${GO_MIN}+; apt's golang-go is often too old)" ;;
+    *) note "install Go ${GO_MIN}+ from https://go.dev/doc/install" ;;
   esac
 }
 
@@ -195,25 +188,19 @@ else
   tier1_missing=$((tier1_missing + 1))
 fi
 
-# Go, with a version floor. go.mod declares `go 1.26.0`, the floor
-# golang.org/x/net v0.60.0 sets, and Go refuses
-# to build against a dependency requiring a newer language version than the main
-# module declares, so a lower toolchain fails outright rather than degrading.
+# Go, with a version floor: the full version go.mod declares. 1.26.10 is the
+# first 1.26 with the crypto/x509 fix, and golang.org/x/net v0.60.0 needs at
+# least 1.26.0. Go refuses to build a module that declares a newer version than
+# the toolchain, so a lower one fails outright rather than degrading.
 MODULE_GO="$(awk '/^go / {print $2; exit}' go.mod 2>/dev/null || true)"
-GO_MIN_MAJOR=1
-GO_MIN_MINOR=26
-if [ -n "$MODULE_GO" ]; then
-  GO_MIN_MAJOR="${MODULE_GO%%.*}"
-  GO_MIN_MINOR="${MODULE_GO#*.}"
-  GO_MIN_MINOR="${GO_MIN_MINOR%%.*}"
-fi
+GO_MIN="${MODULE_GO:-1.26.10}"
 if command -v go >/dev/null 2>&1; then
   go_ver="$(go env GOVERSION 2>/dev/null | sed 's/^go//')"
-  if semver_ge "${go_ver:-0}" "${GO_MIN_MAJOR}.${GO_MIN_MINOR}"; then
+  if semver_ge "${go_ver:-0}" "$GO_MIN"; then
     good "go $go_ver"
   else
-    bad "go $go_ver is too old; need $GO_MIN_MAJOR.$GO_MIN_MINOR or newer"
-    note "go.mod declares go ${MODULE_GO:-1.26.0}, and a lower toolchain cannot build it"
+    bad "go $go_ver is too old; need $GO_MIN or newer"
+    note "go.mod declares go $GO_MIN, and a lower toolchain cannot build it"
     hint_go
     tier1_missing=$((tier1_missing + 1))
   fi
@@ -253,8 +240,8 @@ if command -v golangci-lint >/dev/null 2>&1; then
     bad "golangci-lint $lint_ver is too old; need v2 (this repo's .golangci.yml is version 2)"
     hint_golangci
     tier1_missing=$((tier1_missing + 1))
-  elif [ -n "$lint_go" ] && ! semver_ge "$lint_go" "${GO_MIN_MAJOR}.${GO_MIN_MINOR}"; then
-    bad "golangci-lint $lint_ver was built with go$lint_go; need go${GO_MIN_MAJOR}.${GO_MIN_MINOR}+ to lint this module"
+  elif [ -n "$lint_go" ] && ! semver_ge "$lint_go" "$GO_MIN"; then
+    bad "golangci-lint $lint_ver was built with go$lint_go; need go${GO_MIN}+ to lint this module"
     note "make check fails: the Go language version used to build golangci-lint is lower than the targeted Go version"
     hint_golangci
     tier1_missing=$((tier1_missing + 1))

@@ -3,7 +3,7 @@
 Until the provider is published, build it once and tell Terraform where the
 build is. For released versions, see [installing the provider](install.md).
 
-You need Go 1.26 or newer and `git`.
+You need Go 1.26.10 or newer and `git`.
 
 ## Build it
 

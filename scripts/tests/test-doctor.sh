@@ -59,16 +59,26 @@ if grep -q 'Tier 1 is ready' "$tmp/oldgo.out"; then
   fail "doctor reported Tier 1 ready with golangci-lint built on go1.25"
 fi
 
-# --- v2 built with Go 1.26 must pass the linter check -----------------------
+# --- v2 built with the go.mod Go must pass the linter check -----------------
 mkdir -p "$tmp/ok"
 write_lint "$tmp/ok/golangci-lint" \
-  "golangci-lint has version 2.13.2 built with go1.26.0 from abc on 2025-01-01"
+  "golangci-lint has version 2.13.2 built with go1.26.10 from abc on 2025-01-01"
 run_doctor "$tmp/ok" "$tmp/ok.out"
-grep -qE 'ok +golangci-lint 2.13.2 \(built with go1.26.0\)' "$tmp/ok.out" \
+grep -qE 'ok +golangci-lint 2.13.2 \(built with go1.26.10\)' "$tmp/ok.out" \
   || fail "compatible v2 was not accepted; output:"$'\n'"$(cat "$tmp/ok.out")"
 if grep -qE 'MISS +golangci-lint' "$tmp/ok.out"; then
   fail "compatible v2 was marked MISS"
 fi
+
+# --- An older patch of the go.mod minor is too old ---------------------------
+# go.mod declares a patch release, so the floor compares the patch too: 1.26.9
+# sorts below 1.26.10, which a major.minor compare would have let through.
+mkdir -p "$tmp/oldpatch"
+write_lint "$tmp/oldpatch/golangci-lint" \
+  "golangci-lint has version 2.13.2 built with go1.26.9 from abc on 2025-01-01"
+run_doctor "$tmp/oldpatch" "$tmp/oldpatch.out"
+grep -q 'was built with go1.26.9; need go1.26.10+' "$tmp/oldpatch.out" \
+  || fail "a linter built with go1.26.9 was not rejected; output:"$'\n'"$(cat "$tmp/oldpatch.out")"
 
 # --- Makefile pins GOTOOLCHAIN to go.mod ------------------------------------
 grep -q 'GOTOOLCHAIN=\$(GOLANGCI_LINT_GOTOOLCHAIN)' Makefile \

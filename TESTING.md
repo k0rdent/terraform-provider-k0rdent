@@ -10,7 +10,7 @@ How to run each test, and what a pass does and doesn't prove. Run every
 
 ## Set up
 
-You need make, Go 1.26 or later, Python 3, and Terraform or OpenTofu. On
+You need make, Go 1.26.10 or later, Python 3, and Terraform or OpenTofu. On
 macOS:
 
 ```sh
