@@ -88,7 +88,9 @@ the secrets, checks the signature against `signing-key.asc`, and fails if:
 The nightly reads `signing-key.asc` with no secret. It warns once the signing
 subkey is a year old or the parent five, which is when they rotate. It fails
 when either has under 90 days left, which turns the nightly red. Run it with
-`make signing-key-check`.
+`make signing-key-check`. While either is due, the nightly keeps one
+`signing-key-rotation` issue open with the dates and where the how-to is, and
+closes it once nothing is due.
 
 To rotate: add a new signing subkey, put it in
 `TERRAFORM_PROVIDER_GPG_PRIVATE_KEY`, commit the new public key here, upload

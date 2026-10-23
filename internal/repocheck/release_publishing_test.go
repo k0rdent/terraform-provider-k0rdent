@@ -22,15 +22,17 @@ var (
 // download from, behind the same checks as the signing. goreleaser makes a
 // draft, and the signing job publishes it only after validating the
 // artifacts and checking the draft holds them. That job is the only one in
-// any workflow that can write, apart from the nightly's report job, which
-// writes issues only.
+// any workflow that can write, apart from two nightly jobs that write issues
+// only: report, and signing-key-reminder.
 func validateReleasePublishing(workflows map[string]string, goreleaser string) error {
 	const (
-		dispatcher       = "release-dispatch.yml"
-		signingJob       = "build-signed-artifacts"
-		nightly          = "nightly.yml"
-		nightlyReportJob = "report"
+		dispatcher = "release-dispatch.yml"
+		signingJob = "build-signed-artifacts"
+		nightly    = "nightly.yml"
 	)
+	// The nightly jobs that keep one issue open: report while the nightly
+	// fails, signing-key-reminder while the signing key is due to rotate.
+	nightlyIssueJobs := []string{"report", "signing-key-reminder"}
 
 	release, ok := yamlBlock(goreleaser, "release")
 	if !ok {
@@ -56,14 +58,14 @@ func validateReleasePublishing(workflows map[string]string, goreleaser string) e
 				outside = strings.Replace(workflow, job, "", 1)
 			}
 		}
-		// The nightly's report job keeps one issue open while the nightly
-		// fails. It writes issues and nothing else, so it can't touch a
-		// release.
+		// Each writes issues and nothing else, so it can't touch a release.
 		if name == nightly {
-			if job, found := workflowJobBlock(workflow, nightlyReportJob); found {
-				grants := writePermission.FindAllString(job, -1)
-				if len(grants) == 1 && strings.TrimSpace(grants[0]) == "issues: write" {
-					outside = strings.Replace(outside, job, "", 1)
+			for _, issueJob := range nightlyIssueJobs {
+				if job, found := workflowJobBlock(workflow, issueJob); found {
+					grants := writePermission.FindAllString(job, -1)
+					if len(grants) == 1 && strings.TrimSpace(grants[0]) == "issues: write" {
+						outside = strings.Replace(outside, job, "", 1)
+					}
 				}
 			}
 		}
@@ -157,7 +159,11 @@ func TestReleasePublishingRejectsRegressions(t *testing.T) {
 		{"write token on another job", replace("ci.yml", "  build:\n    name: build\n", "  build:\n    name: build\n    permissions:\n      contents: write\n"), `grants "contents: write" outside`},
 		{"issues token on another job", replace("ci.yml", "  build:\n    name: build\n", "  build:\n    name: build\n    permissions:\n      issues: write\n"), `grants "issues: write" outside`},
 		{"inline write token on another job", replace("ci.yml", "  build:\n    name: build\n", "  build:\n    name: build\n    permissions: {contents: write}\n"), "grants write inline"},
-		{"contents token on the nightly report", replace("nightly.yml", "      issues: write\n", "      issues: write\n      contents: write\n"), `grants "issues: write" outside`},
+		{"contents token on the nightly report", replace("nightly.yml", "    permissions:\n      actions: read\n      issues: write\n", "    permissions:\n      actions: read\n      issues: write\n      contents: write\n"), `grants "issues: write" outside`},
+		{"contents token on the rotation reminder", replace("nightly.yml", "    permissions:\n      issues: write\n    steps:\n      - uses: actions/checkout", "    permissions:\n      issues: write\n      contents: write\n    steps:\n      - uses: actions/checkout"), `grants "issues: write" outside`},
+		{"pull-requests token on the rotation reminder", replace("nightly.yml", "    permissions:\n      issues: write\n    steps:\n      - uses: actions/checkout", "    permissions:\n      issues: write\n      pull-requests: write\n    steps:\n      - uses: actions/checkout"), `grants "issues: write" outside`},
+		{"issues token on the signing key check", replace("nightly.yml", "    name: signing key dates\n    runs-on: ubuntu-latest\n", "    name: signing key dates\n    runs-on: ubuntu-latest\n    permissions:\n      issues: write\n"), `grants "issues: write" outside`},
+		{"issues token on a renamed reminder", replace("nightly.yml", "  signing-key-reminder:\n", "  signing-key-reminders:\n"), `grants "issues: write" outside`},
 		{"pull_request_target", replace("changelog.yml", "  pull_request:\n", "  pull_request_target:\n"), "pull_request_target"},
 		{"never published", replace("release-dispatch.yml", "-F draft=false", "-F draft=true"), "never publishes"},
 		{"published before validation", replace("release-dispatch.yml", "- name: Validate release artifact layout", "- name: Validate later"), "before validating"},

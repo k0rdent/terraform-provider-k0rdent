@@ -130,6 +130,90 @@ public_of ecc >"$work/ecc.asc"
 "$check" public "$work/ecc.asc" >"$work/out" 2>&1 && { cat "$work/out" >&2; fail "an ECC key passed"; }
 grep -Fq "Unsupported signing key algorithm" "$work/out" || fail "an ECC key didn't say why"
 
+# What's due reaches the reminder: one line per key past its rotation date,
+# none for a fresh key, and the near-expiry failure still writes its line.
+: >"$work/due"
+SIGNING_KEY_DUE_FILE="$work/due" "$check" public "$work/good.asc" >"$work/out" 2>&1 || fail "a fresh key failed"
+[ ! -s "$work/due" ] || { cat "$work/due" >&2; fail "a fresh key was reported due"; }
+SIGNING_KEY_DUE_FILE="$work/due" SIGNING_KEY_NOW=$((created + 400 * day)) "$check" public "$work/good.asc" >"$work/out" 2>&1 ||
+  fail "a key past its rotation date failed"
+grep -q "^signing subkey	$(awk -F: '$1=="fpr"{f=$10} END{print f}' <(gpg --batch --with-colons --show-keys "$work/good.asc" 2>/dev/null))	" "$work/due" ||
+  { cat "$work/due" >&2; fail "a rotation-due subkey wasn't written to the due file"; }
+: >"$work/due"
+SIGNING_KEY_DUE_FILE="$work/due" SIGNING_KEY_NOW=$((created + 700 * day)) "$check" public "$work/good.asc" >"$work/out" 2>&1 &&
+  fail "a subkey near expiry passed"
+grep -q '^signing subkey	' "$work/due" || fail "a subkey near expiry wasn't written to the due file"
+
+# The reminder, against a stub gh that keeps one issue's state in files.
+stub="$work/stub"
+mkdir -p "$stub"
+cat >"$stub/gh" <<'STUB'
+#!/usr/bin/env bash
+state="$GH_STATE"
+echo "$*" >>"$state/calls"
+case "$1 $2" in
+  "issue list") [ -f "$state/open" ] && cat "$state/open"; exit 0 ;;
+  "issue view") cat "$state/title"; exit 0 ;;
+  "label create") exit 0 ;;
+esac
+args=("$@")
+for ((i = 0; i < ${#args[@]}; i++)); do
+  case "${args[$i]}" in
+    --title) printf '%s' "${args[$((i + 1))]}" >"$state/title" ;;
+    --body) printf '%s' "${args[$((i + 1))]}" >"$state/body" ;;
+  esac
+done
+case "$1 $2" in
+  "issue create") echo 7 >"$state/open" ;;
+  "issue close") rm -f "$state/open" ;;
+esac
+STUB
+chmod +x "$stub/gh"
+remind() {
+  GH_STATE="$work/gh" PATH="$stub:$PATH" RESULT="$1" RUN_URL=https://example.invalid/run \
+    "$PWD/scripts/signing-key-reminder.sh" "$2" >"$work/out" 2>&1 || { cat "$work/out" >&2; fail "the reminder failed"; }
+}
+calls() { grep -c "^issue $1" "$work/gh/calls" || true; }
+rm -rf "$work/gh" && mkdir -p "$work/gh"
+printf 'signing subkey\tABCD\t2027-10-23\t2028-10-22\n' >"$work/due1"
+
+# Due, nothing open: one issue, titled with the date, saying where the how-to is.
+remind failure "$work/due1"
+[ "$(calls create)" = 1 ] || fail "a due key didn't open an issue"
+grep -Fxq "Rotate the release signing subkey (due 2027-10-23)" "$work/gh/title" || { cat "$work/gh/title" >&2; fail "wrong issue title"; }
+for needle in ABCD "rotate by 2027-10-23" "expires 2028-10-22" '"k0rdent - Terraform" 1Password vault' "how to use it"; do
+  grep -Fq "$needle" "$work/gh/body" || { cat "$work/gh/body" >&2; fail "the issue body doesn't say $needle"; }
+done
+grep -Eq '@[A-Za-z0-9]' "$work/gh/body" && fail "the issue body mentions someone"
+
+# Due again the next night: the same issue, edited, with no comment and no
+# second issue.
+remind success "$work/due1"
+[ "$(calls create)" = 1 ] || fail "a second night opened a duplicate issue"
+[ "$(calls edit)" = 1 ] || fail "a second night didn't update the open issue"
+[ "$(calls comment)" = 0 ] || fail "an unchanged reminder commented"
+
+# The parent comes due too: the title changes, and that comments once.
+printf 'parent\tEF01\t2031-10-23\t2036-10-20\nsigning subkey\tABCD\t2027-10-23\t2028-10-22\n' >"$work/due2"
+remind success "$work/due2"
+grep -Fxq "Rotate the release signing parent and subkey (due 2027-10-23)" "$work/gh/title" || { cat "$work/gh/title" >&2; fail "wrong title for two keys"; }
+[ "$(calls comment)" = 1 ] || fail "a changed reminder didn't comment"
+[ "$(calls create)" = 1 ] || fail "a changed reminder opened a duplicate"
+
+# A check that broke without naming anything due leaves the issue alone.
+: >"$work/none"
+remind failure "$work/none"
+[ "$(calls close)" = 0 ] || fail "a failed check closed the reminder"
+
+# Rotated: a clean check closes it.
+remind success "$work/none"
+[ "$(calls close)" = 1 ] || fail "a clean check didn't close the reminder"
+[ ! -f "$work/gh/open" ] || fail "the reminder is still open"
+
+# Clean with nothing open: nothing happens.
+remind success "$work/none"
+[ "$(calls close)" = 1 ] || fail "a clean check with nothing open closed something"
+
 # The committed key itself.
 "$check" public docs/signing-key.asc >"$work/out" 2>&1 ||
   { cat "$work/out" >&2; fail "docs/signing-key.asc doesn't pass"; }

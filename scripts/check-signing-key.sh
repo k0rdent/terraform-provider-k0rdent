@@ -29,6 +29,9 @@
 # Rotation is at 1 year for a subkey and 5 years for the parent, well before
 # their 2 and 10 year expiries, so there's room for things to go wrong.
 # SIGNING_KEY_NOW, in seconds since the epoch, stands in for the clock in tests.
+# With SIGNING_KEY_DUE_FILE set, each key that's due to rotate is appended to
+# that file as one tab-separated line: which key, its fingerprint, its
+# rotation date and its expiry date. scripts/signing-key-reminder.sh reads it.
 set -euo pipefail
 
 day=86400
@@ -177,6 +180,11 @@ check_dates() {
   fi
   if [ "$now" -ge "$rotate_at" ]; then
     warning "Signing key due to rotate" "The $what $fpr was due to rotate on $(on "$rotate_at"). See docs/release-signing.md."
+    if [ -n "${SIGNING_KEY_DUE_FILE:-}" ]; then
+      local expiry=never
+      [ "$expires" = never ] || expiry="$(on "$expires")"
+      printf '%s\t%s\t%s\t%s\n' "$what" "$fpr" "$(on "$rotate_at")" "$expiry" >>"$SIGNING_KEY_DUE_FILE"
+    fi
   fi
 }
 

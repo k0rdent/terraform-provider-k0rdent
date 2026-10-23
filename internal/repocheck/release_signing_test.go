@@ -687,3 +687,72 @@ func releaseSigningTestWorkflows(t *testing.T) map[string]string {
 	}
 	return workflows
 }
+
+// validateRotationReminder keeps the nightly's rotation reminder wired: the
+// signing-key job hands what's due to signing-key-reminder even when it
+// fails, and the reminder runs on main, after it, with the job's result.
+func validateRotationReminder(workflows map[string]string) error {
+	const nightly = "nightly.yml"
+	dates, ok := workflowJobBlock(workflows[nightly], "signing-key")
+	if !ok {
+		return fmt.Errorf("%s has no signing-key job", nightly)
+	}
+	for _, text := range []string{
+		`SIGNING_KEY_DUE_FILE="$RUNNER_TEMP/due" make signing-key-check || status=$?`,
+		`due: ${{ steps.dates.outputs.due }}`,
+		`exit "$status"`,
+	} {
+		if !strings.Contains(dates, text) {
+			return fmt.Errorf("signing-key doesn't hand what's due to the reminder: missing %s", text)
+		}
+	}
+	reminder, ok := workflowJobBlock(workflows[nightly], "signing-key-reminder")
+	if !ok {
+		return fmt.Errorf("%s has no signing-key-reminder job", nightly)
+	}
+	for _, check := range []struct{ text, what string }{
+		{"needs: signing-key", "wait for the signing key check"},
+		{"if: ${{ always() && github.ref == 'refs/heads/main' }}", "run after a failed check, on main only"},
+		{"DUE: ${{ needs.signing-key.outputs.due }}", "read what's due"},
+		{"RESULT: ${{ needs.signing-key.result }}", "read the check's result"},
+		{"./scripts/signing-key-reminder.sh", "run scripts/signing-key-reminder.sh"},
+	} {
+		if !strings.Contains(reminder, check.text) {
+			return fmt.Errorf("signing-key-reminder doesn't %s", check.what)
+		}
+	}
+	return nil
+}
+
+func TestRotationReminderAcceptsCurrentNightly(t *testing.T) {
+	if err := validateRotationReminder(releaseSigningTestWorkflows(t)); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRotationReminderRejectsRegressions(t *testing.T) {
+	tests := []struct{ name, old, new, want string }{
+		{"due not written", `SIGNING_KEY_DUE_FILE="$RUNNER_TEMP/due" make signing-key-check`, "make signing-key-check", "missing SIGNING_KEY_DUE_FILE"},
+		{"due not an output", "due: ${{ steps.dates.outputs.due }}", "due: ''", "missing due:"},
+		{"near expiry passes", `exit "$status"`, "exit 0", `missing exit "$status"`},
+		{"reminder skipped after a failed check", "if: ${{ always() && github.ref == 'refs/heads/main' }}\n    runs-on: ubuntu-latest\n    permissions:\n      issues: write", "if: ${{ github.ref == 'refs/heads/main' }}\n    runs-on: ubuntu-latest\n    permissions:\n      issues: write", "run after a failed check"},
+		{"reminder doesn't read the due keys", "DUE: ${{ needs.signing-key.outputs.due }}", "DUE: ''", "read what's due"},
+		{"reminder doesn't read the result", "RESULT: ${{ needs.signing-key.result }}", "RESULT: success", "read the check's result"},
+		{"reminder runs nothing", "./scripts/signing-key-reminder.sh", "true", "run scripts/signing-key-reminder.sh"},
+		{"reminder gone", "  signing-key-reminder:\n", "  other:\n", "no signing-key-reminder job"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			workflows := releaseSigningTestWorkflows(t)
+			mutated := strings.Replace(workflows["nightly.yml"], tt.old, tt.new, 1)
+			if mutated == workflows["nightly.yml"] {
+				t.Fatal("the mutation matched nothing, so it tests nothing")
+			}
+			workflows["nightly.yml"] = mutated
+			err := validateRotationReminder(workflows)
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("validateRotationReminder() error = %v, want %q", err, tt.want)
+			}
+		})
+	}
+}
