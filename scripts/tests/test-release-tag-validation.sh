@@ -108,6 +108,10 @@ pr_merge() {
 validate() {
   rm -rf "$work/clone"
   git clone -q "$work/origin" "$work/clone"
+  # The workflow's checkout keeps no credentials, so the step must work from
+  # what the checkout fetched. An origin that can't be reached makes any fetch
+  # in the script fail the case.
+  git -C "$work/clone" remote set-url origin "$work/no-such-origin"
   mkdir -p "$work/clone/scripts"
   cp "$repo/scripts/check-major-release.sh" "$work/clone/scripts/"
   (cd "$work/clone" && PATH="$work/bin:$PATH" STUB="$work/stub" GITHUB_REF=refs/heads/main \
@@ -123,6 +127,7 @@ reset() { rm -f "$work/stub/"*; echo "$full_rules" > "$work/stub/rules.json"; pr
 
 reset
 accepted v0.1.0 "a tag on main"
+refused v0.9.9 "a tag that was never pushed" "isn't a tag in this repository"
 accepted v0.1.1 "a pull request's merge on a protected release branch"
 refused v0.1.2 "a commit pushed straight to the release branch" "is not the merge of a pull request"
 refused v0.2.0 "a v0.2 tag on release-v0.1.x" "neither origin/main nor origin/release-v0.2.x"

@@ -32,13 +32,14 @@ jobs:
       tag: ${{ steps.validate.outputs.tag }}
       tag_commit: ${{ steps.validate.outputs.tag_commit }}
     steps:
-      # The one checkout that keeps its token: the step below fetches main, a
-      # release branch and the tag from this repository, which needs it. This job holds
-      # no other secret. scripts/check-workflow-actions.sh lists the exception.
+      # fetch-depth: 0 fetches every branch into refs/remotes/origin and every
+      # tag, so the step below reads main, the release branch and the tag from
+      # here and fetches nothing. The token doesn't have to stay in .git/config.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           ref: main
           fetch-depth: 0
+          persist-credentials: false
       - id: validate
         name: Validate SemVer tag and protected-branch ancestry
         shell: bash
@@ -64,9 +65,10 @@ jobs:
             exit 1
           fi
 
-          git fetch --no-tags origin main
-          git fetch --force --no-tags origin "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"
-          tag_commit="$(git rev-parse "refs/tags/${RELEASE_TAG}^{}")"
+          if ! tag_commit="$(git rev-parse --verify --quiet "refs/tags/${RELEASE_TAG}^{commit}")"; then
+            echo "::error title=Release tag not found::$RELEASE_TAG isn't a tag in this repository. Push the tag before dispatching."
+            exit 1
+          fi
           # A tag is built from main's own history, or from its own minor's
           # release branch: v0.1.0-rc.2 and v0.1.1 from release-v0.1.x.
           # Reachable isn't reviewed. Both branches take merge commits, so every
@@ -88,7 +90,7 @@ jobs:
           if ! on_own_history "$tag_commit" origin/main; then
             [[ "$RELEASE_TAG" =~ ^v([0-9]+)\.([0-9]+)\. ]]
             release_branch="release-v${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.x"
-            if ! git fetch --no-tags origin "refs/heads/$release_branch:refs/remotes/origin/$release_branch" ||
+            if ! git rev-parse --verify --quiet "refs/remotes/origin/$release_branch" >/dev/null ||
               ! on_own_history "$tag_commit" "origin/$release_branch"; then
               echo "::error title=Release tag is not a commit of a release branch::$RELEASE_TAG resolves to $tag_commit, which is on the own history of neither origin/main nor origin/$release_branch. Tag a commit made on one of them, such as a pull request's merge."
               exit 1
