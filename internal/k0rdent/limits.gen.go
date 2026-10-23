@@ -100,26 +100,59 @@ const (
 	ClusterNodePoolIdMaxLength = 63
 )
 
+// ClusterNodePool.instanceRefs[].id
+const (
+	ClusterNodePoolInstanceRefsItemIdPattern = `^inst-[0-9a-f]{32}$`
+)
+
 // ClusterNodePool.nodeCount
 const (
 	ClusterNodePoolNodeCountMinimum = 0
 )
 
+// ClusterNodePoolProgress.nodesReady
+const (
+	ClusterNodePoolProgressNodesReadyMinimum = 0
+)
+
+// ClusterNodePoolProgress.servers.acquiring
+const (
+	ClusterNodePoolProgressServersAcquiringMinimum = 0
+)
+
+// ClusterNodePoolProgress.servers.deprovisioning
+const (
+	ClusterNodePoolProgressServersDeprovisioningMinimum = 0
+)
+
+// ClusterNodePoolProgress.servers.failed
+const (
+	ClusterNodePoolProgressServersFailedMinimum = 0
+)
+
+// ClusterNodePoolProgress.servers.provisioned
+const (
+	ClusterNodePoolProgressServersProvisionedMinimum = 0
+)
+
+// ClusterNodePoolProgress.servers.provisioning
+const (
+	ClusterNodePoolProgressServersProvisioningMinimum = 0
+)
+
+// ClusterNodePoolProgress.servers.releasing
+const (
+	ClusterNodePoolProgressServersReleasingMinimum = 0
+)
+
+// ClusterNodePoolProgress.servers.total
+const (
+	ClusterNodePoolProgressServersTotalMinimum = 0
+)
+
 // ClusterNodePool.targetNodeCount
 const (
 	ClusterNodePoolTargetNodeCountMinimum = 0
-)
-
-// ClusterNodePoolUpdateRequest.id
-const (
-	ClusterNodePoolUpdateRequestIdPattern   = `^[a-z]([-a-z0-9]*[a-z0-9])?$`
-	ClusterNodePoolUpdateRequestIdMinLength = 1
-	ClusterNodePoolUpdateRequestIdMaxLength = 63
-)
-
-// ClusterNodePoolUpdateRequest.nodeCount
-const (
-	ClusterNodePoolUpdateRequestNodeCountMinimum = 0
 )
 
 // ClusterScaleRequest.nodePools
@@ -150,6 +183,16 @@ const (
 // ClusterTypeK8s.controlPlane.replicas
 const (
 	ClusterTypeK8sControlPlaneReplicasMinimum = 1
+)
+
+// ClusterTypeK8sNodeNetwork.interface
+const (
+	ClusterTypeK8sNodeNetworkInterfacePattern = `^[A-Za-z0-9_.-]{1,15}$`
+)
+
+// ClusterTypeNodeNetwork.interface
+const (
+	ClusterTypeNodeNetworkInterfacePattern = `^[A-Za-z0-9_.-]{1,15}$`
 )
 
 // ClusterTypeNodePool.id
@@ -425,6 +468,12 @@ const (
 	InstanceGroupIdPattern   = `^[a-z]([-a-z0-9]*[a-z0-9])?$`
 	InstanceGroupIdMinLength = 1
 	InstanceGroupIdMaxLength = 63
+)
+
+// InstanceGroupScaleRequest.instancesToDelete
+const (
+	InstanceGroupScaleRequestInstancesToDeleteMinItems = 1
+	InstanceGroupScaleRequestInstancesToDeleteMaxItems = 200
 )
 
 // InstanceGroupScaleRequest.nodePools
@@ -789,6 +838,12 @@ const (
 	NodePoolReadyCountMinimum = 0
 )
 
+// NotificationEvent.project
+const (
+	NotificationEventProjectPattern   = `^[a-z]([-a-z0-9]*[a-z0-9])?$`
+	NotificationEventProjectMaxLength = 63
+)
+
 // OperationProgress.completed
 const (
 	OperationProgressCompletedMinimum = 0
@@ -876,6 +931,36 @@ const (
 // ProjectSummary.totalCount
 const (
 	ProjectSummaryTotalCountMinimum = 0
+)
+
+// QuotaEnforcementAcknowledgement.blockedScopes
+const (
+	QuotaEnforcementAcknowledgementBlockedScopesMinimum = 0
+)
+
+// QuotaRefusal.admissible
+const (
+	QuotaRefusalAdmissibleMinimum = 0
+)
+
+// QuotaRefusal.requested
+const (
+	QuotaRefusalRequestedMinimum = 0
+)
+
+// QuotaRefusalScope.headroom
+const (
+	QuotaRefusalScopeHeadroomMinimum = 0
+)
+
+// QuotaRefusalScope.limit
+const (
+	QuotaRefusalScopeLimitMinimum = 0
+)
+
+// QuotaRefusalScope.used
+const (
+	QuotaRefusalScopeUsedMinimum = 0
 )
 
 // QuotaViewScope.headroom
@@ -1081,6 +1166,17 @@ const (
 // SshUser.displayName
 const (
 	SshUserDisplayNameMaxLength = 255
+)
+
+// SshUser.sshPublicKeyCredentials
+const (
+	SshUserSshPublicKeyCredentialsMinItems = 1
+	SshUserSshPublicKeyCredentialsMaxItems = 32
+)
+
+// SshUser.sshPublicKeyCredentials[]
+const (
+	SshUserSshPublicKeyCredentialsItemPattern = `^/v1/regions/[^/]+/projects/[^/]+/credentials/mcred-[0-9A-TV-Za-tv-z]{26}$`
 )
 
 // SshUser.sshPublicKeys

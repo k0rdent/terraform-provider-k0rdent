@@ -266,7 +266,9 @@ func (c cancelRun) cancel(ctx context.Context) {
 		// or the connection, and may have reached the platform before it was.
 		addAdvisedError(c.diags, "Could not cancel the cluster's operation", c.mayHaveLanded(now), err)
 		return
-	case got.JSON200 != nil:
+	case got.JSON200 != nil, got.JSON202 != nil:
+		// 202 is the stop requested and the run still winding down, 200 a
+		// cancel that had already settled. settle waits out either.
 		c.settle(ctx, now)
 		return
 	case isNotFound(got.HTTPResponse, got.Body):

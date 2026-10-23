@@ -5,10 +5,11 @@
 # finds out on real hardware.
 #
 # It runs the blocks twice, in bash and, when it's installed, zsh: once in the
-# page's order, and once with the cancel in place of steps 4 and 5. Only the
-# values a reader fills in at step 1 are replaced. kubectl is a stand-in, since
-# the fake isn't a Kubernetes API. curl is wrapped, and no run may hand it the
-# client secret or the token as an argument.
+# page's order, and once with the cancel after step 3 and step 4 waiting it
+# out, in place of step 5. Only the values a reader fills in at step 1 are
+# replaced. kubectl is a stand-in, since the fake isn't a Kubernetes API. curl
+# is wrapped, and no run may hand it the client secret or the token as an
+# argument.
 #
 # Requires: go, python3, curl and jq.
 
@@ -70,7 +71,7 @@ read = re.compile(r"printf 'client secret: ' >&2\nread -rs K0RDENT_CLIENT_SECRET
 if not read.search(setup):
     sys.exit("step 1 no longer reads the secret in with read -rs")
 setup = read.sub('export K0RDENT_CLIENT_SECRET="$FAKE_CLIENT_SECRET"\n', setup)
-paths = {"lifecycle": [setup] + blocks[1:8], "cancel": [setup, blocks[1], blocks[2], blocks[8], blocks[5], blocks[6], blocks[7]]}
+paths = {"lifecycle": [setup] + blocks[1:8], "cancel": [setup, blocks[1], blocks[2], blocks[8], blocks[3], blocks[5], blocks[6], blocks[7]]}
 for name, parts in paths.items():
     open("%s/%s.sh" % (work, name), "w").write("\n".join(parts).replace("sleep 30", "sleep 1"))
 PY
@@ -95,7 +96,7 @@ run() {
 for shell in bash zsh; do
   command -v "$shell" >/dev/null || { [ "$shell" = bash ] && fail "bash is not installed"; continue; }
   run "$shell" lifecycle "token ok" '"status": "available"' "HTTP 201" "active" "HTTP 204" "gone"
-  run "$shell" cancel "token ok" "HTTP 201" "cancelling" "HTTP 200" '"stateReason":"CANCELLED"' "HTTP 204" "gone"
+  run "$shell" cancel "token ok" "HTTP 201" "cancelling" "HTTP 202" "failed" '"stateReason":"CANCELLED"' "HTTP 204" "gone"
 done
 
 if grep -n -F -e "$FAKE_CLIENT_SECRET" -e "fake-access-token" "$WORK/curl-argv.log"; then

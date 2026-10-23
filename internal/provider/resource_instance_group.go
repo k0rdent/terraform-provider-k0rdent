@@ -565,19 +565,21 @@ func (r *instanceGroupResource) scaleUp(ctx context.Context, target clusterTarge
 	}
 
 	var body k0rdent.InstanceGroupScaleRequest
+	pools := derefOrNil(body.NodePools)
 	for _, poolID := range sortedKeys(want) {
 		size, current := want[poolID], have[poolID]
 		if size <= current {
 			continue
 		}
-		entry := zeroElem(body.NodePools)
+		entry := zeroElem(pools)
 		entry.NodePool = poolID
 		entry.Size = int32(size) //nolint:gosec // bounded by the ClusterType's nodeCountMax
-		body.NodePools = append(body.NodePools, entry)
+		pools = append(pools, entry)
 	}
-	if len(body.NodePools) == 0 {
+	if len(pools) == 0 {
 		return false, diags
 	}
+	body.NodePools = &pools
 	return true, r.scaleOnce(ctx, target, id, body)
 }
 

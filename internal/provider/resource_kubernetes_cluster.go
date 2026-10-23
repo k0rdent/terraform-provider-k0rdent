@@ -1334,3 +1334,12 @@ func reasonString(r *k0rdent.StateReason) string {
 // the anonymous type's fields and JSON tags would compile until the day the
 // field names matched but the tags did not.
 func zeroElem[S ~[]E, E any](_ S) (zero E) { return }
+
+// derefOrNil is the slice behind an optional generated list, nil when absent.
+// With zeroElem it builds a list whose element type is an unnamed struct.
+func derefOrNil[S ~[]E, E any](p *S) S {
+	if p == nil {
+		return nil
+	}
+	return *p
+}

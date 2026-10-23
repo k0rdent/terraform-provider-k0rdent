@@ -117,10 +117,9 @@ type ClientInterface interface {
 	// This endpoint proxies to the underlying identity provider
 	// for token issuance.
 	//
-	// Four grant types are supported:
-	//
-	// **authorization_code** — Interactive user session. Exchanges an
-	// authorization code obtained from the OAuth2 /authorize flow.
+	// Three grant types are supported. Interactive sign-in does not use this
+	// endpoint: it goes through `login/initiate` and the login callback, which
+	// record a session and set the `k0r_refresh_token` cookie.
 	//
 	// **api_key** — Programmatic access via an API key. The caller
 	// presents the opaque, prefixed API key token. Effective privileges
@@ -162,10 +161,9 @@ type ClientInterface interface {
 	// This endpoint proxies to the underlying identity provider
 	// for token issuance.
 	//
-	// Four grant types are supported:
-	//
-	// **authorization_code** — Interactive user session. Exchanges an
-	// authorization code obtained from the OAuth2 /authorize flow.
+	// Three grant types are supported. Interactive sign-in does not use this
+	// endpoint: it goes through `login/initiate` and the login callback, which
+	// record a session and set the `k0r_refresh_token` cookie.
 	//
 	// **api_key** — Programmatic access via an API key. The caller
 	// presents the opaque, prefixed API key token. Effective privileges
@@ -203,12 +201,20 @@ type ClientInterface interface {
 	//
 	// **Visibility:** `public` (x-visibility)
 	//
+	// **Who may call this:** Any authenticated caller, for their own partition's subscriptions: a customer's organization, or the provider partition for provider personnel. A customer with no resolvable organization is refused with 401.
+	//
 	// Corresponds with GET /v1/regions/global/notifications/webhooks (the `ListWebhookSubscriptions` operationId).
 	ListWebhookSubscriptions(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// CreateWebhookSubscriptionWithBody Create a webhook subscription
 	//
 	// **Visibility:** `public` (x-visibility)
+	//
+	// **Who may call this:** Any authenticated caller, in their own partition.
+	// Any member of a customer organization may write that organization's
+	// subscriptions (no org-admin role is needed); in the provider partition
+	// only platform-admin may, and other provider personnel are refused with
+	// 403. A customer with no resolvable organization is refused with 401.
 	//
 	// Subscribe a customer endpoint to notification events. A signing secret is
 	// generated when not supplied and returned ONCE in the response (store it — it
@@ -397,6 +403,11 @@ type ClientInterface interface {
 	// ignore fields it does not recognise. Changing the meaning of an existing field
 	// or removing one is a breaking change and will only be made through a versioned
 	// change with a published migration period — never silently.
+	//
+	// The `data` of an event delivered to an organization's endpoint holds only
+	// the fields its event type defines for customers; a field the producing
+	// service sent outside that list is never delivered there. The provider's own
+	// subscriptions receive all of `data`.
 	//
 	// Build your receiver to tolerate additive growth, and keep that tolerance
 	// separate from the two mechanisms above, which are NOT affected by new fields:
@@ -432,6 +443,12 @@ type ClientInterface interface {
 	//
 	// **Visibility:** `public` (x-visibility)
 	//
+	// **Who may call this:** Any authenticated caller, in their own partition.
+	// Any member of a customer organization may write that organization's
+	// subscriptions (no org-admin role is needed); in the provider partition
+	// only platform-admin may, and other provider personnel are refused with
+	// 403. A customer with no resolvable organization is refused with 401.
+	//
 	// Subscribe a customer endpoint to notification events. A signing secret is
 	// generated when not supplied and returned ONCE in the response (store it — it
 	// is never returned again). Dispatch requires the event-intake fan-out relay to
@@ -620,6 +637,11 @@ type ClientInterface interface {
 	// or removing one is a breaking change and will only be made through a versioned
 	// change with a published migration period — never silently.
 	//
+	// The `data` of an event delivered to an organization's endpoint holds only
+	// the fields its event type defines for customers; a field the producing
+	// service sent outside that list is never delivered there. The provider's own
+	// subscriptions receive all of `data`.
+	//
 	// Build your receiver to tolerate additive growth, and keep that tolerance
 	// separate from the two mechanisms above, which are NOT affected by new fields:
 	//
@@ -654,7 +676,9 @@ type ClientInterface interface {
 	//
 	// **Visibility:** `public` (x-visibility)
 	//
-	// Delete one of the caller's webhook subscriptions. Deleting a provider subscription requires the platform-admin role, the same rule as creating one.
+	// **Who may call this:** Any authenticated caller, in their own partition. Any member of a customer organization may write that organization's subscriptions (no org-admin role is needed); in the provider partition only platform-admin may, and other provider personnel are refused with 403. A customer with no resolvable organization is refused with 401.
+	//
+	// Delete one of the webhook subscriptions in the caller's partition.
 	//
 	// Corresponds with DELETE /v1/regions/global/notifications/webhooks/{id} (the `DeleteWebhookSubscription` operationId).
 	DeleteWebhookSubscription(ctx context.Context, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -662,6 +686,12 @@ type ClientInterface interface {
 	// RotateWebhookSubscriptionSecretWithBody Rotate a webhook subscription's signing secret
 	//
 	// **Visibility:** `public` (x-visibility)
+	//
+	// **Who may call this:** Any authenticated caller, in their own partition.
+	// Any member of a customer organization may write that organization's
+	// subscriptions (no org-admin role is needed); in the provider partition
+	// only platform-admin may, and other provider personnel are refused with
+	// 403. A customer with no resolvable organization is refused with 401.
 	//
 	// Issue a new signing secret for an existing webhook subscription. The
 	// subscription id, URL and event-type filter are unchanged, and no delivery is
@@ -729,6 +759,12 @@ type ClientInterface interface {
 	// RotateWebhookSubscriptionSecret Rotate a webhook subscription's signing secret
 	//
 	// **Visibility:** `public` (x-visibility)
+	//
+	// **Who may call this:** Any authenticated caller, in their own partition.
+	// Any member of a customer organization may write that organization's
+	// subscriptions (no org-admin role is needed); in the provider partition
+	// only platform-admin may, and other provider personnel are refused with
+	// 403. A customer with no resolvable organization is refused with 401.
 	//
 	// Issue a new signing secret for an existing webhook subscription. The
 	// subscription id, URL and event-type filter are unchanged, and no delivery is
@@ -827,7 +863,7 @@ type ClientInterface interface {
 	//
 	// **Visibility:** `public` · `internal` (x-visibility)
 	//
-	// List all role definitions.
+	// List the roles that can be bound in this organization: the built-in roles and the organization's custom roles whose `scopes` include `org` or `project`. Roles bindable only at platform scope are not listed here; they are listed by `GET /v1/regions/global/iam/platform/roles` and remain readable by id through `getRole`. The filter reads only each role's `scopes`, never the caller, so every principal listing the same organization receives the same set. A role with mixed scopes (for example `iam-admin`, scopes `platform` and `org`) appears both here and in the platform list. `totalCount` counts this filtered set.
 	//
 	// Corresponds with GET /v1/regions/global/organizations/{orgId}/iam/roles (the `ListRoles` operationId).
 	ListRoles(ctx context.Context, orgId OrganizationPathParam, params *ListRolesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -973,8 +1009,8 @@ type ClientInterface interface {
 	// creating a project with the same id afterwards succeeds. It is not available
 	// before then, so wait for the first 404 rather than retrying a create. Before
 	// the id is released, the project's project-scoped service accounts are
-	// disabled, its IAM role bindings are purged, and its quota assignment is
-	// cleared, so a re-created project does not inherit them. That is the order
+	// disabled, its IAM role bindings are purged, and its quota limits are
+	// removed, so a re-created project does not inherit them. That is the order
 	// the service uses, and the first two are deliberately in that sequence.
 	//
 	// Disabling the service accounts is a side effect worth planning for: a
@@ -1084,7 +1120,7 @@ type ClientInterface interface {
 	//
 	// **Visibility:** `internal` · `public` (x-visibility)
 	//
-	// Read the organization's tenant-scope quota: one row per dimension that is limited, or enforced with recorded usage, with its unit, whether it is enforced, and a single `tenant` entry in `scopes` carrying the configured limit, recorded usage, headroom and over-limit flag. Usage is summed across regions. A dimension the admission check does not refuse on (nothing charges it, or its enforcement is switched off) reports enforced false and omits used and headroom rather than showing 0. An organization with no active quota assignment is not an error; its rows report usage with limit and headroom absent (unlimited). The top-level limit, used and remaining are deprecated in favor of scopes. Returns 404 if the organization does not exist or the caller is not scoped to it.
+	// Read the organization's tenant-scope quota: one row per dimension that is limited, or enforced with recorded usage, with its unit, whether it is enforced, and a single `tenant` entry in `scopes` carrying the configured limit, recorded usage, headroom and over-limit flag. Usage is summed across regions. A dimension the admission check does not refuse on (nothing charges it, or its enforcement is switched off) reports enforced false and omits used and headroom rather than showing 0. An organization that holds no limits of its own is not an error; its rows report usage with limit and headroom absent (unlimited). The top-level limit, used and remaining are deprecated in favor of scopes. Returns 404 if the organization does not exist or the caller is not scoped to it.
 	//
 	// Corresponds with GET /v1/regions/global/organizations/{orgId}/quota (the `GetTenantQuota` operationId).
 	GetTenantQuota(ctx context.Context, orgId string, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1102,7 +1138,16 @@ type ClientInterface interface {
 	//
 	// **Visibility:** `internal` · `public` (x-visibility)
 	//
-	// List all ClusterTypes available in the region. Deprecated types are excluded unless includeDeprecated=true.
+	// List all ClusterTypes available in the region, newest first. Deprecated
+	// types are excluded unless `includeDeprecated=true`.
+	//
+	// Supply any of `offset`, `limit` or `includeTotal` to page by position and
+	// receive `totalCount`, which counts the ClusterTypes the same
+	// `includeDeprecated` setting lists. This is the only way to read past the
+	// first page. Without those parameters the list returns its first page only,
+	// sized by the deprecated `pageSize`; the deprecated `pageToken` has never
+	// been implemented here and is rejected with 400 on its own, or with 422
+	// alongside an offset-style parameter.
 	//
 	// Corresponds with GET /v1/regions/{region}/compute/cluster-types (the `ListClusterTypes` operationId).
 	ListClusterTypes(ctx context.Context, region RegionPathParam, params *ListClusterTypesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1124,6 +1169,13 @@ type ClientInterface interface {
 	// optional `status` query parameter filters to one lifecycle status; an
 	// unrecognized value is rejected with `422` rather than returning an empty
 	// list.
+	//
+	// Supply any of `offset`, `limit` or `includeTotal` to page through the
+	// history and receive `totalCount`, which counts this ClusterType's versions matching the same
+	// `status`. A request with no paging parameter returns the whole history,
+	// as it always has. This list has no cursor style; `pageToken` and
+	// `pageSize` are ignored unless sent alongside an offset-style parameter,
+	// which is rejected with `422`.
 	//
 	// Corresponds with GET /v1/regions/{region}/compute/cluster-types/{id}/versions (the `ListClusterTypeVersions` operationId).
 	ListClusterTypeVersions(ctx context.Context, region RegionPathParam, id string, params *ListClusterTypeVersionsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1182,6 +1234,15 @@ type ClientInterface interface {
 	// so a cluster whose creation commits after a page was served may not appear
 	// in that traversal at all — start a fresh list to see it.)
 	//
+	// Supply `offset` and `limit` to page by position and receive `totalCount`;
+	// the deprecated `pageToken`/`pageSize` cursor keeps working for existing
+	// clients, and a request carrying neither stays on it. Both styles walk the
+	// collection in the same newest-first order, and `totalCount` counts the
+	// clusters matching the active `state`, `health` and `search` filters. Unlike
+	// the cursor, an offset is a position: a cluster created or deleted between
+	// two requests shifts every later row by one, so a row can repeat or be
+	// skipped across pages.
+	//
 	// Corresponds with GET /v1/regions/{region}/projects/{project}/compute/clusters (the `ListClusters` operationId).
 	ListClusters(ctx context.Context, region RegionPathParam, project ProjectPathParam, params *ListClustersParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -1237,10 +1298,17 @@ type ClientInterface interface {
 	// a token.
 	//
 	// An API key receives a kubeconfig capped to the key's own roles rather than
-	// its owner's. A caller with no owning organization in context — in practice
-	// a platform-scope operator with no membership in the cluster's organization
-	// — gets `503` too: a token narrowed by project alone would still carry that
-	// caller's roles in every other organization they belong to.
+	// its owner's.
+	//
+	// A caller whose access comes from platform-scope roles and who holds no role
+	// in the cluster's organization or project gets `403`: provider-side roles
+	// alone do not grant access to a tenant cluster.
+	//
+	// `503` means the platform could not check membership or mint a token, not
+	// that access was refused. That includes a request for which the platform
+	// could not determine the organization that owns the project, since a token
+	// narrowed by project alone would still carry the caller's roles in every
+	// other organization they belong to.
 	//
 	// Corresponds with GET /v1/regions/{region}/projects/{project}/compute/clusters/{clusterId}/kubeconfig (the `GetClusterKubeconfig` operationId).
 	GetClusterKubeconfig(ctx context.Context, region RegionPathParam, project ProjectPathParam, clusterId string, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1260,6 +1328,10 @@ type ClientInterface interface {
 	// issuance and a `revoked` config are both excluded, so a caller that has
 	// just requested one will not find that row here until it activates.
 	//
+	// Because this operation is deprecated, it does not take the `offset`/`limit`
+	// pagination style the other lists offer: it keeps `pageToken`/`pageSize`,
+	// and its response keeps reporting `total`.
+	//
 	// Corresponds with GET /v1/regions/{region}/projects/{project}/compute/clusters/{clusterId}/kubeconfigs (the `ListKubeconfigs` operationId).
 	//
 	// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
@@ -1274,6 +1346,10 @@ type ClientInterface interface {
 	// at provisioning time and is immutable — it cannot be changed or removed from
 	// a running cluster.
 	//
+	// Not paginated. The list is bounded by construction — at most 32 users,
+	// fixed when the cluster is created — so it is always returned whole, with no
+	// `offset`/`limit` or `pageToken`/`pageSize` parameters.
+	//
 	// Corresponds with GET /v1/regions/{region}/projects/{project}/compute/clusters/{clusterId}/ssh-access (the `ListClusterSshAccess` operationId).
 	ListClusterSshAccess(ctx context.Context, region RegionPathParam, project ProjectPathParam, clusterId string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -1282,6 +1358,7 @@ type ClientInterface interface {
 	// **Visibility:** `internal` · `public` (x-visibility)
 	//
 	// "Cluster CRUD API"; Delete cluster and trigger cleanup of nodes and IP resources.
+	// Credentials distributed to the cluster are revoked before the delete starts; if revocation fails, nothing changes and the delete must be retried.
 	//
 	// Corresponds with DELETE /v1/regions/{region}/projects/{project}/compute/clusters/{id} (the `DeleteCluster` operationId).
 	DeleteCluster(ctx context.Context, region RegionPathParam, project ProjectPathParam, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1300,7 +1377,7 @@ type ClientInterface interface {
 	//
 	// **Visibility:** `internal` · `public` (x-visibility)
 	//
-	// "Cluster CRUD API"; Update cluster configuration to scale resources, upgrade versions, or modify settings.
+	// "Cluster CRUD API"; Update cluster configuration: display name, description, tags, storage ceiling, or security groups. Node counts are not changed here; use `scaleCluster`, and a request carrying `nodePools` is refused with `422`.
 	//
 	// Takes any type of body and a specified content type.
 	//
@@ -1311,7 +1388,7 @@ type ClientInterface interface {
 	//
 	// **Visibility:** `internal` · `public` (x-visibility)
 	//
-	// "Cluster CRUD API"; Update cluster configuration to scale resources, upgrade versions, or modify settings.
+	// "Cluster CRUD API"; Update cluster configuration: display name, description, tags, storage ceiling, or security groups. Node counts are not changed here; use `scaleCluster`, and a request carrying `nodePools` is refused with `422`.
 	//
 	// Takes a body of the `application/json` content type.
 	//
@@ -1322,35 +1399,41 @@ type ClientInterface interface {
 	//
 	// **Visibility:** `internal` · `public` (x-visibility)
 	//
-	// Cancel the operation the cluster is currently running and settle it to
-	// `failed` with `stateReason` `CANCELLED`, so a cluster wedged mid-operation
-	// can reach a state from which it can be deleted.
+	// Request that the operation the cluster is currently running be stopped. The
+	// cancel does not change the cluster's `state`: it asks the engine execution to
+	// stop and marks the operation cancelling, leaving the cluster in its
+	// transitional `state` while the run winds down. When the run ends the cluster
+	// settles the usual way: normally `failed` with `stateReason` `CANCELLED`
+	// (`operation.status` `cancelled`), also when the run ignores the stop and the
+	// watchdog force-fails it; but a run that completes before the stop takes
+	// effect settles `active` instead (`operation.status` `succeeded`). Wait for
+	// either settled state before deleting; a `DELETE` issued while the cluster is
+	// still cancelling is refused with `409`.
 	//
 	// Admitted only while an operation is in flight: the cluster must be
 	// `creating` or `updating`. The engine execution is asked to stop first; if
 	// that request cannot be delivered the cancel fails (`5xx`) and the cluster is
-	// left unchanged in its transitional state, so the caller can retry. Once the
-	// stop is requested — or the run has already finished on its own — the cluster
-	// is settled `failed` and `operation.status` reads `cancelled`, distinct from
-	// an ordinary `failed`. A workflow that completes despite the cancel lands a
-	// callback the settled cluster ignores, so the result is stable.
+	// left unchanged, so the caller can retry. Once the stop has been requested the
+	// cluster is returned in its transitional `state` with `operation.status`
+	// `cancelling`, and the response is `202`.
 	//
 	// The request body pins the operation to cancel: `executionId` must match the
 	// operation currently in flight, as read from the cluster's
 	// `operation.executionId`. This makes a cancel acted on a stale view safe — if
 	// the cluster has settled and begun a different operation since it was read,
-	// the cancel is refused rather than aborting the newer operation.
+	// the cancel is refused rather than stopping the newer operation.
 	//
-	// The cluster is returned in its settled `failed` state. Retrying the cancel —
-	// the same `executionId` on a cluster already settled `failed` with
-	// `operation.status` `cancelled` — returns `200` with that settled cluster, so
-	// the operation is idempotent. Cancelling is rejected with `409` when the
-	// cluster is otherwise settled with nothing in flight (`active`, or `failed`
-	// from a different cause or operation), or is `deleting`, which has no cancel,
-	// or when `executionId` does not match the operation now in flight; the message
-	// names the blocking state. A missing or empty body is rejected with `400`. A
-	// cluster that has already been deleted is not found and returns `404`, like any
-	// unknown cluster.
+	// Retrying the cancel — the same `executionId` on a cluster that has since
+	// settled `failed` with `operation.status` `cancelled` — returns `200` with
+	// that settled cluster, so the operation is idempotent; a cancel that lost to
+	// completion leaves nothing to cancel, so its retry is refused with `409` like
+	// any other settled cluster. Cancelling is rejected
+	// with `409` when the cluster is otherwise settled with nothing in flight
+	// (`active`, or `failed` from a different cause or operation), or is `deleting`,
+	// which has no cancel, or when `executionId` does not match the operation now
+	// in flight; the message names the blocking state. A missing or empty body is
+	// rejected with `400`. A cluster that has already been deleted is not found and
+	// returns `404`, like any unknown cluster.
 	//
 	// Takes any type of body and a specified content type.
 	//
@@ -1361,35 +1444,41 @@ type ClientInterface interface {
 	//
 	// **Visibility:** `internal` · `public` (x-visibility)
 	//
-	// Cancel the operation the cluster is currently running and settle it to
-	// `failed` with `stateReason` `CANCELLED`, so a cluster wedged mid-operation
-	// can reach a state from which it can be deleted.
+	// Request that the operation the cluster is currently running be stopped. The
+	// cancel does not change the cluster's `state`: it asks the engine execution to
+	// stop and marks the operation cancelling, leaving the cluster in its
+	// transitional `state` while the run winds down. When the run ends the cluster
+	// settles the usual way: normally `failed` with `stateReason` `CANCELLED`
+	// (`operation.status` `cancelled`), also when the run ignores the stop and the
+	// watchdog force-fails it; but a run that completes before the stop takes
+	// effect settles `active` instead (`operation.status` `succeeded`). Wait for
+	// either settled state before deleting; a `DELETE` issued while the cluster is
+	// still cancelling is refused with `409`.
 	//
 	// Admitted only while an operation is in flight: the cluster must be
 	// `creating` or `updating`. The engine execution is asked to stop first; if
 	// that request cannot be delivered the cancel fails (`5xx`) and the cluster is
-	// left unchanged in its transitional state, so the caller can retry. Once the
-	// stop is requested — or the run has already finished on its own — the cluster
-	// is settled `failed` and `operation.status` reads `cancelled`, distinct from
-	// an ordinary `failed`. A workflow that completes despite the cancel lands a
-	// callback the settled cluster ignores, so the result is stable.
+	// left unchanged, so the caller can retry. Once the stop has been requested the
+	// cluster is returned in its transitional `state` with `operation.status`
+	// `cancelling`, and the response is `202`.
 	//
 	// The request body pins the operation to cancel: `executionId` must match the
 	// operation currently in flight, as read from the cluster's
 	// `operation.executionId`. This makes a cancel acted on a stale view safe — if
 	// the cluster has settled and begun a different operation since it was read,
-	// the cancel is refused rather than aborting the newer operation.
+	// the cancel is refused rather than stopping the newer operation.
 	//
-	// The cluster is returned in its settled `failed` state. Retrying the cancel —
-	// the same `executionId` on a cluster already settled `failed` with
-	// `operation.status` `cancelled` — returns `200` with that settled cluster, so
-	// the operation is idempotent. Cancelling is rejected with `409` when the
-	// cluster is otherwise settled with nothing in flight (`active`, or `failed`
-	// from a different cause or operation), or is `deleting`, which has no cancel,
-	// or when `executionId` does not match the operation now in flight; the message
-	// names the blocking state. A missing or empty body is rejected with `400`. A
-	// cluster that has already been deleted is not found and returns `404`, like any
-	// unknown cluster.
+	// Retrying the cancel — the same `executionId` on a cluster that has since
+	// settled `failed` with `operation.status` `cancelled` — returns `200` with
+	// that settled cluster, so the operation is idempotent; a cancel that lost to
+	// completion leaves nothing to cancel, so its retry is refused with `409` like
+	// any other settled cluster. Cancelling is rejected
+	// with `409` when the cluster is otherwise settled with nothing in flight
+	// (`active`, or `failed` from a different cause or operation), or is `deleting`,
+	// which has no cancel, or when `executionId` does not match the operation now
+	// in flight; the message names the blocking state. A missing or empty body is
+	// rejected with `400`. A cluster that has already been deleted is not found and
+	// returns `404`, like any unknown cluster.
 	//
 	// Takes a body of the `application/json` content type.
 	//
@@ -1502,6 +1591,10 @@ type ClientInterface interface {
 	// only from `active`); reaching a version further ahead requires one
 	// UpgradeCluster call per step.
 	//
+	// A cluster with a hosted control plane is upgraded the same way, and its
+	// control plane keeps the settings its ClusterType's HCPConfig sets.
+	// **Not yet applied:** declared ahead of its implementation.
+	//
 	// Takes any type of body and a specified content type.
 	//
 	// Corresponds with POST /v1/regions/{region}/projects/{project}/compute/clusters/{id}/upgrade (the `UpgradeCluster` operationId).
@@ -1528,6 +1621,10 @@ type ClientInterface interface {
 	// only from `active`); reaching a version further ahead requires one
 	// UpgradeCluster call per step.
 	//
+	// A cluster with a hosted control plane is upgraded the same way, and its
+	// control plane keeps the settings its ClusterType's HCPConfig sets.
+	// **Not yet applied:** declared ahead of its implementation.
+	//
 	// Takes a body of the `application/json` content type.
 	//
 	// Corresponds with POST /v1/regions/{region}/projects/{project}/compute/clusters/{id}/upgrade (the `UpgradeCluster` operationId).
@@ -1537,7 +1634,11 @@ type ClientInterface interface {
 	//
 	// **Visibility:** `internal` · `public` (x-visibility)
 	//
-	// List BMaaS instance groups in the project.
+	// List BMaaS instance groups in the project, ordered by `id`.
+	//
+	// Supply `offset` and `limit` to page by position and receive `totalCount`; the deprecated `pageToken`/`pageSize` cursor keeps working for existing clients, and a request carrying neither stays on it. Both styles walk the groups in the same `id` order, and `totalCount` counts the groups the `showDeleted` setting selects. An offset is a position, so a group created or deleted between two requests can make a row repeat or be skipped across pages.
+	//
+	// The embed budgets below bound ONE response, so they apply to each offset page exactly as they do to each cursor page; a smaller `limit` is the lever for both.
 	//
 	// Corresponds with GET /v1/regions/{region}/projects/{project}/compute/instance-groups (the `ListInstanceGroups` operationId).
 	ListInstanceGroups(ctx context.Context, region RegionPathParam, project ProjectPathParam, params *ListInstanceGroupsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1569,8 +1670,10 @@ type ClientInterface interface {
 	// **Visibility:** `internal` · `public` (x-visibility)
 	//
 	// Delete a group and release all its hosts (each performing the mandatory OS wipe). Deletion is asynchronous and two-phase: the group must be in `active`, `failed`, or `creating`. From `active`/`failed` the request transitions the group to `deleting` and starts the teardown workflow, and the row is removed only once that workflow is observed to finish.
-	// Deleting a `creating` group instead cancels its in-flight create; once that settles (normally to `failed`), the group is automatically torn down the rest of the way — no second DELETE call is needed, though this may take longer than deleting an already-settled group. A manual DELETE issued again during this window is harmless: a `204` while the group is still `creating` (the cancel-mark request re-matches), or a `409` once the auto-chain has moved the row to `deleting`.
+	// Deleting a `creating` group instead cancels its in-flight create; once that settles (normally to `failed`), the group is automatically torn down the rest of the way — a second DELETE call is normally not needed, though this may take longer than deleting an already-settled group. A manual DELETE issued again during this window is harmless: a `204` while the group is still `creating` (the cancel-mark request re-matches), or a `409` once the auto-chain has moved the row to `deleting`.
 	// Deleting a group in `updating` or `deleting` returns `409 CONFLICT_IN_USE`.
+	// From `active`/`failed`, credentials distributed to the group are revoked before the delete starts; if revocation fails, nothing changes and the delete must be retried.
+	// Deleting a `failed` group returns `503` when a node pool's reservation can only be recovered from the group's workflow history and either that history cannot be read right now, or the reservation recovered from it cannot be recorded on the group. The group is left in `failed` (any reservation already recovered and recorded stays recorded), and the delete should be retried.
 	//
 	// Corresponds with DELETE /v1/regions/{region}/projects/{project}/compute/instance-groups/{id} (the `DeleteInstanceGroup` operationId).
 	DeleteInstanceGroup(ctx context.Context, region RegionPathParam, project ProjectPathParam, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1613,22 +1716,69 @@ type ClientInterface interface {
 	// Corresponds with PATCH /v1/regions/{region}/projects/{project}/compute/instance-groups/{id} (the `UpdateInstanceGroup` operationId).
 	UpdateInstanceGroup(ctx context.Context, region RegionPathParam, project ProjectPathParam, id string, body UpdateInstanceGroupJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// ScaleInstanceGroupWithBody Scale instance group node pools (scale up only; scale down not yet implemented)
+	// ScaleInstanceGroupWithBody Scale instance group node pools up or down
 	//
 	// **Visibility:** `internal` · `public` (x-visibility)
 	//
-	// Increase host counts on one or more of the group's node pools and dispatch
-	// the asynchronous `instance-group-scale-up` workflow, which adds servers to
-	// each pool's existing reservation and provisions the new hosts.
+	// Change host counts on one or more of the group's node pools and dispatch the
+	// asynchronous workflow for the request's direction: `instance-group-scale-up`
+	// adds servers to each pool's existing reservation and provisions the new
+	// hosts; `instance-group-scale-down` removes the named instances' hosts from
+	// their reservation and hands them back to the available pool.
 	//
-	// Each `nodePools[]` entry supplies an absolute desired count (not a delta).
-	// The request is rejected with `422` when duplicate pool slugs are supplied, a
-	// slug is unknown, any target is less than or equal to the pool's settled
-	// count, or a pool has no bound infrastructure reservation; and with `409` when
-	// the group is not in the settled `active` state — i.e. another lifecycle
-	// operation (create, update, delete, or a concurrent scale) is already in
-	// flight, or the group is `failed`. The accepted scale atomically moves the
-	// group to `updating` and returns its snapshot.
+	// **A shrink needs more authority than a grow.** Growing a pool is an update;
+	// shrinking one destroys instances and hands their servers back, so it
+	// additionally requires the permission that governs removal — the same one
+	// the group''s deprovision and `DELETE` carry. A caller who may resize a pool
+	// but not remove from it can grow and will be refused `403` on a shrink.
+	//
+	//
+	// **The body states its direction by which field it carries**, and the two are
+	// mutually exclusive: supply exactly one. `nodePools[]` grows pools, each
+	// entry an absolute desired count (not a delta). `instancesToDelete` shrinks
+	// them. Supplying both, or neither, is `422` — there is no single honest
+	// response for a request that does both. The request is also rejected with
+	// `422` when duplicate pool slugs are supplied, a slug is unknown, a `size` is
+	// below what its pool holds, or a pool has no bound infrastructure
+	// reservation; and with `409` when the group is not in the settled `active`
+	// state — i.e. another lifecycle operation (create, update, delete, or a
+	// concurrent scale) is already in flight, or the group is `failed`. The
+	// accepted scale atomically moves the group to `updating` and returns its
+	// snapshot.
+	//
+	//
+	// **A shrink names hosts, never counts.** `instancesToDelete` is the entire
+	// scale-down request: each instance names its own pool, and each pool's new
+	// size is derived as the hosts it holds minus the instances named from it, so
+	// neither pool nor size is supplied. This is why a `size` below what a pool
+	// holds is refused rather than treated as a shrink — it would say how MANY
+	// hosts to remove without saying WHICH, and the platform does not choose
+	// hosts on a tenant's behalf.
+	//
+	//
+	// Only an instance whose host is settled `not_provisioned` can be removed —
+	// there is nothing running on it to destroy. An instance in any other state
+	// refuses the WHOLE request with `INSTANCES_NOT_DEPROVISIONED` (below) and
+	// nothing is written. Destroy what runs on those hosts first with
+	// `POST .../instance-groups/{id}/deprovision`, which keeps them claimed, then
+	// scale down to hand them back.
+	//
+	//
+	// The cluster type's `nodeCountMin` is NOT re-checked here. It is a floor on
+	// hosts that RUN the pool, enforced where one stops running — the deprovision
+	// above — so by the time an instance can be removed its pool has already
+	// satisfied it. Re-checking against the new size would also refuse the case
+	// the floor exists to permit: retiring a pool whose hosts were all
+	// legitimately deprovisioned.
+	//
+	//
+	// **Draining a pool releases its reservation.** Naming every host a pool
+	// holds releases the pool's reservation along with them, and the pool
+	// settles at size `0`. A later scale-up re-reserves hosts for it, unless the
+	// instance group's usage counts against organization limits: there a drained
+	// pool cannot be grown again (`RESERVATION_RELEASED` below), so drain a pool
+	// only when the group is finished with it. To remove the group itself, use
+	// `DELETE`.
 	//
 	//
 	// **`desiredCount` is yours.** Only this endpoint and create ever set a pool's
@@ -1642,41 +1792,89 @@ type ClientInterface interface {
 	// alone — disagree, it cannot be scaled: a target computed from a size you
 	// never confirmed is a guess. A pool whose counts AGREE but that still has a
 	// host provisioning is a different refusal, `POOL_HOSTS_NOT_PROVISIONED`
-	// below, and needs no correction. Send a request whose `size` equals the
-	// number of hosts the pool's reservation currently holds (the `409` names
-	// it): that is accepted, sets `desiredCount` to it, provisions nothing, leaves
-	// the group `active`, and makes the pool scalable again. It is not a
-	// scale-down — no host is released — and a request mixing this correction
-	// with a real scale of another pool is refused with `422`.
+	// below, and needs no correction. Send a `nodePools[]` request whose `size`
+	// equals the number of hosts the pool's reservation currently holds (the
+	// `409` names it): that is accepted, sets `desiredCount` to it, provisions
+	// nothing, leaves the group `active`, and makes the pool scalable again. It is
+	// not a scale-down — no host is released — and a request mixing this
+	// correction with a real scale of another pool is refused with `422`.
 	//
 	//
 	// That size may be `0`, when the pool's reservation answers holding no hosts.
-	// Recording it is the way out of a failed scale-up. The pool is then empty, and
-	// an empty pool cannot be grown yet (`POOL_EMPTY`) — materializing hosts into
-	// one needs a scale path that can CREATE a reservation rather than only extend
-	// an existing one.
+	// Recording it is the way out of a failed scale-up. The pool is then empty. An
+	// empty pool cannot be grown by extending its reservation (`POOL_EMPTY`); a
+	// pool whose reservation has been released, including one drained by a
+	// scale-down to `0`, is re-reserved by a scale-up instead, unless the instance
+	// group's usage counts against organization limits.
 	//
 	// Takes any type of body and a specified content type.
 	//
 	// Corresponds with POST /v1/regions/{region}/projects/{project}/compute/instance-groups/{id}/scale (the `ScaleInstanceGroup` operationId).
 	ScaleInstanceGroupWithBody(ctx context.Context, region RegionPathParam, project ProjectPathParam, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// ScaleInstanceGroup Scale instance group node pools (scale up only; scale down not yet implemented)
+	// ScaleInstanceGroup Scale instance group node pools up or down
 	//
 	// **Visibility:** `internal` · `public` (x-visibility)
 	//
-	// Increase host counts on one or more of the group's node pools and dispatch
-	// the asynchronous `instance-group-scale-up` workflow, which adds servers to
-	// each pool's existing reservation and provisions the new hosts.
+	// Change host counts on one or more of the group's node pools and dispatch the
+	// asynchronous workflow for the request's direction: `instance-group-scale-up`
+	// adds servers to each pool's existing reservation and provisions the new
+	// hosts; `instance-group-scale-down` removes the named instances' hosts from
+	// their reservation and hands them back to the available pool.
 	//
-	// Each `nodePools[]` entry supplies an absolute desired count (not a delta).
-	// The request is rejected with `422` when duplicate pool slugs are supplied, a
-	// slug is unknown, any target is less than or equal to the pool's settled
-	// count, or a pool has no bound infrastructure reservation; and with `409` when
-	// the group is not in the settled `active` state — i.e. another lifecycle
-	// operation (create, update, delete, or a concurrent scale) is already in
-	// flight, or the group is `failed`. The accepted scale atomically moves the
-	// group to `updating` and returns its snapshot.
+	// **A shrink needs more authority than a grow.** Growing a pool is an update;
+	// shrinking one destroys instances and hands their servers back, so it
+	// additionally requires the permission that governs removal — the same one
+	// the group''s deprovision and `DELETE` carry. A caller who may resize a pool
+	// but not remove from it can grow and will be refused `403` on a shrink.
+	//
+	//
+	// **The body states its direction by which field it carries**, and the two are
+	// mutually exclusive: supply exactly one. `nodePools[]` grows pools, each
+	// entry an absolute desired count (not a delta). `instancesToDelete` shrinks
+	// them. Supplying both, or neither, is `422` — there is no single honest
+	// response for a request that does both. The request is also rejected with
+	// `422` when duplicate pool slugs are supplied, a slug is unknown, a `size` is
+	// below what its pool holds, or a pool has no bound infrastructure
+	// reservation; and with `409` when the group is not in the settled `active`
+	// state — i.e. another lifecycle operation (create, update, delete, or a
+	// concurrent scale) is already in flight, or the group is `failed`. The
+	// accepted scale atomically moves the group to `updating` and returns its
+	// snapshot.
+	//
+	//
+	// **A shrink names hosts, never counts.** `instancesToDelete` is the entire
+	// scale-down request: each instance names its own pool, and each pool's new
+	// size is derived as the hosts it holds minus the instances named from it, so
+	// neither pool nor size is supplied. This is why a `size` below what a pool
+	// holds is refused rather than treated as a shrink — it would say how MANY
+	// hosts to remove without saying WHICH, and the platform does not choose
+	// hosts on a tenant's behalf.
+	//
+	//
+	// Only an instance whose host is settled `not_provisioned` can be removed —
+	// there is nothing running on it to destroy. An instance in any other state
+	// refuses the WHOLE request with `INSTANCES_NOT_DEPROVISIONED` (below) and
+	// nothing is written. Destroy what runs on those hosts first with
+	// `POST .../instance-groups/{id}/deprovision`, which keeps them claimed, then
+	// scale down to hand them back.
+	//
+	//
+	// The cluster type's `nodeCountMin` is NOT re-checked here. It is a floor on
+	// hosts that RUN the pool, enforced where one stops running — the deprovision
+	// above — so by the time an instance can be removed its pool has already
+	// satisfied it. Re-checking against the new size would also refuse the case
+	// the floor exists to permit: retiring a pool whose hosts were all
+	// legitimately deprovisioned.
+	//
+	//
+	// **Draining a pool releases its reservation.** Naming every host a pool
+	// holds releases the pool's reservation along with them, and the pool
+	// settles at size `0`. A later scale-up re-reserves hosts for it, unless the
+	// instance group's usage counts against organization limits: there a drained
+	// pool cannot be grown again (`RESERVATION_RELEASED` below), so drain a pool
+	// only when the group is finished with it. To remove the group itself, use
+	// `DELETE`.
 	//
 	//
 	// **`desiredCount` is yours.** Only this endpoint and create ever set a pool's
@@ -1690,19 +1888,20 @@ type ClientInterface interface {
 	// alone — disagree, it cannot be scaled: a target computed from a size you
 	// never confirmed is a guess. A pool whose counts AGREE but that still has a
 	// host provisioning is a different refusal, `POOL_HOSTS_NOT_PROVISIONED`
-	// below, and needs no correction. Send a request whose `size` equals the
-	// number of hosts the pool's reservation currently holds (the `409` names
-	// it): that is accepted, sets `desiredCount` to it, provisions nothing, leaves
-	// the group `active`, and makes the pool scalable again. It is not a
-	// scale-down — no host is released — and a request mixing this correction
-	// with a real scale of another pool is refused with `422`.
+	// below, and needs no correction. Send a `nodePools[]` request whose `size`
+	// equals the number of hosts the pool's reservation currently holds (the
+	// `409` names it): that is accepted, sets `desiredCount` to it, provisions
+	// nothing, leaves the group `active`, and makes the pool scalable again. It is
+	// not a scale-down — no host is released — and a request mixing this
+	// correction with a real scale of another pool is refused with `422`.
 	//
 	//
 	// That size may be `0`, when the pool's reservation answers holding no hosts.
-	// Recording it is the way out of a failed scale-up. The pool is then empty, and
-	// an empty pool cannot be grown yet (`POOL_EMPTY`) — materializing hosts into
-	// one needs a scale path that can CREATE a reservation rather than only extend
-	// an existing one.
+	// Recording it is the way out of a failed scale-up. The pool is then empty. An
+	// empty pool cannot be grown by extending its reservation (`POOL_EMPTY`); a
+	// pool whose reservation has been released, including one drained by a
+	// scale-down to `0`, is re-reserved by a scale-up instead, unless the instance
+	// group's usage counts against organization limits.
 	//
 	// Takes a body of the `application/json` content type.
 	//
@@ -1713,10 +1912,13 @@ type ClientInterface interface {
 	//
 	// **Visibility:** `internal` · `public` (x-visibility)
 	//
-	// List the project's instances — the provisioned hosts of its InstanceGroups.
+	// List the project's instances — the provisioned hosts of its InstanceGroups
+	// and Clusters.
 	//
-	// Instances are materialized when a group is created or scaled up, so there
-	// is no create operation: to add hosts, scale the owning InstanceGroup.
+	// Every instance has exactly one owner, an InstanceGroup or a Cluster, and
+	// publishes that owner's uid and id. Instances are materialized when their
+	// owner is created or scaled up, so there is no create operation: to add
+	// hosts, scale the owning InstanceGroup or Cluster node pool.
 	//
 	// A parent can be named by uid or by id (slug) — both are published on every
 	// instance. Filters combine with AND, so naming the same parent two ways that
@@ -1724,9 +1926,18 @@ type ClientInterface interface {
 	//
 	// Every row carries the host's current state — lifecycle status, health,
 	// inventory and current network configuration — read from the infrastructure
-	// service in one batched request while serving this call. `pageSize` is capped
-	// to the size of that batch, so this is unconditional: there is no degraded
-	// page.
+	// service in one batched request while serving this call. `limit` (and the
+	// deprecated `pageSize`) is capped to the size of that batch, 200, so this is
+	// unconditional: there is no degraded page.
+	//
+	// Supply `offset` and `limit` to page by position and receive `totalCount`;
+	// the deprecated `pageToken`/`pageSize` cursor keeps working for existing
+	// clients, and a request carrying neither stays on it. Both styles walk the
+	// instances in the same order (by `uid`), and `totalCount` counts the
+	// instances matching every active filter. An offset is a position, so an
+	// instance materialized or deleted between two requests can make a row
+	// repeat or be skipped across pages. See `inStates` for how it behaves on
+	// the offset style.
 	//
 	// That read is a dependency, not an enrichment. When the infrastructure
 	// service cannot be reached the listing fails with `503` rather than returning
@@ -1739,10 +1950,14 @@ type ClientInterface interface {
 	//
 	// **Visibility:** `internal` · `public` (x-visibility)
 	//
-	// Retrieve one instance: its identity and API context — which group and node
-	// pool own it, and which host it is — plus that host's current state:
+	// Retrieve one instance: its identity and API context — which owner and node
+	// pool it belongs to, and which host it is — plus that host's current state:
 	// lifecycle status, health, inventory and network configuration, all read
 	// from the infrastructure service while serving this request.
+	//
+	// The owner is an InstanceGroup or a Cluster, never both: the response carries
+	// `instanceGroupUuid`/`instanceGroupId` or `clusterUuid`/`clusterId`, and
+	// `nodePoolUuid`/`nodePool` either way.
 	//
 	// Nothing about the host is stored or cached here, so no field on this
 	// response is older than the request itself.
@@ -2177,8 +2392,10 @@ type ClientInterface interface {
 	// **Visibility:** `internal` · `public` (x-visibility)
 	//
 	//
-	// List the file stores in the project. Ordered by `createdAt` descending — newest first — with cursor pagination; there is no `orderBy` in v1.
+	// List the file stores in the project. Ordered by `createdAt` descending — newest first, ties broken by an internal unique key so the order is total; there is no `orderBy` in v1.
 	// Filters are all optional, combined with `AND`, and never change the shape of the response envelope. Use `state` to surface stores that never converged, `shareType` to account for committed capacity per capability class, and `consumer` to find the stores a given address or instance group is attached to — matched against the entry `ref`, not against the addresses a group resolved to.
+	//
+	// Supply any of `offset`, `limit` or `includeTotal` to page by position and receive `totalCount`, which counts the stores matching the same filters. The `shareType` filter matches the class name recorded on each store and is not checked against the catalog: a malformed name is rejected, but a name the catalog no longer offers is not, and still matches stores created under it before the class was removed. The deprecated `pageToken`/`pageSize` cursor keeps working, and a request with no paging parameter at all stays on it.
 	//
 	// Corresponds with GET /v1/regions/{region}/projects/{project}/storage/file-stores (the `ListFileStores` operationId).
 	ListFileStores(ctx context.Context, region RegionPathParam, project ProjectPathParam, params *ListFileStoresParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -2272,7 +2489,13 @@ type ClientInterface interface {
 	// List the file storage capability classes offered in the region. A share type is the tenant's entire storage selector: pick one by capability — for example `general` or `high-speed` — and the platform decides which storage satisfies it. The backing hardware is not selectable.
 	// The catalog is operator-curated and operator-written, and can differ between regions, so it must be read per region rather than cached globally. Results are ordered by `id` ascending.
 	// Only classes naming a live storage backend are returned, so a region with no registered backend serves an empty catalog.
-	// A caller without `compute.storage.read` is served the capability half of each class only: `backendRef`, `placement` and `createdBy` are absent.
+	// A caller without `compute.storage.read` is served the capability half of each class only: `backendRef`, `placement` and `createdBy` are absent. That projection removes fields, never classes, so `totalCount` is the same for every caller.
+	//
+	// Supply any of `offset`, `limit` or `includeTotal` to page by position and receive `totalCount`. A page can hold fewer than `limit` classes before the end of the catalog, so step `offset` by `limit` and stop once it reaches `totalCount` rather than at the first short page.
+	//
+	// This overrides the general `includeTotal` guidance for this list. That guidance says that with `includeTotal=false` a page shorter than `limit` is the last page; here it is not, because a class whose stored record cannot be read is left out of its page while still counted. `totalCount` is the only reliable end signal on this list, so keep it (the default) to read the whole catalog.
+	//
+	// The deprecated `pageToken`/`pageSize` cursor keeps working, and a request with no paging parameter at all stays on it.
 	//
 	// Corresponds with GET /v1/regions/{region}/storage/share-types (the `ListShareTypes` operationId).
 	ListShareTypes(ctx context.Context, region RegionPathParam, params *ListShareTypesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -2321,10 +2544,9 @@ func (c *Client) ListRegions(ctx context.Context, reqEditors ...RequestEditorFn)
 // This endpoint proxies to the underlying identity provider
 // for token issuance.
 //
-// Four grant types are supported:
-//
-// **authorization_code** — Interactive user session. Exchanges an
-// authorization code obtained from the OAuth2 /authorize flow.
+// Three grant types are supported. Interactive sign-in does not use this
+// endpoint: it goes through `login/initiate` and the login callback, which
+// record a session and set the `k0r_refresh_token` cookie.
 //
 // **api_key** — Programmatic access via an API key. The caller
 // presents the opaque, prefixed API key token. Effective privileges
@@ -2377,10 +2599,9 @@ func (c *Client) MintTokenWithBody(ctx context.Context, contentType string, body
 // This endpoint proxies to the underlying identity provider
 // for token issuance.
 //
-// Four grant types are supported:
-//
-// **authorization_code** — Interactive user session. Exchanges an
-// authorization code obtained from the OAuth2 /authorize flow.
+// Three grant types are supported. Interactive sign-in does not use this
+// endpoint: it goes through `login/initiate` and the login callback, which
+// record a session and set the `k0r_refresh_token` cookie.
 //
 // **api_key** — Programmatic access via an API key. The caller
 // presents the opaque, prefixed API key token. Effective privileges
@@ -2429,6 +2650,8 @@ func (c *Client) MintToken(ctx context.Context, body MintTokenJSONRequestBody, r
 //
 // **Visibility:** `public` (x-visibility)
 //
+// **Who may call this:** Any authenticated caller, for their own partition's subscriptions: a customer's organization, or the provider partition for provider personnel. A customer with no resolvable organization is refused with 401.
+//
 // Corresponds with GET /v1/regions/global/notifications/webhooks (the `ListWebhookSubscriptions` operationId).
 func (c *Client) ListWebhookSubscriptions(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewListWebhookSubscriptionsRequest(c.Server)
@@ -2446,6 +2669,12 @@ func (c *Client) ListWebhookSubscriptions(ctx context.Context, reqEditors ...Req
 // CreateWebhookSubscriptionWithBody Create a webhook subscription
 //
 // **Visibility:** `public` (x-visibility)
+//
+// **Who may call this:** Any authenticated caller, in their own partition.
+// Any member of a customer organization may write that organization's
+// subscriptions (no org-admin role is needed); in the provider partition
+// only platform-admin may, and other provider personnel are refused with
+// 403. A customer with no resolvable organization is refused with 401.
 //
 // Subscribe a customer endpoint to notification events. A signing secret is
 // generated when not supplied and returned ONCE in the response (store it — it
@@ -2636,6 +2865,11 @@ func (c *Client) ListWebhookSubscriptions(ctx context.Context, reqEditors ...Req
 // ignore fields it does not recognise. Changing the meaning of an existing field
 // or removing one is a breaking change and will only be made through a versioned
 // change with a published migration period — never silently.
+//
+// The `data` of an event delivered to an organization's endpoint holds only
+// the fields its event type defines for customers; a field the producing
+// service sent outside that list is never delivered there. The provider's own
+// subscriptions receive all of `data`.
 //
 // Build your receiver to tolerate additive growth, and keep that tolerance
 // separate from the two mechanisms above, which are NOT affected by new fields:
@@ -2682,6 +2916,12 @@ func (c *Client) CreateWebhookSubscriptionWithBody(ctx context.Context, contentT
 //
 // **Visibility:** `public` (x-visibility)
 //
+// **Who may call this:** Any authenticated caller, in their own partition.
+// Any member of a customer organization may write that organization's
+// subscriptions (no org-admin role is needed); in the provider partition
+// only platform-admin may, and other provider personnel are refused with
+// 403. A customer with no resolvable organization is refused with 401.
+//
 // Subscribe a customer endpoint to notification events. A signing secret is
 // generated when not supplied and returned ONCE in the response (store it — it
 // is never returned again). Dispatch requires the event-intake fan-out relay to
@@ -2872,6 +3112,11 @@ func (c *Client) CreateWebhookSubscriptionWithBody(ctx context.Context, contentT
 // or removing one is a breaking change and will only be made through a versioned
 // change with a published migration period — never silently.
 //
+// The `data` of an event delivered to an organization's endpoint holds only
+// the fields its event type defines for customers; a field the producing
+// service sent outside that list is never delivered there. The provider's own
+// subscriptions receive all of `data`.
+//
 // Build your receiver to tolerate additive growth, and keep that tolerance
 // separate from the two mechanisms above, which are NOT affected by new fields:
 //
@@ -2917,7 +3162,9 @@ func (c *Client) CreateWebhookSubscription(ctx context.Context, body CreateWebho
 //
 // **Visibility:** `public` (x-visibility)
 //
-// Delete one of the caller's webhook subscriptions. Deleting a provider subscription requires the platform-admin role, the same rule as creating one.
+// **Who may call this:** Any authenticated caller, in their own partition. Any member of a customer organization may write that organization's subscriptions (no org-admin role is needed); in the provider partition only platform-admin may, and other provider personnel are refused with 403. A customer with no resolvable organization is refused with 401.
+//
+// Delete one of the webhook subscriptions in the caller's partition.
 //
 // Corresponds with DELETE /v1/regions/global/notifications/webhooks/{id} (the `DeleteWebhookSubscription` operationId).
 func (c *Client) DeleteWebhookSubscription(ctx context.Context, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -2936,6 +3183,12 @@ func (c *Client) DeleteWebhookSubscription(ctx context.Context, id openapi_types
 // RotateWebhookSubscriptionSecretWithBody Rotate a webhook subscription's signing secret
 //
 // **Visibility:** `public` (x-visibility)
+//
+// **Who may call this:** Any authenticated caller, in their own partition.
+// Any member of a customer organization may write that organization's
+// subscriptions (no org-admin role is needed); in the provider partition
+// only platform-admin may, and other provider personnel are refused with
+// 403. A customer with no resolvable organization is refused with 401.
 //
 // Issue a new signing secret for an existing webhook subscription. The
 // subscription id, URL and event-type filter are unchanged, and no delivery is
@@ -3014,6 +3267,12 @@ func (c *Client) RotateWebhookSubscriptionSecretWithBody(ctx context.Context, id
 // RotateWebhookSubscriptionSecret Rotate a webhook subscription's signing secret
 //
 // **Visibility:** `public` (x-visibility)
+//
+// **Who may call this:** Any authenticated caller, in their own partition.
+// Any member of a customer organization may write that organization's
+// subscriptions (no org-admin role is needed); in the provider partition
+// only platform-admin may, and other provider personnel are refused with
+// 403. A customer with no resolvable organization is refused with 401.
 //
 // Issue a new signing secret for an existing webhook subscription. The
 // subscription id, URL and event-type filter are unchanged, and no delivery is
@@ -3145,7 +3404,7 @@ func (c *Client) GetOrganization(ctx context.Context, id string, reqEditors ...R
 //
 // **Visibility:** `public` · `internal` (x-visibility)
 //
-// List all role definitions.
+// List the roles that can be bound in this organization: the built-in roles and the organization's custom roles whose `scopes` include `org` or `project`. Roles bindable only at platform scope are not listed here; they are listed by `GET /v1/regions/global/iam/platform/roles` and remain readable by id through `getRole`. The filter reads only each role's `scopes`, never the caller, so every principal listing the same organization receives the same set. A role with mixed scopes (for example `iam-admin`, scopes `platform` and `org`) appears both here and in the platform list. `totalCount` counts this filtered set.
 //
 // Corresponds with GET /v1/regions/global/organizations/{orgId}/iam/roles (the `ListRoles` operationId).
 func (c *Client) ListRoles(ctx context.Context, orgId OrganizationPathParam, params *ListRolesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -3357,8 +3616,8 @@ func (c *Client) CreateProjectInOrg(ctx context.Context, orgId string, body Crea
 // creating a project with the same id afterwards succeeds. It is not available
 // before then, so wait for the first 404 rather than retrying a create. Before
 // the id is released, the project's project-scoped service accounts are
-// disabled, its IAM role bindings are purged, and its quota assignment is
-// cleared, so a re-created project does not inherit them. That is the order
+// disabled, its IAM role bindings are purged, and its quota limits are
+// removed, so a re-created project does not inherit them. That is the order
 // the service uses, and the first two are deliberately in that sequence.
 //
 // Disabling the service accounts is a side effect worth planning for: a
@@ -3523,7 +3782,7 @@ func (c *Client) GetProjectQuota(ctx context.Context, orgId string, id string, r
 //
 // **Visibility:** `internal` · `public` (x-visibility)
 //
-// Read the organization's tenant-scope quota: one row per dimension that is limited, or enforced with recorded usage, with its unit, whether it is enforced, and a single `tenant` entry in `scopes` carrying the configured limit, recorded usage, headroom and over-limit flag. Usage is summed across regions. A dimension the admission check does not refuse on (nothing charges it, or its enforcement is switched off) reports enforced false and omits used and headroom rather than showing 0. An organization with no active quota assignment is not an error; its rows report usage with limit and headroom absent (unlimited). The top-level limit, used and remaining are deprecated in favor of scopes. Returns 404 if the organization does not exist or the caller is not scoped to it.
+// Read the organization's tenant-scope quota: one row per dimension that is limited, or enforced with recorded usage, with its unit, whether it is enforced, and a single `tenant` entry in `scopes` carrying the configured limit, recorded usage, headroom and over-limit flag. Usage is summed across regions. A dimension the admission check does not refuse on (nothing charges it, or its enforcement is switched off) reports enforced false and omits used and headroom rather than showing 0. An organization that holds no limits of its own is not an error; its rows report usage with limit and headroom absent (unlimited). The top-level limit, used and remaining are deprecated in favor of scopes. Returns 404 if the organization does not exist or the caller is not scoped to it.
 //
 // Corresponds with GET /v1/regions/global/organizations/{orgId}/quota (the `GetTenantQuota` operationId).
 func (c *Client) GetTenantQuota(ctx context.Context, orgId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -3563,7 +3822,16 @@ func (c *Client) ListProjects(ctx context.Context, params *ListProjectsParams, r
 //
 // **Visibility:** `internal` · `public` (x-visibility)
 //
-// List all ClusterTypes available in the region. Deprecated types are excluded unless includeDeprecated=true.
+// List all ClusterTypes available in the region, newest first. Deprecated
+// types are excluded unless `includeDeprecated=true`.
+//
+// Supply any of `offset`, `limit` or `includeTotal` to page by position and
+// receive `totalCount`, which counts the ClusterTypes the same
+// `includeDeprecated` setting lists. This is the only way to read past the
+// first page. Without those parameters the list returns its first page only,
+// sized by the deprecated `pageSize`; the deprecated `pageToken` has never
+// been implemented here and is rejected with 400 on its own, or with 422
+// alongside an offset-style parameter.
 //
 // Corresponds with GET /v1/regions/{region}/compute/cluster-types (the `ListClusterTypes` operationId).
 func (c *Client) ListClusterTypes(ctx context.Context, region RegionPathParam, params *ListClusterTypesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -3607,6 +3875,13 @@ func (c *Client) GetClusterType(ctx context.Context, region RegionPathParam, id 
 // optional `status` query parameter filters to one lifecycle status; an
 // unrecognized value is rejected with `422` rather than returning an empty
 // list.
+//
+// Supply any of `offset`, `limit` or `includeTotal` to page through the
+// history and receive `totalCount`, which counts this ClusterType's versions matching the same
+// `status`. A request with no paging parameter returns the whole history,
+// as it always has. This list has no cursor style; `pageToken` and
+// `pageSize` are ignored unless sent alongside an offset-style parameter,
+// which is rejected with `422`.
 //
 // Corresponds with GET /v1/regions/{region}/compute/cluster-types/{id}/versions (the `ListClusterTypeVersions` operationId).
 func (c *Client) ListClusterTypeVersions(ctx context.Context, region RegionPathParam, id string, params *ListClusterTypeVersionsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -3709,6 +3984,15 @@ func (c *Client) GetAddressPool(ctx context.Context, region RegionPathParam, id 
 // so a cluster whose creation commits after a page was served may not appear
 // in that traversal at all — start a fresh list to see it.)
 //
+// Supply `offset` and `limit` to page by position and receive `totalCount`;
+// the deprecated `pageToken`/`pageSize` cursor keeps working for existing
+// clients, and a request carrying neither stays on it. Both styles walk the
+// collection in the same newest-first order, and `totalCount` counts the
+// clusters matching the active `state`, `health` and `search` filters. Unlike
+// the cursor, an offset is a position: a cluster created or deleted between
+// two requests shifts every later row by one, so a row can repeat or be
+// skipped across pages.
+//
 // Corresponds with GET /v1/regions/{region}/projects/{project}/compute/clusters (the `ListClusters` operationId).
 func (c *Client) ListClusters(ctx context.Context, region RegionPathParam, project ProjectPathParam, params *ListClustersParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewListClustersRequest(c.Server, region, project, params)
@@ -3797,10 +4081,17 @@ func (c *Client) CreateCluster(ctx context.Context, region RegionPathParam, proj
 // a token.
 //
 // An API key receives a kubeconfig capped to the key's own roles rather than
-// its owner's. A caller with no owning organization in context — in practice
-// a platform-scope operator with no membership in the cluster's organization
-// — gets `503` too: a token narrowed by project alone would still carry that
-// caller's roles in every other organization they belong to.
+// its owner's.
+//
+// A caller whose access comes from platform-scope roles and who holds no role
+// in the cluster's organization or project gets `403`: provider-side roles
+// alone do not grant access to a tenant cluster.
+//
+// `503` means the platform could not check membership or mint a token, not
+// that access was refused. That includes a request for which the platform
+// could not determine the organization that owns the project, since a token
+// narrowed by project alone would still carry the caller's roles in every
+// other organization they belong to.
 //
 // Corresponds with GET /v1/regions/{region}/projects/{project}/compute/clusters/{clusterId}/kubeconfig (the `GetClusterKubeconfig` operationId).
 func (c *Client) GetClusterKubeconfig(ctx context.Context, region RegionPathParam, project ProjectPathParam, clusterId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -3831,6 +4122,10 @@ func (c *Client) GetClusterKubeconfig(ctx context.Context, region RegionPathPara
 // issuance and a `revoked` config are both excluded, so a caller that has
 // just requested one will not find that row here until it activates.
 //
+// Because this operation is deprecated, it does not take the `offset`/`limit`
+// pagination style the other lists offer: it keeps `pageToken`/`pageSize`,
+// and its response keeps reporting `total`.
+//
 // Corresponds with GET /v1/regions/{region}/projects/{project}/compute/clusters/{clusterId}/kubeconfigs (the `ListKubeconfigs` operationId).
 // Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 func (c *Client) ListKubeconfigs(ctx context.Context, region RegionPathParam, project ProjectPathParam, clusterId string, params *ListKubeconfigsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -3855,6 +4150,10 @@ func (c *Client) ListKubeconfigs(ctx context.Context, region RegionPathParam, pr
 // at provisioning time and is immutable — it cannot be changed or removed from
 // a running cluster.
 //
+// Not paginated. The list is bounded by construction — at most 32 users,
+// fixed when the cluster is created — so it is always returned whole, with no
+// `offset`/`limit` or `pageToken`/`pageSize` parameters.
+//
 // Corresponds with GET /v1/regions/{region}/projects/{project}/compute/clusters/{clusterId}/ssh-access (the `ListClusterSshAccess` operationId).
 func (c *Client) ListClusterSshAccess(ctx context.Context, region RegionPathParam, project ProjectPathParam, clusterId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewListClusterSshAccessRequest(c.Server, region, project, clusterId)
@@ -3874,6 +4173,7 @@ func (c *Client) ListClusterSshAccess(ctx context.Context, region RegionPathPara
 // **Visibility:** `internal` · `public` (x-visibility)
 //
 // "Cluster CRUD API"; Delete cluster and trigger cleanup of nodes and IP resources.
+// Credentials distributed to the cluster are revoked before the delete starts; if revocation fails, nothing changes and the delete must be retried.
 //
 // Corresponds with DELETE /v1/regions/{region}/projects/{project}/compute/clusters/{id} (the `DeleteCluster` operationId).
 func (c *Client) DeleteCluster(ctx context.Context, region RegionPathParam, project ProjectPathParam, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -3913,7 +4213,7 @@ func (c *Client) GetCluster(ctx context.Context, region RegionPathParam, project
 //
 // **Visibility:** `internal` · `public` (x-visibility)
 //
-// "Cluster CRUD API"; Update cluster configuration to scale resources, upgrade versions, or modify settings.
+// "Cluster CRUD API"; Update cluster configuration: display name, description, tags, storage ceiling, or security groups. Node counts are not changed here; use `scaleCluster`, and a request carrying `nodePools` is refused with `422`.
 //
 // Takes any type of body and a specified content type.
 //
@@ -3935,7 +4235,7 @@ func (c *Client) UpdateClusterWithBody(ctx context.Context, region RegionPathPar
 //
 // **Visibility:** `internal` · `public` (x-visibility)
 //
-// "Cluster CRUD API"; Update cluster configuration to scale resources, upgrade versions, or modify settings.
+// "Cluster CRUD API"; Update cluster configuration: display name, description, tags, storage ceiling, or security groups. Node counts are not changed here; use `scaleCluster`, and a request carrying `nodePools` is refused with `422`.
 //
 // Takes a body of the `application/json` content type.
 //
@@ -3957,35 +4257,41 @@ func (c *Client) UpdateCluster(ctx context.Context, region RegionPathParam, proj
 //
 // **Visibility:** `internal` · `public` (x-visibility)
 //
-// Cancel the operation the cluster is currently running and settle it to
-// `failed` with `stateReason` `CANCELLED`, so a cluster wedged mid-operation
-// can reach a state from which it can be deleted.
+// Request that the operation the cluster is currently running be stopped. The
+// cancel does not change the cluster's `state`: it asks the engine execution to
+// stop and marks the operation cancelling, leaving the cluster in its
+// transitional `state` while the run winds down. When the run ends the cluster
+// settles the usual way: normally `failed` with `stateReason` `CANCELLED`
+// (`operation.status` `cancelled`), also when the run ignores the stop and the
+// watchdog force-fails it; but a run that completes before the stop takes
+// effect settles `active` instead (`operation.status` `succeeded`). Wait for
+// either settled state before deleting; a `DELETE` issued while the cluster is
+// still cancelling is refused with `409`.
 //
 // Admitted only while an operation is in flight: the cluster must be
 // `creating` or `updating`. The engine execution is asked to stop first; if
 // that request cannot be delivered the cancel fails (`5xx`) and the cluster is
-// left unchanged in its transitional state, so the caller can retry. Once the
-// stop is requested — or the run has already finished on its own — the cluster
-// is settled `failed` and `operation.status` reads `cancelled`, distinct from
-// an ordinary `failed`. A workflow that completes despite the cancel lands a
-// callback the settled cluster ignores, so the result is stable.
+// left unchanged, so the caller can retry. Once the stop has been requested the
+// cluster is returned in its transitional `state` with `operation.status`
+// `cancelling`, and the response is `202`.
 //
 // The request body pins the operation to cancel: `executionId` must match the
 // operation currently in flight, as read from the cluster's
 // `operation.executionId`. This makes a cancel acted on a stale view safe — if
 // the cluster has settled and begun a different operation since it was read,
-// the cancel is refused rather than aborting the newer operation.
+// the cancel is refused rather than stopping the newer operation.
 //
-// The cluster is returned in its settled `failed` state. Retrying the cancel —
-// the same `executionId` on a cluster already settled `failed` with
-// `operation.status` `cancelled` — returns `200` with that settled cluster, so
-// the operation is idempotent. Cancelling is rejected with `409` when the
-// cluster is otherwise settled with nothing in flight (`active`, or `failed`
-// from a different cause or operation), or is `deleting`, which has no cancel,
-// or when `executionId` does not match the operation now in flight; the message
-// names the blocking state. A missing or empty body is rejected with `400`. A
-// cluster that has already been deleted is not found and returns `404`, like any
-// unknown cluster.
+// Retrying the cancel — the same `executionId` on a cluster that has since
+// settled `failed` with `operation.status` `cancelled` — returns `200` with
+// that settled cluster, so the operation is idempotent; a cancel that lost to
+// completion leaves nothing to cancel, so its retry is refused with `409` like
+// any other settled cluster. Cancelling is rejected
+// with `409` when the cluster is otherwise settled with nothing in flight
+// (`active`, or `failed` from a different cause or operation), or is `deleting`,
+// which has no cancel, or when `executionId` does not match the operation now
+// in flight; the message names the blocking state. A missing or empty body is
+// rejected with `400`. A cluster that has already been deleted is not found and
+// returns `404`, like any unknown cluster.
 //
 // Takes any type of body and a specified content type.
 //
@@ -4007,35 +4313,41 @@ func (c *Client) CancelClusterWithBody(ctx context.Context, region RegionPathPar
 //
 // **Visibility:** `internal` · `public` (x-visibility)
 //
-// Cancel the operation the cluster is currently running and settle it to
-// `failed` with `stateReason` `CANCELLED`, so a cluster wedged mid-operation
-// can reach a state from which it can be deleted.
+// Request that the operation the cluster is currently running be stopped. The
+// cancel does not change the cluster's `state`: it asks the engine execution to
+// stop and marks the operation cancelling, leaving the cluster in its
+// transitional `state` while the run winds down. When the run ends the cluster
+// settles the usual way: normally `failed` with `stateReason` `CANCELLED`
+// (`operation.status` `cancelled`), also when the run ignores the stop and the
+// watchdog force-fails it; but a run that completes before the stop takes
+// effect settles `active` instead (`operation.status` `succeeded`). Wait for
+// either settled state before deleting; a `DELETE` issued while the cluster is
+// still cancelling is refused with `409`.
 //
 // Admitted only while an operation is in flight: the cluster must be
 // `creating` or `updating`. The engine execution is asked to stop first; if
 // that request cannot be delivered the cancel fails (`5xx`) and the cluster is
-// left unchanged in its transitional state, so the caller can retry. Once the
-// stop is requested — or the run has already finished on its own — the cluster
-// is settled `failed` and `operation.status` reads `cancelled`, distinct from
-// an ordinary `failed`. A workflow that completes despite the cancel lands a
-// callback the settled cluster ignores, so the result is stable.
+// left unchanged, so the caller can retry. Once the stop has been requested the
+// cluster is returned in its transitional `state` with `operation.status`
+// `cancelling`, and the response is `202`.
 //
 // The request body pins the operation to cancel: `executionId` must match the
 // operation currently in flight, as read from the cluster's
 // `operation.executionId`. This makes a cancel acted on a stale view safe — if
 // the cluster has settled and begun a different operation since it was read,
-// the cancel is refused rather than aborting the newer operation.
+// the cancel is refused rather than stopping the newer operation.
 //
-// The cluster is returned in its settled `failed` state. Retrying the cancel —
-// the same `executionId` on a cluster already settled `failed` with
-// `operation.status` `cancelled` — returns `200` with that settled cluster, so
-// the operation is idempotent. Cancelling is rejected with `409` when the
-// cluster is otherwise settled with nothing in flight (`active`, or `failed`
-// from a different cause or operation), or is `deleting`, which has no cancel,
-// or when `executionId` does not match the operation now in flight; the message
-// names the blocking state. A missing or empty body is rejected with `400`. A
-// cluster that has already been deleted is not found and returns `404`, like any
-// unknown cluster.
+// Retrying the cancel — the same `executionId` on a cluster that has since
+// settled `failed` with `operation.status` `cancelled` — returns `200` with
+// that settled cluster, so the operation is idempotent; a cancel that lost to
+// completion leaves nothing to cancel, so its retry is refused with `409` like
+// any other settled cluster. Cancelling is rejected
+// with `409` when the cluster is otherwise settled with nothing in flight
+// (`active`, or `failed` from a different cause or operation), or is `deleting`,
+// which has no cancel, or when `executionId` does not match the operation now
+// in flight; the message names the blocking state. A missing or empty body is
+// rejected with `400`. A cluster that has already been deleted is not found and
+// returns `404`, like any unknown cluster.
 //
 // Takes a body of the `application/json` content type.
 //
@@ -4192,6 +4504,10 @@ func (c *Client) ScaleCluster(ctx context.Context, region RegionPathParam, proje
 // only from `active`); reaching a version further ahead requires one
 // UpgradeCluster call per step.
 //
+// A cluster with a hosted control plane is upgraded the same way, and its
+// control plane keeps the settings its ClusterType's HCPConfig sets.
+// **Not yet applied:** declared ahead of its implementation.
+//
 // Takes any type of body and a specified content type.
 //
 // Corresponds with POST /v1/regions/{region}/projects/{project}/compute/clusters/{id}/upgrade (the `UpgradeCluster` operationId).
@@ -4229,6 +4545,10 @@ func (c *Client) UpgradeClusterWithBody(ctx context.Context, region RegionPathPa
 // only from `active`); reaching a version further ahead requires one
 // UpgradeCluster call per step.
 //
+// A cluster with a hosted control plane is upgraded the same way, and its
+// control plane keeps the settings its ClusterType's HCPConfig sets.
+// **Not yet applied:** declared ahead of its implementation.
+//
 // Takes a body of the `application/json` content type.
 //
 // Corresponds with POST /v1/regions/{region}/projects/{project}/compute/clusters/{id}/upgrade (the `UpgradeCluster` operationId).
@@ -4249,7 +4569,11 @@ func (c *Client) UpgradeCluster(ctx context.Context, region RegionPathParam, pro
 //
 // **Visibility:** `internal` · `public` (x-visibility)
 //
-// List BMaaS instance groups in the project.
+// List BMaaS instance groups in the project, ordered by `id`.
+//
+// Supply `offset` and `limit` to page by position and receive `totalCount`; the deprecated `pageToken`/`pageSize` cursor keeps working for existing clients, and a request carrying neither stays on it. Both styles walk the groups in the same `id` order, and `totalCount` counts the groups the `showDeleted` setting selects. An offset is a position, so a group created or deleted between two requests can make a row repeat or be skipped across pages.
+//
+// The embed budgets below bound ONE response, so they apply to each offset page exactly as they do to each cursor page; a smaller `limit` is the lever for both.
 //
 // Corresponds with GET /v1/regions/{region}/projects/{project}/compute/instance-groups (the `ListInstanceGroups` operationId).
 func (c *Client) ListInstanceGroups(ctx context.Context, region RegionPathParam, project ProjectPathParam, params *ListInstanceGroupsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -4314,8 +4638,10 @@ func (c *Client) CreateInstanceGroup(ctx context.Context, region RegionPathParam
 // **Visibility:** `internal` · `public` (x-visibility)
 //
 // Delete a group and release all its hosts (each performing the mandatory OS wipe). Deletion is asynchronous and two-phase: the group must be in `active`, `failed`, or `creating`. From `active`/`failed` the request transitions the group to `deleting` and starts the teardown workflow, and the row is removed only once that workflow is observed to finish.
-// Deleting a `creating` group instead cancels its in-flight create; once that settles (normally to `failed`), the group is automatically torn down the rest of the way — no second DELETE call is needed, though this may take longer than deleting an already-settled group. A manual DELETE issued again during this window is harmless: a `204` while the group is still `creating` (the cancel-mark request re-matches), or a `409` once the auto-chain has moved the row to `deleting`.
+// Deleting a `creating` group instead cancels its in-flight create; once that settles (normally to `failed`), the group is automatically torn down the rest of the way — a second DELETE call is normally not needed, though this may take longer than deleting an already-settled group. A manual DELETE issued again during this window is harmless: a `204` while the group is still `creating` (the cancel-mark request re-matches), or a `409` once the auto-chain has moved the row to `deleting`.
 // Deleting a group in `updating` or `deleting` returns `409 CONFLICT_IN_USE`.
+// From `active`/`failed`, credentials distributed to the group are revoked before the delete starts; if revocation fails, nothing changes and the delete must be retried.
+// Deleting a `failed` group returns `503` when a node pool's reservation can only be recovered from the group's workflow history and either that history cannot be read right now, or the reservation recovered from it cannot be recorded on the group. The group is left in `failed` (any reservation already recovered and recorded stays recorded), and the delete should be retried.
 //
 // Corresponds with DELETE /v1/regions/{region}/projects/{project}/compute/instance-groups/{id} (the `DeleteInstanceGroup` operationId).
 func (c *Client) DeleteInstanceGroup(ctx context.Context, region RegionPathParam, project ProjectPathParam, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -4402,22 +4728,64 @@ func (c *Client) UpdateInstanceGroup(ctx context.Context, region RegionPathParam
 	return c.Client.Do(req)
 }
 
-// ScaleInstanceGroupWithBody Scale instance group node pools (scale up only; scale down not yet implemented)
+// ScaleInstanceGroupWithBody Scale instance group node pools up or down
 //
 // **Visibility:** `internal` · `public` (x-visibility)
 //
-// Increase host counts on one or more of the group's node pools and dispatch
-// the asynchronous `instance-group-scale-up` workflow, which adds servers to
-// each pool's existing reservation and provisions the new hosts.
+// Change host counts on one or more of the group's node pools and dispatch the
+// asynchronous workflow for the request's direction: `instance-group-scale-up`
+// adds servers to each pool's existing reservation and provisions the new
+// hosts; `instance-group-scale-down` removes the named instances' hosts from
+// their reservation and hands them back to the available pool.
 //
-// Each `nodePools[]` entry supplies an absolute desired count (not a delta).
-// The request is rejected with `422` when duplicate pool slugs are supplied, a
-// slug is unknown, any target is less than or equal to the pool's settled
-// count, or a pool has no bound infrastructure reservation; and with `409` when
-// the group is not in the settled `active` state — i.e. another lifecycle
-// operation (create, update, delete, or a concurrent scale) is already in
-// flight, or the group is `failed`. The accepted scale atomically moves the
-// group to `updating` and returns its snapshot.
+// **A shrink needs more authority than a grow.** Growing a pool is an update;
+// shrinking one destroys instances and hands their servers back, so it
+// additionally requires the permission that governs removal — the same one
+// the group”s deprovision and `DELETE` carry. A caller who may resize a pool
+// but not remove from it can grow and will be refused `403` on a shrink.
+//
+// **The body states its direction by which field it carries**, and the two are
+// mutually exclusive: supply exactly one. `nodePools[]` grows pools, each
+// entry an absolute desired count (not a delta). `instancesToDelete` shrinks
+// them. Supplying both, or neither, is `422` — there is no single honest
+// response for a request that does both. The request is also rejected with
+// `422` when duplicate pool slugs are supplied, a slug is unknown, a `size` is
+// below what its pool holds, or a pool has no bound infrastructure
+// reservation; and with `409` when the group is not in the settled `active`
+// state — i.e. another lifecycle operation (create, update, delete, or a
+// concurrent scale) is already in flight, or the group is `failed`. The
+// accepted scale atomically moves the group to `updating` and returns its
+// snapshot.
+//
+// **A shrink names hosts, never counts.** `instancesToDelete` is the entire
+// scale-down request: each instance names its own pool, and each pool's new
+// size is derived as the hosts it holds minus the instances named from it, so
+// neither pool nor size is supplied. This is why a `size` below what a pool
+// holds is refused rather than treated as a shrink — it would say how MANY
+// hosts to remove without saying WHICH, and the platform does not choose
+// hosts on a tenant's behalf.
+//
+// Only an instance whose host is settled `not_provisioned` can be removed —
+// there is nothing running on it to destroy. An instance in any other state
+// refuses the WHOLE request with `INSTANCES_NOT_DEPROVISIONED` (below) and
+// nothing is written. Destroy what runs on those hosts first with
+// `POST .../instance-groups/{id}/deprovision`, which keeps them claimed, then
+// scale down to hand them back.
+//
+// The cluster type's `nodeCountMin` is NOT re-checked here. It is a floor on
+// hosts that RUN the pool, enforced where one stops running — the deprovision
+// above — so by the time an instance can be removed its pool has already
+// satisfied it. Re-checking against the new size would also refuse the case
+// the floor exists to permit: retiring a pool whose hosts were all
+// legitimately deprovisioned.
+//
+// **Draining a pool releases its reservation.** Naming every host a pool
+// holds releases the pool's reservation along with them, and the pool
+// settles at size `0`. A later scale-up re-reserves hosts for it, unless the
+// instance group's usage counts against organization limits: there a drained
+// pool cannot be grown again (`RESERVATION_RELEASED` below), so drain a pool
+// only when the group is finished with it. To remove the group itself, use
+// `DELETE`.
 //
 // **`desiredCount` is yours.** Only this endpoint and create ever set a pool's
 // desired size; no failure path, settle or background job rewrites it. A
@@ -4429,18 +4797,19 @@ func (c *Client) UpdateInstanceGroup(ctx context.Context, region RegionPathParam
 // alone — disagree, it cannot be scaled: a target computed from a size you
 // never confirmed is a guess. A pool whose counts AGREE but that still has a
 // host provisioning is a different refusal, `POOL_HOSTS_NOT_PROVISIONED`
-// below, and needs no correction. Send a request whose `size` equals the
-// number of hosts the pool's reservation currently holds (the `409` names
-// it): that is accepted, sets `desiredCount` to it, provisions nothing, leaves
-// the group `active`, and makes the pool scalable again. It is not a
-// scale-down — no host is released — and a request mixing this correction
-// with a real scale of another pool is refused with `422`.
+// below, and needs no correction. Send a `nodePools[]` request whose `size`
+// equals the number of hosts the pool's reservation currently holds (the
+// `409` names it): that is accepted, sets `desiredCount` to it, provisions
+// nothing, leaves the group `active`, and makes the pool scalable again. It is
+// not a scale-down — no host is released — and a request mixing this
+// correction with a real scale of another pool is refused with `422`.
 //
 // That size may be `0`, when the pool's reservation answers holding no hosts.
-// Recording it is the way out of a failed scale-up. The pool is then empty, and
-// an empty pool cannot be grown yet (`POOL_EMPTY`) — materializing hosts into
-// one needs a scale path that can CREATE a reservation rather than only extend
-// an existing one.
+// Recording it is the way out of a failed scale-up. The pool is then empty. An
+// empty pool cannot be grown by extending its reservation (`POOL_EMPTY`); a
+// pool whose reservation has been released, including one drained by a
+// scale-down to `0`, is re-reserved by a scale-up instead, unless the instance
+// group's usage counts against organization limits.
 //
 // Takes any type of body and a specified content type.
 //
@@ -4458,22 +4827,64 @@ func (c *Client) ScaleInstanceGroupWithBody(ctx context.Context, region RegionPa
 	return c.Client.Do(req)
 }
 
-// ScaleInstanceGroup Scale instance group node pools (scale up only; scale down not yet implemented)
+// ScaleInstanceGroup Scale instance group node pools up or down
 //
 // **Visibility:** `internal` · `public` (x-visibility)
 //
-// Increase host counts on one or more of the group's node pools and dispatch
-// the asynchronous `instance-group-scale-up` workflow, which adds servers to
-// each pool's existing reservation and provisions the new hosts.
+// Change host counts on one or more of the group's node pools and dispatch the
+// asynchronous workflow for the request's direction: `instance-group-scale-up`
+// adds servers to each pool's existing reservation and provisions the new
+// hosts; `instance-group-scale-down` removes the named instances' hosts from
+// their reservation and hands them back to the available pool.
 //
-// Each `nodePools[]` entry supplies an absolute desired count (not a delta).
-// The request is rejected with `422` when duplicate pool slugs are supplied, a
-// slug is unknown, any target is less than or equal to the pool's settled
-// count, or a pool has no bound infrastructure reservation; and with `409` when
-// the group is not in the settled `active` state — i.e. another lifecycle
-// operation (create, update, delete, or a concurrent scale) is already in
-// flight, or the group is `failed`. The accepted scale atomically moves the
-// group to `updating` and returns its snapshot.
+// **A shrink needs more authority than a grow.** Growing a pool is an update;
+// shrinking one destroys instances and hands their servers back, so it
+// additionally requires the permission that governs removal — the same one
+// the group”s deprovision and `DELETE` carry. A caller who may resize a pool
+// but not remove from it can grow and will be refused `403` on a shrink.
+//
+// **The body states its direction by which field it carries**, and the two are
+// mutually exclusive: supply exactly one. `nodePools[]` grows pools, each
+// entry an absolute desired count (not a delta). `instancesToDelete` shrinks
+// them. Supplying both, or neither, is `422` — there is no single honest
+// response for a request that does both. The request is also rejected with
+// `422` when duplicate pool slugs are supplied, a slug is unknown, a `size` is
+// below what its pool holds, or a pool has no bound infrastructure
+// reservation; and with `409` when the group is not in the settled `active`
+// state — i.e. another lifecycle operation (create, update, delete, or a
+// concurrent scale) is already in flight, or the group is `failed`. The
+// accepted scale atomically moves the group to `updating` and returns its
+// snapshot.
+//
+// **A shrink names hosts, never counts.** `instancesToDelete` is the entire
+// scale-down request: each instance names its own pool, and each pool's new
+// size is derived as the hosts it holds minus the instances named from it, so
+// neither pool nor size is supplied. This is why a `size` below what a pool
+// holds is refused rather than treated as a shrink — it would say how MANY
+// hosts to remove without saying WHICH, and the platform does not choose
+// hosts on a tenant's behalf.
+//
+// Only an instance whose host is settled `not_provisioned` can be removed —
+// there is nothing running on it to destroy. An instance in any other state
+// refuses the WHOLE request with `INSTANCES_NOT_DEPROVISIONED` (below) and
+// nothing is written. Destroy what runs on those hosts first with
+// `POST .../instance-groups/{id}/deprovision`, which keeps them claimed, then
+// scale down to hand them back.
+//
+// The cluster type's `nodeCountMin` is NOT re-checked here. It is a floor on
+// hosts that RUN the pool, enforced where one stops running — the deprovision
+// above — so by the time an instance can be removed its pool has already
+// satisfied it. Re-checking against the new size would also refuse the case
+// the floor exists to permit: retiring a pool whose hosts were all
+// legitimately deprovisioned.
+//
+// **Draining a pool releases its reservation.** Naming every host a pool
+// holds releases the pool's reservation along with them, and the pool
+// settles at size `0`. A later scale-up re-reserves hosts for it, unless the
+// instance group's usage counts against organization limits: there a drained
+// pool cannot be grown again (`RESERVATION_RELEASED` below), so drain a pool
+// only when the group is finished with it. To remove the group itself, use
+// `DELETE`.
 //
 // **`desiredCount` is yours.** Only this endpoint and create ever set a pool's
 // desired size; no failure path, settle or background job rewrites it. A
@@ -4485,18 +4896,19 @@ func (c *Client) ScaleInstanceGroupWithBody(ctx context.Context, region RegionPa
 // alone — disagree, it cannot be scaled: a target computed from a size you
 // never confirmed is a guess. A pool whose counts AGREE but that still has a
 // host provisioning is a different refusal, `POOL_HOSTS_NOT_PROVISIONED`
-// below, and needs no correction. Send a request whose `size` equals the
-// number of hosts the pool's reservation currently holds (the `409` names
-// it): that is accepted, sets `desiredCount` to it, provisions nothing, leaves
-// the group `active`, and makes the pool scalable again. It is not a
-// scale-down — no host is released — and a request mixing this correction
-// with a real scale of another pool is refused with `422`.
+// below, and needs no correction. Send a `nodePools[]` request whose `size`
+// equals the number of hosts the pool's reservation currently holds (the
+// `409` names it): that is accepted, sets `desiredCount` to it, provisions
+// nothing, leaves the group `active`, and makes the pool scalable again. It is
+// not a scale-down — no host is released — and a request mixing this
+// correction with a real scale of another pool is refused with `422`.
 //
 // That size may be `0`, when the pool's reservation answers holding no hosts.
-// Recording it is the way out of a failed scale-up. The pool is then empty, and
-// an empty pool cannot be grown yet (`POOL_EMPTY`) — materializing hosts into
-// one needs a scale path that can CREATE a reservation rather than only extend
-// an existing one.
+// Recording it is the way out of a failed scale-up. The pool is then empty. An
+// empty pool cannot be grown by extending its reservation (`POOL_EMPTY`); a
+// pool whose reservation has been released, including one drained by a
+// scale-down to `0`, is re-reserved by a scale-up instead, unless the instance
+// group's usage counts against organization limits.
 //
 // Takes a body of the `application/json` content type.
 //
@@ -4518,10 +4930,13 @@ func (c *Client) ScaleInstanceGroup(ctx context.Context, region RegionPathParam,
 //
 // **Visibility:** `internal` · `public` (x-visibility)
 //
-// List the project's instances — the provisioned hosts of its InstanceGroups.
+// List the project's instances — the provisioned hosts of its InstanceGroups
+// and Clusters.
 //
-// Instances are materialized when a group is created or scaled up, so there
-// is no create operation: to add hosts, scale the owning InstanceGroup.
+// Every instance has exactly one owner, an InstanceGroup or a Cluster, and
+// publishes that owner's uid and id. Instances are materialized when their
+// owner is created or scaled up, so there is no create operation: to add
+// hosts, scale the owning InstanceGroup or Cluster node pool.
 //
 // A parent can be named by uid or by id (slug) — both are published on every
 // instance. Filters combine with AND, so naming the same parent two ways that
@@ -4529,9 +4944,18 @@ func (c *Client) ScaleInstanceGroup(ctx context.Context, region RegionPathParam,
 //
 // Every row carries the host's current state — lifecycle status, health,
 // inventory and current network configuration — read from the infrastructure
-// service in one batched request while serving this call. `pageSize` is capped
-// to the size of that batch, so this is unconditional: there is no degraded
-// page.
+// service in one batched request while serving this call. `limit` (and the
+// deprecated `pageSize`) is capped to the size of that batch, 200, so this is
+// unconditional: there is no degraded page.
+//
+// Supply `offset` and `limit` to page by position and receive `totalCount`;
+// the deprecated `pageToken`/`pageSize` cursor keeps working for existing
+// clients, and a request carrying neither stays on it. Both styles walk the
+// instances in the same order (by `uid`), and `totalCount` counts the
+// instances matching every active filter. An offset is a position, so an
+// instance materialized or deleted between two requests can make a row
+// repeat or be skipped across pages. See `inStates` for how it behaves on
+// the offset style.
 //
 // That read is a dependency, not an enrichment. When the infrastructure
 // service cannot be reached the listing fails with `503` rather than returning
@@ -4555,10 +4979,14 @@ func (c *Client) ListInstances(ctx context.Context, region RegionPathParam, proj
 //
 // **Visibility:** `internal` · `public` (x-visibility)
 //
-// Retrieve one instance: its identity and API context — which group and node
-// pool own it, and which host it is — plus that host's current state:
+// Retrieve one instance: its identity and API context — which owner and node
+// pool it belongs to, and which host it is — plus that host's current state:
 // lifecycle status, health, inventory and network configuration, all read
 // from the infrastructure service while serving this request.
+//
+// The owner is an InstanceGroup or a Cluster, never both: the response carries
+// `instanceGroupUuid`/`instanceGroupId` or `clusterUuid`/`clusterId`, and
+// `nodePoolUuid`/`nodePool` either way.
 //
 // Nothing about the host is stored or cached here, so no field on this
 // response is older than the request itself.
@@ -5309,8 +5737,10 @@ func (c *Client) GetVPCPeering(ctx context.Context, region RegionPathParam, proj
 //
 // **Visibility:** `internal` · `public` (x-visibility)
 //
-// List the file stores in the project. Ordered by `createdAt` descending — newest first — with cursor pagination; there is no `orderBy` in v1.
+// List the file stores in the project. Ordered by `createdAt` descending — newest first, ties broken by an internal unique key so the order is total; there is no `orderBy` in v1.
 // Filters are all optional, combined with `AND`, and never change the shape of the response envelope. Use `state` to surface stores that never converged, `shareType` to account for committed capacity per capability class, and `consumer` to find the stores a given address or instance group is attached to — matched against the entry `ref`, not against the addresses a group resolved to.
+//
+// Supply any of `offset`, `limit` or `includeTotal` to page by position and receive `totalCount`, which counts the stores matching the same filters. The `shareType` filter matches the class name recorded on each store and is not checked against the catalog: a malformed name is rejected, but a name the catalog no longer offers is not, and still matches stores created under it before the class was removed. The deprecated `pageToken`/`pageSize` cursor keeps working, and a request with no paging parameter at all stays on it.
 //
 // Corresponds with GET /v1/regions/{region}/projects/{project}/storage/file-stores (the `ListFileStores` operationId).
 func (c *Client) ListFileStores(ctx context.Context, region RegionPathParam, project ProjectPathParam, params *ListFileStoresParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -5474,7 +5904,13 @@ func (c *Client) UpdateFileStore(ctx context.Context, region RegionPathParam, pr
 // List the file storage capability classes offered in the region. A share type is the tenant's entire storage selector: pick one by capability — for example `general` or `high-speed` — and the platform decides which storage satisfies it. The backing hardware is not selectable.
 // The catalog is operator-curated and operator-written, and can differ between regions, so it must be read per region rather than cached globally. Results are ordered by `id` ascending.
 // Only classes naming a live storage backend are returned, so a region with no registered backend serves an empty catalog.
-// A caller without `compute.storage.read` is served the capability half of each class only: `backendRef`, `placement` and `createdBy` are absent.
+// A caller without `compute.storage.read` is served the capability half of each class only: `backendRef`, `placement` and `createdBy` are absent. That projection removes fields, never classes, so `totalCount` is the same for every caller.
+//
+// Supply any of `offset`, `limit` or `includeTotal` to page by position and receive `totalCount`. A page can hold fewer than `limit` classes before the end of the catalog, so step `offset` by `limit` and stop once it reaches `totalCount` rather than at the first short page.
+//
+// This overrides the general `includeTotal` guidance for this list. That guidance says that with `includeTotal=false` a page shorter than `limit` is the last page; here it is not, because a class whose stored record cannot be read is left out of its page while still counted. `totalCount` is the only reliable end signal on this list, so keep it (the default) to read the whole catalog.
+//
+// The deprecated `pageToken`/`pageSize` cursor keeps working, and a request with no paging parameter at all stays on it.
 //
 // Corresponds with GET /v1/regions/{region}/storage/share-types (the `ListShareTypes` operationId).
 func (c *Client) ListShareTypes(ctx context.Context, region RegionPathParam, params *ListShareTypesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -6856,6 +7292,18 @@ func NewListProjectsRequest(server string, params *ListProjectsParams) (*http.Re
 
 		}
 
+		if params.Region != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "region", *params.Region, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
 		if encoded := queryValues.Encode(); encoded != "" {
 			rawQueryFragments = append(rawQueryFragments, encoded)
 		}
@@ -6912,6 +7360,42 @@ func NewListClusterTypesRequest(server string, region RegionPathParam, params *L
 		if params.IncludeDeprecated != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "includeDeprecated", *params.IncludeDeprecated, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Offset != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "offset", *params.Offset, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int32"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int32"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.IncludeTotal != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "includeTotal", *params.IncludeTotal, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
 				return nil, err
 			} else {
 				for _, qp := range strings.Split(queryFrag, "&") {
@@ -7061,6 +7545,42 @@ func NewListClusterTypeVersionsRequest(server string, region RegionPathParam, id
 		if params.Status != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "status", *params.Status, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Offset != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "offset", *params.Offset, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int32"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int32"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.IncludeTotal != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "includeTotal", *params.IncludeTotal, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
 				return nil, err
 			} else {
 				for _, qp := range strings.Split(queryFrag, "&") {
@@ -7355,6 +7875,66 @@ func NewListClustersRequest(server string, region RegionPathParam, project Proje
 		// styled parameters, preserving literal commas as delimiters
 		// per the OpenAPI spec (e.g. "color=blue,black,brown").
 		var rawQueryFragments []string
+
+		if params.IncludeInstanceRefs != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "includeInstanceRefs", *params.IncludeInstanceRefs, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.IncludeInstances != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "includeInstances", *params.IncludeInstances, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Offset != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "offset", *params.Offset, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int32"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int32"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.IncludeTotal != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "includeTotal", *params.IncludeTotal, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
 
 		if params.PageToken != nil {
 
@@ -7831,6 +8411,30 @@ func NewGetClusterRequest(server string, region RegionPathParam, project Project
 		// styled parameters, preserving literal commas as delimiters
 		// per the OpenAPI spec (e.g. "color=blue,black,brown").
 		var rawQueryFragments []string
+
+		if params.IncludeInstanceRefs != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "includeInstanceRefs", *params.IncludeInstanceRefs, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.IncludeInstances != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "includeInstances", *params.IncludeInstances, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
 
 		if params.IncludeStages != nil {
 
@@ -8347,6 +8951,42 @@ func NewListInstanceGroupsRequest(server string, region RegionPathParam, project
 		// per the OpenAPI spec (e.g. "color=blue,black,brown").
 		var rawQueryFragments []string
 
+		if params.Offset != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "offset", *params.Offset, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int32"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int32"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.IncludeTotal != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "includeTotal", *params.IncludeTotal, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
 		if params.PageToken != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "pageToken", *params.PageToken, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
@@ -8838,6 +9478,42 @@ func NewListInstancesRequest(server string, region RegionPathParam, project Proj
 		// per the OpenAPI spec (e.g. "color=blue,black,brown").
 		var rawQueryFragments []string
 
+		if params.Offset != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "offset", *params.Offset, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int32"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int32"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.IncludeTotal != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "includeTotal", *params.IncludeTotal, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
 		if params.PageToken != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "pageToken", *params.PageToken, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
@@ -8877,6 +9553,30 @@ func NewListInstancesRequest(server string, region RegionPathParam, project Proj
 		if params.InstanceGroupId != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "instanceGroupId", *params.InstanceGroupId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.ClusterUuid != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "clusterUuid", *params.ClusterUuid, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: "uuid"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.ClusterId != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "clusterId", *params.ClusterId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
 				return nil, err
 			} else {
 				for _, qp := range strings.Split(queryFrag, "&") {
@@ -11048,6 +11748,42 @@ func NewListFileStoresRequest(server string, region RegionPathParam, project Pro
 		// per the OpenAPI spec (e.g. "color=blue,black,brown").
 		var rawQueryFragments []string
 
+		if params.Offset != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "offset", *params.Offset, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int32"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int32"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.IncludeTotal != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "includeTotal", *params.IncludeTotal, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
 		if params.PageToken != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "pageToken", *params.PageToken, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
@@ -11442,6 +12178,42 @@ func NewListShareTypesRequest(server string, region RegionPathParam, params *Lis
 		// styled parameters, preserving literal commas as delimiters
 		// per the OpenAPI spec (e.g. "color=blue,black,brown").
 		var rawQueryFragments []string
+
+		if params.Offset != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "offset", *params.Offset, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int32"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int32"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.IncludeTotal != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "includeTotal", *params.IncludeTotal, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
 
 		if params.PageToken != nil {
 
@@ -11845,6 +12617,7 @@ var Operations = map[string]OperationInfo{
 			400: {Description: "Bad request", Ref: "#/components/responses/BadRequest"},
 			401: {Description: "Unauthorized", Ref: "#/components/responses/Unauthorized"},
 			403: {Description: "Forbidden", Ref: "#/components/responses/Forbidden"},
+			422: {Description: "Unprocessable entity (validation or invalid state)", Ref: "#/components/responses/UnprocessableEntity"},
 			500: {Description: "Internal server error", Ref: "#/components/responses/InternalServerError"},
 		},
 	},
@@ -11920,7 +12693,7 @@ var Operations = map[string]OperationInfo{
 			401: {Description: "Unauthorized", Ref: "#/components/responses/Unauthorized"},
 			403: {Description: "Forbidden", Ref: "#/components/responses/Forbidden"},
 			409: {Description: "The request conflicts with the current state of a resource.\n\nOn every operation under `/v1/regions/{region}/projects/{project}`, this\nincludes a project locked to a different region than the one in the URL:\nthe error carries reason `PROJECT_REGION_MISMATCH`. A project's region is\nset once and is immutable thereafter, so retrying the same URL returns the\nsame result; address the project's own region, which the project read\nreturns. The message does not name that region.\n\nThe check runs once the caller is authorized for the project, before the\noperation reads or changes anything, and needs the project's region from\nthe platform. When that lookup fails, a `POST` returns 503 and a `GET`,\n`PATCH` or `DELETE` proceeds without the check. A project created before\nregions were required, and not yet assigned one, is not checked.\n", Ref: "#/components/responses/ProjectRegionMismatch"},
-			422: {Description: "Unprocessable entity (validation or invalid state)", Ref: "#/components/responses/UnprocessableEntity"},
+			422: {Description: "Validation failure: a `state` or `health` value outside its enum (or\n`state=deleted`), a `search` longer than 255 characters, a malformed\n`pageToken`, a boolean embed flag that is not a boolean, or a response\nthat would exceed an embed's budget.\n\n\nAlso returned for the offset parameters: an `offset` below `0` or above\n`2147483647`, a `limit` outside `1`-`500`, an `includeTotal` that is not\n`true` or `false`, or any request mixing the offset style with the\ndeprecated cursor style.\n\n\nOnly the offset-parameter failures and a malformed embed flag carry\n`details[].reason: INVALID_ARGUMENT`; the filter, `pageToken` and\nembed-budget failures carry an error message without `details`.\n", Ref: ""},
 			500: {Description: "Internal server error", Ref: "#/components/responses/InternalServerError"},
 		},
 	},
@@ -11930,15 +12703,15 @@ var Operations = map[string]OperationInfo{
 		Deprecated: false,
 		Responses: map[int]ResponseInfo{
 			201: {Ref: ""},
-			400: {Description: "Bad request", Ref: "#/components/responses/BadRequest"},
+			400: {Description: "Bad request — malformed body, invalid `sshAccess`, or a `sshPublicKeyCredentials` reference outside the request's region and project.", Ref: ""},
 			401: {Description: "Unauthorized", Ref: "#/components/responses/Unauthorized"},
 			403: {Description: "Forbidden", Ref: "#/components/responses/Forbidden"},
-			404: {Description: "Not found", Ref: "#/components/responses/NotFound"},
-			409: {Description: "Three deterministic state conflicts, none of which writes anything:\n\n- `QUOTA_EXCEEDED`: the create would exceed a\n  node-count or `storage_gib` quota limit at the organization or the project scope; the\n  limits are independent gates and the request must fit at both.\n  `error.reason` is `QUOTA_EXCEEDED` and `error.details[]` carries one\n  entry per refused dimension with `dimension`, `requested`,\n  `admissible` (the largest amount of that dimension that would have been admitted),\n  `bindingScope` (`tenant` or `project`) and `scopes` (every gating\n  scope's `limit`, `used` and `headroom`). Retrying without freeing\n  capacity, asking for `admissible` or less, or raising the binding\n  limit returns the same result.\n- `QUOTA_UNASSIGNED`: the organization has no quota profile\n  assigned while the platform requires one (a default profile is\n  designated), so the create is refused before any limit is measured.\n  `error.reason` is `QUOTA_UNASSIGNED` with no `details[]`. Retrying\n  returns the same result until an operator assigns the organization a\n  profile.\n- The target project is being deleted. No `reason`. Retrying\n  can never succeed — a project leaves `deleting` only for a terminal\n  state.\n\nAlso returned, with top-level `reason: PROJECT_REGION_MISMATCH`, when the project is locked to a different region than the one in the URL. A project's region is immutable once set, so address the project's own region instead of retrying.\n", Ref: ""},
+			404: {Description: "Resource not found: the ClusterType, an AddressPool its network schema\nreferences, or the project. A project is also found missing when the\ncluster's organization is looked up from it for placement (see 503).\n", Ref: ""},
+			409: {Description: "Three deterministic state conflicts and one transient one, none of\nwhich writes anything:\n\n- `QUOTA_EXCEEDED`: the create would exceed a\n  node-count or `storage_gib` quota limit at the organization or the project scope; the\n  limits are independent gates and the request must fit at both.\n  `error.reason` is `QUOTA_EXCEEDED` and `error.details[]` carries one\n  entry per refused dimension with `dimension`, `requested`,\n  `admissible` (the largest amount of that dimension that would have been admitted),\n  `bindingScope` (`tenant` or `project`) and `scopes` (every gating\n  scope's `limit`, `used` and `headroom`). Retrying without freeing\n  capacity, asking for `admissible` or less, or raising the binding\n  limit returns the same result.\n- `QUOTA_UNASSIGNED`: the organization holds no quota limits\n  while the platform requires them (a default profile is\n  designated), so the create is refused before any limit is measured.\n  `error.reason` is `QUOTA_UNASSIGNED` with no `details[]`. Retrying\n  returns the same result until an operator gives the organization\n  limits, by applying a profile or setting them directly.\n- The target project is being deleted. No `reason`. Retrying\n  can never succeed — a project leaves `deleting` only for a terminal\n  state.\n- `CONFLICT_VERSION`: placing the hosted control plane of a cluster\n  whose ClusterType references an HCPConfig lost, several times in a\n  row, to concurrent changes of that HCPConfig or of the Control\n  Platforms that could host it. Retry the create.\n\nAlso returned, with top-level `reason: PROJECT_REGION_MISMATCH`, when the project is locked to a different region than the one in the URL. A project's region is immutable once set, so address the project's own region instead of retrying.\n", Ref: ""},
 			413: {Description: "Request body exceeds the 1 MB per-handler cap enforced by\n`http.MaxBytesReader` inside the service's `readJSON` helper. The\nresponse carries the standard error envelope; no further body parsing\noccurs once the limit is hit.\n\nFIRST FAULT WINS. The cap raises only once a read crosses it, so a body\nthat is oversized AND invalid in some other way may be reported as that\nother fault — a body opening with an unrecognised field, for instance,\nis refused for the field before enough of it has been read to trip the\nlimit. Every such answer is still a 4xx naming the more specific\nproblem; the cap exists to bound the work a request can cause, not to\ntake precedence over faults found earlier. Do not treat the absence of\na 413 as evidence that a body was within the limit.\n", Ref: "#/components/responses/PayloadTooLarge"},
-			422: {Description: "Unprocessable entity (validation or invalid state)", Ref: "#/components/responses/UnprocessableEntity"},
+			422: {Description: "Validation failed or invalid state, or the cluster's control plane\ncannot be placed.\n\nA cluster whose ClusterType references an HCPConfig is placed inside\nthe create; when no host can take its control plane, the create is\nrefused before anything is created, with top-level `reason:\nINSUFFICIENT_CAPACITY` and one `details[]` entry, also\n`INSUFFICIENT_CAPACITY`, with a generic message. Retry later. The\nhosted control plane does not count against quota.\n\nOperators holding `compute.controlplatforms.read` get one `details[]`\nentry per candidate Control Platform instead, naming it in `metadata`\nwith its reason (`PlacementReason`), in Control Platform id order;\nwith no candidate, a single `HCPCONFIG_NOT_ACCEPTED` entry naming none.\nA ClusterType without an HCPConfig is never refused this way.\n\n**Not yet applied:** a create that would be placed is refused with 422\n(no `reason`) and writes nothing: hosted control planes are not yet\ndeployed on the Control Platform they are placed on. The refusals\nabove are served.\n", Ref: ""},
 			500: {Description: "Internal server error", Ref: "#/components/responses/InternalServerError"},
-			503: {Description: "Service unavailable. The server is temporarily unable to handle the\nrequest because a required dependency is not configured (e.g., an upstream\ndependency is not wired up) or cannot be reached. Distinct from 504\nGateway Timeout, which signals a transient upstream stall.\n", Ref: "#/components/responses/ServiceUnavailable"},
+			503: {Description: "A dependency is unavailable; retry later. This includes placement:\nwhen a candidate Control Platform restricts `allowedOrganizations` and\nthe request does not carry the cluster's organization, it is looked up\nfrom the project, and a lookup that is not configured or cannot answer\nrefuses the create.\n", Ref: ""},
 			504: {Description: "Gateway timeout. The server, while acting as a gateway, did not receive a\ntimely response from an upstream dependency. Retries with backoff are\nappropriate.\n", Ref: "#/components/responses/GatewayTimeout"},
 		},
 	},
@@ -11992,9 +12765,9 @@ var Operations = map[string]OperationInfo{
 			401: {Description: "Unauthorized", Ref: "#/components/responses/Unauthorized"},
 			403: {Description: "Forbidden", Ref: "#/components/responses/Forbidden"},
 			404: {Description: "Not found", Ref: "#/components/responses/NotFound"},
-			409: {Description: "Cluster is not in a settled state (`active` or `failed`), so a delete\ncannot be started. The message names the blocking state, the state\ndelete requires, and the remedy: a `creating` or `updating` cluster\nmust be cancelled first (`POST .../clusters/{id}/cancel`), and a\n`deleting` cluster is already terminating.\n\nAlso returned, with top-level `reason: PROJECT_REGION_MISMATCH`, when the project is locked to a different region than the one in the URL. A project's region is immutable once set, so address the project's own region instead of retrying.\n", Ref: ""},
+			409: {Description: "Cluster is not in a settled state (`active` or `failed`), so a delete\ncannot be started. The message names the blocking state, the state\ndelete requires, and the remedy: a `creating` or `updating` cluster\nmust be cancelled first (`POST .../clusters/{id}/cancel`), and a\n`deleting` cluster is already terminating.\n\nOn the backing Cluster of a managed Control Platform (operator-only),\nalso `details[].reason: CONFLICT_IN_USE` while any hosted control plane\nis placed on that Control Platform. Otherwise the delete also removes\nthe Control Platform, so it also needs `compute.controlplatforms.delete`\n(403 otherwise). **Not yet applied:** the `CONFLICT_IN_USE` refusal and\nthe permission check are declared ahead of their implementation; the\nControl Platform's removal is applied.\n\nAlso returned, with top-level `reason: PROJECT_REGION_MISMATCH`, when the project is locked to a different region than the one in the URL. A project's region is immutable once set, so address the project's own region instead of retrying.\n\nAlso returned when the cluster's credentials are being changed and cannot be revoked yet; the cluster is unchanged, so retry after `Retry-After`.\n", Ref: ""},
 			500: {Description: "Internal server error", Ref: "#/components/responses/InternalServerError"},
-			503: {Description: "Service unavailable. The server is temporarily unable to handle the\nrequest because a required dependency is not configured (e.g., an upstream\ndependency is not wired up) or cannot be reached. Distinct from 504\nGateway Timeout, which signals a transient upstream stall.\n", Ref: "#/components/responses/ServiceUnavailable"},
+			503: {Description: "Service unavailable, including when the cluster's credentials could not be revoked; the cluster is unchanged, so retry the delete.", Ref: ""},
 			504: {Description: "Gateway timeout. The server, while acting as a gateway, did not receive a\ntimely response from an upstream dependency. Retries with backoff are\nappropriate.\n", Ref: "#/components/responses/GatewayTimeout"},
 		},
 	},
@@ -12009,6 +12782,7 @@ var Operations = map[string]OperationInfo{
 			403: {Description: "Forbidden", Ref: "#/components/responses/Forbidden"},
 			404: {Description: "Not found", Ref: "#/components/responses/NotFound"},
 			409: {Description: "The request conflicts with the current state of a resource.\n\nOn every operation under `/v1/regions/{region}/projects/{project}`, this\nincludes a project locked to a different region than the one in the URL:\nthe error carries reason `PROJECT_REGION_MISMATCH`. A project's region is\nset once and is immutable thereafter, so retrying the same URL returns the\nsame result; address the project's own region, which the project read\nreturns. The message does not name that region.\n\nThe check runs once the caller is authorized for the project, before the\noperation reads or changes anything, and needs the project's region from\nthe platform. When that lookup fails, a `POST` returns 503 and a `GET`,\n`PATCH` or `DELETE` proceeds without the check. A project created before\nregions were required, and not yet assigned one, is not checked.\n", Ref: "#/components/responses/ProjectRegionMismatch"},
+			422: {Description: "Validation failure — the response would carry more embedded refs or instances than it allows, or `includeInstanceRefs` or `includeInstances` was present and not a boolean (a blank value included: that is an interpolation that came out empty, not an absent parameter). For the budget, narrow the request or use `GET /compute/instances?clusterId=`. `details[].reason` is `INVALID_ARGUMENT`.", Ref: ""},
 			500: {Description: "Internal server error", Ref: "#/components/responses/InternalServerError"},
 		},
 	},
@@ -12023,8 +12797,8 @@ var Operations = map[string]OperationInfo{
 			401: {Description: "Unauthorized", Ref: "#/components/responses/Unauthorized"},
 			403: {Description: "Forbidden", Ref: "#/components/responses/Forbidden"},
 			404: {Description: "Not found", Ref: "#/components/responses/NotFound"},
-			409: {Description: "An immutable field (`id`, `clusterType`) was present in the request\nbody, or a concurrent writer modified the cluster between this PATCH's\ninternal read and write. `details[].reason` is `CONFLICT_IMMUTABLE`\nor `CONFLICT_VERSION` respectively.\n\nAlso returned, with top-level `reason: PROJECT_REGION_MISMATCH`, when the project is locked to a different region than the one in the URL. A project's region is immutable once set, so address the project's own region instead of retrying.\n\n- A `storage` raise on a cluster that is not `ACTIVE` answers this `409` without a reason; one whose quota accounting is still settling or whose ceiling changed concurrently answers the same and can be retried shortly.\n- `QUOTA_EXCEEDED` — a `storage.ceilingGiB` raise would exceed a `storage_gib` limit; `requested` and `admissible` are increases in GiB, see `Error`.\n- `QUOTA_UNASSIGNED` — a `storage.ceilingGiB` raise while the organization has no quota profile and a default is designated; see `Error`.\n", Ref: ""},
-			422: {Description: "Validation failed, including a `storage.ceilingGiB` outside 1..1048576 or below the current ceiling, or `storage` combined with `securityGroups`.", Ref: ""},
+			409: {Description: "An immutable field (`id`, `clusterType`) was present in the request\nbody, or a concurrent writer modified the cluster between this PATCH's\ninternal read and write. `details[].reason` is `CONFLICT_IMMUTABLE`\nor `CONFLICT_VERSION` respectively.\n\nAlso returned, with top-level `reason: PROJECT_REGION_MISMATCH`, when the project is locked to a different region than the one in the URL. A project's region is immutable once set, so address the project's own region instead of retrying.\n\n- A `storage` raise on a cluster that is not `ACTIVE` answers this `409` without a reason; one whose quota accounting is still settling or whose ceiling changed concurrently answers the same and can be retried shortly.\n- `QUOTA_EXCEEDED` — a `storage.ceilingGiB` raise would exceed a `storage_gib` limit; `requested` and `admissible` are increases in GiB, see `Error`.\n- `QUOTA_UNASSIGNED` — a `storage.ceilingGiB` raise while the organization holds no quota limits and a default is designated; see `Error`.\n", Ref: ""},
+			422: {Description: "Validation failed, including a `storage.ceilingGiB` outside 1..1048576 or below the current ceiling, `storage` combined with `securityGroups`, or a body that carries `nodePools` (alone or with other fields; nothing is applied). Node counts change only through `scaleCluster`.", Ref: ""},
 			500: {Description: "Internal server error", Ref: "#/components/responses/InternalServerError"},
 			503: {Description: "A `storage` raise on a quota-accounted cluster could not be checked against the quota; nothing was changed, retry.", Ref: ""},
 		},
@@ -12035,6 +12809,7 @@ var Operations = map[string]OperationInfo{
 		Deprecated: false,
 		Responses: map[int]ResponseInfo{
 			200: {Ref: ""},
+			202: {Ref: ""},
 			400: {Description: "Bad request", Ref: "#/components/responses/BadRequest"},
 			401: {Description: "Unauthorized", Ref: "#/components/responses/Unauthorized"},
 			403: {Description: "Forbidden", Ref: "#/components/responses/Forbidden"},
@@ -12070,7 +12845,7 @@ var Operations = map[string]OperationInfo{
 			401: {Description: "Unauthorized", Ref: "#/components/responses/Unauthorized"},
 			403: {Description: "Forbidden", Ref: "#/components/responses/Forbidden"},
 			404: {Description: "Not found", Ref: "#/components/responses/NotFound"},
-			409: {Description: "Four distinct conflict cases:\n\n- The cluster is not in a scalable state — another lifecycle operation\n  (create, update, delete, or a concurrent scale) is already in flight.\n  Scale is admitted only from the settled `active` state; a `creating`,\n  `updating`, `deleting`, or `failed` cluster is rejected here. No\n  `reason`.\n- A previous size change (or the create itself) is still settling its\n  quota accounting — a window of a few seconds after the cluster turns\n  `active`. Retry shortly; the same request is then admitted. No\n  `reason`.\n- `QUOTA_EXCEEDED`: a scale-up would exceed a\n  node-count quota limit at the organization or the project scope (the\n  limits are independent gates). `error.reason` is `QUOTA_EXCEEDED`\n  and `error.details[]` carries one entry per refused dimension with\n  `dimension`, `requested` (the aggregate node-count increase asked\n  for across the request's pools), `admissible` (the largest such\n  increase that would have been admitted), `bindingScope` and\n  `scopes` — see `Error`. Both are increases, not target sizes: the\n  request's pool targets are absolute, so to fit the client reduces\n  the aggregate increase to at most `admissible` and re-derives its\n  targets (a cluster at 4 nodes with requested 3 and admissible 1\n  can scale to 5, not to 1). The target counts are not persisted and\n  nothing is written; retrying without freeing capacity, without\n  reducing the increase, or without raising the binding limit\n  returns the same result. A scale-down is never quota-refused: the\n  freed capacity is returned once the scale settles.\n- `QUOTA_UNASSIGNED`: the organization has no quota profile\n  assigned while the platform requires one (a default profile is\n  designated), so a scale-up is refused before any limit is\n  measured. A scale-down is not refused.\n  `error.reason` is `QUOTA_UNASSIGNED` with no `details[]`. Retrying\n  returns the same result until an operator assigns the organization a\n  profile.\n\nAlso returned, with top-level `reason: PROJECT_REGION_MISMATCH`, when the project is locked to a different region than the one in the URL. A project's region is immutable once set, so address the project's own region instead of retrying.\n", Ref: ""},
+			409: {Description: "Four distinct conflict cases on every cluster, and two more on the\nbacking Cluster of a managed Control Platform (below):\n\n- The cluster is not in a scalable state — another lifecycle operation\n  (create, update, delete, or a concurrent scale) is already in flight.\n  Scale is admitted only from the settled `active` state; a `creating`,\n  `updating`, `deleting`, or `failed` cluster is rejected here. No\n  `reason`.\n- A previous size change (or the create itself) is still settling its\n  quota accounting — a window of a few seconds after the cluster turns\n  `active`. Retry shortly; the same request is then admitted. No\n  `reason`.\n- `QUOTA_EXCEEDED`: a scale-up would exceed a\n  node-count quota limit at the organization or the project scope (the\n  limits are independent gates). `error.reason` is `QUOTA_EXCEEDED`\n  and `error.details[]` carries one entry per refused dimension with\n  `dimension`, `requested` (the aggregate node-count increase asked\n  for across the request's pools), `admissible` (the largest such\n  increase that would have been admitted), `bindingScope` and\n  `scopes` — see `Error`. Both are increases, not target sizes: the\n  request's pool targets are absolute, so to fit the client reduces\n  the aggregate increase to at most `admissible` and re-derives its\n  targets (a cluster at 4 nodes with requested 3 and admissible 1\n  can scale to 5, not to 1). The target counts are not persisted and\n  nothing is written; retrying without freeing capacity, without\n  reducing the increase, or without raising the binding limit\n  returns the same result. A scale-down is never quota-refused: the\n  freed capacity is returned once the scale settles.\n- `QUOTA_UNASSIGNED`: the organization holds no quota limits\n  while the platform requires them (a default profile is\n  designated), so a scale-up is refused before any limit is\n  measured. A scale-down is not refused.\n  `error.reason` is `QUOTA_UNASSIGNED` with no `details[]`. Retrying\n  returns the same result until an operator gives the organization\n  limits, by applying a profile or setting them directly.\n\nOn the backing Cluster of a managed Control Platform (operator-only),\nwith the codes in `details[].reason` only and no top-level reason:\n\n- A scale-down whose remaining workers would not carry the placed\n  hosted control planes: too little capacity\n  (`INSUFFICIENT_CAPACITY`); fewer Ready, schedulable workers than the\n  largest placed replica count, counted per HCPConfig over the workers\n  carrying its `DoNotSchedule` topology keys (`TOO_FEW_NODES`); or not\n  enough workers without etcd volumes to remove\n  (`NODES_HOLD_ETCD_VOLUMES`, with how many can be removed and how many\n  were asked in `metadata`). The message says how much capacity is in\n  use and by how many control planes. Workers holding etcd volumes are\n  never chosen for removal.\n- A scale-up above the region's limit on nodes per Control Platform,\n  when set (`ADMISSION_LIMIT_REACHED`).\n\n**Not yet applied:** these backing-Cluster refusals are declared ahead of their\nimplementation.\n\nAlso returned, with top-level `reason: PROJECT_REGION_MISMATCH`, when the project is locked to a different region than the one in the URL. A project's region is immutable once set, so address the project's own region instead of retrying.\n", Ref: ""},
 			422: {Description: "Unprocessable entity (validation or invalid state)", Ref: "#/components/responses/UnprocessableEntity"},
 			500: {Description: "Internal server error", Ref: "#/components/responses/InternalServerError"},
 			503: {Description: "Service unavailable. The server is temporarily unable to handle the\nrequest because a required dependency is not configured (e.g., an upstream\ndependency is not wired up) or cannot be reached. Distinct from 504\nGateway Timeout, which signals a transient upstream stall.\n", Ref: "#/components/responses/ServiceUnavailable"},
@@ -12104,7 +12879,7 @@ var Operations = map[string]OperationInfo{
 			401: {Description: "Unauthorized", Ref: "#/components/responses/Unauthorized"},
 			403: {Description: "Forbidden", Ref: "#/components/responses/Forbidden"},
 			409: {Description: "The request conflicts with the current state of a resource.\n\nOn every operation under `/v1/regions/{region}/projects/{project}`, this\nincludes a project locked to a different region than the one in the URL:\nthe error carries reason `PROJECT_REGION_MISMATCH`. A project's region is\nset once and is immutable thereafter, so retrying the same URL returns the\nsame result; address the project's own region, which the project read\nreturns. The message does not name that region.\n\nThe check runs once the caller is authorized for the project, before the\noperation reads or changes anything, and needs the project's region from\nthe platform. When that lookup fails, a `POST` returns 503 and a `GET`,\n`PATCH` or `DELETE` proceeds without the check. A project created before\nregions were required, and not yet assigned one, is not checked.\n", Ref: "#/components/responses/ProjectRegionMismatch"},
-			422: {Description: "Validation failure — a malformed `pageToken`, a `pageSize` that is not an integer, is out of range, or is present and blank, a boolean parameter (`showDeleted`, `includeInstanceRefs`, `includeInstances`) that is not a boolean (a blank value included: that is an interpolation which came out empty, not an absent parameter), or a response that would carry more embedded refs or instances than an embed YOU ASKED FOR allows. Narrow the request, or use `GET /compute/instances?instanceGroupId=`. An embed that only `showDeleted` turned on is omitted instead of refused — see that parameter. `details[].reason` is `INVALID_ARGUMENT`.", Ref: ""},
+			422: {Description: "Validation failure — a malformed `pageToken`, a `pageSize` that is not an integer, is out of range, or is present and blank, a boolean parameter (`showDeleted`, `includeInstanceRefs`, `includeInstances`) that is not a boolean (a blank value included: that is an interpolation which came out empty, not an absent parameter), or a response that would carry more embedded refs or instances than an embed YOU ASKED FOR allows. Narrow the request, or use `GET /compute/instances?instanceGroupId=`. An embed that only `showDeleted` turned on is omitted instead of refused — see that parameter. `details[].reason` is `INVALID_ARGUMENT`.\n\nAlso returned for the offset parameters: an `offset` below `0` or above `2147483647`, a `limit` outside `1`-`500`, an `includeTotal` that is not `true` or `false`, or any request mixing the offset style with the deprecated cursor style.", Ref: ""},
 			500: {Description: "Internal server error", Ref: "#/components/responses/InternalServerError"},
 		},
 	},
@@ -12114,10 +12889,10 @@ var Operations = map[string]OperationInfo{
 		Deprecated: false,
 		Responses: map[int]ResponseInfo{
 			201: {Ref: ""},
-			400: {Description: "Bad request", Ref: "#/components/responses/BadRequest"},
+			400: {Description: "Bad request — malformed body, invalid `sshAccess`, a `sshPublicKeyCredentials` reference outside the request's region and project, or an inline `sshPublicKeys` entry the credentials service refuses (for example, one carrying `authorized_keys` options or a comment longer than 256 bytes).", Ref: ""},
 			401: {Description: "Unauthorized", Ref: "#/components/responses/Unauthorized"},
 			403: {Description: "Forbidden", Ref: "#/components/responses/Forbidden"},
-			409: {Description: "Three deterministic conflicts, none of which creates an instance-group\nrow (a duplicate `id` can still have taken a short-lived quota hold that\nis released asynchronously):\n\n- An instance group with the same `id` already exists in the project.\n  `details[].reason` is `CONFLICT_DUPLICATE`.\n- `QUOTA_EXCEEDED`: the create would exceed a node-count\n  quota limit at the organization or the project scope; the limits are\n  independent gates and the request must fit at both. Instance groups\n  consume the same servers as clusters and count against the same\n  `node_count` dimension. `error.reason` is `QUOTA_EXCEEDED` and\n  `error.details[]` carries one entry per refused dimension with\n  `dimension`, `requested` (the sum of the requested pool sizes),\n  `admissible` (the largest node count that would have been admitted),\n  `bindingScope` (`tenant` or `project`) and `scopes` (every gating\n  scope's `limit`, `used` and `headroom`) — see `Error`. Retrying\n  without freeing capacity, asking for `admissible` or less, or raising\n  the binding limit returns the same result.\n- `QUOTA_UNASSIGNED`: the organization has no quota profile\n  assigned while the platform requires one (a default profile is\n  designated), so the create is refused before any limit is measured.\n  `error.reason` is `QUOTA_UNASSIGNED` with no `details[]`. Retrying\n  returns the same result until an operator assigns the organization a\n  profile.\n\nAlso returned, with top-level `reason: PROJECT_REGION_MISMATCH`, when the project is locked to a different region than the one in the URL. A project's region is immutable once set, so address the project's own region instead of retrying.\n", Ref: ""},
+			409: {Description: "Three deterministic conflicts, none of which creates an instance-group\nrow (a duplicate `id` can still have taken a short-lived quota hold that\nis released asynchronously):\n\n- An instance group with the same `id` already exists in the project.\n  `details[].reason` is `CONFLICT_DUPLICATE`.\n- `QUOTA_EXCEEDED`: the create would exceed a node-count\n  quota limit at the organization or the project scope; the limits are\n  independent gates and the request must fit at both. Instance groups\n  consume the same servers as clusters and count against the same\n  `node_count` dimension. `error.reason` is `QUOTA_EXCEEDED` and\n  `error.details[]` carries one entry per refused dimension with\n  `dimension`, `requested` (the sum of the requested pool sizes),\n  `admissible` (the largest node count that would have been admitted),\n  `bindingScope` (`tenant` or `project`) and `scopes` (every gating\n  scope's `limit`, `used` and `headroom`) — see `Error`. Retrying\n  without freeing capacity, asking for `admissible` or less, or raising\n  the binding limit returns the same result.\n- `QUOTA_UNASSIGNED`: the organization holds no quota limits\n  while the platform requires them (a default profile is\n  designated), so the create is refused before any limit is measured.\n  `error.reason` is `QUOTA_UNASSIGNED` with no `details[]`. Retrying\n  returns the same result until an operator gives the organization\n  limits, by applying a profile or setting them directly.\n\nAlso returned, with top-level `reason: PROJECT_REGION_MISMATCH`, when the project is locked to a different region than the one in the URL. A project's region is immutable once set, so address the project's own region instead of retrying.\n", Ref: ""},
 			413: {Description: "Request body exceeds the 1 MB per-handler cap enforced by\n`http.MaxBytesReader` inside the service's `readJSON` helper. The\nresponse carries the standard error envelope; no further body parsing\noccurs once the limit is hit.\n\nFIRST FAULT WINS. The cap raises only once a read crosses it, so a body\nthat is oversized AND invalid in some other way may be reported as that\nother fault — a body opening with an unrecognised field, for instance,\nis refused for the field before enough of it has been read to trip the\nlimit. Every such answer is still a 4xx naming the more specific\nproblem; the cap exists to bound the work a request can cause, not to\ntake precedence over faults found earlier. Do not treat the absence of\na 413 as evidence that a body was within the limit.\n", Ref: "#/components/responses/PayloadTooLarge"},
 			422: {Description: "Validation failure (missing/empty `clusterType` or `nodePools`, an unknown node pool, a `size` outside the pool's bounds, a deprecated ClusterType, etc.). `details[].reason` is `INVALID_ARGUMENT`.", Ref: ""},
 			500: {Description: "Internal server error", Ref: "#/components/responses/InternalServerError"},
@@ -12134,8 +12909,9 @@ var Operations = map[string]OperationInfo{
 			401: {Description: "Unauthorized", Ref: "#/components/responses/Unauthorized"},
 			403: {Description: "Forbidden", Ref: "#/components/responses/Forbidden"},
 			404: {Description: "Not found", Ref: "#/components/responses/NotFound"},
-			409: {Description: "Conflict — the group is in `updating` or `deleting` and cannot be deleted yet. `details[].reason` is `CONFLICT_IN_USE`. Clients SHOULD retry after the group reaches `active` or `failed`.\n\nAlso returned, with top-level `reason: PROJECT_REGION_MISMATCH`, when the project is locked to a different region than the one in the URL. A project's region is immutable once set, so address the project's own region instead of retrying.\n", Ref: ""},
+			409: {Description: "Conflict — the group is in `updating` or `deleting` and cannot be deleted yet. `details[].reason` is `CONFLICT_IN_USE`. Clients SHOULD retry after the group reaches `active` or `failed`.\n\nAlso returned, with `details[].reason` `CONFLICT_IN_USE`, when the group's credentials are being changed and cannot be revoked yet; the group is unchanged, so retry after `Retry-After`.\n\nAlso returned, with top-level `reason: PROJECT_REGION_MISMATCH`, when the project is locked to a different region than the one in the URL. A project's region is immutable once set, so address the project's own region instead of retrying.\n", Ref: ""},
 			500: {Description: "Internal server error", Ref: "#/components/responses/InternalServerError"},
+			503: {Description: "Service unavailable, including when the group's credentials could not be revoked; the group is unchanged, so retry the delete.", Ref: ""},
 			504: {Description: "Gateway timeout. The server, while acting as a gateway, did not receive a\ntimely response from an upstream dependency. Retries with backoff are\nappropriate.\n", Ref: "#/components/responses/GatewayTimeout"},
 		},
 	},
@@ -12179,10 +12955,12 @@ var Operations = map[string]OperationInfo{
 			401: {Description: "Unauthorized", Ref: "#/components/responses/Unauthorized"},
 			403: {Description: "Forbidden", Ref: "#/components/responses/Forbidden"},
 			404: {Description: "Not found", Ref: "#/components/responses/NotFound"},
-			409: {Description: "The group is not in a scalable state, the scale does not fit the quota,\nor a pool's infrastructure reservation cannot back a scale.\n\nAnother lifecycle operation (create, update, delete, or a concurrent\nscale) already in flight rejects the scale with no `reason` — scale is\nadmitted only from the settled `active` state, so a `creating`,\n`updating`, `deleting`, or `failed` group is rejected. A previous size\nchange (or the create itself) still settling its quota accounting, a\nwindow of a few seconds after the group turns `active`, also answers a\nreason-less 409; retry shortly and the same request is admitted.\n\n`QUOTA_EXCEEDED`: the servers this scale adds would exceed a\nnode-count quota limit at the organization or the project scope (the\nlimits are independent gates). `error.reason` is `QUOTA_EXCEEDED` and\n`error.details[]` carries one entry per refused dimension with\n`dimension`, `requested` (the aggregate node-count increase asked for\nacross the request's pools), `admissible` (the largest such increase\nthat would have been admitted), `bindingScope` and `scopes` — see\n`Error`. Both are increases, not target sizes: the request's pool\n`size` values are absolute, so to fit the client reduces the aggregate\nincrease to at most `admissible` and re-derives its targets (a pool at\n10 with requested 3 and admissible 1 can scale to 11, not to 1). The\ntarget sizes are not persisted and nothing is written; retrying\nwithout freeing capacity, without reducing the increase, or without\nraising the binding limit returns the same result. A request that only\nconfirms a pool's held size provisions nothing and is never\nquota-refused.\n\n`QUOTA_UNASSIGNED`: the organization has no quota profile\nassigned while the platform requires one (a default profile is\ndesignated), so a scale that adds servers is refused before any limit\nis measured. `error.reason` is `QUOTA_UNASSIGNED` with no `details[]`.\nRetrying returns the same result until an operator assigns the\norganization a profile.\n\nA pool whose infrastructure reservation cannot back the scale is\ndistinguished by `details[].reason`:\n\n- `RESERVATION_RELEASED` — the reservation has been released, so the\n  pool holds no hosts and cannot be grown. Its instances are cleared and\n  its counts reset to 0 as part of this response; create a new instance\n  group.\n- `RESERVATION_DRIFTED` — the infrastructure service does not know the\n  reservation this pool references, so the two services disagree about\n  the pool. Nothing is changed. The block clears once they agree again;\n  otherwise an administrator has to reconcile them.\n- `POOL_EMPTY` — the pool holds no hosts, so there is no initialized\n  reservation to extend. Raised either from the recorded counts before\n  any reservation is read (`desiredCount` is `0` and it has no\n  instances, whether it was created at size `0` or emptied when its\n  reservation was released), or from the reservation itself answering\n  that it holds nothing. Scaling extends a pool's existing reservation,\n  and materializing hosts into an empty pool is not supported yet — only\n  a non-empty pool can be scaled for now. Requesting size `0` to record\n  the pool's real size is still accepted. Only the pool named in the\n  request is checked, so an empty pool does not block a scale of its\n  siblings.\n- `POOL_COUNT_MISMATCH` — the pool's `desiredCount` disagrees with the\n  number of hosts its reservation HOLDS (`readyCount` + `notReadyCount`,\n  which counts hosts in any state, not only provisioned ones), usually\n  after a scale that failed. The message names that number; send it as\n  `size` to set the desired size to it, then scale from there. A pool\n  whose counts agree but whose hosts are not all provisioned is\n  `POOL_HOSTS_NOT_PROVISIONED` below, not this.\n- `POOL_HOSTS_NOT_PROVISIONED` — the pool holds a host that has not\n  finished provisioning. Scaling waits for it. A host that cannot\n  recover has to be removed from the pool's infrastructure reservation\n  before the group can grow.\n\nAlso returned, with top-level `reason: PROJECT_REGION_MISMATCH`, when the project is locked to a different region than the one in the URL. A project's region is immutable once set, so address the project's own region instead of retrying.\n", Ref: ""},
+			409: {Description: "The group is not in a scalable state, the scale does not fit the quota,\na named instance cannot be removed, or a pool's infrastructure\nreservation cannot back a scale.\n\nAnother lifecycle operation (create, update, delete, or a concurrent\nscale) already in flight rejects the scale with no `reason` — scale is\nadmitted only from the settled `active` state, so a `creating`,\n`updating`, `deleting`, or `failed` group is rejected. A previous size\nchange (or the create itself) still settling its quota accounting, a\nwindow of a few seconds after the group turns `active`, also answers a\nreason-less 409; retry shortly and the same request is admitted.\n\n`QUOTA_EXCEEDED`: the servers this scale adds would exceed a\nnode-count quota limit at the organization or the project scope (the\nlimits are independent gates). `error.reason` is `QUOTA_EXCEEDED` and\n`error.details[]` carries one entry per refused dimension with\n`dimension`, `requested` (the aggregate node-count increase asked for\nacross the request's pools), `admissible` (the largest such increase\nthat would have been admitted), `bindingScope` and `scopes` — see\n`Error`. Both are increases, not target sizes: the request's pool\n`size` values are absolute, so to fit the client reduces the aggregate\nincrease to at most `admissible` and re-derives its targets (a pool at\n10 with requested 3 and admissible 1 can scale to 11, not to 1). The\ntarget sizes are not persisted and nothing is written; retrying\nwithout freeing capacity, without reducing the increase, or without\nraising the binding limit returns the same result. A request that only\nconfirms a pool's held size provisions nothing and is never\nquota-refused, and neither is a scale-down — it releases node-count\naccounting for the servers it hands back rather than consuming any.\n\n`QUOTA_UNASSIGNED`: the organization holds no quota limits\nwhile the platform requires them (a default profile is\ndesignated), so a scale that adds servers is refused before any limit\nis measured. `error.reason` is `QUOTA_UNASSIGNED` with no `details[]`.\nRetrying returns the same result until an operator gives the\norganization limits, by applying a profile or setting them directly.\n\n`INSTANCES_NOT_DEPROVISIONED`: a scale-down named an instance whose host\nis not settled `not_provisioned`, so there is still something running on\nit. The WHOLE request is refused and nothing is written. The message\nnames every offending instance with its current state, in request order,\nand ends with what to do about each kind: destroy what runs on them\nfirst with `POST .../instance-groups/{id}/deprovision`; wait for an\ninstance already `provisioning` or `deprovisioning` to settle; drop one\nalready `deleting`, whose host is leaving anyway; retry one reporting\n`unknown`, whose host state could not be established.\n\nA pool whose infrastructure reservation cannot back the scale is\ndistinguished by `details[].reason`:\n\n- `RESERVATION_RELEASED` — the reservation has been released, so the\n  pool holds no hosts. Its instances are cleared and its counts reset to\n  0 as part of this response. A scale-up re-reserves the pool's hosts\n  instead of returning this; it is returned for a request that leaves\n  the pool at 0, to report the clean-up (scale the pool up to reserve\n  hosts again), and for a scale-up in an instance group whose usage\n  counts against organization limits, whose released pool cannot be\n  grown (create a new instance group).\n- `RESERVATION_DRIFTED` — the infrastructure service does not know the\n  reservation this pool references, so the two services disagree about\n  the pool. Nothing is changed. The block clears once they agree again;\n  otherwise an administrator has to reconcile them.\n- `POOL_EMPTY` — the pool holds no hosts, so there is no initialized\n  reservation to extend, and its reservation has not been released (a\n  released one, including that of a pool drained by a scale-down to\n  `0`, is re-reserved instead, see `RESERVATION_RELEASED`). Raised\n  either from the recorded counts (`desiredCount` is `0` and it has no\n  instances: it was created at size `0`, so it never held a\n  reservation, or its reservation is live but holds nothing), or from\n  the reservation itself answering that it holds nothing.\n  Materializing hosts into such a pool is not supported yet.\n  Requesting size `0` to record the pool's real size is still\n  accepted. Only the pool named in the request is checked, so an\n  empty pool does not block a scale of its siblings.\n- `POOL_COUNT_MISMATCH` — the pool's `desiredCount` disagrees with the\n  number of hosts its reservation HOLDS (`readyCount` + `notReadyCount`,\n  which counts hosts in any state, not only provisioned ones), usually\n  after a scale that failed. The message names that number; send it as\n  `size` to set the desired size to it, then scale from there. A pool\n  whose counts agree but whose hosts are not all provisioned is\n  `POOL_HOSTS_NOT_PROVISIONED` below, not this.\nA reservation that is still SETTLING — mid-acquire, mid-release, or\nparked after a failure — cannot release hosts, so a scale-down against\nit is refused with no `details[].reason` and a message naming the two\nstates it is in. It clears on its own; retry once the pool's\nreservation reports `reserved`.\n\n- `POOL_HOSTS_NOT_PROVISIONED` — a scale-UP found the pool holding a\n  host that has not finished provisioning; growing waits for it, so the\n  original fault is not buried under new provisioning. A host that\n  cannot recover is removed with a scale-down, which is the one request\n  this does not block: a shrink is gated on the instances it NAMES\n  being settled `not_provisioned`, never on the pool's other hosts.\n\nAlso returned, with top-level `reason: PROJECT_REGION_MISMATCH`, when the project is locked to a different region than the one in the URL. A project's region is immutable once set, so address the project's own region instead of retrying.\n", Ref: ""},
+			410: {Description: "A scale-down named an instance that has already been removed. Ids are\nnever reused, so this is distinct from `404`: the id named a real\ninstance of this project and no longer resolves to one. Re-sending a\nshrink that already landed is the ordinary way to meet it.\n", Ref: ""},
 			413: {Description: "Request body exceeds the 1 MB per-handler cap enforced by\n`http.MaxBytesReader` inside the service's `readJSON` helper. The\nresponse carries the standard error envelope; no further body parsing\noccurs once the limit is hit.\n\nFIRST FAULT WINS. The cap raises only once a read crosses it, so a body\nthat is oversized AND invalid in some other way may be reported as that\nother fault — a body opening with an unrecognised field, for instance,\nis refused for the field before enough of it has been read to trip the\nlimit. Every such answer is still a 4xx naming the more specific\nproblem; the cap exists to bound the work a request can cause, not to\ntake precedence over faults found earlier. Do not treat the absence of\na 413 as evidence that a body was within the limit.\n", Ref: "#/components/responses/PayloadTooLarge"},
 			422: {Description: "Unprocessable entity (validation or invalid state)", Ref: "#/components/responses/UnprocessableEntity"},
 			500: {Description: "Internal server error", Ref: "#/components/responses/InternalServerError"},
+			501: {Description: "This deployment cannot verify the hosts a scale-down would release, so\nshrinking is unavailable on it. Growing is unaffected.\n`details[].reason` is `NOT_IMPLEMENTED`.\n", Ref: ""},
 			503: {Description: "A pool's size could not be confirmed, so the scale base is unknown: the\ninfrastructure service is unreachable, or it answered with a member that\nhas no server name. Nothing is written. Retry — unlike the `409`s above,\nthis condition does clear on its own. A reservation that ANSWERS holding\nno hosts is not this: that size is confirmed, and it is reported as\n`POOL_EMPTY`.\n", Ref: ""},
 			504: {Description: "The state transition was persisted but the scale workflow could not be\nstarted (e.g. an upstream dependency was unreachable); the reconciler converges.\n", Ref: ""},
 		},
@@ -12196,9 +12974,10 @@ var Operations = map[string]OperationInfo{
 			401: {Description: "Unauthorized", Ref: "#/components/responses/Unauthorized"},
 			403: {Description: "Forbidden", Ref: "#/components/responses/Forbidden"},
 			409: {Description: "The request conflicts with the current state of a resource.\n\nOn every operation under `/v1/regions/{region}/projects/{project}`, this\nincludes a project locked to a different region than the one in the URL:\nthe error carries reason `PROJECT_REGION_MISMATCH`. A project's region is\nset once and is immutable thereafter, so retrying the same URL returns the\nsame result; address the project's own region, which the project read\nreturns. The message does not name that region.\n\nThe check runs once the caller is authorized for the project, before the\noperation reads or changes anything, and needs the project's region from\nthe platform. When that lookup fails, a `POST` returns 503 and a `GET`,\n`PATCH` or `DELETE` proceeds without the check. A project created before\nregions were required, and not yet assigned one, is not checked.\n", Ref: "#/components/responses/ProjectRegionMismatch"},
-			422: {Description: "Validation failure — malformed `pageToken`, a uuid filter that is not a uuid, an `instanceId` that is not an `inst-` id, an `inStates` value this resource does not publish, a `showDeleted` that is not a boolean, a `pageSize` that is not an integer or is out of range, or a PRESENT BUT BLANK `pageSize`, `instanceId`, `serverSlug` or `inStates`. A bad filter is refused rather than dropped, because an ignored one silently widens the page — and a blank value is a caller whose variable interpolated empty, not a caller asking for everything. `details[].reason` is `INVALID_ARGUMENT`.", Ref: ""},
+			422: {Description: "Validation failure — malformed `pageToken`, a uuid filter that is not a uuid, an `instanceId` that is not an `inst-` id, an `inStates` value this resource does not publish, a `showDeleted` that is not a boolean, a `pageSize` that is not an integer or is out of range, or a PRESENT BUT BLANK `pageSize`, `instanceId`, `serverSlug` or `inStates`. A bad filter is refused rather than dropped, because an ignored one silently widens the page — and a blank value is a caller whose variable interpolated empty, not a caller asking for everything. `details[].reason` is `INVALID_ARGUMENT`.\n\nAlso returned for the offset parameters: an `offset` below `0` or above `2147483647`, a `limit` outside `1`-`200`, an `includeTotal` that is not `true` or `false`, any request mixing the offset style with the deprecated cursor style, or an offset-style `inStates` request that leaves more than 5000 instances to judge after its other filters.", Ref: ""},
 			500: {Description: "Internal server error", Ref: "#/components/responses/InternalServerError"},
 			503: {Description: "Service unavailable. The server is temporarily unable to handle the\nrequest because a required dependency is not configured (e.g., an upstream\ndependency is not wired up) or cannot be reached. Distinct from 504\nGateway Timeout, which signals a transient upstream stall.\n", Ref: "#/components/responses/ServiceUnavailable"},
+			504: {Description: "Gateway timeout. The server, while acting as a gateway, did not receive a\ntimely response from an upstream dependency. Retries with backoff are\nappropriate.\n", Ref: "#/components/responses/GatewayTimeout"},
 		},
 	},
 	"getInstance": {
@@ -12548,7 +13327,7 @@ var Operations = map[string]OperationInfo{
 			401: {Description: "Unauthorized", Ref: "#/components/responses/Unauthorized"},
 			403: {Description: "Forbidden", Ref: "#/components/responses/Forbidden"},
 			409: {Description: "The request conflicts with the current state of a resource.\n\nOn every operation under `/v1/regions/{region}/projects/{project}`, this\nincludes a project locked to a different region than the one in the URL:\nthe error carries reason `PROJECT_REGION_MISMATCH`. A project's region is\nset once and is immutable thereafter, so retrying the same URL returns the\nsame result; address the project's own region, which the project read\nreturns. The message does not name that region.\n\nThe check runs once the caller is authorized for the project, before the\noperation reads or changes anything, and needs the project's region from\nthe platform. When that lookup fails, a `POST` returns 503 and a `GET`,\n`PATCH` or `DELETE` proceeds without the check. A project created before\nregions were required, and not yet assigned one, is not checked.\n", Ref: "#/components/responses/ProjectRegionMismatch"},
-			422: {Description: "Any semantic validation failure, with `details[].reason:\nINVALID_ARGUMENT`. For example: a `state` filter that is not one of\n`creating`, `active`, `deleting`, `failed`; a `shareType` filter that\ndoes not name a class offered in this region; a `consumer` filter that\nis neither a routable literal IPv4 host address nor a well-formed\ninstance-group `id`; a `pageSize` that is not a positive integer; or a\nmalformed `pageToken`.\n", Ref: ""},
+			422: {Description: "Any semantic validation failure, with `details[].reason:\nINVALID_ARGUMENT`. For example: a `state` filter that is not one of\n`creating`, `active`, `deleting`, `failed`; a `shareType` filter that\nis not a well-formed class name; a `consumer` filter that\nis neither a routable literal IPv4 host address nor a well-formed\ninstance-group `id`; a `pageSize` that is not a positive integer; a\nmalformed `pageToken`; an `offset`, `limit` or `includeTotal` out of\nrange; or a request mixing the offset and cursor paging styles.\n", Ref: ""},
 			500: {Description: "Internal server error", Ref: "#/components/responses/InternalServerError"},
 		},
 	},
@@ -12562,7 +13341,7 @@ var Operations = map[string]OperationInfo{
 			401: {Description: "Unauthorized", Ref: "#/components/responses/Unauthorized"},
 			403: {Description: "Forbidden", Ref: "#/components/responses/Forbidden"},
 			404: {Description: "Not found", Ref: "#/components/responses/NotFound"},
-			409: {Description: "Conflict. `details[].reason` is `CONFLICT_DUPLICATE` when a store with\nthe supplied `id` already exists in the project — the expected\noutcome of a retried create.\n\nThe same status is returned while the target project is being deleted, and carries `CONFLICT_BACKEND_CAPACITY_EXCEEDED` when the requested class's storage system has no sellable capacity left for `capacityGiB`, and `QUOTA_EXCEEDED` when `capacityGiB` would exceed the organization's or the project's `storage_gib` limit; returned only while `storage_gib` enforcement is on, which it is not by default; nothing is written and each `error.details[]` entry's `metadata` carries `dimension`, `requested`, `admissible`, `bindingScope` and `scopes`, see `Error`.\n\n`QUOTA_UNASSIGNED`: the organization has no quota profile assigned while the platform requires one (a default profile is designated), so the create is refused before any limit is measured; `error.reason` is `QUOTA_UNASSIGNED` with no `details[]`, and retrying returns the same result until an operator assigns the organization a profile.\n\nAlso returned, with top-level `reason: PROJECT_REGION_MISMATCH`, when the project is locked to a different region than the one in the URL. A project's region is immutable once set, so address the project's own region instead of retrying.\n", Ref: ""},
+			409: {Description: "Conflict. `details[].reason` is `CONFLICT_DUPLICATE` when a store with\nthe supplied `id` already exists in the project — the expected\noutcome of a retried create.\n\nThe same status is returned while the target project is being deleted, and carries `CONFLICT_BACKEND_CAPACITY_EXCEEDED` when the requested class's storage system has no sellable capacity left for `capacityGiB`, and `QUOTA_EXCEEDED` when `capacityGiB` would exceed the organization's or the project's `storage_gib` limit; returned only while `storage_gib` enforcement is on, which it is not by default; nothing is written and each `error.details[]` entry's `metadata` carries `dimension`, `requested`, `admissible`, `bindingScope` and `scopes`, see `Error`.\n\n`CONFLICT_SHARE_TYPE_MISMATCH`: the project already holds a store of another `shareType` in this region that is live or whose removal is not yet confirmed; all such stores of a project in a region share one `shareType`.\n\n`QUOTA_UNASSIGNED`: the organization holds no quota limits while the platform requires them (a default profile is designated), so the create is refused before any limit is measured; `error.reason` is `QUOTA_UNASSIGNED` with no `details[]`, and retrying returns the same result until an operator gives the organization limits, by applying a profile or setting them directly.\n\nAlso returned, with top-level `reason: PROJECT_REGION_MISMATCH`, when the project is locked to a different region than the one in the URL. A project's region is immutable once set, so address the project's own region instead of retrying.\n", Ref: ""},
 			422: {Description: "Any semantic validation failure, with `details[].reason:\nINVALID_ARGUMENT`. For example: `shareType` does not name a class\noffered in this region; an `ipAddress` `consumers[].ref` is not a\nroutable literal IPv4 host address (a prefix, `0.0.0.0`,\n`255.255.255.255`, a loopback, multicast or link-local address are all\nrefused); an `instanceGroup` `consumers[].ref` does not name a group in\nthis project, names one that has been deleted or is being deleted, or\nis a URI rather than a bare `id`; the group has no members yet, or no\nmember carries a grantable IPv4 address yet; an `instanceGroup` entry\nomits `network`, or an `ipAddress` entry carries one; a `network`\nsupplies the hardware identifier that does not go with its `type`, uses\na spelling outside that field's `pattern`, names a fabric that a\nresolved member has no interface on, or carries a hardware identifier\nmatching no interface anywhere in the group; two entries normalize\nto the same `ref`; an `accessLevel` of `ro`, which cannot be granted, or\none outside the enum; a `mountPath` that is not a clean absolute POSIX\npath; more than 64 `consumers`; a consumer list whose resolved\naddresses coalesce into more than 256 access rules; or a `capacityGiB`\nabove the `maxCapacityGiB` the requested class sets on one allocation.\n\nA group that cannot be resolved is a `422` and never a `404`: the\naddressed resource is the store, and the store was found.\n\nThe same status carries `details[0].reason` `STORAGE_BACKEND_MISSING` (the class names no live storage backend), `STORAGE_BACKEND_OUT_OF_SERVICE` (its backend is out of service) or `STORAGE_PLACEMENT_NOT_APPLIED` (the class is not active or its placement was never applied).\n\nThe same status, with the same `reason`, is returned when the region\nhas no storage configured at all. The message names storage as\nunconfigured for the region and no store is persisted. This is a\nproperty of the deployment, not of the request: retrying with a\ndifferent body does not help, and the condition clears only when the\nregion is configured for storage.\n", Ref: ""},
 			500: {Description: "Internal server error", Ref: "#/components/responses/InternalServerError"},
 			503: {Description: "The project check or the storage quota check could not be made (organizations unreachable); nothing was written, retry.", Ref: ""},
@@ -12607,7 +13386,7 @@ var Operations = map[string]OperationInfo{
 			401: {Description: "Unauthorized", Ref: "#/components/responses/Unauthorized"},
 			403: {Description: "Forbidden", Ref: "#/components/responses/Forbidden"},
 			404: {Description: "Not found", Ref: "#/components/responses/NotFound"},
-			409: {Description: "Conflict, with a distinct `details[].reason` per cause:\n\n- `CONFLICT_IMMUTABLE` — the body carried `shareType`, which is fixed\n  for the life of the store.\n- `CONFLICT_CAPACITY_BELOW_USAGE` — `capacityGiB` is below the usage last measured on the store; refused only when the store has a measured usage, otherwise the size change goes to the backend.\n- `CONFLICT_VERSION` — the supplied `etag` does not match the\n  store's current revision, so the store changed since it was read;\n  re-read and retry.\n- `CONFLICT_IN_USE` — the store is not in a state that accepts\n  updates, because it is `creating`, `deleting` or `failed`, a previous\n  capacity change is still settling its quota accounting, or the\n  reconcile sweep is charging the store's quota; retry shortly.\n- `QUOTA_EXCEEDED` — the growth over the capacity the store's quota hold already covers would exceed a `storage_gib` limit; `requested` and `admissible` are increases in GiB, see `Error`. Returned only while `storage_gib` enforcement is on, which it is not by default, and only for a store that holds quota: a store created before its organization had a `storage_gib` limit is not refused on growth until the sweep charges it, within one sweep period.\n- `QUOTA_UNASSIGNED` — the organization has no quota profile assigned while the platform requires one (a default profile is designated), so the resize is refused before any limit is measured; no `details[]`, and retrying returns the same result until an operator assigns the organization a profile.\n- `CONFLICT_BACKEND_CAPACITY_EXCEEDED` — the class's storage system has no sellable capacity left for the increment.\n\nAlso returned, with top-level `reason: PROJECT_REGION_MISMATCH`, when the project is locked to a different region than the one in the URL. A project's region is immutable once set, so address the project's own region instead of retrying.\n", Ref: ""},
+			409: {Description: "Conflict, with a distinct `details[].reason` per cause:\n\n- `CONFLICT_IMMUTABLE` — the body carried `shareType`, which is fixed\n  for the life of the store.\n- `CONFLICT_CAPACITY_BELOW_USAGE` — `capacityGiB` is below the usage last measured on the store; refused only when the store has a measured usage, otherwise the size change goes to the backend.\n- `CONFLICT_VERSION` — the supplied `etag` does not match the\n  store's current revision, so the store changed since it was read;\n  re-read and retry.\n- `CONFLICT_IN_USE` — the store is not in a state that accepts\n  updates, because it is `creating`, `deleting` or `failed`, a previous\n  capacity change is still settling its quota accounting, or the\n  reconcile sweep is charging the store's quota; retry shortly.\n- `QUOTA_EXCEEDED` — the growth over the capacity the store's quota hold already covers would exceed a `storage_gib` limit; `requested` and `admissible` are increases in GiB, see `Error`. Returned only while `storage_gib` enforcement is on, which it is not by default, and only for a store that holds quota: a store created before its organization had a `storage_gib` limit is not refused on growth until the sweep charges it, within one sweep period.\n- `QUOTA_UNASSIGNED` — the organization holds no quota limits while the platform requires them (a default profile is designated), so the resize is refused before any limit is measured; no `details[]`, and retrying returns the same result until an operator gives the organization limits, by applying a profile or setting them directly.\n- `CONFLICT_BACKEND_CAPACITY_EXCEEDED` — the class's storage system has no sellable capacity left for the increment.\n\nAlso returned, with top-level `reason: PROJECT_REGION_MISMATCH`, when the project is locked to a different region than the one in the URL. A project's region is immutable once set, so address the project's own region instead of retrying.\n", Ref: ""},
 			422: {Description: "Any semantic validation failure, with `details[].reason:\nINVALID_ARGUMENT`. For example: an `ipAddress` `consumers[].ref` is not\na routable literal IPv4 host address (a prefix, `0.0.0.0`,\n`255.255.255.255`, a loopback, multicast or link-local address are all\nrefused); an `instanceGroup` `consumers[].ref` does not name a group in\nthis project, names one that has been deleted or is being deleted, or\nis a URI rather than a bare `id`; the group has no members yet, or no\nmember carries a grantable IPv4 address yet; an `instanceGroup` entry\nomits `network`, or an `ipAddress` entry carries one; a `network`\nsupplies the hardware identifier that does not go with its `type`, uses\na spelling outside that field's `pattern`, names a fabric that a\nresolved member has no interface on, or carries a hardware identifier\nmatching no interface anywhere in the group; two entries normalize\nto the same `ref`; an `accessLevel` of `ro`, which cannot be granted, or\none outside the enum; a `mountPath` that is not a clean absolute POSIX\npath; more than 64 `consumers`; a consumer list whose resolved\naddresses coalesce into more than 256 access rules; or a `capacityGiB`\nabove the `maxCapacityGiB` the class sets on one allocation — the\nceiling binds the resulting size, not the increment.\n\nA group that cannot be resolved is a `422` and never a `404`: the\naddressed resource is the store, and the store was found.\n\nAn expand carries the same storage `details[0].reason` as a create when the store's class cannot place the increment.\n", Ref: ""},
 			500: {Description: "Internal server error", Ref: "#/components/responses/InternalServerError"},
 			503: {Description: "The capacity change could not be checked against the quota; nothing was changed, retry.", Ref: ""},
@@ -12693,10 +13472,9 @@ type ClientWithResponsesInterface interface {
 	// This endpoint proxies to the underlying identity provider
 	// for token issuance.
 	//
-	// Four grant types are supported:
-	//
-	// **authorization_code** — Interactive user session. Exchanges an
-	// authorization code obtained from the OAuth2 /authorize flow.
+	// Three grant types are supported. Interactive sign-in does not use this
+	// endpoint: it goes through `login/initiate` and the login callback, which
+	// record a session and set the `k0r_refresh_token` cookie.
 	//
 	// **api_key** — Programmatic access via an API key. The caller
 	// presents the opaque, prefixed API key token. Effective privileges
@@ -12738,10 +13516,9 @@ type ClientWithResponsesInterface interface {
 	// This endpoint proxies to the underlying identity provider
 	// for token issuance.
 	//
-	// Four grant types are supported:
-	//
-	// **authorization_code** — Interactive user session. Exchanges an
-	// authorization code obtained from the OAuth2 /authorize flow.
+	// Three grant types are supported. Interactive sign-in does not use this
+	// endpoint: it goes through `login/initiate` and the login callback, which
+	// record a session and set the `k0r_refresh_token` cookie.
 	//
 	// **api_key** — Programmatic access via an API key. The caller
 	// presents the opaque, prefixed API key token. Effective privileges
@@ -12779,6 +13556,8 @@ type ClientWithResponsesInterface interface {
 	//
 	// **Visibility:** `public` (x-visibility)
 	//
+	// **Who may call this:** Any authenticated caller, for their own partition's subscriptions: a customer's organization, or the provider partition for provider personnel. A customer with no resolvable organization is refused with 401.
+	//
 	// Returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with GET /v1/regions/global/notifications/webhooks (the `ListWebhookSubscriptions` operationId).
@@ -12787,6 +13566,12 @@ type ClientWithResponsesInterface interface {
 	// CreateWebhookSubscriptionWithBodyWithResponse Create a webhook subscription
 	//
 	// **Visibility:** `public` (x-visibility)
+	//
+	// **Who may call this:** Any authenticated caller, in their own partition.
+	// Any member of a customer organization may write that organization's
+	// subscriptions (no org-admin role is needed); in the provider partition
+	// only platform-admin may, and other provider personnel are refused with
+	// 403. A customer with no resolvable organization is refused with 401.
 	//
 	// Subscribe a customer endpoint to notification events. A signing secret is
 	// generated when not supplied and returned ONCE in the response (store it — it
@@ -12975,6 +13760,11 @@ type ClientWithResponsesInterface interface {
 	// ignore fields it does not recognise. Changing the meaning of an existing field
 	// or removing one is a breaking change and will only be made through a versioned
 	// change with a published migration period — never silently.
+	//
+	// The `data` of an event delivered to an organization's endpoint holds only
+	// the fields its event type defines for customers; a field the producing
+	// service sent outside that list is never delivered there. The provider's own
+	// subscriptions receive all of `data`.
 	//
 	// Build your receiver to tolerate additive growth, and keep that tolerance
 	// separate from the two mechanisms above, which are NOT affected by new fields:
@@ -13010,6 +13800,12 @@ type ClientWithResponsesInterface interface {
 	//
 	// **Visibility:** `public` (x-visibility)
 	//
+	// **Who may call this:** Any authenticated caller, in their own partition.
+	// Any member of a customer organization may write that organization's
+	// subscriptions (no org-admin role is needed); in the provider partition
+	// only platform-admin may, and other provider personnel are refused with
+	// 403. A customer with no resolvable organization is refused with 401.
+	//
 	// Subscribe a customer endpoint to notification events. A signing secret is
 	// generated when not supplied and returned ONCE in the response (store it — it
 	// is never returned again). Dispatch requires the event-intake fan-out relay to
@@ -13198,6 +13994,11 @@ type ClientWithResponsesInterface interface {
 	// or removing one is a breaking change and will only be made through a versioned
 	// change with a published migration period — never silently.
 	//
+	// The `data` of an event delivered to an organization's endpoint holds only
+	// the fields its event type defines for customers; a field the producing
+	// service sent outside that list is never delivered there. The provider's own
+	// subscriptions receive all of `data`.
+	//
 	// Build your receiver to tolerate additive growth, and keep that tolerance
 	// separate from the two mechanisms above, which are NOT affected by new fields:
 	//
@@ -13232,7 +14033,9 @@ type ClientWithResponsesInterface interface {
 	//
 	// **Visibility:** `public` (x-visibility)
 	//
-	// Delete one of the caller's webhook subscriptions. Deleting a provider subscription requires the platform-admin role, the same rule as creating one.
+	// **Who may call this:** Any authenticated caller, in their own partition. Any member of a customer organization may write that organization's subscriptions (no org-admin role is needed); in the provider partition only platform-admin may, and other provider personnel are refused with 403. A customer with no resolvable organization is refused with 401.
+	//
+	// Delete one of the webhook subscriptions in the caller's partition.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
@@ -13242,6 +14045,12 @@ type ClientWithResponsesInterface interface {
 	// RotateWebhookSubscriptionSecretWithBodyWithResponse Rotate a webhook subscription's signing secret
 	//
 	// **Visibility:** `public` (x-visibility)
+	//
+	// **Who may call this:** Any authenticated caller, in their own partition.
+	// Any member of a customer organization may write that organization's
+	// subscriptions (no org-admin role is needed); in the provider partition
+	// only platform-admin may, and other provider personnel are refused with
+	// 403. A customer with no resolvable organization is refused with 401.
 	//
 	// Issue a new signing secret for an existing webhook subscription. The
 	// subscription id, URL and event-type filter are unchanged, and no delivery is
@@ -13309,6 +14118,12 @@ type ClientWithResponsesInterface interface {
 	// RotateWebhookSubscriptionSecretWithResponse Rotate a webhook subscription's signing secret
 	//
 	// **Visibility:** `public` (x-visibility)
+	//
+	// **Who may call this:** Any authenticated caller, in their own partition.
+	// Any member of a customer organization may write that organization's
+	// subscriptions (no org-admin role is needed); in the provider partition
+	// only platform-admin may, and other provider personnel are refused with
+	// 403. A customer with no resolvable organization is refused with 401.
 	//
 	// Issue a new signing secret for an existing webhook subscription. The
 	// subscription id, URL and event-type filter are unchanged, and no delivery is
@@ -13411,7 +14226,7 @@ type ClientWithResponsesInterface interface {
 	//
 	// **Visibility:** `public` · `internal` (x-visibility)
 	//
-	// List all role definitions.
+	// List the roles that can be bound in this organization: the built-in roles and the organization's custom roles whose `scopes` include `org` or `project`. Roles bindable only at platform scope are not listed here; they are listed by `GET /v1/regions/global/iam/platform/roles` and remain readable by id through `getRole`. The filter reads only each role's `scopes`, never the caller, so every principal listing the same organization receives the same set. A role with mixed scopes (for example `iam-admin`, scopes `platform` and `org`) appears both here and in the platform list. `totalCount` counts this filtered set.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
@@ -13565,8 +14380,8 @@ type ClientWithResponsesInterface interface {
 	// creating a project with the same id afterwards succeeds. It is not available
 	// before then, so wait for the first 404 rather than retrying a create. Before
 	// the id is released, the project's project-scoped service accounts are
-	// disabled, its IAM role bindings are purged, and its quota assignment is
-	// cleared, so a re-created project does not inherit them. That is the order
+	// disabled, its IAM role bindings are purged, and its quota limits are
+	// removed, so a re-created project does not inherit them. That is the order
 	// the service uses, and the first two are deliberately in that sequence.
 	//
 	// Disabling the service accounts is a side effect worth planning for: a
@@ -13682,7 +14497,7 @@ type ClientWithResponsesInterface interface {
 	//
 	// **Visibility:** `internal` · `public` (x-visibility)
 	//
-	// Read the organization's tenant-scope quota: one row per dimension that is limited, or enforced with recorded usage, with its unit, whether it is enforced, and a single `tenant` entry in `scopes` carrying the configured limit, recorded usage, headroom and over-limit flag. Usage is summed across regions. A dimension the admission check does not refuse on (nothing charges it, or its enforcement is switched off) reports enforced false and omits used and headroom rather than showing 0. An organization with no active quota assignment is not an error; its rows report usage with limit and headroom absent (unlimited). The top-level limit, used and remaining are deprecated in favor of scopes. Returns 404 if the organization does not exist or the caller is not scoped to it.
+	// Read the organization's tenant-scope quota: one row per dimension that is limited, or enforced with recorded usage, with its unit, whether it is enforced, and a single `tenant` entry in `scopes` carrying the configured limit, recorded usage, headroom and over-limit flag. Usage is summed across regions. A dimension the admission check does not refuse on (nothing charges it, or its enforcement is switched off) reports enforced false and omits used and headroom rather than showing 0. An organization that holds no limits of its own is not an error; its rows report usage with limit and headroom absent (unlimited). The top-level limit, used and remaining are deprecated in favor of scopes. Returns 404 if the organization does not exist or the caller is not scoped to it.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
@@ -13704,7 +14519,16 @@ type ClientWithResponsesInterface interface {
 	//
 	// **Visibility:** `internal` · `public` (x-visibility)
 	//
-	// List all ClusterTypes available in the region. Deprecated types are excluded unless includeDeprecated=true.
+	// List all ClusterTypes available in the region, newest first. Deprecated
+	// types are excluded unless `includeDeprecated=true`.
+	//
+	// Supply any of `offset`, `limit` or `includeTotal` to page by position and
+	// receive `totalCount`, which counts the ClusterTypes the same
+	// `includeDeprecated` setting lists. This is the only way to read past the
+	// first page. Without those parameters the list returns its first page only,
+	// sized by the deprecated `pageSize`; the deprecated `pageToken` has never
+	// been implemented here and is rejected with 400 on its own, or with 422
+	// alongside an offset-style parameter.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
@@ -13730,6 +14554,13 @@ type ClientWithResponsesInterface interface {
 	// optional `status` query parameter filters to one lifecycle status; an
 	// unrecognized value is rejected with `422` rather than returning an empty
 	// list.
+	//
+	// Supply any of `offset`, `limit` or `includeTotal` to page through the
+	// history and receive `totalCount`, which counts this ClusterType's versions matching the same
+	// `status`. A request with no paging parameter returns the whole history,
+	// as it always has. This list has no cursor style; `pageToken` and
+	// `pageSize` are ignored unless sent alongside an offset-style parameter,
+	// which is rejected with `422`.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
@@ -13796,6 +14627,15 @@ type ClientWithResponsesInterface interface {
 	// so a cluster whose creation commits after a page was served may not appear
 	// in that traversal at all — start a fresh list to see it.)
 	//
+	// Supply `offset` and `limit` to page by position and receive `totalCount`;
+	// the deprecated `pageToken`/`pageSize` cursor keeps working for existing
+	// clients, and a request carrying neither stays on it. Both styles walk the
+	// collection in the same newest-first order, and `totalCount` counts the
+	// clusters matching the active `state`, `health` and `search` filters. Unlike
+	// the cursor, an offset is a position: a cluster created or deleted between
+	// two requests shifts every later row by one, so a row can repeat or be
+	// skipped across pages.
+	//
 	// Returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with GET /v1/regions/{region}/projects/{project}/compute/clusters (the `ListClusters` operationId).
@@ -13853,10 +14693,17 @@ type ClientWithResponsesInterface interface {
 	// a token.
 	//
 	// An API key receives a kubeconfig capped to the key's own roles rather than
-	// its owner's. A caller with no owning organization in context — in practice
-	// a platform-scope operator with no membership in the cluster's organization
-	// — gets `503` too: a token narrowed by project alone would still carry that
-	// caller's roles in every other organization they belong to.
+	// its owner's.
+	//
+	// A caller whose access comes from platform-scope roles and who holds no role
+	// in the cluster's organization or project gets `403`: provider-side roles
+	// alone do not grant access to a tenant cluster.
+	//
+	// `503` means the platform could not check membership or mint a token, not
+	// that access was refused. That includes a request for which the platform
+	// could not determine the organization that owns the project, since a token
+	// narrowed by project alone would still carry the caller's roles in every
+	// other organization they belong to.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
@@ -13878,6 +14725,10 @@ type ClientWithResponsesInterface interface {
 	// issuance and a `revoked` config are both excluded, so a caller that has
 	// just requested one will not find that row here until it activates.
 	//
+	// Because this operation is deprecated, it does not take the `offset`/`limit`
+	// pagination style the other lists offer: it keeps `pageToken`/`pageSize`,
+	// and its response keeps reporting `total`.
+	//
 	// Returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with GET /v1/regions/{region}/projects/{project}/compute/clusters/{clusterId}/kubeconfigs (the `ListKubeconfigs` operationId).
@@ -13894,6 +14745,10 @@ type ClientWithResponsesInterface interface {
 	// at provisioning time and is immutable — it cannot be changed or removed from
 	// a running cluster.
 	//
+	// Not paginated. The list is bounded by construction — at most 32 users,
+	// fixed when the cluster is created — so it is always returned whole, with no
+	// `offset`/`limit` or `pageToken`/`pageSize` parameters.
+	//
 	// Returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with GET /v1/regions/{region}/projects/{project}/compute/clusters/{clusterId}/ssh-access (the `ListClusterSshAccess` operationId).
@@ -13904,6 +14759,7 @@ type ClientWithResponsesInterface interface {
 	// **Visibility:** `internal` · `public` (x-visibility)
 	//
 	// "Cluster CRUD API"; Delete cluster and trigger cleanup of nodes and IP resources.
+	// Credentials distributed to the cluster are revoked before the delete starts; if revocation fails, nothing changes and the delete must be retried.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
@@ -13926,7 +14782,7 @@ type ClientWithResponsesInterface interface {
 	//
 	// **Visibility:** `internal` · `public` (x-visibility)
 	//
-	// "Cluster CRUD API"; Update cluster configuration to scale resources, upgrade versions, or modify settings.
+	// "Cluster CRUD API"; Update cluster configuration: display name, description, tags, storage ceiling, or security groups. Node counts are not changed here; use `scaleCluster`, and a request carrying `nodePools` is refused with `422`.
 	//
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -13937,7 +14793,7 @@ type ClientWithResponsesInterface interface {
 	//
 	// **Visibility:** `internal` · `public` (x-visibility)
 	//
-	// "Cluster CRUD API"; Update cluster configuration to scale resources, upgrade versions, or modify settings.
+	// "Cluster CRUD API"; Update cluster configuration: display name, description, tags, storage ceiling, or security groups. Node counts are not changed here; use `scaleCluster`, and a request carrying `nodePools` is refused with `422`.
 	//
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -13948,35 +14804,41 @@ type ClientWithResponsesInterface interface {
 	//
 	// **Visibility:** `internal` · `public` (x-visibility)
 	//
-	// Cancel the operation the cluster is currently running and settle it to
-	// `failed` with `stateReason` `CANCELLED`, so a cluster wedged mid-operation
-	// can reach a state from which it can be deleted.
+	// Request that the operation the cluster is currently running be stopped. The
+	// cancel does not change the cluster's `state`: it asks the engine execution to
+	// stop and marks the operation cancelling, leaving the cluster in its
+	// transitional `state` while the run winds down. When the run ends the cluster
+	// settles the usual way: normally `failed` with `stateReason` `CANCELLED`
+	// (`operation.status` `cancelled`), also when the run ignores the stop and the
+	// watchdog force-fails it; but a run that completes before the stop takes
+	// effect settles `active` instead (`operation.status` `succeeded`). Wait for
+	// either settled state before deleting; a `DELETE` issued while the cluster is
+	// still cancelling is refused with `409`.
 	//
 	// Admitted only while an operation is in flight: the cluster must be
 	// `creating` or `updating`. The engine execution is asked to stop first; if
 	// that request cannot be delivered the cancel fails (`5xx`) and the cluster is
-	// left unchanged in its transitional state, so the caller can retry. Once the
-	// stop is requested — or the run has already finished on its own — the cluster
-	// is settled `failed` and `operation.status` reads `cancelled`, distinct from
-	// an ordinary `failed`. A workflow that completes despite the cancel lands a
-	// callback the settled cluster ignores, so the result is stable.
+	// left unchanged, so the caller can retry. Once the stop has been requested the
+	// cluster is returned in its transitional `state` with `operation.status`
+	// `cancelling`, and the response is `202`.
 	//
 	// The request body pins the operation to cancel: `executionId` must match the
 	// operation currently in flight, as read from the cluster's
 	// `operation.executionId`. This makes a cancel acted on a stale view safe — if
 	// the cluster has settled and begun a different operation since it was read,
-	// the cancel is refused rather than aborting the newer operation.
+	// the cancel is refused rather than stopping the newer operation.
 	//
-	// The cluster is returned in its settled `failed` state. Retrying the cancel —
-	// the same `executionId` on a cluster already settled `failed` with
-	// `operation.status` `cancelled` — returns `200` with that settled cluster, so
-	// the operation is idempotent. Cancelling is rejected with `409` when the
-	// cluster is otherwise settled with nothing in flight (`active`, or `failed`
-	// from a different cause or operation), or is `deleting`, which has no cancel,
-	// or when `executionId` does not match the operation now in flight; the message
-	// names the blocking state. A missing or empty body is rejected with `400`. A
-	// cluster that has already been deleted is not found and returns `404`, like any
-	// unknown cluster.
+	// Retrying the cancel — the same `executionId` on a cluster that has since
+	// settled `failed` with `operation.status` `cancelled` — returns `200` with
+	// that settled cluster, so the operation is idempotent; a cancel that lost to
+	// completion leaves nothing to cancel, so its retry is refused with `409` like
+	// any other settled cluster. Cancelling is rejected
+	// with `409` when the cluster is otherwise settled with nothing in flight
+	// (`active`, or `failed` from a different cause or operation), or is `deleting`,
+	// which has no cancel, or when `executionId` does not match the operation now
+	// in flight; the message names the blocking state. A missing or empty body is
+	// rejected with `400`. A cluster that has already been deleted is not found and
+	// returns `404`, like any unknown cluster.
 	//
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -13987,35 +14849,41 @@ type ClientWithResponsesInterface interface {
 	//
 	// **Visibility:** `internal` · `public` (x-visibility)
 	//
-	// Cancel the operation the cluster is currently running and settle it to
-	// `failed` with `stateReason` `CANCELLED`, so a cluster wedged mid-operation
-	// can reach a state from which it can be deleted.
+	// Request that the operation the cluster is currently running be stopped. The
+	// cancel does not change the cluster's `state`: it asks the engine execution to
+	// stop and marks the operation cancelling, leaving the cluster in its
+	// transitional `state` while the run winds down. When the run ends the cluster
+	// settles the usual way: normally `failed` with `stateReason` `CANCELLED`
+	// (`operation.status` `cancelled`), also when the run ignores the stop and the
+	// watchdog force-fails it; but a run that completes before the stop takes
+	// effect settles `active` instead (`operation.status` `succeeded`). Wait for
+	// either settled state before deleting; a `DELETE` issued while the cluster is
+	// still cancelling is refused with `409`.
 	//
 	// Admitted only while an operation is in flight: the cluster must be
 	// `creating` or `updating`. The engine execution is asked to stop first; if
 	// that request cannot be delivered the cancel fails (`5xx`) and the cluster is
-	// left unchanged in its transitional state, so the caller can retry. Once the
-	// stop is requested — or the run has already finished on its own — the cluster
-	// is settled `failed` and `operation.status` reads `cancelled`, distinct from
-	// an ordinary `failed`. A workflow that completes despite the cancel lands a
-	// callback the settled cluster ignores, so the result is stable.
+	// left unchanged, so the caller can retry. Once the stop has been requested the
+	// cluster is returned in its transitional `state` with `operation.status`
+	// `cancelling`, and the response is `202`.
 	//
 	// The request body pins the operation to cancel: `executionId` must match the
 	// operation currently in flight, as read from the cluster's
 	// `operation.executionId`. This makes a cancel acted on a stale view safe — if
 	// the cluster has settled and begun a different operation since it was read,
-	// the cancel is refused rather than aborting the newer operation.
+	// the cancel is refused rather than stopping the newer operation.
 	//
-	// The cluster is returned in its settled `failed` state. Retrying the cancel —
-	// the same `executionId` on a cluster already settled `failed` with
-	// `operation.status` `cancelled` — returns `200` with that settled cluster, so
-	// the operation is idempotent. Cancelling is rejected with `409` when the
-	// cluster is otherwise settled with nothing in flight (`active`, or `failed`
-	// from a different cause or operation), or is `deleting`, which has no cancel,
-	// or when `executionId` does not match the operation now in flight; the message
-	// names the blocking state. A missing or empty body is rejected with `400`. A
-	// cluster that has already been deleted is not found and returns `404`, like any
-	// unknown cluster.
+	// Retrying the cancel — the same `executionId` on a cluster that has since
+	// settled `failed` with `operation.status` `cancelled` — returns `200` with
+	// that settled cluster, so the operation is idempotent; a cancel that lost to
+	// completion leaves nothing to cancel, so its retry is refused with `409` like
+	// any other settled cluster. Cancelling is rejected
+	// with `409` when the cluster is otherwise settled with nothing in flight
+	// (`active`, or `failed` from a different cause or operation), or is `deleting`,
+	// which has no cancel, or when `executionId` does not match the operation now
+	// in flight; the message names the blocking state. A missing or empty body is
+	// rejected with `400`. A cluster that has already been deleted is not found and
+	// returns `404`, like any unknown cluster.
 	//
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -14130,6 +14998,10 @@ type ClientWithResponsesInterface interface {
 	// only from `active`); reaching a version further ahead requires one
 	// UpgradeCluster call per step.
 	//
+	// A cluster with a hosted control plane is upgraded the same way, and its
+	// control plane keeps the settings its ClusterType's HCPConfig sets.
+	// **Not yet applied:** declared ahead of its implementation.
+	//
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with POST /v1/regions/{region}/projects/{project}/compute/clusters/{id}/upgrade (the `UpgradeCluster` operationId).
@@ -14156,6 +15028,10 @@ type ClientWithResponsesInterface interface {
 	// only from `active`); reaching a version further ahead requires one
 	// UpgradeCluster call per step.
 	//
+	// A cluster with a hosted control plane is upgraded the same way, and its
+	// control plane keeps the settings its ClusterType's HCPConfig sets.
+	// **Not yet applied:** declared ahead of its implementation.
+	//
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with POST /v1/regions/{region}/projects/{project}/compute/clusters/{id}/upgrade (the `UpgradeCluster` operationId).
@@ -14165,7 +15041,11 @@ type ClientWithResponsesInterface interface {
 	//
 	// **Visibility:** `internal` · `public` (x-visibility)
 	//
-	// List BMaaS instance groups in the project.
+	// List BMaaS instance groups in the project, ordered by `id`.
+	//
+	// Supply `offset` and `limit` to page by position and receive `totalCount`; the deprecated `pageToken`/`pageSize` cursor keeps working for existing clients, and a request carrying neither stays on it. Both styles walk the groups in the same `id` order, and `totalCount` counts the groups the `showDeleted` setting selects. An offset is a position, so a group created or deleted between two requests can make a row repeat or be skipped across pages.
+	//
+	// The embed budgets below bound ONE response, so they apply to each offset page exactly as they do to each cursor page; a smaller `limit` is the lever for both.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
@@ -14199,8 +15079,10 @@ type ClientWithResponsesInterface interface {
 	// **Visibility:** `internal` · `public` (x-visibility)
 	//
 	// Delete a group and release all its hosts (each performing the mandatory OS wipe). Deletion is asynchronous and two-phase: the group must be in `active`, `failed`, or `creating`. From `active`/`failed` the request transitions the group to `deleting` and starts the teardown workflow, and the row is removed only once that workflow is observed to finish.
-	// Deleting a `creating` group instead cancels its in-flight create; once that settles (normally to `failed`), the group is automatically torn down the rest of the way — no second DELETE call is needed, though this may take longer than deleting an already-settled group. A manual DELETE issued again during this window is harmless: a `204` while the group is still `creating` (the cancel-mark request re-matches), or a `409` once the auto-chain has moved the row to `deleting`.
+	// Deleting a `creating` group instead cancels its in-flight create; once that settles (normally to `failed`), the group is automatically torn down the rest of the way — a second DELETE call is normally not needed, though this may take longer than deleting an already-settled group. A manual DELETE issued again during this window is harmless: a `204` while the group is still `creating` (the cancel-mark request re-matches), or a `409` once the auto-chain has moved the row to `deleting`.
 	// Deleting a group in `updating` or `deleting` returns `409 CONFLICT_IN_USE`.
+	// From `active`/`failed`, credentials distributed to the group are revoked before the delete starts; if revocation fails, nothing changes and the delete must be retried.
+	// Deleting a `failed` group returns `503` when a node pool's reservation can only be recovered from the group's workflow history and either that history cannot be read right now, or the reservation recovered from it cannot be recorded on the group. The group is left in `failed` (any reservation already recovered and recorded stays recorded), and the delete should be retried.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
@@ -14247,22 +15129,69 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with PATCH /v1/regions/{region}/projects/{project}/compute/instance-groups/{id} (the `UpdateInstanceGroup` operationId).
 	UpdateInstanceGroupWithResponse(ctx context.Context, region RegionPathParam, project ProjectPathParam, id string, body UpdateInstanceGroupJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateInstanceGroupResponse, error)
 
-	// ScaleInstanceGroupWithBodyWithResponse Scale instance group node pools (scale up only; scale down not yet implemented)
+	// ScaleInstanceGroupWithBodyWithResponse Scale instance group node pools up or down
 	//
 	// **Visibility:** `internal` · `public` (x-visibility)
 	//
-	// Increase host counts on one or more of the group's node pools and dispatch
-	// the asynchronous `instance-group-scale-up` workflow, which adds servers to
-	// each pool's existing reservation and provisions the new hosts.
+	// Change host counts on one or more of the group's node pools and dispatch the
+	// asynchronous workflow for the request's direction: `instance-group-scale-up`
+	// adds servers to each pool's existing reservation and provisions the new
+	// hosts; `instance-group-scale-down` removes the named instances' hosts from
+	// their reservation and hands them back to the available pool.
 	//
-	// Each `nodePools[]` entry supplies an absolute desired count (not a delta).
-	// The request is rejected with `422` when duplicate pool slugs are supplied, a
-	// slug is unknown, any target is less than or equal to the pool's settled
-	// count, or a pool has no bound infrastructure reservation; and with `409` when
-	// the group is not in the settled `active` state — i.e. another lifecycle
-	// operation (create, update, delete, or a concurrent scale) is already in
-	// flight, or the group is `failed`. The accepted scale atomically moves the
-	// group to `updating` and returns its snapshot.
+	// **A shrink needs more authority than a grow.** Growing a pool is an update;
+	// shrinking one destroys instances and hands their servers back, so it
+	// additionally requires the permission that governs removal — the same one
+	// the group''s deprovision and `DELETE` carry. A caller who may resize a pool
+	// but not remove from it can grow and will be refused `403` on a shrink.
+	//
+	//
+	// **The body states its direction by which field it carries**, and the two are
+	// mutually exclusive: supply exactly one. `nodePools[]` grows pools, each
+	// entry an absolute desired count (not a delta). `instancesToDelete` shrinks
+	// them. Supplying both, or neither, is `422` — there is no single honest
+	// response for a request that does both. The request is also rejected with
+	// `422` when duplicate pool slugs are supplied, a slug is unknown, a `size` is
+	// below what its pool holds, or a pool has no bound infrastructure
+	// reservation; and with `409` when the group is not in the settled `active`
+	// state — i.e. another lifecycle operation (create, update, delete, or a
+	// concurrent scale) is already in flight, or the group is `failed`. The
+	// accepted scale atomically moves the group to `updating` and returns its
+	// snapshot.
+	//
+	//
+	// **A shrink names hosts, never counts.** `instancesToDelete` is the entire
+	// scale-down request: each instance names its own pool, and each pool's new
+	// size is derived as the hosts it holds minus the instances named from it, so
+	// neither pool nor size is supplied. This is why a `size` below what a pool
+	// holds is refused rather than treated as a shrink — it would say how MANY
+	// hosts to remove without saying WHICH, and the platform does not choose
+	// hosts on a tenant's behalf.
+	//
+	//
+	// Only an instance whose host is settled `not_provisioned` can be removed —
+	// there is nothing running on it to destroy. An instance in any other state
+	// refuses the WHOLE request with `INSTANCES_NOT_DEPROVISIONED` (below) and
+	// nothing is written. Destroy what runs on those hosts first with
+	// `POST .../instance-groups/{id}/deprovision`, which keeps them claimed, then
+	// scale down to hand them back.
+	//
+	//
+	// The cluster type's `nodeCountMin` is NOT re-checked here. It is a floor on
+	// hosts that RUN the pool, enforced where one stops running — the deprovision
+	// above — so by the time an instance can be removed its pool has already
+	// satisfied it. Re-checking against the new size would also refuse the case
+	// the floor exists to permit: retiring a pool whose hosts were all
+	// legitimately deprovisioned.
+	//
+	//
+	// **Draining a pool releases its reservation.** Naming every host a pool
+	// holds releases the pool's reservation along with them, and the pool
+	// settles at size `0`. A later scale-up re-reserves hosts for it, unless the
+	// instance group's usage counts against organization limits: there a drained
+	// pool cannot be grown again (`RESERVATION_RELEASED` below), so drain a pool
+	// only when the group is finished with it. To remove the group itself, use
+	// `DELETE`.
 	//
 	//
 	// **`desiredCount` is yours.** Only this endpoint and create ever set a pool's
@@ -14276,41 +15205,89 @@ type ClientWithResponsesInterface interface {
 	// alone — disagree, it cannot be scaled: a target computed from a size you
 	// never confirmed is a guess. A pool whose counts AGREE but that still has a
 	// host provisioning is a different refusal, `POOL_HOSTS_NOT_PROVISIONED`
-	// below, and needs no correction. Send a request whose `size` equals the
-	// number of hosts the pool's reservation currently holds (the `409` names
-	// it): that is accepted, sets `desiredCount` to it, provisions nothing, leaves
-	// the group `active`, and makes the pool scalable again. It is not a
-	// scale-down — no host is released — and a request mixing this correction
-	// with a real scale of another pool is refused with `422`.
+	// below, and needs no correction. Send a `nodePools[]` request whose `size`
+	// equals the number of hosts the pool's reservation currently holds (the
+	// `409` names it): that is accepted, sets `desiredCount` to it, provisions
+	// nothing, leaves the group `active`, and makes the pool scalable again. It is
+	// not a scale-down — no host is released — and a request mixing this
+	// correction with a real scale of another pool is refused with `422`.
 	//
 	//
 	// That size may be `0`, when the pool's reservation answers holding no hosts.
-	// Recording it is the way out of a failed scale-up. The pool is then empty, and
-	// an empty pool cannot be grown yet (`POOL_EMPTY`) — materializing hosts into
-	// one needs a scale path that can CREATE a reservation rather than only extend
-	// an existing one.
+	// Recording it is the way out of a failed scale-up. The pool is then empty. An
+	// empty pool cannot be grown by extending its reservation (`POOL_EMPTY`); a
+	// pool whose reservation has been released, including one drained by a
+	// scale-down to `0`, is re-reserved by a scale-up instead, unless the instance
+	// group's usage counts against organization limits.
 	//
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with POST /v1/regions/{region}/projects/{project}/compute/instance-groups/{id}/scale (the `ScaleInstanceGroup` operationId).
 	ScaleInstanceGroupWithBodyWithResponse(ctx context.Context, region RegionPathParam, project ProjectPathParam, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ScaleInstanceGroupResponse, error)
 
-	// ScaleInstanceGroupWithResponse Scale instance group node pools (scale up only; scale down not yet implemented)
+	// ScaleInstanceGroupWithResponse Scale instance group node pools up or down
 	//
 	// **Visibility:** `internal` · `public` (x-visibility)
 	//
-	// Increase host counts on one or more of the group's node pools and dispatch
-	// the asynchronous `instance-group-scale-up` workflow, which adds servers to
-	// each pool's existing reservation and provisions the new hosts.
+	// Change host counts on one or more of the group's node pools and dispatch the
+	// asynchronous workflow for the request's direction: `instance-group-scale-up`
+	// adds servers to each pool's existing reservation and provisions the new
+	// hosts; `instance-group-scale-down` removes the named instances' hosts from
+	// their reservation and hands them back to the available pool.
 	//
-	// Each `nodePools[]` entry supplies an absolute desired count (not a delta).
-	// The request is rejected with `422` when duplicate pool slugs are supplied, a
-	// slug is unknown, any target is less than or equal to the pool's settled
-	// count, or a pool has no bound infrastructure reservation; and with `409` when
-	// the group is not in the settled `active` state — i.e. another lifecycle
-	// operation (create, update, delete, or a concurrent scale) is already in
-	// flight, or the group is `failed`. The accepted scale atomically moves the
-	// group to `updating` and returns its snapshot.
+	// **A shrink needs more authority than a grow.** Growing a pool is an update;
+	// shrinking one destroys instances and hands their servers back, so it
+	// additionally requires the permission that governs removal — the same one
+	// the group''s deprovision and `DELETE` carry. A caller who may resize a pool
+	// but not remove from it can grow and will be refused `403` on a shrink.
+	//
+	//
+	// **The body states its direction by which field it carries**, and the two are
+	// mutually exclusive: supply exactly one. `nodePools[]` grows pools, each
+	// entry an absolute desired count (not a delta). `instancesToDelete` shrinks
+	// them. Supplying both, or neither, is `422` — there is no single honest
+	// response for a request that does both. The request is also rejected with
+	// `422` when duplicate pool slugs are supplied, a slug is unknown, a `size` is
+	// below what its pool holds, or a pool has no bound infrastructure
+	// reservation; and with `409` when the group is not in the settled `active`
+	// state — i.e. another lifecycle operation (create, update, delete, or a
+	// concurrent scale) is already in flight, or the group is `failed`. The
+	// accepted scale atomically moves the group to `updating` and returns its
+	// snapshot.
+	//
+	//
+	// **A shrink names hosts, never counts.** `instancesToDelete` is the entire
+	// scale-down request: each instance names its own pool, and each pool's new
+	// size is derived as the hosts it holds minus the instances named from it, so
+	// neither pool nor size is supplied. This is why a `size` below what a pool
+	// holds is refused rather than treated as a shrink — it would say how MANY
+	// hosts to remove without saying WHICH, and the platform does not choose
+	// hosts on a tenant's behalf.
+	//
+	//
+	// Only an instance whose host is settled `not_provisioned` can be removed —
+	// there is nothing running on it to destroy. An instance in any other state
+	// refuses the WHOLE request with `INSTANCES_NOT_DEPROVISIONED` (below) and
+	// nothing is written. Destroy what runs on those hosts first with
+	// `POST .../instance-groups/{id}/deprovision`, which keeps them claimed, then
+	// scale down to hand them back.
+	//
+	//
+	// The cluster type's `nodeCountMin` is NOT re-checked here. It is a floor on
+	// hosts that RUN the pool, enforced where one stops running — the deprovision
+	// above — so by the time an instance can be removed its pool has already
+	// satisfied it. Re-checking against the new size would also refuse the case
+	// the floor exists to permit: retiring a pool whose hosts were all
+	// legitimately deprovisioned.
+	//
+	//
+	// **Draining a pool releases its reservation.** Naming every host a pool
+	// holds releases the pool's reservation along with them, and the pool
+	// settles at size `0`. A later scale-up re-reserves hosts for it, unless the
+	// instance group's usage counts against organization limits: there a drained
+	// pool cannot be grown again (`RESERVATION_RELEASED` below), so drain a pool
+	// only when the group is finished with it. To remove the group itself, use
+	// `DELETE`.
 	//
 	//
 	// **`desiredCount` is yours.** Only this endpoint and create ever set a pool's
@@ -14324,19 +15301,20 @@ type ClientWithResponsesInterface interface {
 	// alone — disagree, it cannot be scaled: a target computed from a size you
 	// never confirmed is a guess. A pool whose counts AGREE but that still has a
 	// host provisioning is a different refusal, `POOL_HOSTS_NOT_PROVISIONED`
-	// below, and needs no correction. Send a request whose `size` equals the
-	// number of hosts the pool's reservation currently holds (the `409` names
-	// it): that is accepted, sets `desiredCount` to it, provisions nothing, leaves
-	// the group `active`, and makes the pool scalable again. It is not a
-	// scale-down — no host is released — and a request mixing this correction
-	// with a real scale of another pool is refused with `422`.
+	// below, and needs no correction. Send a `nodePools[]` request whose `size`
+	// equals the number of hosts the pool's reservation currently holds (the
+	// `409` names it): that is accepted, sets `desiredCount` to it, provisions
+	// nothing, leaves the group `active`, and makes the pool scalable again. It is
+	// not a scale-down — no host is released — and a request mixing this
+	// correction with a real scale of another pool is refused with `422`.
 	//
 	//
 	// That size may be `0`, when the pool's reservation answers holding no hosts.
-	// Recording it is the way out of a failed scale-up. The pool is then empty, and
-	// an empty pool cannot be grown yet (`POOL_EMPTY`) — materializing hosts into
-	// one needs a scale path that can CREATE a reservation rather than only extend
-	// an existing one.
+	// Recording it is the way out of a failed scale-up. The pool is then empty. An
+	// empty pool cannot be grown by extending its reservation (`POOL_EMPTY`); a
+	// pool whose reservation has been released, including one drained by a
+	// scale-down to `0`, is re-reserved by a scale-up instead, unless the instance
+	// group's usage counts against organization limits.
 	//
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -14347,10 +15325,13 @@ type ClientWithResponsesInterface interface {
 	//
 	// **Visibility:** `internal` · `public` (x-visibility)
 	//
-	// List the project's instances — the provisioned hosts of its InstanceGroups.
+	// List the project's instances — the provisioned hosts of its InstanceGroups
+	// and Clusters.
 	//
-	// Instances are materialized when a group is created or scaled up, so there
-	// is no create operation: to add hosts, scale the owning InstanceGroup.
+	// Every instance has exactly one owner, an InstanceGroup or a Cluster, and
+	// publishes that owner's uid and id. Instances are materialized when their
+	// owner is created or scaled up, so there is no create operation: to add
+	// hosts, scale the owning InstanceGroup or Cluster node pool.
 	//
 	// A parent can be named by uid or by id (slug) — both are published on every
 	// instance. Filters combine with AND, so naming the same parent two ways that
@@ -14358,9 +15339,18 @@ type ClientWithResponsesInterface interface {
 	//
 	// Every row carries the host's current state — lifecycle status, health,
 	// inventory and current network configuration — read from the infrastructure
-	// service in one batched request while serving this call. `pageSize` is capped
-	// to the size of that batch, so this is unconditional: there is no degraded
-	// page.
+	// service in one batched request while serving this call. `limit` (and the
+	// deprecated `pageSize`) is capped to the size of that batch, 200, so this is
+	// unconditional: there is no degraded page.
+	//
+	// Supply `offset` and `limit` to page by position and receive `totalCount`;
+	// the deprecated `pageToken`/`pageSize` cursor keeps working for existing
+	// clients, and a request carrying neither stays on it. Both styles walk the
+	// instances in the same order (by `uid`), and `totalCount` counts the
+	// instances matching every active filter. An offset is a position, so an
+	// instance materialized or deleted between two requests can make a row
+	// repeat or be skipped across pages. See `inStates` for how it behaves on
+	// the offset style.
 	//
 	// That read is a dependency, not an enrichment. When the infrastructure
 	// service cannot be reached the listing fails with `503` rather than returning
@@ -14375,10 +15365,14 @@ type ClientWithResponsesInterface interface {
 	//
 	// **Visibility:** `internal` · `public` (x-visibility)
 	//
-	// Retrieve one instance: its identity and API context — which group and node
-	// pool own it, and which host it is — plus that host's current state:
+	// Retrieve one instance: its identity and API context — which owner and node
+	// pool it belongs to, and which host it is — plus that host's current state:
 	// lifecycle status, health, inventory and network configuration, all read
 	// from the infrastructure service while serving this request.
+	//
+	// The owner is an InstanceGroup or a Cluster, never both: the response carries
+	// `instanceGroupUuid`/`instanceGroupId` or `clusterUuid`/`clusterId`, and
+	// `nodePoolUuid`/`nodePool` either way.
 	//
 	// Nothing about the host is stored or cached here, so no field on this
 	// response is older than the request itself.
@@ -14847,8 +15841,10 @@ type ClientWithResponsesInterface interface {
 	// **Visibility:** `internal` · `public` (x-visibility)
 	//
 	//
-	// List the file stores in the project. Ordered by `createdAt` descending — newest first — with cursor pagination; there is no `orderBy` in v1.
+	// List the file stores in the project. Ordered by `createdAt` descending — newest first, ties broken by an internal unique key so the order is total; there is no `orderBy` in v1.
 	// Filters are all optional, combined with `AND`, and never change the shape of the response envelope. Use `state` to surface stores that never converged, `shareType` to account for committed capacity per capability class, and `consumer` to find the stores a given address or instance group is attached to — matched against the entry `ref`, not against the addresses a group resolved to.
+	//
+	// Supply any of `offset`, `limit` or `includeTotal` to page by position and receive `totalCount`, which counts the stores matching the same filters. The `shareType` filter matches the class name recorded on each store and is not checked against the catalog: a malformed name is rejected, but a name the catalog no longer offers is not, and still matches stores created under it before the class was removed. The deprecated `pageToken`/`pageSize` cursor keeps working, and a request with no paging parameter at all stays on it.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
@@ -14948,7 +15944,13 @@ type ClientWithResponsesInterface interface {
 	// List the file storage capability classes offered in the region. A share type is the tenant's entire storage selector: pick one by capability — for example `general` or `high-speed` — and the platform decides which storage satisfies it. The backing hardware is not selectable.
 	// The catalog is operator-curated and operator-written, and can differ between regions, so it must be read per region rather than cached globally. Results are ordered by `id` ascending.
 	// Only classes naming a live storage backend are returned, so a region with no registered backend serves an empty catalog.
-	// A caller without `compute.storage.read` is served the capability half of each class only: `backendRef`, `placement` and `createdBy` are absent.
+	// A caller without `compute.storage.read` is served the capability half of each class only: `backendRef`, `placement` and `createdBy` are absent. That projection removes fields, never classes, so `totalCount` is the same for every caller.
+	//
+	// Supply any of `offset`, `limit` or `includeTotal` to page by position and receive `totalCount`. A page can hold fewer than `limit` classes before the end of the catalog, so step `offset` by `limit` and stop once it reaches `totalCount` rather than at the first short page.
+	//
+	// This overrides the general `includeTotal` guidance for this list. That guidance says that with `includeTotal=false` a page shorter than `limit` is the last page; here it is not, because a class whose stored record cannot be read is left out of its page while still counted. `totalCount` is the only reliable end signal on this list, so keep it (the default) to read the whole catalog.
+	//
+	// The deprecated `pageToken`/`pageSize` cursor keeps working, and a request with no paging parameter at all stays on it.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
@@ -16567,6 +17569,8 @@ type ListClusterTypesResponse struct {
 	JSON401 *Unauthorized
 	// JSON403 the response for an HTTP 403 `application/json` response
 	JSON403 *Forbidden
+	// JSON422 the response for an HTTP 422 `application/json` response
+	JSON422 *UnprocessableEntity
 	// JSON500 the response for an HTTP 500 `application/json` response
 	JSON500 *InternalServerError
 }
@@ -16589,6 +17593,11 @@ func (r ListClusterTypesResponse) GetJSON401() *Unauthorized {
 // GetJSON403 returns the response for an HTTP 403 `application/json` response
 func (r ListClusterTypesResponse) GetJSON403() *Forbidden {
 	return r.JSON403
+}
+
+// GetJSON422 returns the response for an HTTP 422 `application/json` response
+func (r ListClusterTypesResponse) GetJSON422() *UnprocessableEntity {
+	return r.JSON422
 }
 
 // GetJSON500 returns the response for an HTTP 500 `application/json` response
@@ -17057,7 +18066,7 @@ type ListClustersResponse struct {
 	// JSON409 the response for an HTTP 409 `application/json` response
 	JSON409 *ProjectRegionMismatch
 	// JSON422 the response for an HTTP 422 `application/json` response
-	JSON422 *UnprocessableEntity
+	JSON422 *Error
 	// JSON500 the response for an HTTP 500 `application/json` response
 	JSON500 *InternalServerError
 }
@@ -17083,7 +18092,7 @@ func (r ListClustersResponse) GetJSON409() *ProjectRegionMismatch {
 }
 
 // GetJSON422 returns the response for an HTTP 422 `application/json` response
-func (r ListClustersResponse) GetJSON422() *UnprocessableEntity {
+func (r ListClustersResponse) GetJSON422() *Error {
 	return r.JSON422
 }
 
@@ -17136,23 +18145,23 @@ type CreateClusterResponse struct {
 	// JSON201 the response for an HTTP 201 `application/json` response
 	JSON201 *Cluster
 	// JSON400 the response for an HTTP 400 `application/json` response
-	JSON400 *BadRequest
+	JSON400 *Error
 	// JSON401 the response for an HTTP 401 `application/json` response
 	JSON401 *Unauthorized
 	// JSON403 the response for an HTTP 403 `application/json` response
 	JSON403 *Forbidden
 	// JSON404 the response for an HTTP 404 `application/json` response
-	JSON404 *NotFound
+	JSON404 *Error
 	// JSON409 the response for an HTTP 409 `application/json` response
 	JSON409 *Error
 	// JSON413 the response for an HTTP 413 `application/json` response
 	JSON413 *PayloadTooLarge
 	// JSON422 the response for an HTTP 422 `application/json` response
-	JSON422 *UnprocessableEntity
+	JSON422 *Error
 	// JSON500 the response for an HTTP 500 `application/json` response
 	JSON500 *InternalServerError
 	// JSON503 the response for an HTTP 503 `application/json` response
-	JSON503 *ServiceUnavailable
+	JSON503 *Error
 	// JSON504 the response for an HTTP 504 `application/json` response
 	JSON504 *GatewayTimeout
 }
@@ -17163,7 +18172,7 @@ func (r CreateClusterResponse) GetJSON201() *Cluster {
 }
 
 // GetJSON400 returns the response for an HTTP 400 `application/json` response
-func (r CreateClusterResponse) GetJSON400() *BadRequest {
+func (r CreateClusterResponse) GetJSON400() *Error {
 	return r.JSON400
 }
 
@@ -17178,7 +18187,7 @@ func (r CreateClusterResponse) GetJSON403() *Forbidden {
 }
 
 // GetJSON404 returns the response for an HTTP 404 `application/json` response
-func (r CreateClusterResponse) GetJSON404() *NotFound {
+func (r CreateClusterResponse) GetJSON404() *Error {
 	return r.JSON404
 }
 
@@ -17193,7 +18202,7 @@ func (r CreateClusterResponse) GetJSON413() *PayloadTooLarge {
 }
 
 // GetJSON422 returns the response for an HTTP 422 `application/json` response
-func (r CreateClusterResponse) GetJSON422() *UnprocessableEntity {
+func (r CreateClusterResponse) GetJSON422() *Error {
 	return r.JSON422
 }
 
@@ -17203,7 +18212,7 @@ func (r CreateClusterResponse) GetJSON500() *InternalServerError {
 }
 
 // GetJSON503 returns the response for an HTTP 503 `application/json` response
-func (r CreateClusterResponse) GetJSON503() *ServiceUnavailable {
+func (r CreateClusterResponse) GetJSON503() *Error {
 	return r.JSON503
 }
 
@@ -17519,6 +18528,16 @@ func (r ListClusterSshAccessResponse) ContentType() string {
 	return ""
 }
 
+// DeleteClusterResponse409Headers the declared response headers of an HTTP 409 response for DeleteCluster
+type DeleteClusterResponse409Headers struct {
+	RetryAfter *int
+}
+
+// DeleteClusterResponse503Headers the declared response headers of an HTTP 503 response for DeleteCluster
+type DeleteClusterResponse503Headers struct {
+	RetryAfter *int
+}
+
 type DeleteClusterResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -17533,9 +18552,13 @@ type DeleteClusterResponse struct {
 	// JSON500 the response for an HTTP 500 `application/json` response
 	JSON500 *InternalServerError
 	// JSON503 the response for an HTTP 503 `application/json` response
-	JSON503 *ServiceUnavailable
+	JSON503 *Error
 	// JSON504 the response for an HTTP 504 `application/json` response
 	JSON504 *GatewayTimeout
+	// Headers409 the parsed response headers for an HTTP 409 response
+	Headers409 *DeleteClusterResponse409Headers
+	// Headers503 the parsed response headers for an HTTP 503 response
+	Headers503 *DeleteClusterResponse503Headers
 }
 
 // GetJSON401 returns the response for an HTTP 401 `application/json` response
@@ -17564,7 +18587,7 @@ func (r DeleteClusterResponse) GetJSON500() *InternalServerError {
 }
 
 // GetJSON503 returns the response for an HTTP 503 `application/json` response
-func (r DeleteClusterResponse) GetJSON503() *ServiceUnavailable {
+func (r DeleteClusterResponse) GetJSON503() *Error {
 	return r.JSON503
 }
 
@@ -17626,6 +18649,8 @@ type GetClusterResponse struct {
 	JSON404 *NotFound
 	// JSON409 the response for an HTTP 409 `application/json` response
 	JSON409 *ProjectRegionMismatch
+	// JSON422 the response for an HTTP 422 `application/json` response
+	JSON422 *Error
 	// JSON500 the response for an HTTP 500 `application/json` response
 	JSON500 *InternalServerError
 }
@@ -17658,6 +18683,11 @@ func (r GetClusterResponse) GetJSON404() *NotFound {
 // GetJSON409 returns the response for an HTTP 409 `application/json` response
 func (r GetClusterResponse) GetJSON409() *ProjectRegionMismatch {
 	return r.JSON409
+}
+
+// GetJSON422 returns the response for an HTTP 422 `application/json` response
+func (r GetClusterResponse) GetJSON422() *Error {
+	return r.JSON422
 }
 
 // GetJSON500 returns the response for an HTTP 500 `application/json` response
@@ -17821,6 +18851,8 @@ type CancelClusterResponse struct {
 	HTTPResponse *http.Response
 	// JSON200 the response for an HTTP 200 `application/json` response
 	JSON200 *Cluster
+	// JSON202 the response for an HTTP 202 `application/json` response
+	JSON202 *Cluster
 	// JSON400 the response for an HTTP 400 `application/json` response
 	JSON400 *BadRequest
 	// JSON401 the response for an HTTP 401 `application/json` response
@@ -17842,6 +18874,11 @@ type CancelClusterResponse struct {
 // GetJSON200 returns the response for an HTTP 200 `application/json` response
 func (r CancelClusterResponse) GetJSON200() *Cluster {
 	return r.JSON200
+}
+
+// GetJSON202 returns the response for an HTTP 202 `application/json` response
+func (r CancelClusterResponse) GetJSON202() *Cluster {
+	return r.JSON202
 }
 
 // GetJSON400 returns the response for an HTTP 400 `application/json` response
@@ -18345,7 +19382,7 @@ type CreateInstanceGroupResponse struct {
 	// JSON201 the response for an HTTP 201 `application/json` response
 	JSON201 *InstanceGroup
 	// JSON400 the response for an HTTP 400 `application/json` response
-	JSON400 *BadRequest
+	JSON400 *Error
 	// JSON401 the response for an HTTP 401 `application/json` response
 	JSON401 *Unauthorized
 	// JSON403 the response for an HTTP 403 `application/json` response
@@ -18370,7 +19407,7 @@ func (r CreateInstanceGroupResponse) GetJSON201() *InstanceGroup {
 }
 
 // GetJSON400 returns the response for an HTTP 400 `application/json` response
-func (r CreateInstanceGroupResponse) GetJSON400() *BadRequest {
+func (r CreateInstanceGroupResponse) GetJSON400() *Error {
 	return r.JSON400
 }
 
@@ -18452,6 +19489,16 @@ func (r CreateInstanceGroupResponse) ContentType() string {
 	return ""
 }
 
+// DeleteInstanceGroupResponse409Headers the declared response headers of an HTTP 409 response for DeleteInstanceGroup
+type DeleteInstanceGroupResponse409Headers struct {
+	RetryAfter *int
+}
+
+// DeleteInstanceGroupResponse503Headers the declared response headers of an HTTP 503 response for DeleteInstanceGroup
+type DeleteInstanceGroupResponse503Headers struct {
+	RetryAfter *int
+}
+
 type DeleteInstanceGroupResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -18465,8 +19512,14 @@ type DeleteInstanceGroupResponse struct {
 	JSON409 *Error
 	// JSON500 the response for an HTTP 500 `application/json` response
 	JSON500 *InternalServerError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *Error
 	// JSON504 the response for an HTTP 504 `application/json` response
 	JSON504 *GatewayTimeout
+	// Headers409 the parsed response headers for an HTTP 409 response
+	Headers409 *DeleteInstanceGroupResponse409Headers
+	// Headers503 the parsed response headers for an HTTP 503 response
+	Headers503 *DeleteInstanceGroupResponse503Headers
 }
 
 // GetJSON401 returns the response for an HTTP 401 `application/json` response
@@ -18492,6 +19545,11 @@ func (r DeleteInstanceGroupResponse) GetJSON409() *Error {
 // GetJSON500 returns the response for an HTTP 500 `application/json` response
 func (r DeleteInstanceGroupResponse) GetJSON500() *InternalServerError {
 	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r DeleteInstanceGroupResponse) GetJSON503() *Error {
+	return r.JSON503
 }
 
 // GetJSON504 returns the response for an HTTP 504 `application/json` response
@@ -18750,12 +19808,16 @@ type ScaleInstanceGroupResponse struct {
 	JSON404 *NotFound
 	// JSON409 the response for an HTTP 409 `application/json` response
 	JSON409 *Error
+	// JSON410 the response for an HTTP 410 `application/json` response
+	JSON410 *Error
 	// JSON413 the response for an HTTP 413 `application/json` response
 	JSON413 *PayloadTooLarge
 	// JSON422 the response for an HTTP 422 `application/json` response
 	JSON422 *UnprocessableEntity
 	// JSON500 the response for an HTTP 500 `application/json` response
 	JSON500 *InternalServerError
+	// JSON501 the response for an HTTP 501 `application/json` response
+	JSON501 *Error
 	// JSON503 the response for an HTTP 503 `application/json` response
 	JSON503 *Error
 	// JSON504 the response for an HTTP 504 `application/json` response
@@ -18792,6 +19854,11 @@ func (r ScaleInstanceGroupResponse) GetJSON409() *Error {
 	return r.JSON409
 }
 
+// GetJSON410 returns the response for an HTTP 410 `application/json` response
+func (r ScaleInstanceGroupResponse) GetJSON410() *Error {
+	return r.JSON410
+}
+
 // GetJSON413 returns the response for an HTTP 413 `application/json` response
 func (r ScaleInstanceGroupResponse) GetJSON413() *PayloadTooLarge {
 	return r.JSON413
@@ -18805,6 +19872,11 @@ func (r ScaleInstanceGroupResponse) GetJSON422() *UnprocessableEntity {
 // GetJSON500 returns the response for an HTTP 500 `application/json` response
 func (r ScaleInstanceGroupResponse) GetJSON500() *InternalServerError {
 	return r.JSON500
+}
+
+// GetJSON501 returns the response for an HTTP 501 `application/json` response
+func (r ScaleInstanceGroupResponse) GetJSON501() *Error {
+	return r.JSON501
 }
 
 // GetJSON503 returns the response for an HTTP 503 `application/json` response
@@ -18872,6 +19944,8 @@ type ListInstancesResponse struct {
 	JSON500 *InternalServerError
 	// JSON503 the response for an HTTP 503 `application/json` response
 	JSON503 *ServiceUnavailable
+	// JSON504 the response for an HTTP 504 `application/json` response
+	JSON504 *GatewayTimeout
 }
 
 // GetJSON200 returns the response for an HTTP 200 `application/json` response
@@ -18907,6 +19981,11 @@ func (r ListInstancesResponse) GetJSON500() *InternalServerError {
 // GetJSON503 returns the response for an HTTP 503 `application/json` response
 func (r ListInstancesResponse) GetJSON503() *ServiceUnavailable {
 	return r.JSON503
+}
+
+// GetJSON504 returns the response for an HTTP 504 `application/json` response
+func (r ListInstancesResponse) GetJSON504() *GatewayTimeout {
+	return r.JSON504
 }
 
 // GetBody returns the raw response body bytes
@@ -21821,10 +22900,9 @@ func (c *ClientWithResponses) ListRegionsWithResponse(ctx context.Context, reqEd
 // This endpoint proxies to the underlying identity provider
 // for token issuance.
 //
-// Four grant types are supported:
-//
-// **authorization_code** — Interactive user session. Exchanges an
-// authorization code obtained from the OAuth2 /authorize flow.
+// Three grant types are supported. Interactive sign-in does not use this
+// endpoint: it goes through `login/initiate` and the login callback, which
+// record a session and set the `k0r_refresh_token` cookie.
 //
 // **api_key** — Programmatic access via an API key. The caller
 // presents the opaque, prefixed API key token. Effective privileges
@@ -21872,10 +22950,9 @@ func (c *ClientWithResponses) MintTokenWithBodyWithResponse(ctx context.Context,
 // This endpoint proxies to the underlying identity provider
 // for token issuance.
 //
-// Four grant types are supported:
-//
-// **authorization_code** — Interactive user session. Exchanges an
-// authorization code obtained from the OAuth2 /authorize flow.
+// Three grant types are supported. Interactive sign-in does not use this
+// endpoint: it goes through `login/initiate` and the login callback, which
+// record a session and set the `k0r_refresh_token` cookie.
 //
 // **api_key** — Programmatic access via an API key. The caller
 // presents the opaque, prefixed API key token. Effective privileges
@@ -21919,6 +22996,8 @@ func (c *ClientWithResponses) MintTokenWithResponse(ctx context.Context, body Mi
 //
 // **Visibility:** `public` (x-visibility)
 //
+// **Who may call this:** Any authenticated caller, for their own partition's subscriptions: a customer's organization, or the provider partition for provider personnel. A customer with no resolvable organization is refused with 401.
+//
 // Returns a wrapper object for the known response body format(s).
 //
 // Corresponds with GET /v1/regions/global/notifications/webhooks (the `ListWebhookSubscriptions` operationId).
@@ -21933,6 +23012,12 @@ func (c *ClientWithResponses) ListWebhookSubscriptionsWithResponse(ctx context.C
 // CreateWebhookSubscriptionWithBodyWithResponse Create a webhook subscription
 //
 // **Visibility:** `public` (x-visibility)
+//
+// **Who may call this:** Any authenticated caller, in their own partition.
+// Any member of a customer organization may write that organization's
+// subscriptions (no org-admin role is needed); in the provider partition
+// only platform-admin may, and other provider personnel are refused with
+// 403. A customer with no resolvable organization is refused with 401.
 //
 // Subscribe a customer endpoint to notification events. A signing secret is
 // generated when not supplied and returned ONCE in the response (store it — it
@@ -22123,6 +23208,11 @@ func (c *ClientWithResponses) ListWebhookSubscriptionsWithResponse(ctx context.C
 // ignore fields it does not recognise. Changing the meaning of an existing field
 // or removing one is a breaking change and will only be made through a versioned
 // change with a published migration period — never silently.
+//
+// The `data` of an event delivered to an organization's endpoint holds only
+// the fields its event type defines for customers; a field the producing
+// service sent outside that list is never delivered there. The provider's own
+// subscriptions receive all of `data`.
 //
 // Build your receiver to tolerate additive growth, and keep that tolerance
 // separate from the two mechanisms above, which are NOT affected by new fields:
@@ -22164,6 +23254,12 @@ func (c *ClientWithResponses) CreateWebhookSubscriptionWithBodyWithResponse(ctx 
 //
 // **Visibility:** `public` (x-visibility)
 //
+// **Who may call this:** Any authenticated caller, in their own partition.
+// Any member of a customer organization may write that organization's
+// subscriptions (no org-admin role is needed); in the provider partition
+// only platform-admin may, and other provider personnel are refused with
+// 403. A customer with no resolvable organization is refused with 401.
+//
 // Subscribe a customer endpoint to notification events. A signing secret is
 // generated when not supplied and returned ONCE in the response (store it — it
 // is never returned again). Dispatch requires the event-intake fan-out relay to
@@ -22354,6 +23450,11 @@ func (c *ClientWithResponses) CreateWebhookSubscriptionWithBodyWithResponse(ctx 
 // or removing one is a breaking change and will only be made through a versioned
 // change with a published migration period — never silently.
 //
+// The `data` of an event delivered to an organization's endpoint holds only
+// the fields its event type defines for customers; a field the producing
+// service sent outside that list is never delivered there. The provider's own
+// subscriptions receive all of `data`.
+//
 // Build your receiver to tolerate additive growth, and keep that tolerance
 // separate from the two mechanisms above, which are NOT affected by new fields:
 //
@@ -22394,7 +23495,9 @@ func (c *ClientWithResponses) CreateWebhookSubscriptionWithResponse(ctx context.
 //
 // **Visibility:** `public` (x-visibility)
 //
-// Delete one of the caller's webhook subscriptions. Deleting a provider subscription requires the platform-admin role, the same rule as creating one.
+// **Who may call this:** Any authenticated caller, in their own partition. Any member of a customer organization may write that organization's subscriptions (no org-admin role is needed); in the provider partition only platform-admin may, and other provider personnel are refused with 403. A customer with no resolvable organization is refused with 401.
+//
+// Delete one of the webhook subscriptions in the caller's partition.
 //
 // Returns a wrapper object for the known response body format(s).
 //
@@ -22410,6 +23513,12 @@ func (c *ClientWithResponses) DeleteWebhookSubscriptionWithResponse(ctx context.
 // RotateWebhookSubscriptionSecretWithBodyWithResponse Rotate a webhook subscription's signing secret
 //
 // **Visibility:** `public` (x-visibility)
+//
+// **Who may call this:** Any authenticated caller, in their own partition.
+// Any member of a customer organization may write that organization's
+// subscriptions (no org-admin role is needed); in the provider partition
+// only platform-admin may, and other provider personnel are refused with
+// 403. A customer with no resolvable organization is refused with 401.
 //
 // Issue a new signing secret for an existing webhook subscription. The
 // subscription id, URL and event-type filter are unchanged, and no delivery is
@@ -22483,6 +23592,12 @@ func (c *ClientWithResponses) RotateWebhookSubscriptionSecretWithBodyWithRespons
 // RotateWebhookSubscriptionSecretWithResponse Rotate a webhook subscription's signing secret
 //
 // **Visibility:** `public` (x-visibility)
+//
+// **Who may call this:** Any authenticated caller, in their own partition.
+// Any member of a customer organization may write that organization's
+// subscriptions (no org-admin role is needed); in the provider partition
+// only platform-admin may, and other provider personnel are refused with
+// 403. A customer with no resolvable organization is refused with 401.
 //
 // Issue a new signing secret for an existing webhook subscription. The
 // subscription id, URL and event-type filter are unchanged, and no delivery is
@@ -22603,7 +23718,7 @@ func (c *ClientWithResponses) GetOrganizationWithResponse(ctx context.Context, i
 //
 // **Visibility:** `public` · `internal` (x-visibility)
 //
-// List all role definitions.
+// List the roles that can be bound in this organization: the built-in roles and the organization's custom roles whose `scopes` include `org` or `project`. Roles bindable only at platform scope are not listed here; they are listed by `GET /v1/regions/global/iam/platform/roles` and remain readable by id through `getRole`. The filter reads only each role's `scopes`, never the caller, so every principal listing the same organization receives the same set. A role with mixed scopes (for example `iam-admin`, scopes `platform` and `org`) appears both here and in the platform list. `totalCount` counts this filtered set.
 //
 // Returns a wrapper object for the known response body format(s).
 //
@@ -22793,8 +23908,8 @@ func (c *ClientWithResponses) CreateProjectInOrgWithResponse(ctx context.Context
 // creating a project with the same id afterwards succeeds. It is not available
 // before then, so wait for the first 404 rather than retrying a create. Before
 // the id is released, the project's project-scoped service accounts are
-// disabled, its IAM role bindings are purged, and its quota assignment is
-// cleared, so a re-created project does not inherit them. That is the order
+// disabled, its IAM role bindings are purged, and its quota limits are
+// removed, so a re-created project does not inherit them. That is the order
 // the service uses, and the first two are deliberately in that sequence.
 //
 // Disabling the service accounts is a side effect worth planning for: a
@@ -22940,7 +24055,7 @@ func (c *ClientWithResponses) GetProjectQuotaWithResponse(ctx context.Context, o
 //
 // **Visibility:** `internal` · `public` (x-visibility)
 //
-// Read the organization's tenant-scope quota: one row per dimension that is limited, or enforced with recorded usage, with its unit, whether it is enforced, and a single `tenant` entry in `scopes` carrying the configured limit, recorded usage, headroom and over-limit flag. Usage is summed across regions. A dimension the admission check does not refuse on (nothing charges it, or its enforcement is switched off) reports enforced false and omits used and headroom rather than showing 0. An organization with no active quota assignment is not an error; its rows report usage with limit and headroom absent (unlimited). The top-level limit, used and remaining are deprecated in favor of scopes. Returns 404 if the organization does not exist or the caller is not scoped to it.
+// Read the organization's tenant-scope quota: one row per dimension that is limited, or enforced with recorded usage, with its unit, whether it is enforced, and a single `tenant` entry in `scopes` carrying the configured limit, recorded usage, headroom and over-limit flag. Usage is summed across regions. A dimension the admission check does not refuse on (nothing charges it, or its enforcement is switched off) reports enforced false and omits used and headroom rather than showing 0. An organization that holds no limits of its own is not an error; its rows report usage with limit and headroom absent (unlimited). The top-level limit, used and remaining are deprecated in favor of scopes. Returns 404 if the organization does not exist or the caller is not scoped to it.
 //
 // Returns a wrapper object for the known response body format(s).
 //
@@ -22974,7 +24089,16 @@ func (c *ClientWithResponses) ListProjectsWithResponse(ctx context.Context, para
 //
 // **Visibility:** `internal` · `public` (x-visibility)
 //
-// List all ClusterTypes available in the region. Deprecated types are excluded unless includeDeprecated=true.
+// List all ClusterTypes available in the region, newest first. Deprecated
+// types are excluded unless `includeDeprecated=true`.
+//
+// Supply any of `offset`, `limit` or `includeTotal` to page by position and
+// receive `totalCount`, which counts the ClusterTypes the same
+// `includeDeprecated` setting lists. This is the only way to read past the
+// first page. Without those parameters the list returns its first page only,
+// sized by the deprecated `pageSize`; the deprecated `pageToken` has never
+// been implemented here and is rejected with 400 on its own, or with 422
+// alongside an offset-style parameter.
 //
 // Returns a wrapper object for the known response body format(s).
 //
@@ -23012,6 +24136,13 @@ func (c *ClientWithResponses) GetClusterTypeWithResponse(ctx context.Context, re
 // optional `status` query parameter filters to one lifecycle status; an
 // unrecognized value is rejected with `422` rather than returning an empty
 // list.
+//
+// Supply any of `offset`, `limit` or `includeTotal` to page through the
+// history and receive `totalCount`, which counts this ClusterType's versions matching the same
+// `status`. A request with no paging parameter returns the whole history,
+// as it always has. This list has no cursor style; `pageToken` and
+// `pageSize` are ignored unless sent alongside an offset-style parameter,
+// which is rejected with `422`.
 //
 // Returns a wrapper object for the known response body format(s).
 //
@@ -23102,6 +24233,15 @@ func (c *ClientWithResponses) GetAddressPoolWithResponse(ctx context.Context, re
 // so a cluster whose creation commits after a page was served may not appear
 // in that traversal at all — start a fresh list to see it.)
 //
+// Supply `offset` and `limit` to page by position and receive `totalCount`;
+// the deprecated `pageToken`/`pageSize` cursor keeps working for existing
+// clients, and a request carrying neither stays on it. Both styles walk the
+// collection in the same newest-first order, and `totalCount` counts the
+// clusters matching the active `state`, `health` and `search` filters. Unlike
+// the cursor, an offset is a position: a cluster created or deleted between
+// two requests shifts every later row by one, so a row can repeat or be
+// skipped across pages.
+//
 // Returns a wrapper object for the known response body format(s).
 //
 // Corresponds with GET /v1/regions/{region}/projects/{project}/compute/clusters (the `ListClusters` operationId).
@@ -23177,10 +24317,17 @@ func (c *ClientWithResponses) CreateClusterWithResponse(ctx context.Context, reg
 // a token.
 //
 // An API key receives a kubeconfig capped to the key's own roles rather than
-// its owner's. A caller with no owning organization in context — in practice
-// a platform-scope operator with no membership in the cluster's organization
-// — gets `503` too: a token narrowed by project alone would still carry that
-// caller's roles in every other organization they belong to.
+// its owner's.
+//
+// A caller whose access comes from platform-scope roles and who holds no role
+// in the cluster's organization or project gets `403`: provider-side roles
+// alone do not grant access to a tenant cluster.
+//
+// `503` means the platform could not check membership or mint a token, not
+// that access was refused. That includes a request for which the platform
+// could not determine the organization that owns the project, since a token
+// narrowed by project alone would still carry the caller's roles in every
+// other organization they belong to.
 //
 // Returns a wrapper object for the known response body format(s).
 //
@@ -23208,6 +24355,10 @@ func (c *ClientWithResponses) GetClusterKubeconfigWithResponse(ctx context.Conte
 // issuance and a `revoked` config are both excluded, so a caller that has
 // just requested one will not find that row here until it activates.
 //
+// Because this operation is deprecated, it does not take the `offset`/`limit`
+// pagination style the other lists offer: it keeps `pageToken`/`pageSize`,
+// and its response keeps reporting `total`.
+//
 // Returns a wrapper object for the known response body format(s).
 //
 // Corresponds with GET /v1/regions/{region}/projects/{project}/compute/clusters/{clusterId}/kubeconfigs (the `ListKubeconfigs` operationId).
@@ -23230,6 +24381,10 @@ func (c *ClientWithResponses) ListKubeconfigsWithResponse(ctx context.Context, r
 // at provisioning time and is immutable — it cannot be changed or removed from
 // a running cluster.
 //
+// Not paginated. The list is bounded by construction — at most 32 users,
+// fixed when the cluster is created — so it is always returned whole, with no
+// `offset`/`limit` or `pageToken`/`pageSize` parameters.
+//
 // Returns a wrapper object for the known response body format(s).
 //
 // Corresponds with GET /v1/regions/{region}/projects/{project}/compute/clusters/{clusterId}/ssh-access (the `ListClusterSshAccess` operationId).
@@ -23246,6 +24401,7 @@ func (c *ClientWithResponses) ListClusterSshAccessWithResponse(ctx context.Conte
 // **Visibility:** `internal` · `public` (x-visibility)
 //
 // "Cluster CRUD API"; Delete cluster and trigger cleanup of nodes and IP resources.
+// Credentials distributed to the cluster are revoked before the delete starts; if revocation fails, nothing changes and the delete must be retried.
 //
 // Returns a wrapper object for the known response body format(s).
 //
@@ -23279,7 +24435,7 @@ func (c *ClientWithResponses) GetClusterWithResponse(ctx context.Context, region
 //
 // **Visibility:** `internal` · `public` (x-visibility)
 //
-// "Cluster CRUD API"; Update cluster configuration to scale resources, upgrade versions, or modify settings.
+// "Cluster CRUD API"; Update cluster configuration: display name, description, tags, storage ceiling, or security groups. Node counts are not changed here; use `scaleCluster`, and a request carrying `nodePools` is refused with `422`.
 //
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
@@ -23296,7 +24452,7 @@ func (c *ClientWithResponses) UpdateClusterWithBodyWithResponse(ctx context.Cont
 //
 // **Visibility:** `internal` · `public` (x-visibility)
 //
-// "Cluster CRUD API"; Update cluster configuration to scale resources, upgrade versions, or modify settings.
+// "Cluster CRUD API"; Update cluster configuration: display name, description, tags, storage ceiling, or security groups. Node counts are not changed here; use `scaleCluster`, and a request carrying `nodePools` is refused with `422`.
 //
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
@@ -23313,35 +24469,41 @@ func (c *ClientWithResponses) UpdateClusterWithResponse(ctx context.Context, reg
 //
 // **Visibility:** `internal` · `public` (x-visibility)
 //
-// Cancel the operation the cluster is currently running and settle it to
-// `failed` with `stateReason` `CANCELLED`, so a cluster wedged mid-operation
-// can reach a state from which it can be deleted.
+// Request that the operation the cluster is currently running be stopped. The
+// cancel does not change the cluster's `state`: it asks the engine execution to
+// stop and marks the operation cancelling, leaving the cluster in its
+// transitional `state` while the run winds down. When the run ends the cluster
+// settles the usual way: normally `failed` with `stateReason` `CANCELLED`
+// (`operation.status` `cancelled`), also when the run ignores the stop and the
+// watchdog force-fails it; but a run that completes before the stop takes
+// effect settles `active` instead (`operation.status` `succeeded`). Wait for
+// either settled state before deleting; a `DELETE` issued while the cluster is
+// still cancelling is refused with `409`.
 //
 // Admitted only while an operation is in flight: the cluster must be
 // `creating` or `updating`. The engine execution is asked to stop first; if
 // that request cannot be delivered the cancel fails (`5xx`) and the cluster is
-// left unchanged in its transitional state, so the caller can retry. Once the
-// stop is requested — or the run has already finished on its own — the cluster
-// is settled `failed` and `operation.status` reads `cancelled`, distinct from
-// an ordinary `failed`. A workflow that completes despite the cancel lands a
-// callback the settled cluster ignores, so the result is stable.
+// left unchanged, so the caller can retry. Once the stop has been requested the
+// cluster is returned in its transitional `state` with `operation.status`
+// `cancelling`, and the response is `202`.
 //
 // The request body pins the operation to cancel: `executionId` must match the
 // operation currently in flight, as read from the cluster's
 // `operation.executionId`. This makes a cancel acted on a stale view safe — if
 // the cluster has settled and begun a different operation since it was read,
-// the cancel is refused rather than aborting the newer operation.
+// the cancel is refused rather than stopping the newer operation.
 //
-// The cluster is returned in its settled `failed` state. Retrying the cancel —
-// the same `executionId` on a cluster already settled `failed` with
-// `operation.status` `cancelled` — returns `200` with that settled cluster, so
-// the operation is idempotent. Cancelling is rejected with `409` when the
-// cluster is otherwise settled with nothing in flight (`active`, or `failed`
-// from a different cause or operation), or is `deleting`, which has no cancel,
-// or when `executionId` does not match the operation now in flight; the message
-// names the blocking state. A missing or empty body is rejected with `400`. A
-// cluster that has already been deleted is not found and returns `404`, like any
-// unknown cluster.
+// Retrying the cancel — the same `executionId` on a cluster that has since
+// settled `failed` with `operation.status` `cancelled` — returns `200` with
+// that settled cluster, so the operation is idempotent; a cancel that lost to
+// completion leaves nothing to cancel, so its retry is refused with `409` like
+// any other settled cluster. Cancelling is rejected
+// with `409` when the cluster is otherwise settled with nothing in flight
+// (`active`, or `failed` from a different cause or operation), or is `deleting`,
+// which has no cancel, or when `executionId` does not match the operation now
+// in flight; the message names the blocking state. A missing or empty body is
+// rejected with `400`. A cluster that has already been deleted is not found and
+// returns `404`, like any unknown cluster.
 //
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
@@ -23358,35 +24520,41 @@ func (c *ClientWithResponses) CancelClusterWithBodyWithResponse(ctx context.Cont
 //
 // **Visibility:** `internal` · `public` (x-visibility)
 //
-// Cancel the operation the cluster is currently running and settle it to
-// `failed` with `stateReason` `CANCELLED`, so a cluster wedged mid-operation
-// can reach a state from which it can be deleted.
+// Request that the operation the cluster is currently running be stopped. The
+// cancel does not change the cluster's `state`: it asks the engine execution to
+// stop and marks the operation cancelling, leaving the cluster in its
+// transitional `state` while the run winds down. When the run ends the cluster
+// settles the usual way: normally `failed` with `stateReason` `CANCELLED`
+// (`operation.status` `cancelled`), also when the run ignores the stop and the
+// watchdog force-fails it; but a run that completes before the stop takes
+// effect settles `active` instead (`operation.status` `succeeded`). Wait for
+// either settled state before deleting; a `DELETE` issued while the cluster is
+// still cancelling is refused with `409`.
 //
 // Admitted only while an operation is in flight: the cluster must be
 // `creating` or `updating`. The engine execution is asked to stop first; if
 // that request cannot be delivered the cancel fails (`5xx`) and the cluster is
-// left unchanged in its transitional state, so the caller can retry. Once the
-// stop is requested — or the run has already finished on its own — the cluster
-// is settled `failed` and `operation.status` reads `cancelled`, distinct from
-// an ordinary `failed`. A workflow that completes despite the cancel lands a
-// callback the settled cluster ignores, so the result is stable.
+// left unchanged, so the caller can retry. Once the stop has been requested the
+// cluster is returned in its transitional `state` with `operation.status`
+// `cancelling`, and the response is `202`.
 //
 // The request body pins the operation to cancel: `executionId` must match the
 // operation currently in flight, as read from the cluster's
 // `operation.executionId`. This makes a cancel acted on a stale view safe — if
 // the cluster has settled and begun a different operation since it was read,
-// the cancel is refused rather than aborting the newer operation.
+// the cancel is refused rather than stopping the newer operation.
 //
-// The cluster is returned in its settled `failed` state. Retrying the cancel —
-// the same `executionId` on a cluster already settled `failed` with
-// `operation.status` `cancelled` — returns `200` with that settled cluster, so
-// the operation is idempotent. Cancelling is rejected with `409` when the
-// cluster is otherwise settled with nothing in flight (`active`, or `failed`
-// from a different cause or operation), or is `deleting`, which has no cancel,
-// or when `executionId` does not match the operation now in flight; the message
-// names the blocking state. A missing or empty body is rejected with `400`. A
-// cluster that has already been deleted is not found and returns `404`, like any
-// unknown cluster.
+// Retrying the cancel — the same `executionId` on a cluster that has since
+// settled `failed` with `operation.status` `cancelled` — returns `200` with
+// that settled cluster, so the operation is idempotent; a cancel that lost to
+// completion leaves nothing to cancel, so its retry is refused with `409` like
+// any other settled cluster. Cancelling is rejected
+// with `409` when the cluster is otherwise settled with nothing in flight
+// (`active`, or `failed` from a different cause or operation), or is `deleting`,
+// which has no cancel, or when `executionId` does not match the operation now
+// in flight; the message names the blocking state. A missing or empty body is
+// rejected with `400`. A cluster that has already been deleted is not found and
+// returns `404`, like any unknown cluster.
 //
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
@@ -23525,6 +24693,10 @@ func (c *ClientWithResponses) ScaleClusterWithResponse(ctx context.Context, regi
 // only from `active`); reaching a version further ahead requires one
 // UpgradeCluster call per step.
 //
+// A cluster with a hosted control plane is upgraded the same way, and its
+// control plane keeps the settings its ClusterType's HCPConfig sets.
+// **Not yet applied:** declared ahead of its implementation.
+//
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
 // Corresponds with POST /v1/regions/{region}/projects/{project}/compute/clusters/{id}/upgrade (the `UpgradeCluster` operationId).
@@ -23557,6 +24729,10 @@ func (c *ClientWithResponses) UpgradeClusterWithBodyWithResponse(ctx context.Con
 // only from `active`); reaching a version further ahead requires one
 // UpgradeCluster call per step.
 //
+// A cluster with a hosted control plane is upgraded the same way, and its
+// control plane keeps the settings its ClusterType's HCPConfig sets.
+// **Not yet applied:** declared ahead of its implementation.
+//
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
 // Corresponds with POST /v1/regions/{region}/projects/{project}/compute/clusters/{id}/upgrade (the `UpgradeCluster` operationId).
@@ -23572,7 +24748,11 @@ func (c *ClientWithResponses) UpgradeClusterWithResponse(ctx context.Context, re
 //
 // **Visibility:** `internal` · `public` (x-visibility)
 //
-// List BMaaS instance groups in the project.
+// List BMaaS instance groups in the project, ordered by `id`.
+//
+// Supply `offset` and `limit` to page by position and receive `totalCount`; the deprecated `pageToken`/`pageSize` cursor keeps working for existing clients, and a request carrying neither stays on it. Both styles walk the groups in the same `id` order, and `totalCount` counts the groups the `showDeleted` setting selects. An offset is a position, so a group created or deleted between two requests can make a row repeat or be skipped across pages.
+//
+// The embed budgets below bound ONE response, so they apply to each offset page exactly as they do to each cursor page; a smaller `limit` is the lever for both.
 //
 // Returns a wrapper object for the known response body format(s).
 //
@@ -23624,8 +24804,10 @@ func (c *ClientWithResponses) CreateInstanceGroupWithResponse(ctx context.Contex
 // **Visibility:** `internal` · `public` (x-visibility)
 //
 // Delete a group and release all its hosts (each performing the mandatory OS wipe). Deletion is asynchronous and two-phase: the group must be in `active`, `failed`, or `creating`. From `active`/`failed` the request transitions the group to `deleting` and starts the teardown workflow, and the row is removed only once that workflow is observed to finish.
-// Deleting a `creating` group instead cancels its in-flight create; once that settles (normally to `failed`), the group is automatically torn down the rest of the way — no second DELETE call is needed, though this may take longer than deleting an already-settled group. A manual DELETE issued again during this window is harmless: a `204` while the group is still `creating` (the cancel-mark request re-matches), or a `409` once the auto-chain has moved the row to `deleting`.
+// Deleting a `creating` group instead cancels its in-flight create; once that settles (normally to `failed`), the group is automatically torn down the rest of the way — a second DELETE call is normally not needed, though this may take longer than deleting an already-settled group. A manual DELETE issued again during this window is harmless: a `204` while the group is still `creating` (the cancel-mark request re-matches), or a `409` once the auto-chain has moved the row to `deleting`.
 // Deleting a group in `updating` or `deleting` returns `409 CONFLICT_IN_USE`.
+// From `active`/`failed`, credentials distributed to the group are revoked before the delete starts; if revocation fails, nothing changes and the delete must be retried.
+// Deleting a `failed` group returns `503` when a node pool's reservation can only be recovered from the group's workflow history and either that history cannot be read right now, or the reservation recovered from it cannot be recorded on the group. The group is left in `failed` (any reservation already recovered and recorded stays recorded), and the delete should be retried.
 //
 // Returns a wrapper object for the known response body format(s).
 //
@@ -23696,22 +24878,64 @@ func (c *ClientWithResponses) UpdateInstanceGroupWithResponse(ctx context.Contex
 	return ParseUpdateInstanceGroupResponse(rsp)
 }
 
-// ScaleInstanceGroupWithBodyWithResponse Scale instance group node pools (scale up only; scale down not yet implemented)
+// ScaleInstanceGroupWithBodyWithResponse Scale instance group node pools up or down
 //
 // **Visibility:** `internal` · `public` (x-visibility)
 //
-// Increase host counts on one or more of the group's node pools and dispatch
-// the asynchronous `instance-group-scale-up` workflow, which adds servers to
-// each pool's existing reservation and provisions the new hosts.
+// Change host counts on one or more of the group's node pools and dispatch the
+// asynchronous workflow for the request's direction: `instance-group-scale-up`
+// adds servers to each pool's existing reservation and provisions the new
+// hosts; `instance-group-scale-down` removes the named instances' hosts from
+// their reservation and hands them back to the available pool.
 //
-// Each `nodePools[]` entry supplies an absolute desired count (not a delta).
-// The request is rejected with `422` when duplicate pool slugs are supplied, a
-// slug is unknown, any target is less than or equal to the pool's settled
-// count, or a pool has no bound infrastructure reservation; and with `409` when
-// the group is not in the settled `active` state — i.e. another lifecycle
-// operation (create, update, delete, or a concurrent scale) is already in
-// flight, or the group is `failed`. The accepted scale atomically moves the
-// group to `updating` and returns its snapshot.
+// **A shrink needs more authority than a grow.** Growing a pool is an update;
+// shrinking one destroys instances and hands their servers back, so it
+// additionally requires the permission that governs removal — the same one
+// the group”s deprovision and `DELETE` carry. A caller who may resize a pool
+// but not remove from it can grow and will be refused `403` on a shrink.
+//
+// **The body states its direction by which field it carries**, and the two are
+// mutually exclusive: supply exactly one. `nodePools[]` grows pools, each
+// entry an absolute desired count (not a delta). `instancesToDelete` shrinks
+// them. Supplying both, or neither, is `422` — there is no single honest
+// response for a request that does both. The request is also rejected with
+// `422` when duplicate pool slugs are supplied, a slug is unknown, a `size` is
+// below what its pool holds, or a pool has no bound infrastructure
+// reservation; and with `409` when the group is not in the settled `active`
+// state — i.e. another lifecycle operation (create, update, delete, or a
+// concurrent scale) is already in flight, or the group is `failed`. The
+// accepted scale atomically moves the group to `updating` and returns its
+// snapshot.
+//
+// **A shrink names hosts, never counts.** `instancesToDelete` is the entire
+// scale-down request: each instance names its own pool, and each pool's new
+// size is derived as the hosts it holds minus the instances named from it, so
+// neither pool nor size is supplied. This is why a `size` below what a pool
+// holds is refused rather than treated as a shrink — it would say how MANY
+// hosts to remove without saying WHICH, and the platform does not choose
+// hosts on a tenant's behalf.
+//
+// Only an instance whose host is settled `not_provisioned` can be removed —
+// there is nothing running on it to destroy. An instance in any other state
+// refuses the WHOLE request with `INSTANCES_NOT_DEPROVISIONED` (below) and
+// nothing is written. Destroy what runs on those hosts first with
+// `POST .../instance-groups/{id}/deprovision`, which keeps them claimed, then
+// scale down to hand them back.
+//
+// The cluster type's `nodeCountMin` is NOT re-checked here. It is a floor on
+// hosts that RUN the pool, enforced where one stops running — the deprovision
+// above — so by the time an instance can be removed its pool has already
+// satisfied it. Re-checking against the new size would also refuse the case
+// the floor exists to permit: retiring a pool whose hosts were all
+// legitimately deprovisioned.
+//
+// **Draining a pool releases its reservation.** Naming every host a pool
+// holds releases the pool's reservation along with them, and the pool
+// settles at size `0`. A later scale-up re-reserves hosts for it, unless the
+// instance group's usage counts against organization limits: there a drained
+// pool cannot be grown again (`RESERVATION_RELEASED` below), so drain a pool
+// only when the group is finished with it. To remove the group itself, use
+// `DELETE`.
 //
 // **`desiredCount` is yours.** Only this endpoint and create ever set a pool's
 // desired size; no failure path, settle or background job rewrites it. A
@@ -23723,18 +24947,19 @@ func (c *ClientWithResponses) UpdateInstanceGroupWithResponse(ctx context.Contex
 // alone — disagree, it cannot be scaled: a target computed from a size you
 // never confirmed is a guess. A pool whose counts AGREE but that still has a
 // host provisioning is a different refusal, `POOL_HOSTS_NOT_PROVISIONED`
-// below, and needs no correction. Send a request whose `size` equals the
-// number of hosts the pool's reservation currently holds (the `409` names
-// it): that is accepted, sets `desiredCount` to it, provisions nothing, leaves
-// the group `active`, and makes the pool scalable again. It is not a
-// scale-down — no host is released — and a request mixing this correction
-// with a real scale of another pool is refused with `422`.
+// below, and needs no correction. Send a `nodePools[]` request whose `size`
+// equals the number of hosts the pool's reservation currently holds (the
+// `409` names it): that is accepted, sets `desiredCount` to it, provisions
+// nothing, leaves the group `active`, and makes the pool scalable again. It is
+// not a scale-down — no host is released — and a request mixing this
+// correction with a real scale of another pool is refused with `422`.
 //
 // That size may be `0`, when the pool's reservation answers holding no hosts.
-// Recording it is the way out of a failed scale-up. The pool is then empty, and
-// an empty pool cannot be grown yet (`POOL_EMPTY`) — materializing hosts into
-// one needs a scale path that can CREATE a reservation rather than only extend
-// an existing one.
+// Recording it is the way out of a failed scale-up. The pool is then empty. An
+// empty pool cannot be grown by extending its reservation (`POOL_EMPTY`); a
+// pool whose reservation has been released, including one drained by a
+// scale-down to `0`, is re-reserved by a scale-up instead, unless the instance
+// group's usage counts against organization limits.
 //
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
@@ -23747,22 +24972,64 @@ func (c *ClientWithResponses) ScaleInstanceGroupWithBodyWithResponse(ctx context
 	return ParseScaleInstanceGroupResponse(rsp)
 }
 
-// ScaleInstanceGroupWithResponse Scale instance group node pools (scale up only; scale down not yet implemented)
+// ScaleInstanceGroupWithResponse Scale instance group node pools up or down
 //
 // **Visibility:** `internal` · `public` (x-visibility)
 //
-// Increase host counts on one or more of the group's node pools and dispatch
-// the asynchronous `instance-group-scale-up` workflow, which adds servers to
-// each pool's existing reservation and provisions the new hosts.
+// Change host counts on one or more of the group's node pools and dispatch the
+// asynchronous workflow for the request's direction: `instance-group-scale-up`
+// adds servers to each pool's existing reservation and provisions the new
+// hosts; `instance-group-scale-down` removes the named instances' hosts from
+// their reservation and hands them back to the available pool.
 //
-// Each `nodePools[]` entry supplies an absolute desired count (not a delta).
-// The request is rejected with `422` when duplicate pool slugs are supplied, a
-// slug is unknown, any target is less than or equal to the pool's settled
-// count, or a pool has no bound infrastructure reservation; and with `409` when
-// the group is not in the settled `active` state — i.e. another lifecycle
-// operation (create, update, delete, or a concurrent scale) is already in
-// flight, or the group is `failed`. The accepted scale atomically moves the
-// group to `updating` and returns its snapshot.
+// **A shrink needs more authority than a grow.** Growing a pool is an update;
+// shrinking one destroys instances and hands their servers back, so it
+// additionally requires the permission that governs removal — the same one
+// the group”s deprovision and `DELETE` carry. A caller who may resize a pool
+// but not remove from it can grow and will be refused `403` on a shrink.
+//
+// **The body states its direction by which field it carries**, and the two are
+// mutually exclusive: supply exactly one. `nodePools[]` grows pools, each
+// entry an absolute desired count (not a delta). `instancesToDelete` shrinks
+// them. Supplying both, or neither, is `422` — there is no single honest
+// response for a request that does both. The request is also rejected with
+// `422` when duplicate pool slugs are supplied, a slug is unknown, a `size` is
+// below what its pool holds, or a pool has no bound infrastructure
+// reservation; and with `409` when the group is not in the settled `active`
+// state — i.e. another lifecycle operation (create, update, delete, or a
+// concurrent scale) is already in flight, or the group is `failed`. The
+// accepted scale atomically moves the group to `updating` and returns its
+// snapshot.
+//
+// **A shrink names hosts, never counts.** `instancesToDelete` is the entire
+// scale-down request: each instance names its own pool, and each pool's new
+// size is derived as the hosts it holds minus the instances named from it, so
+// neither pool nor size is supplied. This is why a `size` below what a pool
+// holds is refused rather than treated as a shrink — it would say how MANY
+// hosts to remove without saying WHICH, and the platform does not choose
+// hosts on a tenant's behalf.
+//
+// Only an instance whose host is settled `not_provisioned` can be removed —
+// there is nothing running on it to destroy. An instance in any other state
+// refuses the WHOLE request with `INSTANCES_NOT_DEPROVISIONED` (below) and
+// nothing is written. Destroy what runs on those hosts first with
+// `POST .../instance-groups/{id}/deprovision`, which keeps them claimed, then
+// scale down to hand them back.
+//
+// The cluster type's `nodeCountMin` is NOT re-checked here. It is a floor on
+// hosts that RUN the pool, enforced where one stops running — the deprovision
+// above — so by the time an instance can be removed its pool has already
+// satisfied it. Re-checking against the new size would also refuse the case
+// the floor exists to permit: retiring a pool whose hosts were all
+// legitimately deprovisioned.
+//
+// **Draining a pool releases its reservation.** Naming every host a pool
+// holds releases the pool's reservation along with them, and the pool
+// settles at size `0`. A later scale-up re-reserves hosts for it, unless the
+// instance group's usage counts against organization limits: there a drained
+// pool cannot be grown again (`RESERVATION_RELEASED` below), so drain a pool
+// only when the group is finished with it. To remove the group itself, use
+// `DELETE`.
 //
 // **`desiredCount` is yours.** Only this endpoint and create ever set a pool's
 // desired size; no failure path, settle or background job rewrites it. A
@@ -23774,18 +25041,19 @@ func (c *ClientWithResponses) ScaleInstanceGroupWithBodyWithResponse(ctx context
 // alone — disagree, it cannot be scaled: a target computed from a size you
 // never confirmed is a guess. A pool whose counts AGREE but that still has a
 // host provisioning is a different refusal, `POOL_HOSTS_NOT_PROVISIONED`
-// below, and needs no correction. Send a request whose `size` equals the
-// number of hosts the pool's reservation currently holds (the `409` names
-// it): that is accepted, sets `desiredCount` to it, provisions nothing, leaves
-// the group `active`, and makes the pool scalable again. It is not a
-// scale-down — no host is released — and a request mixing this correction
-// with a real scale of another pool is refused with `422`.
+// below, and needs no correction. Send a `nodePools[]` request whose `size`
+// equals the number of hosts the pool's reservation currently holds (the
+// `409` names it): that is accepted, sets `desiredCount` to it, provisions
+// nothing, leaves the group `active`, and makes the pool scalable again. It is
+// not a scale-down — no host is released — and a request mixing this
+// correction with a real scale of another pool is refused with `422`.
 //
 // That size may be `0`, when the pool's reservation answers holding no hosts.
-// Recording it is the way out of a failed scale-up. The pool is then empty, and
-// an empty pool cannot be grown yet (`POOL_EMPTY`) — materializing hosts into
-// one needs a scale path that can CREATE a reservation rather than only extend
-// an existing one.
+// Recording it is the way out of a failed scale-up. The pool is then empty. An
+// empty pool cannot be grown by extending its reservation (`POOL_EMPTY`); a
+// pool whose reservation has been released, including one drained by a
+// scale-down to `0`, is re-reserved by a scale-up instead, unless the instance
+// group's usage counts against organization limits.
 //
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
@@ -23802,10 +25070,13 @@ func (c *ClientWithResponses) ScaleInstanceGroupWithResponse(ctx context.Context
 //
 // **Visibility:** `internal` · `public` (x-visibility)
 //
-// List the project's instances — the provisioned hosts of its InstanceGroups.
+// List the project's instances — the provisioned hosts of its InstanceGroups
+// and Clusters.
 //
-// Instances are materialized when a group is created or scaled up, so there
-// is no create operation: to add hosts, scale the owning InstanceGroup.
+// Every instance has exactly one owner, an InstanceGroup or a Cluster, and
+// publishes that owner's uid and id. Instances are materialized when their
+// owner is created or scaled up, so there is no create operation: to add
+// hosts, scale the owning InstanceGroup or Cluster node pool.
 //
 // A parent can be named by uid or by id (slug) — both are published on every
 // instance. Filters combine with AND, so naming the same parent two ways that
@@ -23813,9 +25084,18 @@ func (c *ClientWithResponses) ScaleInstanceGroupWithResponse(ctx context.Context
 //
 // Every row carries the host's current state — lifecycle status, health,
 // inventory and current network configuration — read from the infrastructure
-// service in one batched request while serving this call. `pageSize` is capped
-// to the size of that batch, so this is unconditional: there is no degraded
-// page.
+// service in one batched request while serving this call. `limit` (and the
+// deprecated `pageSize`) is capped to the size of that batch, 200, so this is
+// unconditional: there is no degraded page.
+//
+// Supply `offset` and `limit` to page by position and receive `totalCount`;
+// the deprecated `pageToken`/`pageSize` cursor keeps working for existing
+// clients, and a request carrying neither stays on it. Both styles walk the
+// instances in the same order (by `uid`), and `totalCount` counts the
+// instances matching every active filter. An offset is a position, so an
+// instance materialized or deleted between two requests can make a row
+// repeat or be skipped across pages. See `inStates` for how it behaves on
+// the offset style.
 //
 // That read is a dependency, not an enrichment. When the infrastructure
 // service cannot be reached the listing fails with `503` rather than returning
@@ -23836,10 +25116,14 @@ func (c *ClientWithResponses) ListInstancesWithResponse(ctx context.Context, reg
 //
 // **Visibility:** `internal` · `public` (x-visibility)
 //
-// Retrieve one instance: its identity and API context — which group and node
-// pool own it, and which host it is — plus that host's current state:
+// Retrieve one instance: its identity and API context — which owner and node
+// pool it belongs to, and which host it is — plus that host's current state:
 // lifecycle status, health, inventory and network configuration, all read
 // from the infrastructure service while serving this request.
+//
+// The owner is an InstanceGroup or a Cluster, never both: the response carries
+// `instanceGroupUuid`/`instanceGroupId` or `clusterUuid`/`clusterId`, and
+// `nodePoolUuid`/`nodePool` either way.
 //
 // Nothing about the host is stored or cached here, so no field on this
 // response is older than the request itself.
@@ -24469,8 +25753,10 @@ func (c *ClientWithResponses) GetVPCPeeringWithResponse(ctx context.Context, reg
 //
 // **Visibility:** `internal` · `public` (x-visibility)
 //
-// List the file stores in the project. Ordered by `createdAt` descending — newest first — with cursor pagination; there is no `orderBy` in v1.
+// List the file stores in the project. Ordered by `createdAt` descending — newest first, ties broken by an internal unique key so the order is total; there is no `orderBy` in v1.
 // Filters are all optional, combined with `AND`, and never change the shape of the response envelope. Use `state` to surface stores that never converged, `shareType` to account for committed capacity per capability class, and `consumer` to find the stores a given address or instance group is attached to — matched against the entry `ref`, not against the addresses a group resolved to.
+//
+// Supply any of `offset`, `limit` or `includeTotal` to page by position and receive `totalCount`, which counts the stores matching the same filters. The `shareType` filter matches the class name recorded on each store and is not checked against the catalog: a malformed name is rejected, but a name the catalog no longer offers is not, and still matches stores created under it before the class was removed. The deprecated `pageToken`/`pageSize` cursor keeps working, and a request with no paging parameter at all stays on it.
 //
 // Returns a wrapper object for the known response body format(s).
 //
@@ -24605,7 +25891,13 @@ func (c *ClientWithResponses) UpdateFileStoreWithResponse(ctx context.Context, r
 // List the file storage capability classes offered in the region. A share type is the tenant's entire storage selector: pick one by capability — for example `general` or `high-speed` — and the platform decides which storage satisfies it. The backing hardware is not selectable.
 // The catalog is operator-curated and operator-written, and can differ between regions, so it must be read per region rather than cached globally. Results are ordered by `id` ascending.
 // Only classes naming a live storage backend are returned, so a region with no registered backend serves an empty catalog.
-// A caller without `compute.storage.read` is served the capability half of each class only: `backendRef`, `placement` and `createdBy` are absent.
+// A caller without `compute.storage.read` is served the capability half of each class only: `backendRef`, `placement` and `createdBy` are absent. That projection removes fields, never classes, so `totalCount` is the same for every caller.
+//
+// Supply any of `offset`, `limit` or `includeTotal` to page by position and receive `totalCount`. A page can hold fewer than `limit` classes before the end of the catalog, so step `offset` by `limit` and stop once it reaches `totalCount` rather than at the first short page.
+//
+// This overrides the general `includeTotal` guidance for this list. That guidance says that with `includeTotal=false` a page shorter than `limit` is the last page; here it is not, because a class whose stored record cannot be read is left out of its page while still counted. `totalCount` is the only reliable end signal on this list, so keep it (the default) to read the whole catalog.
+//
+// The deprecated `pageToken`/`pageSize` cursor keeps working, and a request with no paging parameter at all stays on it.
 //
 // Returns a wrapper object for the known response body format(s).
 //
@@ -25988,6 +27280,13 @@ func decodeListClusterTypesResponse(response *ListClusterTypesResponse, rsp *htt
 		}
 		response.JSON403 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
+		var dest UnprocessableEntity
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON422 = &dest
+
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
 		var dest InternalServerError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
@@ -26382,7 +27681,7 @@ func decodeListClustersResponse(response *ListClustersResponse, rsp *http.Respon
 		response.JSON409 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
-		var dest UnprocessableEntity
+		var dest Error
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -26430,7 +27729,7 @@ func decodeCreateClusterResponse(response *CreateClusterResponse, rsp *http.Resp
 		response.JSON201 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
-		var dest BadRequest
+		var dest Error
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -26451,7 +27750,7 @@ func decodeCreateClusterResponse(response *CreateClusterResponse, rsp *http.Resp
 		response.JSON403 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
-		var dest NotFound
+		var dest Error
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -26472,7 +27771,7 @@ func decodeCreateClusterResponse(response *CreateClusterResponse, rsp *http.Resp
 		response.JSON413 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
-		var dest UnprocessableEntity
+		var dest Error
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -26486,7 +27785,7 @@ func decodeCreateClusterResponse(response *CreateClusterResponse, rsp *http.Resp
 		response.JSON500 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
-		var dest ServiceUnavailable
+		var dest Error
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -26740,6 +28039,28 @@ func ParseDeleteClusterResponse(rsp *http.Response) (*DeleteClusterResponse, err
 	if _, err := decodeDeleteClusterResponse(response, rsp, bodyBytes); err != nil {
 		return response, err
 	}
+	switch {
+	case rsp.StatusCode == 409:
+		var headers DeleteClusterResponse409Headers
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value int
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "integer", Format: ""}); err != nil {
+				return response, err
+			}
+			headers.RetryAfter = &value
+		}
+		response.Headers409 = &headers
+	case rsp.StatusCode == 503:
+		var headers DeleteClusterResponse503Headers
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value int
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "integer", Format: ""}); err != nil {
+				return response, err
+			}
+			headers.RetryAfter = &value
+		}
+		response.Headers503 = &headers
+	}
 
 	return response, nil
 }
@@ -26786,7 +28107,7 @@ func decodeDeleteClusterResponse(response *DeleteClusterResponse, rsp *http.Resp
 		response.JSON500 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
-		var dest ServiceUnavailable
+		var dest Error
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -26867,6 +28188,13 @@ func decodeGetClusterResponse(response *GetClusterResponse, rsp *http.Response, 
 			return nil, err
 		}
 		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON422 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
 		var dest InternalServerError
@@ -27005,6 +28333,13 @@ func decodeCancelClusterResponse(response *CancelClusterResponse, rsp *http.Resp
 			return nil, err
 		}
 		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 202:
+		var dest Cluster
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON202 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
 		var dest BadRequest
@@ -27450,7 +28785,7 @@ func decodeCreateInstanceGroupResponse(response *CreateInstanceGroupResponse, rs
 		response.JSON201 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
-		var dest BadRequest
+		var dest Error
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -27532,6 +28867,28 @@ func ParseDeleteInstanceGroupResponse(rsp *http.Response) (*DeleteInstanceGroupR
 	if _, err := decodeDeleteInstanceGroupResponse(response, rsp, bodyBytes); err != nil {
 		return response, err
 	}
+	switch {
+	case rsp.StatusCode == 409:
+		var headers DeleteInstanceGroupResponse409Headers
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value int
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "integer", Format: ""}); err != nil {
+				return response, err
+			}
+			headers.RetryAfter = &value
+		}
+		response.Headers409 = &headers
+	case rsp.StatusCode == 503:
+		var headers DeleteInstanceGroupResponse503Headers
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value int
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "integer", Format: ""}); err != nil {
+				return response, err
+			}
+			headers.RetryAfter = &value
+		}
+		response.Headers503 = &headers
+	}
 
 	return response, nil
 }
@@ -27576,6 +28933,13 @@ func decodeDeleteInstanceGroupResponse(response *DeleteInstanceGroupResponse, rs
 			return nil, err
 		}
 		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 504:
 		var dest GatewayTimeout
@@ -27819,6 +29183,13 @@ func decodeScaleInstanceGroupResponse(response *ScaleInstanceGroupResponse, rsp 
 		}
 		response.JSON409 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 410:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON410 = &dest
+
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 413:
 		var dest PayloadTooLarge
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
@@ -27839,6 +29210,13 @@ func decodeScaleInstanceGroupResponse(response *ScaleInstanceGroupResponse, rsp 
 			return nil, err
 		}
 		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 501:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON501 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
 		var dest Error
@@ -27929,6 +29307,13 @@ func decodeListInstancesResponse(response *ListInstancesResponse, rsp *http.Resp
 			return nil, err
 		}
 		response.JSON503 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 504:
+		var dest GatewayTimeout
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON504 = &dest
 
 	}
 

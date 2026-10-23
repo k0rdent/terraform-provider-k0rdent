@@ -244,8 +244,11 @@ func TestAHeldUpgradeIsReleasedByACancel(t *testing.T) {
 	if code, _ := call(t, s.deleteCluster, http.MethodDelete, "c", ""); code != http.StatusConflict {
 		t.Fatalf("delete during the upgrade: %d, want 409", code)
 	}
-	if code, out := cancelNow(t, s); code != http.StatusOK {
+	if code, out := cancelNow(t, s); code != http.StatusAccepted {
 		t.Fatalf("cancel: %d %v", code, out)
+	}
+	for range settleAfter {
+		call(t, s.getCluster, http.MethodGet, "c", "")
 	}
 	if code, out := call(t, s.deleteCluster, http.MethodDelete, "c", ""); code != http.StatusNoContent {
 		t.Fatalf("delete after the cancel: %d %v", code, out)

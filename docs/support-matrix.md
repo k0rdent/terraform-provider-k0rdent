@@ -19,7 +19,7 @@ What this provider runs with, and what's not decided yet.
 | --- | --- | --- |
 | 0.x | Not decided | **Open** |
 
-- The provider is built against API contract **v1.3.0-dev.4**. The client is
+- The provider is built against API contract **v1.3.0-rc.2**. The client is
   generated from it into `internal/k0rdent` and committed, so every build uses
   the same client.
 - The contract version and the provider version change separately.

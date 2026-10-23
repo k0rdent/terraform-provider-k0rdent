@@ -8,6 +8,7 @@ info:
     - `x-visibility`: Documentation audience — `internal` (operator-facing only), `public` (customer-facing only), or `[internal, public]` (both). It records who an operation is documented for and does not gate access. Treat the value as a SET: both orderings of the two-value form occur, so compare membership rather than the literal string.
     - `x-internal`: Derived by the bundler, not authored. Emitted as `true` on exactly those operations whose `x-visibility` is `internal` and nothing else, because `x-visibility` is a k0rdent extension that no standard renderer understands while `x-internal` is the convention they filter on. An operation marked `[internal, public]` is public and is NOT flagged.
     - `x-status`: Implementation status — `mvp`, `tbd`, `blocked`, `stretch`.
+    - `x-maturity`: Stability — `alpha`, `beta`, or `stable`; the document default is `alpha`. Resolved by nearest declaration down operation → schema → field, with parameters and response headers inheriting their operation, so an unannotated field under a `beta`/`stable` schema inherits that level unless it declares a lower one. A shared schema's own level is a promise about that schema; an operation that uses it can still be less mature. A deprecated (`deprecated: true`) `beta`/`stable` element also carries `x-deprecated-since`, `x-sunset`, and `x-deprecated-reason`.
     **Pagination:** Cursor-based using `pageToken` and `pageSize` query parameters.
     **Error Model:** Standard `{ error: { code, message, details[] } }` envelope.
 servers:
@@ -54,7 +55,7 @@ tags:
     description: RBAC role definitions
   - name: token
     description: |
-      Generate access token via multiple grant types (authorization_code, api_key, client_credentials, refresh_token).
+      Generate access token via multiple grant types (api_key, client_credentials, refresh_token).
   - name: serviceaccounts
     description: |
       Manage service accounts for machine-to-machine and infrastructure
@@ -68,10 +69,19 @@ paths:
     get:
       operationId: listClusterTypes
       summary: List ClusterTypes
-      description: |-
+      description: |
         **Visibility:** `internal` · `public` (x-visibility)
 
-        List all ClusterTypes available in the region. Deprecated types are excluded unless includeDeprecated=true.
+        List all ClusterTypes available in the region, newest first. Deprecated
+        types are excluded unless `includeDeprecated=true`.
+
+        Supply any of `offset`, `limit` or `includeTotal` to page by position and
+        receive `totalCount`, which counts the ClusterTypes the same
+        `includeDeprecated` setting lists. This is the only way to read past the
+        first page. Without those parameters the list returns its first page only,
+        sized by the deprecated `pageSize`; the deprecated `pageToken` has never
+        been implemented here and is rejected with 400 on its own, or with 422
+        alongside an offset-style parameter.
       tags:
         - cluster-types
       x-visibility:
@@ -84,6 +94,9 @@ paths:
             type: boolean
             default: false
           description: Include deprecated ClusterTypes in the response.
+        - $ref: '#/components/parameters/Offset'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/IncludeTotal'
         - $ref: '#/components/parameters/PageToken'
         - $ref: '#/components/parameters/PageSize'
       responses:
@@ -99,6 +112,8 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
         '500':
           $ref: '#/components/responses/InternalServerError'
   /v1/regions/{region}/compute/cluster-types/{id}:
@@ -156,6 +171,13 @@ paths:
         optional `status` query parameter filters to one lifecycle status; an
         unrecognized value is rejected with `422` rather than returning an empty
         list.
+
+        Supply any of `offset`, `limit` or `includeTotal` to page through the
+        history and receive `totalCount`, which counts this ClusterType's versions matching the same
+        `status`. A request with no paging parameter returns the whole history,
+        as it always has. This list has no cursor style; `pageToken` and
+        `pageSize` are ignored unless sent alongside an offset-style parameter,
+        which is rejected with `422`.
       tags:
         - cluster-types
       x-visibility:
@@ -167,6 +189,9 @@ paths:
           schema:
             $ref: '#/components/schemas/ClusterTypeVersionStatus'
           description: Filter to versions with this lifecycle status. Omit to return every version.
+        - $ref: '#/components/parameters/Offset'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/IncludeTotal'
       responses:
         '200':
           description: List of version summaries
@@ -259,12 +284,57 @@ paths:
         list instead. (Creation time is assigned when the create transaction begins,
         so a cluster whose creation commits after a page was served may not appear
         in that traversal at all — start a fresh list to see it.)
+
+        Supply `offset` and `limit` to page by position and receive `totalCount`;
+        the deprecated `pageToken`/`pageSize` cursor keeps working for existing
+        clients, and a request carrying neither stays on it. Both styles walk the
+        collection in the same newest-first order, and `totalCount` counts the
+        clusters matching the active `state`, `health` and `search` filters. Unlike
+        the cursor, an offset is a position: a cluster created or deleted between
+        two requests shifts every later row by one, so a row can repeat or be
+        skipped across pages.
       tags:
         - clusters
       x-visibility:
         - internal
         - public
       parameters:
+        - name: includeInstanceRefs
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+          description: |-
+            Embed each node pool's instances as `{id, serverSlug}` in
+            `nodePools[].instanceRefs`. This service's own rows in one query, with no
+            call to the infrastructure service.
+
+            The limit is on the WHOLE response, not one cluster, so a listing of large
+            clusters reaches it sooner than a single read does: over it is a `422`, and
+            the lever is a smaller `limit` (or `pageSize`) — or
+            `GET /compute/instances?clusterId=`, which pages over one cluster's hosts
+            instead.
+        - name: includeInstances
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+          description: |-
+            Embed a page of each node pool's instances in full, in
+            `nodePools[].instances`. Needs a live read of every host, so it is
+            omitted for every pool when the infrastructure service cannot answer —
+            a cluster read never fails over an enrichment.
+
+            Each pool embeds one page; the limit is on the whole response, so it
+            counts those pages across every cluster the listing returns. Over it is a
+            `422`, and the lever is a smaller `limit` (or `pageSize`) — or
+            `GET /compute/instances?clusterId=`, which pages over one cluster's hosts
+            instead.
+        - $ref: '#/components/parameters/Offset'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/IncludeTotal'
         - $ref: '#/components/parameters/PageToken'
         - $ref: '#/components/parameters/PageSize'
         - name: search
@@ -298,9 +368,10 @@ paths:
           description: |
             Filter by canonical `health.state`. Combines with `state` using
             logical AND. Matches the read-time materialized health: a cluster whose
-            health has gone stale, or that has never been observed, matches
-            `health=unknown` (and not its last observed value). An unknown value is
-            rejected with 422. Omitting it returns clusters of any health.
+            health has gone stale, that has never been observed, or whose `state` is
+            `creating` or `deleting` matches `health=unknown` (and not its last
+            observed value). An unknown value is rejected with 422. Omitting it
+            returns clusters of any health.
           schema:
             type: string
             enum:
@@ -322,7 +393,26 @@ paths:
         '409':
           $ref: '#/components/responses/ProjectRegionMismatch'
         '422':
-          $ref: '#/components/responses/UnprocessableEntity'
+          description: |
+            Validation failure: a `state` or `health` value outside its enum (or
+            `state=deleted`), a `search` longer than 255 characters, a malformed
+            `pageToken`, a boolean embed flag that is not a boolean, or a response
+            that would exceed an embed's budget.
+
+
+            Also returned for the offset parameters: an `offset` below `0` or above
+            `2147483647`, a `limit` outside `1`-`500`, an `includeTotal` that is not
+            `true` or `false`, or any request mixing the offset style with the
+            deprecated cursor style.
+
+
+            Only the offset-parameter failures and a malformed embed flag carry
+            `details[].reason: INVALID_ARGUMENT`; the filter, `pageToken` and
+            embed-budget failures carry an error message without `details`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '500':
           $ref: '#/components/responses/InternalServerError'
     post:
@@ -351,22 +441,28 @@ paths:
               schema:
                 $ref: '#/components/schemas/Cluster'
         '400':
-          $ref: '#/components/responses/BadRequest'
+          description: Bad request — malformed body, invalid `sshAccess`, or a `sshPublicKeyCredentials` reference outside the request's region and project.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
-          # An unknown clusterType slug, or an unresolvable addressPool referenced
-          # by the bound ClusterType's networkSchema, produces a 404. So does a
-          # {project} segment that names no project: the project is resolved before
-          # anything is written, so a create against a nonexistent (or already fully
-          # deleted) project gets a 404 rather than failing later. All
-          # deterministic: a client error, not a retryable 503.
-          $ref: '#/components/responses/NotFound'
+          description: |
+            Resource not found: the ClusterType, an AddressPool its network schema
+            references, or the project. A project is also found missing when the
+            cluster's organization is looked up from it for placement (see 503).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '409':
           description: |
-            Three deterministic state conflicts, none of which writes anything:
+            Three deterministic state conflicts and one transient one, none of
+            which writes anything:
 
             - `QUOTA_EXCEEDED`: the create would exceed a
               node-count or `storage_gib` quota limit at the organization or the project scope; the
@@ -378,15 +474,19 @@ paths:
               scope's `limit`, `used` and `headroom`). Retrying without freeing
               capacity, asking for `admissible` or less, or raising the binding
               limit returns the same result.
-            - `QUOTA_UNASSIGNED`: the organization has no quota profile
-              assigned while the platform requires one (a default profile is
+            - `QUOTA_UNASSIGNED`: the organization holds no quota limits
+              while the platform requires them (a default profile is
               designated), so the create is refused before any limit is measured.
               `error.reason` is `QUOTA_UNASSIGNED` with no `details[]`. Retrying
-              returns the same result until an operator assigns the organization a
-              profile.
+              returns the same result until an operator gives the organization
+              limits, by applying a profile or setting them directly.
             - The target project is being deleted. No `reason`. Retrying
               can never succeed — a project leaves `deleting` only for a terminal
               state.
+            - `CONFLICT_VERSION`: placing the hosted control plane of a cluster
+              whose ClusterType references an HCPConfig lost, several times in a
+              row, to concurrent changes of that HCPConfig or of the Control
+              Platforms that could host it. Retry the create.
 
             Also returned, with top-level `reason: PROJECT_REGION_MISMATCH`, when the project is locked to a different region than the one in the URL. A project's region is immutable once set, so address the project's own region instead of retrying.
           content:
@@ -427,11 +527,44 @@ paths:
           # than silently truncated during provisioning.
           $ref: '#/components/responses/PayloadTooLarge'
         '422':
-          $ref: '#/components/responses/UnprocessableEntity'
+          description: |
+            Validation failed or invalid state, or the cluster's control plane
+            cannot be placed.
+
+            A cluster whose ClusterType references an HCPConfig is placed inside
+            the create; when no host can take its control plane, the create is
+            refused before anything is created, with top-level `reason:
+            INSUFFICIENT_CAPACITY` and one `details[]` entry, also
+            `INSUFFICIENT_CAPACITY`, with a generic message. Retry later. The
+            hosted control plane does not count against quota.
+
+            Operators holding `compute.controlplatforms.read` get one `details[]`
+            entry per candidate Control Platform instead, naming it in `metadata`
+            with its reason (`PlacementReason`), in Control Platform id order;
+            with no candidate, a single `HCPCONFIG_NOT_ACCEPTED` entry naming none.
+            A ClusterType without an HCPConfig is never refused this way.
+
+            **Not yet applied:** a create that would be placed is refused with 422
+            (no `reason`) and writes nothing: hosted control planes are not yet
+            deployed on the Control Platform they are placed on. The refusals
+            above are served.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '500':
           $ref: '#/components/responses/InternalServerError'
         '503':
-          $ref: '#/components/responses/ServiceUnavailable'
+          description: |
+            A dependency is unavailable; retry later. This includes placement:
+            when a candidate Control Platform restricts `allowedOrganizations` and
+            the request does not carry the cluster's organization, it is looked up
+            from the project, and a lookup that is not configured or cannot answer
+            refuses the create.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '504':
           $ref: '#/components/responses/GatewayTimeout'
   /v1/regions/{region}/projects/{project}/compute/clusters/{id}:
@@ -458,6 +591,28 @@ paths:
         - internal
         - public
       parameters:
+        - name: includeInstanceRefs
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+          description: |-
+            Embed each node pool's instances as `{id, serverSlug}` in
+            `nodePools[].instanceRefs`. This service's own rows in one query, with no
+            call to the infrastructure service. Over the response limit is a `422`.
+        - name: includeInstances
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+          description: |-
+            Embed a page of each node pool's instances in full, in
+            `nodePools[].instances`. Needs a live read of every host, so it is
+            omitted for every pool when the infrastructure service cannot answer —
+            a cluster read never fails over an enrichment. Over the response limit
+            is a `422`.
         - name: includeStages
           in: query
           required: false
@@ -482,6 +637,12 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/ProjectRegionMismatch'
+        '422':
+          description: 'Validation failure — the response would carry more embedded refs or instances than it allows, or `includeInstanceRefs` or `includeInstances` was present and not a boolean (a blank value included: that is an interpolation that came out empty, not an absent parameter). For the budget, narrow the request or use `GET /compute/instances?clusterId=`. `details[].reason` is `INVALID_ARGUMENT`.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '500':
           $ref: '#/components/responses/InternalServerError'
     patch:
@@ -490,7 +651,7 @@ paths:
       description: |
         **Visibility:** `internal` · `public` (x-visibility)
 
-        "Cluster CRUD API"; Update cluster configuration to scale resources, upgrade versions, or modify settings.
+        "Cluster CRUD API"; Update cluster configuration: display name, description, tags, storage ceiling, or security groups. Node counts are not changed here; use `scaleCluster`, and a request carrying `nodePools` is refused with `422`.
       tags:
         - clusters
       x-visibility:
@@ -504,7 +665,7 @@ paths:
               $ref: '#/components/schemas/ClusterUpdateRequest'
       responses:
         '200':
-          description: Cluster updated
+          description: Cluster updated; a `storage.ceilingGiB` is applied to the running cluster asynchronously and retried until it lands.
           content:
             application/json:
               schema:
@@ -551,13 +712,13 @@ paths:
 
             - A `storage` raise on a cluster that is not `ACTIVE` answers this `409` without a reason; one whose quota accounting is still settling or whose ceiling changed concurrently answers the same and can be retried shortly.
             - `QUOTA_EXCEEDED` — a `storage.ceilingGiB` raise would exceed a `storage_gib` limit; `requested` and `admissible` are increases in GiB, see `Error`.
-            - `QUOTA_UNASSIGNED` — a `storage.ceilingGiB` raise while the organization has no quota profile and a default is designated; see `Error`.
+            - `QUOTA_UNASSIGNED` — a `storage.ceilingGiB` raise while the organization holds no quota limits and a default is designated; see `Error`.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
         '422':
-          description: Validation failed, including a `storage.ceilingGiB` outside 1..1048576 or below the current ceiling, or `storage` combined with `securityGroups`.
+          description: Validation failed, including a `storage.ceilingGiB` outside 1..1048576 or below the current ceiling, `storage` combined with `securityGroups`, or a body that carries `nodePools` (alone or with other fields; nothing is applied). Node counts change only through `scaleCluster`.
           content:
             application/json:
               schema:
@@ -587,6 +748,7 @@ paths:
         **Visibility:** `internal` · `public` (x-visibility)
 
         "Cluster CRUD API"; Delete cluster and trigger cleanup of nodes and IP resources.
+        Credentials distributed to the cluster are revoked before the delete starts; if revocation fails, nothing changes and the delete must be retried.
       tags:
         - clusters
       x-visibility:
@@ -609,7 +771,23 @@ paths:
             must be cancelled first (`POST .../clusters/{id}/cancel`), and a
             `deleting` cluster is already terminating.
 
+            On the backing Cluster of a managed Control Platform (operator-only),
+            also `details[].reason: CONFLICT_IN_USE` while any hosted control plane
+            is placed on that Control Platform. Otherwise the delete also removes
+            the Control Platform, so it also needs `compute.controlplatforms.delete`
+            (403 otherwise). **Not yet applied:** the `CONFLICT_IN_USE` refusal and
+            the permission check are declared ahead of their implementation; the
+            Control Platform's removal is applied.
+
             Also returned, with top-level `reason: PROJECT_REGION_MISMATCH`, when the project is locked to a different region than the one in the URL. A project's region is immutable once set, so address the project's own region instead of retrying.
+
+            Also returned when the cluster's credentials are being changed and cannot be revoked yet; the cluster is unchanged, so retry after `Retry-After`.
+          headers:
+            Retry-After:
+              description: Whole seconds to wait before retrying; present only when credential revocation is temporarily blocked.
+              schema:
+                type: integer
+                minimum: 1
           content:
             application/json:
               schema:
@@ -617,7 +795,17 @@ paths:
         '500':
           $ref: '#/components/responses/InternalServerError'
         '503':
-          $ref: '#/components/responses/ServiceUnavailable'
+          description: Service unavailable, including when the cluster's credentials could not be revoked; the cluster is unchanged, so retry the delete.
+          headers:
+            Retry-After:
+              description: Whole seconds to wait before retrying; present only when a retry interval is known.
+              schema:
+                type: integer
+                minimum: 1
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '504':
           $ref: '#/components/responses/GatewayTimeout'
   /v1/regions/{region}/projects/{project}/compute/clusters/{id}/scale:
@@ -692,7 +880,8 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           description: |
-            Four distinct conflict cases:
+            Four distinct conflict cases on every cluster, and two more on the
+            backing Cluster of a managed Control Platform (below):
 
             - The cluster is not in a scalable state — another lifecycle operation
               (create, update, delete, or a concurrent scale) is already in flight.
@@ -719,13 +908,32 @@ paths:
               reducing the increase, or without raising the binding limit
               returns the same result. A scale-down is never quota-refused: the
               freed capacity is returned once the scale settles.
-            - `QUOTA_UNASSIGNED`: the organization has no quota profile
-              assigned while the platform requires one (a default profile is
+            - `QUOTA_UNASSIGNED`: the organization holds no quota limits
+              while the platform requires them (a default profile is
               designated), so a scale-up is refused before any limit is
               measured. A scale-down is not refused.
               `error.reason` is `QUOTA_UNASSIGNED` with no `details[]`. Retrying
-              returns the same result until an operator assigns the organization a
-              profile.
+              returns the same result until an operator gives the organization
+              limits, by applying a profile or setting them directly.
+
+            On the backing Cluster of a managed Control Platform (operator-only),
+            with the codes in `details[].reason` only and no top-level reason:
+
+            - A scale-down whose remaining workers would not carry the placed
+              hosted control planes: too little capacity
+              (`INSUFFICIENT_CAPACITY`); fewer Ready, schedulable workers than the
+              largest placed replica count, counted per HCPConfig over the workers
+              carrying its `DoNotSchedule` topology keys (`TOO_FEW_NODES`); or not
+              enough workers without etcd volumes to remove
+              (`NODES_HOLD_ETCD_VOLUMES`, with how many can be removed and how many
+              were asked in `metadata`). The message says how much capacity is in
+              use and by how many control planes. Workers holding etcd volumes are
+              never chosen for removal.
+            - A scale-up above the region's limit on nodes per Control Platform,
+              when set (`ADMISSION_LIMIT_REACHED`).
+
+            **Not yet applied:** these backing-Cluster refusals are declared ahead of their
+            implementation.
 
             Also returned, with top-level `reason: PROJECT_REGION_MISMATCH`, when the project is locked to a different region than the one in the URL. A project's region is immutable once set, so address the project's own region instead of retrying.
           content:
@@ -788,10 +996,17 @@ paths:
         a token.
 
         An API key receives a kubeconfig capped to the key's own roles rather than
-        its owner's. A caller with no owning organization in context — in practice
-        a platform-scope operator with no membership in the cluster's organization
-        — gets `503` too: a token narrowed by project alone would still carry that
-        caller's roles in every other organization they belong to.
+        its owner's.
+
+        A caller whose access comes from platform-scope roles and who holds no role
+        in the cluster's organization or project gets `403`: provider-side roles
+        alone do not grant access to a tenant cluster.
+
+        `503` means the platform could not check membership or mint a token, not
+        that access was refused. That includes a request for which the platform
+        could not determine the organization that owns the project, since a token
+        narrowed by project alone would still carry the caller's roles in every
+        other organization they belong to.
       tags:
         - kubeconfigs
       x-visibility:
@@ -848,6 +1063,10 @@ paths:
         `failed` cluster is **not** retryable via this call (upgrade is admitted
         only from `active`); reaching a version further ahead requires one
         UpgradeCluster call per step.
+
+        A cluster with a hosted control plane is upgraded the same way, and its
+        control plane keeps the settings its ClusterType's HCPConfig sets.
+        **Not yet applied:** declared ahead of its implementation.
       tags:
         - clusters
       x-visibility:
@@ -917,35 +1136,41 @@ paths:
       description: |
         **Visibility:** `internal` · `public` (x-visibility)
 
-        Cancel the operation the cluster is currently running and settle it to
-        `failed` with `stateReason` `CANCELLED`, so a cluster wedged mid-operation
-        can reach a state from which it can be deleted.
+        Request that the operation the cluster is currently running be stopped. The
+        cancel does not change the cluster's `state`: it asks the engine execution to
+        stop and marks the operation cancelling, leaving the cluster in its
+        transitional `state` while the run winds down. When the run ends the cluster
+        settles the usual way: normally `failed` with `stateReason` `CANCELLED`
+        (`operation.status` `cancelled`), also when the run ignores the stop and the
+        watchdog force-fails it; but a run that completes before the stop takes
+        effect settles `active` instead (`operation.status` `succeeded`). Wait for
+        either settled state before deleting; a `DELETE` issued while the cluster is
+        still cancelling is refused with `409`.
 
         Admitted only while an operation is in flight: the cluster must be
         `creating` or `updating`. The engine execution is asked to stop first; if
         that request cannot be delivered the cancel fails (`5xx`) and the cluster is
-        left unchanged in its transitional state, so the caller can retry. Once the
-        stop is requested — or the run has already finished on its own — the cluster
-        is settled `failed` and `operation.status` reads `cancelled`, distinct from
-        an ordinary `failed`. A workflow that completes despite the cancel lands a
-        callback the settled cluster ignores, so the result is stable.
+        left unchanged, so the caller can retry. Once the stop has been requested the
+        cluster is returned in its transitional `state` with `operation.status`
+        `cancelling`, and the response is `202`.
 
         The request body pins the operation to cancel: `executionId` must match the
         operation currently in flight, as read from the cluster's
         `operation.executionId`. This makes a cancel acted on a stale view safe — if
         the cluster has settled and begun a different operation since it was read,
-        the cancel is refused rather than aborting the newer operation.
+        the cancel is refused rather than stopping the newer operation.
 
-        The cluster is returned in its settled `failed` state. Retrying the cancel —
-        the same `executionId` on a cluster already settled `failed` with
-        `operation.status` `cancelled` — returns `200` with that settled cluster, so
-        the operation is idempotent. Cancelling is rejected with `409` when the
-        cluster is otherwise settled with nothing in flight (`active`, or `failed`
-        from a different cause or operation), or is `deleting`, which has no cancel,
-        or when `executionId` does not match the operation now in flight; the message
-        names the blocking state. A missing or empty body is rejected with `400`. A
-        cluster that has already been deleted is not found and returns `404`, like any
-        unknown cluster.
+        Retrying the cancel — the same `executionId` on a cluster that has since
+        settled `failed` with `operation.status` `cancelled` — returns `200` with
+        that settled cluster, so the operation is idempotent; a cancel that lost to
+        completion leaves nothing to cancel, so its retry is refused with `409` like
+        any other settled cluster. Cancelling is rejected
+        with `409` when the cluster is otherwise settled with nothing in flight
+        (`active`, or `failed` from a different cause or operation), or is `deleting`,
+        which has no cancel, or when `executionId` does not match the operation now
+        in flight; the message names the blocking state. A missing or empty body is
+        rejected with `400`. A cluster that has already been deleted is not found and
+        returns `404`, like any unknown cluster.
       tags:
         - clusters
       x-visibility:
@@ -958,11 +1183,23 @@ paths:
             schema:
               $ref: '#/components/schemas/CancelClusterRequest'
       responses:
+        '202':
+          description: |
+            Cancel accepted; the stop was requested and the operation is marked
+            cancelling. The cluster is returned in its transitional `state`
+            (`creating` or `updating`) with `operation.status` `cancelling`. Poll
+            the cluster until it settles: normally `failed` with `operation.status`
+            `cancelled`, or `active` with `operation.status` `succeeded` if the run
+            completed before the stop took effect.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Cluster'
         '200':
           description: |
-            Cancel accepted; the cluster settled to `failed` with `operation.status`
-            `cancelled`. Also returned when retrying a cancel that already succeeded
-            (the same `executionId` on an already-`cancelled` cluster) — the
+            Returned when retrying a cancel that already succeeded — the same
+            `executionId` on a cluster that has since settled to `failed` with
+            `operation.status` `cancelled`. The settled cluster is returned, so the
             operation is idempotent.
           content:
             application/json:
@@ -1115,6 +1352,10 @@ paths:
         Returns only `active` and `failed` kubeconfigs. An in-flight `pending`
         issuance and a `revoked` config are both excluded, so a caller that has
         just requested one will not find that row here until it activates.
+
+        Because this operation is deprecated, it does not take the `offset`/`limit`
+        pagination style the other lists offer: it keeps `pageToken`/`pageSize`,
+        and its response keeps reporting `total`.
       tags:
         - kubeconfigs
       x-visibility:
@@ -1162,6 +1403,10 @@ paths:
         (one entry per Linux user). SSH access is baked into every node's cloud-init
         at provisioning time and is immutable — it cannot be changed or removed from
         a running cluster.
+
+        Not paginated. The list is bounded by construction — at most 32 users,
+        fixed when the cluster is created — so it is always returned whole, with no
+        `offset`/`limit` or `pageToken`/`pageSize` parameters.
       tags:
         - clusters
       x-visibility:
@@ -1198,10 +1443,13 @@ paths:
       description: |-
         **Visibility:** `internal` · `public` (x-visibility)
 
-        List the project's instances — the provisioned hosts of its InstanceGroups.
+        List the project's instances — the provisioned hosts of its InstanceGroups
+        and Clusters.
 
-        Instances are materialized when a group is created or scaled up, so there
-        is no create operation: to add hosts, scale the owning InstanceGroup.
+        Every instance has exactly one owner, an InstanceGroup or a Cluster, and
+        publishes that owner's uid and id. Instances are materialized when their
+        owner is created or scaled up, so there is no create operation: to add
+        hosts, scale the owning InstanceGroup or Cluster node pool.
 
         A parent can be named by uid or by id (slug) — both are published on every
         instance. Filters combine with AND, so naming the same parent two ways that
@@ -1209,9 +1457,18 @@ paths:
 
         Every row carries the host's current state — lifecycle status, health,
         inventory and current network configuration — read from the infrastructure
-        service in one batched request while serving this call. `pageSize` is capped
-        to the size of that batch, so this is unconditional: there is no degraded
-        page.
+        service in one batched request while serving this call. `limit` (and the
+        deprecated `pageSize`) is capped to the size of that batch, 200, so this is
+        unconditional: there is no degraded page.
+
+        Supply `offset` and `limit` to page by position and receive `totalCount`;
+        the deprecated `pageToken`/`pageSize` cursor keeps working for existing
+        clients, and a request carrying neither stays on it. Both styles walk the
+        instances in the same order (by `uid`), and `totalCount` counts the
+        instances matching every active filter. An offset is a position, so an
+        instance materialized or deleted between two requests can make a row
+        repeat or be skipped across pages. See `inStates` for how it behaves on
+        the offset style.
 
         That read is a dependency, not an enrichment. When the infrastructure
         service cannot be reached the listing fails with `503` rather than returning
@@ -1223,6 +1480,21 @@ paths:
         - public
       x-status: mvp
       parameters:
+        - $ref: '#/components/parameters/Offset'
+        - name: limit
+          in: query
+          required: false
+          description: |-
+            Maximum number of instances to return in one page, capped at 200 for this operation because every instance in a page is read from the infrastructure service in a single batched request. Values outside the accepted range are rejected with 422 rather than clamped, so the page size applied is always the page size requested.
+
+            The offset style (`offset`, `limit`, `includeTotal`) and the deprecated cursor style (`pageToken`, `pageSize`) are mutually exclusive. Supplying any parameter from both styles in one request is rejected with 422.
+          schema:
+            type: integer
+            format: int32
+            default: 50
+            minimum: 1
+            maximum: 200
+        - $ref: '#/components/parameters/IncludeTotal'
         - $ref: '#/components/parameters/PageToken'
         - name: pageSize
           in: query
@@ -1256,13 +1528,43 @@ paths:
             the same value each instance reports as `instanceGroupId`, so a listing can
             be narrowed without first looking the group's uid up. A slug naming no
             group is an empty page, not an error.
+
+            An id is unique among LIVE groups only: a deleted group keeps its row but
+            releases the id, so a later group may be created with the same one. With
+            `showDeleted=true` this filter then spans every group that held it. A uid
+            is never reused, so `instanceGroupUuid` always names exactly one.
+        - name: clusterUuid
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Return only instances belonging to this Cluster.
+        - name: clusterId
+          in: query
+          required: false
+          schema:
+            type: string
+          description: |-
+            Return only instances belonging to the Cluster with this id — the same
+            value each instance reports as `clusterId` and the one
+            `GET .../compute/clusters/{id}` takes. An id naming no cluster is an empty
+            page, not an error. An instance has ONE owner, so combining this with
+            `instanceGroupId` or `instanceGroupUuid` matches nothing.
+
+            An id is unique among LIVE clusters only: a deleted cluster keeps its row
+            but releases the id, so a later cluster may be created with the same one.
+            With `showDeleted=true` this filter then spans every cluster that held it.
+            A uid is never reused, so `clusterUuid` always names exactly one.
         - name: nodePoolUuid
           in: query
           required: false
           schema:
             type: string
             format: uuid
-          description: Return only instances belonging to this node pool.
+          description: |-
+            Return only instances belonging to this node pool. The pool reference is
+            shared by both owners, so this needs no cluster/group variant.
         - name: nodePool
           in: query
           required: false
@@ -1271,8 +1573,8 @@ paths:
           description: |-
             Return only instances provisioned into a node pool with this id (slug).
             Pool slugs come from the ClusterType, so on its own this matches across
-            every group of the project that has a pool by that name; combine it with
-            `instanceGroupId` for one group's pool.
+            every cluster and group of the project that has a pool by that name;
+            combine it with `instanceGroupId` or `clusterId` for one owner's pool.
         - name: reservationUuid
           in: query
           required: false
@@ -1331,7 +1633,11 @@ paths:
 
             **`inStates=unknown` is slower for a different reason.** An instance is also `unknown` when its host cannot be attributed to it, which is a disagreement between the two services — invisible to the infrastructure service, and able to sit on a host reporting itself perfectly healthy. That cannot be resolved by a query, so a request including `unknown` reads pages and filters them.
 
-            A page may return FEWER rows than `pageSize` while `nextPageToken` is still set: the final verdict is applied after each page is read. A short page is not the end of the list — follow the token until it is absent.
+            On the deprecated cursor style, a page may return FEWER rows than `pageSize` while `nextPageToken` is still set: the final verdict is applied after each page is read. A short page is not the end of the list — follow the token until it is absent.
+
+            On the offset style, `offset` and `totalCount` are exact: the instances matching every other filter are read and judged first, and the page is cut from the ones that match. That read is bounded at 5000 instances: when more than that remain after every other filter (and after the state's own narrowing, where it applies), the request is rejected with `422` — narrow it with an owner, pool, reservation, `serverSlug` or `instanceId` filter. Deleted instances count toward the bound when they are included. Every page holds exactly `limit` items except the last.
+
+            Because the total is exact, the offset style answers `503` rather than a short total when the infrastructure service's answer is incomplete — part of the host read failed, or the reservation read did — and `504` when judging the instances takes longer than the request allows (about 30 seconds); narrow the request the same way.
           style: form
           explode: true
           schema:
@@ -1363,7 +1669,10 @@ paths:
         '409':
           $ref: '#/components/responses/ProjectRegionMismatch'
         '422':
-          description: 'Validation failure — malformed `pageToken`, a uuid filter that is not a uuid, an `instanceId` that is not an `inst-` id, an `inStates` value this resource does not publish, a `showDeleted` that is not a boolean, a `pageSize` that is not an integer or is out of range, or a PRESENT BUT BLANK `pageSize`, `instanceId`, `serverSlug` or `inStates`. A bad filter is refused rather than dropped, because an ignored one silently widens the page — and a blank value is a caller whose variable interpolated empty, not a caller asking for everything. `details[].reason` is `INVALID_ARGUMENT`.'
+          description: |-
+            Validation failure — malformed `pageToken`, a uuid filter that is not a uuid, an `instanceId` that is not an `inst-` id, an `inStates` value this resource does not publish, a `showDeleted` that is not a boolean, a `pageSize` that is not an integer or is out of range, or a PRESENT BUT BLANK `pageSize`, `instanceId`, `serverSlug` or `inStates`. A bad filter is refused rather than dropped, because an ignored one silently widens the page — and a blank value is a caller whose variable interpolated empty, not a caller asking for everything. `details[].reason` is `INVALID_ARGUMENT`.
+
+            Also returned for the offset parameters: an `offset` below `0` or above `2147483647`, a `limit` outside `1`-`200`, an `includeTotal` that is not `true` or `false`, any request mixing the offset style with the deprecated cursor style, or an offset-style `inStates` request that leaves more than 5000 instances to judge after its other filters.
           content:
             application/json:
               schema:
@@ -1372,6 +1681,8 @@ paths:
           $ref: '#/components/responses/InternalServerError'
         '503':
           $ref: '#/components/responses/ServiceUnavailable'
+        '504':
+          $ref: '#/components/responses/GatewayTimeout'
   /v1/regions/{region}/projects/{project}/compute/instances/{id}:
     parameters:
       - $ref: '#/components/parameters/RegionPathParam'
@@ -1394,10 +1705,14 @@ paths:
       description: |-
         **Visibility:** `internal` · `public` (x-visibility)
 
-        Retrieve one instance: its identity and API context — which group and node
-        pool own it, and which host it is — plus that host's current state:
+        Retrieve one instance: its identity and API context — which owner and node
+        pool it belongs to, and which host it is — plus that host's current state:
         lifecycle status, health, inventory and network configuration, all read
         from the infrastructure service while serving this request.
+
+        The owner is an InstanceGroup or a Cluster, never both: the response carries
+        `instanceGroupUuid`/`instanceGroupId` or `clusterUuid`/`clusterId`, and
+        `nodePoolUuid`/`nodePool` either way.
 
         Nothing about the host is stored or cached here, so no field on this
         response is older than the request itself.
@@ -1469,7 +1784,11 @@ paths:
       description: |
         **Visibility:** `internal` · `public` (x-visibility)
 
-        List BMaaS instance groups in the project.
+        List BMaaS instance groups in the project, ordered by `id`.
+
+        Supply `offset` and `limit` to page by position and receive `totalCount`; the deprecated `pageToken`/`pageSize` cursor keeps working for existing clients, and a request carrying neither stays on it. Both styles walk the groups in the same `id` order, and `totalCount` counts the groups the `showDeleted` setting selects. An offset is a position, so a group created or deleted between two requests can make a row repeat or be skipped across pages.
+
+        The embed budgets below bound ONE response, so they apply to each offset page exactly as they do to each cursor page; a smaller `limit` is the lever for both.
       tags:
         - instance-groups
       x-visibility:
@@ -1477,6 +1796,9 @@ paths:
         - public
       x-status: mvp
       parameters:
+        - $ref: '#/components/parameters/Offset'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/IncludeTotal'
         - $ref: '#/components/parameters/PageToken'
         - $ref: '#/components/parameters/PageSize'
         - name: showDeleted
@@ -1494,7 +1816,7 @@ paths:
 
             For the same reason, deleted instances do not count against the limit on how many instances one response may embed — that limit bounds the live read. They DO count against the refs limit, which bounds response size.
 
-            An embed this flag turned on is OMITTED when the response would exceed its budget; it does not fail the read. Nothing reaps tombstones, so a group rebuilt often enough crosses the refs limit on its own, and refusing there would make `showDeleted` permanently unusable for that project with no parameter to drop — at `pageSize=1` there is no smaller page to ask for. An embed you requested EXPLICITLY is still refused with `422`, because you named it. Either way the complete membership is available from `GET /compute/instances?instanceGroupId=&showDeleted=true`, which pages.
+            An embed this flag turned on is OMITTED when the response would exceed its budget; it does not fail the read. Nothing reaps tombstones, so a group rebuilt often enough crosses the refs limit on its own, and refusing there would make `showDeleted` permanently unusable for that project with no parameter to drop — at `limit=1` (or `pageSize=1`) there is no smaller page to ask for. An embed you requested EXPLICITLY is still refused with `422`, because you named it. Either way the complete membership is available from `GET /compute/instances?instanceGroupId=&showDeleted=true`, which pages.
 
             What a deleted group does NOT carry is `readyCount`/`notReadyCount`: those are read from its reservation, which was released and may now be held by another project.
 
@@ -1539,7 +1861,10 @@ paths:
         '409':
           $ref: '#/components/responses/ProjectRegionMismatch'
         '422':
-          description: 'Validation failure — a malformed `pageToken`, a `pageSize` that is not an integer, is out of range, or is present and blank, a boolean parameter (`showDeleted`, `includeInstanceRefs`, `includeInstances`) that is not a boolean (a blank value included: that is an interpolation which came out empty, not an absent parameter), or a response that would carry more embedded refs or instances than an embed YOU ASKED FOR allows. Narrow the request, or use `GET /compute/instances?instanceGroupId=`. An embed that only `showDeleted` turned on is omitted instead of refused — see that parameter. `details[].reason` is `INVALID_ARGUMENT`.'
+          description: |-
+            Validation failure — a malformed `pageToken`, a `pageSize` that is not an integer, is out of range, or is present and blank, a boolean parameter (`showDeleted`, `includeInstanceRefs`, `includeInstances`) that is not a boolean (a blank value included: that is an interpolation which came out empty, not an absent parameter), or a response that would carry more embedded refs or instances than an embed YOU ASKED FOR allows. Narrow the request, or use `GET /compute/instances?instanceGroupId=`. An embed that only `showDeleted` turned on is omitted instead of refused — see that parameter. `details[].reason` is `INVALID_ARGUMENT`.
+
+            Also returned for the offset parameters: an `offset` below `0` or above `2147483647`, a `limit` outside `1`-`500`, an `includeTotal` that is not `true` or `false`, or any request mixing the offset style with the deprecated cursor style.
           content:
             application/json:
               schema:
@@ -1573,7 +1898,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/InstanceGroup'
         '400':
-          $ref: '#/components/responses/BadRequest'
+          description: Bad request — malformed body, invalid `sshAccess`, a `sshPublicKeyCredentials` reference outside the request's region and project, or an inline `sshPublicKeys` entry the credentials service refuses (for example, one carrying `authorized_keys` options or a comment longer than 256 bytes).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -1598,12 +1927,12 @@ paths:
               scope's `limit`, `used` and `headroom`) — see `Error`. Retrying
               without freeing capacity, asking for `admissible` or less, or raising
               the binding limit returns the same result.
-            - `QUOTA_UNASSIGNED`: the organization has no quota profile
-              assigned while the platform requires one (a default profile is
+            - `QUOTA_UNASSIGNED`: the organization holds no quota limits
+              while the platform requires them (a default profile is
               designated), so the create is refused before any limit is measured.
               `error.reason` is `QUOTA_UNASSIGNED` with no `details[]`. Retrying
-              returns the same result until an operator assigns the organization a
-              profile.
+              returns the same result until an operator gives the organization
+              limits, by applying a profile or setting them directly.
 
             Also returned, with top-level `reason: PROJECT_REGION_MISMATCH`, when the project is locked to a different region than the one in the URL. A project's region is immutable once set, so address the project's own region instead of retrying.
           content:
@@ -1835,8 +2164,10 @@ paths:
         **Visibility:** `internal` · `public` (x-visibility)
 
         Delete a group and release all its hosts (each performing the mandatory OS wipe). Deletion is asynchronous and two-phase: the group must be in `active`, `failed`, or `creating`. From `active`/`failed` the request transitions the group to `deleting` and starts the teardown workflow, and the row is removed only once that workflow is observed to finish.
-        Deleting a `creating` group instead cancels its in-flight create; once that settles (normally to `failed`), the group is automatically torn down the rest of the way — no second DELETE call is needed, though this may take longer than deleting an already-settled group. A manual DELETE issued again during this window is harmless: a `204` while the group is still `creating` (the cancel-mark request re-matches), or a `409` once the auto-chain has moved the row to `deleting`.
+        Deleting a `creating` group instead cancels its in-flight create; once that settles (normally to `failed`), the group is automatically torn down the rest of the way — a second DELETE call is normally not needed, though this may take longer than deleting an already-settled group. A manual DELETE issued again during this window is harmless: a `204` while the group is still `creating` (the cancel-mark request re-matches), or a `409` once the auto-chain has moved the row to `deleting`.
         Deleting a group in `updating` or `deleting` returns `409 CONFLICT_IN_USE`.
+        From `active`/`failed`, credentials distributed to the group are revoked before the delete starts; if revocation fails, nothing changes and the delete must be retried.
+        Deleting a `failed` group returns `503` when a node pool's reservation can only be recovered from the group's workflow history and either that history cannot be read right now, or the reservation recovered from it cannot be recorded on the group. The group is left in `failed` (any reservation already recovered and recorded stays recorded), and the delete should be retried.
       tags:
         - instance-groups
       x-visibility:
@@ -1856,13 +2187,33 @@ paths:
           description: |
             Conflict — the group is in `updating` or `deleting` and cannot be deleted yet. `details[].reason` is `CONFLICT_IN_USE`. Clients SHOULD retry after the group reaches `active` or `failed`.
 
+            Also returned, with `details[].reason` `CONFLICT_IN_USE`, when the group's credentials are being changed and cannot be revoked yet; the group is unchanged, so retry after `Retry-After`.
+
             Also returned, with top-level `reason: PROJECT_REGION_MISMATCH`, when the project is locked to a different region than the one in the URL. A project's region is immutable once set, so address the project's own region instead of retrying.
+          headers:
+            Retry-After:
+              description: Whole seconds to wait before retrying; present only when credential revocation is temporarily blocked.
+              schema:
+                type: integer
+                minimum: 1
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
         '500':
           $ref: '#/components/responses/InternalServerError'
+        '503':
+          description: Service unavailable, including when the group's credentials could not be revoked; the group is unchanged, so retry the delete.
+          headers:
+            Retry-After:
+              description: Whole seconds to wait before retrying; present only when a retry interval is known.
+              schema:
+                type: integer
+                minimum: 1
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '504':
           $ref: '#/components/responses/GatewayTimeout'
   /v1/regions/{region}/projects/{project}/compute/instance-groups/{id}/scale:
@@ -1877,22 +2228,69 @@ paths:
         description: Unique instance group identifier
     post:
       operationId: scaleInstanceGroup
-      summary: Scale instance group node pools (scale up only; scale down not yet implemented)
+      summary: Scale instance group node pools up or down
       description: |
         **Visibility:** `internal` · `public` (x-visibility)
 
-        Increase host counts on one or more of the group's node pools and dispatch
-        the asynchronous `instance-group-scale-up` workflow, which adds servers to
-        each pool's existing reservation and provisions the new hosts.
+        Change host counts on one or more of the group's node pools and dispatch the
+        asynchronous workflow for the request's direction: `instance-group-scale-up`
+        adds servers to each pool's existing reservation and provisions the new
+        hosts; `instance-group-scale-down` removes the named instances' hosts from
+        their reservation and hands them back to the available pool.
 
-        Each `nodePools[]` entry supplies an absolute desired count (not a delta).
-        The request is rejected with `422` when duplicate pool slugs are supplied, a
-        slug is unknown, any target is less than or equal to the pool's settled
-        count, or a pool has no bound infrastructure reservation; and with `409` when
-        the group is not in the settled `active` state — i.e. another lifecycle
-        operation (create, update, delete, or a concurrent scale) is already in
-        flight, or the group is `failed`. The accepted scale atomically moves the
-        group to `updating` and returns its snapshot.
+        **A shrink needs more authority than a grow.** Growing a pool is an update;
+        shrinking one destroys instances and hands their servers back, so it
+        additionally requires the permission that governs removal — the same one
+        the group''s deprovision and `DELETE` carry. A caller who may resize a pool
+        but not remove from it can grow and will be refused `403` on a shrink.
+
+
+        **The body states its direction by which field it carries**, and the two are
+        mutually exclusive: supply exactly one. `nodePools[]` grows pools, each
+        entry an absolute desired count (not a delta). `instancesToDelete` shrinks
+        them. Supplying both, or neither, is `422` — there is no single honest
+        response for a request that does both. The request is also rejected with
+        `422` when duplicate pool slugs are supplied, a slug is unknown, a `size` is
+        below what its pool holds, or a pool has no bound infrastructure
+        reservation; and with `409` when the group is not in the settled `active`
+        state — i.e. another lifecycle operation (create, update, delete, or a
+        concurrent scale) is already in flight, or the group is `failed`. The
+        accepted scale atomically moves the group to `updating` and returns its
+        snapshot.
+
+
+        **A shrink names hosts, never counts.** `instancesToDelete` is the entire
+        scale-down request: each instance names its own pool, and each pool's new
+        size is derived as the hosts it holds minus the instances named from it, so
+        neither pool nor size is supplied. This is why a `size` below what a pool
+        holds is refused rather than treated as a shrink — it would say how MANY
+        hosts to remove without saying WHICH, and the platform does not choose
+        hosts on a tenant's behalf.
+
+
+        Only an instance whose host is settled `not_provisioned` can be removed —
+        there is nothing running on it to destroy. An instance in any other state
+        refuses the WHOLE request with `INSTANCES_NOT_DEPROVISIONED` (below) and
+        nothing is written. Destroy what runs on those hosts first with
+        `POST .../instance-groups/{id}/deprovision`, which keeps them claimed, then
+        scale down to hand them back.
+
+
+        The cluster type's `nodeCountMin` is NOT re-checked here. It is a floor on
+        hosts that RUN the pool, enforced where one stops running — the deprovision
+        above — so by the time an instance can be removed its pool has already
+        satisfied it. Re-checking against the new size would also refuse the case
+        the floor exists to permit: retiring a pool whose hosts were all
+        legitimately deprovisioned.
+
+
+        **Draining a pool releases its reservation.** Naming every host a pool
+        holds releases the pool's reservation along with them, and the pool
+        settles at size `0`. A later scale-up re-reserves hosts for it, unless the
+        instance group's usage counts against organization limits: there a drained
+        pool cannot be grown again (`RESERVATION_RELEASED` below), so drain a pool
+        only when the group is finished with it. To remove the group itself, use
+        `DELETE`.
 
 
         **`desiredCount` is yours.** Only this endpoint and create ever set a pool's
@@ -1906,19 +2304,20 @@ paths:
         alone — disagree, it cannot be scaled: a target computed from a size you
         never confirmed is a guess. A pool whose counts AGREE but that still has a
         host provisioning is a different refusal, `POOL_HOSTS_NOT_PROVISIONED`
-        below, and needs no correction. Send a request whose `size` equals the
-        number of hosts the pool's reservation currently holds (the `409` names
-        it): that is accepted, sets `desiredCount` to it, provisions nothing, leaves
-        the group `active`, and makes the pool scalable again. It is not a
-        scale-down — no host is released — and a request mixing this correction
-        with a real scale of another pool is refused with `422`.
+        below, and needs no correction. Send a `nodePools[]` request whose `size`
+        equals the number of hosts the pool's reservation currently holds (the
+        `409` names it): that is accepted, sets `desiredCount` to it, provisions
+        nothing, leaves the group `active`, and makes the pool scalable again. It is
+        not a scale-down — no host is released — and a request mixing this
+        correction with a real scale of another pool is refused with `422`.
 
 
         That size may be `0`, when the pool's reservation answers holding no hosts.
-        Recording it is the way out of a failed scale-up. The pool is then empty, and
-        an empty pool cannot be grown yet (`POOL_EMPTY`) — materializing hosts into
-        one needs a scale path that can CREATE a reservation rather than only extend
-        an existing one.
+        Recording it is the way out of a failed scale-up. The pool is then empty. An
+        empty pool cannot be grown by extending its reservation (`POOL_EMPTY`); a
+        pool whose reservation has been released, including one drained by a
+        scale-down to `0`, is re-reserved by a scale-up instead, unless the instance
+        group's usage counts against organization limits.
       tags:
         - instance-groups
       x-visibility:
@@ -1933,12 +2332,14 @@ paths:
       responses:
         '200':
           description: |
-            Scale accepted; instance group snapshot in the `updating` state.
+            Scale accepted; instance group snapshot in the `updating` state. On a
+            scale-down the named instances report `state: deleting` until their
+            hosts leave the reservation, after which their ids stop resolving.
 
             ALSO returned by the desired-size correction described above, where the
-            group stays `active`: nothing is provisioned, so no workflow runs and
-            no state changes — only the named pools' `desiredCount` is set to what
-            they already hold. Check `state` to tell the two apart.
+            group stays `active`: nothing is provisioned or released, so no workflow
+            runs and no state changes — only the named pools' `desiredCount` is set
+            to what they already hold. Check `state` to tell the two apart.
           content:
             application/json:
               schema:
@@ -1954,7 +2355,8 @@ paths:
         '409':
           description: |
             The group is not in a scalable state, the scale does not fit the quota,
-            or a pool's infrastructure reservation cannot back a scale.
+            a named instance cannot be removed, or a pool's infrastructure
+            reservation cannot back a scale.
 
             Another lifecycle operation (create, update, delete, or a concurrent
             scale) already in flight rejects the scale with no `reason` — scale is
@@ -1979,37 +2381,53 @@ paths:
             without freeing capacity, without reducing the increase, or without
             raising the binding limit returns the same result. A request that only
             confirms a pool's held size provisions nothing and is never
-            quota-refused.
+            quota-refused, and neither is a scale-down — it releases node-count
+            accounting for the servers it hands back rather than consuming any.
 
-            `QUOTA_UNASSIGNED`: the organization has no quota profile
-            assigned while the platform requires one (a default profile is
+            `QUOTA_UNASSIGNED`: the organization holds no quota limits
+            while the platform requires them (a default profile is
             designated), so a scale that adds servers is refused before any limit
             is measured. `error.reason` is `QUOTA_UNASSIGNED` with no `details[]`.
-            Retrying returns the same result until an operator assigns the
-            organization a profile.
+            Retrying returns the same result until an operator gives the
+            organization limits, by applying a profile or setting them directly.
+
+            `INSTANCES_NOT_DEPROVISIONED`: a scale-down named an instance whose host
+            is not settled `not_provisioned`, so there is still something running on
+            it. The WHOLE request is refused and nothing is written. The message
+            names every offending instance with its current state, in request order,
+            and ends with what to do about each kind: destroy what runs on them
+            first with `POST .../instance-groups/{id}/deprovision`; wait for an
+            instance already `provisioning` or `deprovisioning` to settle; drop one
+            already `deleting`, whose host is leaving anyway; retry one reporting
+            `unknown`, whose host state could not be established.
 
             A pool whose infrastructure reservation cannot back the scale is
             distinguished by `details[].reason`:
 
             - `RESERVATION_RELEASED` — the reservation has been released, so the
-              pool holds no hosts and cannot be grown. Its instances are cleared and
-              its counts reset to 0 as part of this response; create a new instance
-              group.
+              pool holds no hosts. Its instances are cleared and its counts reset to
+              0 as part of this response. A scale-up re-reserves the pool's hosts
+              instead of returning this; it is returned for a request that leaves
+              the pool at 0, to report the clean-up (scale the pool up to reserve
+              hosts again), and for a scale-up in an instance group whose usage
+              counts against organization limits, whose released pool cannot be
+              grown (create a new instance group).
             - `RESERVATION_DRIFTED` — the infrastructure service does not know the
               reservation this pool references, so the two services disagree about
               the pool. Nothing is changed. The block clears once they agree again;
               otherwise an administrator has to reconcile them.
             - `POOL_EMPTY` — the pool holds no hosts, so there is no initialized
-              reservation to extend. Raised either from the recorded counts before
-              any reservation is read (`desiredCount` is `0` and it has no
-              instances, whether it was created at size `0` or emptied when its
-              reservation was released), or from the reservation itself answering
-              that it holds nothing. Scaling extends a pool's existing reservation,
-              and materializing hosts into an empty pool is not supported yet — only
-              a non-empty pool can be scaled for now. Requesting size `0` to record
-              the pool's real size is still accepted. Only the pool named in the
-              request is checked, so an empty pool does not block a scale of its
-              siblings.
+              reservation to extend, and its reservation has not been released (a
+              released one, including that of a pool drained by a scale-down to
+              `0`, is re-reserved instead, see `RESERVATION_RELEASED`). Raised
+              either from the recorded counts (`desiredCount` is `0` and it has no
+              instances: it was created at size `0`, so it never held a
+              reservation, or its reservation is live but holds nothing), or from
+              the reservation itself answering that it holds nothing.
+              Materializing hosts into such a pool is not supported yet.
+              Requesting size `0` to record the pool's real size is still
+              accepted. Only the pool named in the request is checked, so an
+              empty pool does not block a scale of its siblings.
             - `POOL_COUNT_MISMATCH` — the pool's `desiredCount` disagrees with the
               number of hosts its reservation HOLDS (`readyCount` + `notReadyCount`,
               which counts hosts in any state, not only provisioned ones), usually
@@ -2017,12 +2435,30 @@ paths:
               `size` to set the desired size to it, then scale from there. A pool
               whose counts agree but whose hosts are not all provisioned is
               `POOL_HOSTS_NOT_PROVISIONED` below, not this.
-            - `POOL_HOSTS_NOT_PROVISIONED` — the pool holds a host that has not
-              finished provisioning. Scaling waits for it. A host that cannot
-              recover has to be removed from the pool's infrastructure reservation
-              before the group can grow.
+            A reservation that is still SETTLING — mid-acquire, mid-release, or
+            parked after a failure — cannot release hosts, so a scale-down against
+            it is refused with no `details[].reason` and a message naming the two
+            states it is in. It clears on its own; retry once the pool's
+            reservation reports `reserved`.
+
+            - `POOL_HOSTS_NOT_PROVISIONED` — a scale-UP found the pool holding a
+              host that has not finished provisioning; growing waits for it, so the
+              original fault is not buried under new provisioning. A host that
+              cannot recover is removed with a scale-down, which is the one request
+              this does not block: a shrink is gated on the instances it NAMES
+              being settled `not_provisioned`, never on the pool's other hosts.
 
             Also returned, with top-level `reason: PROJECT_REGION_MISMATCH`, when the project is locked to a different region than the one in the URL. A project's region is immutable once set, so address the project's own region instead of retrying.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '410':
+          description: |
+            A scale-down named an instance that has already been removed. Ids are
+            never reused, so this is distinct from `404`: the id named a real
+            instance of this project and no longer resolves to one. Re-sending a
+            shrink that already landed is the ordinary way to meet it.
           content:
             application/json:
               schema:
@@ -2035,6 +2471,15 @@ paths:
           $ref: '#/components/responses/UnprocessableEntity'
         '500':
           $ref: '#/components/responses/InternalServerError'
+        '501':
+          description: |
+            This deployment cannot verify the hosts a scale-down would release, so
+            shrinking is unavailable on it. Growing is unaffected.
+            `details[].reason` is `NOT_IMPLEMENTED`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '503':
           description: |
             A pool's size could not be confirmed, so the scale base is unknown: the
@@ -3390,7 +3835,13 @@ paths:
         List the file storage capability classes offered in the region. A share type is the tenant's entire storage selector: pick one by capability — for example `general` or `high-speed` — and the platform decides which storage satisfies it. The backing hardware is not selectable.
         The catalog is operator-curated and operator-written, and can differ between regions, so it must be read per region rather than cached globally. Results are ordered by `id` ascending.
         Only classes naming a live storage backend are returned, so a region with no registered backend serves an empty catalog.
-        A caller without `compute.storage.read` is served the capability half of each class only: `backendRef`, `placement` and `createdBy` are absent.
+        A caller without `compute.storage.read` is served the capability half of each class only: `backendRef`, `placement` and `createdBy` are absent. That projection removes fields, never classes, so `totalCount` is the same for every caller.
+
+        Supply any of `offset`, `limit` or `includeTotal` to page by position and receive `totalCount`. A page can hold fewer than `limit` classes before the end of the catalog, so step `offset` by `limit` and stop once it reaches `totalCount` rather than at the first short page.
+
+        This overrides the general `includeTotal` guidance for this list. That guidance says that with `includeTotal=false` a page shorter than `limit` is the last page; here it is not, because a class whose stored record cannot be read is left out of its page while still counted. `totalCount` is the only reliable end signal on this list, so keep it (the default) to read the whole catalog.
+
+        The deprecated `pageToken`/`pageSize` cursor keeps working, and a request with no paging parameter at all stays on it.
       tags:
         - share-types
       x-visibility:
@@ -3398,6 +3849,9 @@ paths:
         - public
       x-status: mvp
       parameters:
+        - $ref: '#/components/parameters/Offset'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/IncludeTotal'
         - $ref: '#/components/parameters/PageToken'
         - $ref: '#/components/parameters/PageSize'
       responses:
@@ -3465,8 +3919,10 @@ paths:
         **Visibility:** `internal` · `public` (x-visibility)
 
 
-        List the file stores in the project. Ordered by `createdAt` descending — newest first — with cursor pagination; there is no `orderBy` in v1.
+        List the file stores in the project. Ordered by `createdAt` descending — newest first, ties broken by an internal unique key so the order is total; there is no `orderBy` in v1.
         Filters are all optional, combined with `AND`, and never change the shape of the response envelope. Use `state` to surface stores that never converged, `shareType` to account for committed capacity per capability class, and `consumer` to find the stores a given address or instance group is attached to — matched against the entry `ref`, not against the addresses a group resolved to.
+
+        Supply any of `offset`, `limit` or `includeTotal` to page by position and receive `totalCount`, which counts the stores matching the same filters. The `shareType` filter matches the class name recorded on each store and is not checked against the catalog: a malformed name is rejected, but a name the catalog no longer offers is not, and still matches stores created under it before the class was removed. The deprecated `pageToken`/`pageSize` cursor keeps working, and a request with no paging parameter at all stays on it.
       tags:
         - file-stores
       x-visibility:
@@ -3474,6 +3930,9 @@ paths:
         - public
       x-status: mvp
       parameters:
+        - $ref: '#/components/parameters/Offset'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/IncludeTotal'
         - $ref: '#/components/parameters/PageToken'
         - $ref: '#/components/parameters/PageSize'
         - $ref: '#/components/parameters/FileStoreStateFilter'
@@ -3497,10 +3956,11 @@ paths:
             Any semantic validation failure, with `details[].reason:
             INVALID_ARGUMENT`. For example: a `state` filter that is not one of
             `creating`, `active`, `deleting`, `failed`; a `shareType` filter that
-            does not name a class offered in this region; a `consumer` filter that
+            is not a well-formed class name; a `consumer` filter that
             is neither a routable literal IPv4 host address nor a well-formed
-            instance-group `id`; a `pageSize` that is not a positive integer; or a
-            malformed `pageToken`.
+            instance-group `id`; a `pageSize` that is not a positive integer; a
+            malformed `pageToken`; an `offset`, `limit` or `includeTotal` out of
+            range; or a request mixing the offset and cursor paging styles.
           content:
             application/json:
               schema:
@@ -3556,7 +4016,9 @@ paths:
 
             The same status is returned while the target project is being deleted, and carries `CONFLICT_BACKEND_CAPACITY_EXCEEDED` when the requested class's storage system has no sellable capacity left for `capacityGiB`, and `QUOTA_EXCEEDED` when `capacityGiB` would exceed the organization's or the project's `storage_gib` limit; returned only while `storage_gib` enforcement is on, which it is not by default; nothing is written and each `error.details[]` entry's `metadata` carries `dimension`, `requested`, `admissible`, `bindingScope` and `scopes`, see `Error`.
 
-            `QUOTA_UNASSIGNED`: the organization has no quota profile assigned while the platform requires one (a default profile is designated), so the create is refused before any limit is measured; `error.reason` is `QUOTA_UNASSIGNED` with no `details[]`, and retrying returns the same result until an operator assigns the organization a profile.
+            `CONFLICT_SHARE_TYPE_MISMATCH`: the project already holds a store of another `shareType` in this region that is live or whose removal is not yet confirmed; all such stores of a project in a region share one `shareType`.
+
+            `QUOTA_UNASSIGNED`: the organization holds no quota limits while the platform requires them (a default profile is designated), so the create is refused before any limit is measured; `error.reason` is `QUOTA_UNASSIGNED` with no `details[]`, and retrying returns the same result until an operator gives the organization limits, by applying a profile or setting them directly.
 
             Also returned, with top-level `reason: PROJECT_REGION_MISMATCH`, when the project is locked to a different region than the one in the URL. A project's region is immutable once set, so address the project's own region instead of retrying.
           content:
@@ -3703,7 +4165,7 @@ paths:
               capacity change is still settling its quota accounting, or the
               reconcile sweep is charging the store's quota; retry shortly.
             - `QUOTA_EXCEEDED` — the growth over the capacity the store's quota hold already covers would exceed a `storage_gib` limit; `requested` and `admissible` are increases in GiB, see `Error`. Returned only while `storage_gib` enforcement is on, which it is not by default, and only for a store that holds quota: a store created before its organization had a `storage_gib` limit is not refused on growth until the sweep charges it, within one sweep period.
-            - `QUOTA_UNASSIGNED` — the organization has no quota profile assigned while the platform requires one (a default profile is designated), so the resize is refused before any limit is measured; no `details[]`, and retrying returns the same result until an operator assigns the organization a profile.
+            - `QUOTA_UNASSIGNED` — the organization holds no quota limits while the platform requires them (a default profile is designated), so the resize is refused before any limit is measured; no `details[]`, and retrying returns the same result until an operator gives the organization limits, by applying a profile or setting them directly.
             - `CONFLICT_BACKEND_CAPACITY_EXCEEDED` — the class's storage system has no sellable capacity left for the increment.
 
             Also returned, with top-level `reason: PROJECT_REGION_MISMATCH`, when the project is locked to a different region than the one in the URL. A project's region is immutable once set, so address the project's own region instead of retrying.
@@ -3980,6 +4442,10 @@ paths:
   /v1/regions/global/notifications/webhooks:
     get:
       summary: List webhook subscriptions
+      description: |-
+        **Visibility:** `public` (x-visibility)
+
+        **Who may call this:** Any authenticated caller, for their own partition's subscriptions: a customer's organization, or the provider partition for provider personnel. A customer with no resolvable organization is refused with 401.
       operationId: listWebhookSubscriptions
       tags:
         - notifications
@@ -3997,13 +4463,16 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '500':
           $ref: '#/components/responses/InternalServerError'
-      description: |+
-        **Visibility:** `public` (x-visibility)
-
     post:
       summary: Create a webhook subscription
       description: |
         **Visibility:** `public` (x-visibility)
+
+        **Who may call this:** Any authenticated caller, in their own partition.
+        Any member of a customer organization may write that organization's
+        subscriptions (no org-admin role is needed); in the provider partition
+        only platform-admin may, and other provider personnel are refused with
+        403. A customer with no resolvable organization is refused with 401.
 
         Subscribe a customer endpoint to notification events. A signing secret is
         generated when not supplied and returned ONCE in the response (store it — it
@@ -4193,6 +4662,11 @@ paths:
         or removing one is a breaking change and will only be made through a versioned
         change with a published migration period — never silently.
 
+        The `data` of an event delivered to an organization's endpoint holds only
+        the fields its event type defines for customers; a field the producing
+        service sent outside that list is never delivered there. The provider's own
+        subscriptions receive all of `data`.
+
         Build your receiver to tolerate additive growth, and keep that tolerance
         separate from the two mechanisms above, which are NOT affected by new fields:
 
@@ -4334,7 +4808,9 @@ paths:
       description: |-
         **Visibility:** `public` (x-visibility)
 
-        Delete one of the caller's webhook subscriptions. Deleting a provider subscription requires the platform-admin role, the same rule as creating one.
+        **Who may call this:** Any authenticated caller, in their own partition. Any member of a customer organization may write that organization's subscriptions (no org-admin role is needed); in the provider partition only platform-admin may, and other provider personnel are refused with 403. A customer with no resolvable organization is refused with 401.
+
+        Delete one of the webhook subscriptions in the caller's partition.
       operationId: deleteWebhookSubscription
       tags:
         - notifications
@@ -4365,6 +4841,12 @@ paths:
       summary: Rotate a webhook subscription's signing secret
       description: |
         **Visibility:** `public` (x-visibility)
+
+        **Who may call this:** Any authenticated caller, in their own partition.
+        Any member of a customer organization may write that organization's
+        subscriptions (no org-admin role is needed); in the provider partition
+        only platform-admin may, and other provider personnel are refused with
+        403. A customer with no resolvable organization is refused with 401.
 
         Issue a new signing secret for an existing webhook subscription. The
         subscription id, URL and event-type filter are unchanged, and no delivery is
@@ -4656,6 +5138,15 @@ paths:
               - suspended
               - disabled
               - deleting
+        - name: region
+          in: query
+          description: >-
+            Optional region id; returns only the projects locked to that region. Takes a single value shaped like a region id (the ids `GET /v1/regions` lists are the regions projects can be locked to). Omitting it, or sending an empty value, returns the projects of every region. The filter is applied before paging; with `offset` and `limit`, `totalCount` counts the filtered set. Combines with `search`, `status` and `organizationId` (logical AND) and never widens the caller's visible set. A non-empty value that is not shaped like a region id is rejected with 422; a well-formed region that no project is locked to, including one the platform does not list, returns an empty list. A project that has no region recorded matches no `region` value, so it appears only when the parameter is omitted.
+          schema:
+            type: string
+            pattern: ^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)?$
+            maxLength: 63
+            example: region1
       responses:
         '200':
           description: List of projects
@@ -4875,8 +5366,8 @@ paths:
         creating a project with the same id afterwards succeeds. It is not available
         before then, so wait for the first 404 rather than retrying a create. Before
         the id is released, the project's project-scoped service accounts are
-        disabled, its IAM role bindings are purged, and its quota assignment is
-        cleared, so a re-created project does not inherit them. That is the order
+        disabled, its IAM role bindings are purged, and its quota limits are
+        removed, so a re-created project does not inherit them. That is the order
         the service uses, and the first two are deliberately in that sequence.
 
         Disabling the service accounts is a side effect worth planning for: a
@@ -4968,7 +5459,7 @@ paths:
       description: |
         **Visibility:** `internal` · `public` (x-visibility)
 
-        Read the organization's tenant-scope quota: one row per dimension that is limited, or enforced with recorded usage, with its unit, whether it is enforced, and a single `tenant` entry in `scopes` carrying the configured limit, recorded usage, headroom and over-limit flag. Usage is summed across regions. A dimension the admission check does not refuse on (nothing charges it, or its enforcement is switched off) reports enforced false and omits used and headroom rather than showing 0. An organization with no active quota assignment is not an error; its rows report usage with limit and headroom absent (unlimited). The top-level limit, used and remaining are deprecated in favor of scopes. Returns 404 if the organization does not exist or the caller is not scoped to it.
+        Read the organization's tenant-scope quota: one row per dimension that is limited, or enforced with recorded usage, with its unit, whether it is enforced, and a single `tenant` entry in `scopes` carrying the configured limit, recorded usage, headroom and over-limit flag. Usage is summed across regions. A dimension the admission check does not refuse on (nothing charges it, or its enforcement is switched off) reports enforced false and omits used and headroom rather than showing 0. An organization that holds no limits of its own is not an error; its rows report usage with limit and headroom absent (unlimited). The top-level limit, used and remaining are deprecated in favor of scopes. Returns 404 if the organization does not exist or the caller is not scoped to it.
       operationId: getTenantQuota
       x-status: mvp
       x-visibility:
@@ -5048,10 +5539,9 @@ paths:
         This endpoint proxies to the underlying identity provider
         for token issuance.
 
-        Four grant types are supported:
-
-        **authorization_code** — Interactive user session. Exchanges an
-        authorization code obtained from the OAuth2 /authorize flow.
+        Three grant types are supported. Interactive sign-in does not use this
+        endpoint: it goes through `login/initiate` and the login callback, which
+        record a session and set the `k0r_refresh_token` cookie.
 
         **api_key** — Programmatic access via an API key. The caller
         presents the opaque, prefixed API key token. Effective privileges
@@ -5096,12 +5586,10 @@ paths:
               discriminator:
                 propertyName: grant_type
                 mapping:
-                  authorization_code: '#/components/schemas/AuthCodeGrant'
                   api_key: '#/components/schemas/ApiKeyGrant'
                   client_credentials: '#/components/schemas/ClientCredentialsGrant'
                   refresh_token: '#/components/schemas/RefreshTokenGrant'
               oneOf:
-                - $ref: '#/components/schemas/AuthCodeGrant'
                 - $ref: '#/components/schemas/ApiKeyGrant'
                 - $ref: '#/components/schemas/ClientCredentialsGrant'
                 - $ref: '#/components/schemas/RefreshTokenGrant'
@@ -5113,12 +5601,11 @@ paths:
               description: |
                 Sets the httpOnly, Secure, SameSite `k0r_refresh_token` cookie —
                 scoped to this endpoint's path — carrying the issued/rotated refresh
-                token, keeping it out of the URL. On the `refresh_token`
-                grant sourced from the cookie, the rotated token is delivered via this
-                header only and omitted from the response body; on the
-                `authorization_code` grant the token is also returned in the body (for
-                server-side callers that have no cookie jar). Not set for machine
-                grants (`client_credentials`, `api_key`), which have no refresh token.
+                token, keeping it out of the URL. Set only on the `refresh_token`
+                grant; when that refresh was sourced from the cookie, the rotated
+                token is delivered via this header only and omitted from the
+                response body. Not set for machine grants (`client_credentials`,
+                `api_key`), which have no refresh token.
               schema:
                 type: string
           content:
@@ -5145,10 +5632,10 @@ paths:
     get:
       operationId: listRoles
       summary: List RBAC roles
-      description: |
+      description: |-
         **Visibility:** `public` · `internal` (x-visibility)
 
-        List all role definitions.
+        List the roles that can be bound in this organization: the built-in roles and the organization's custom roles whose `scopes` include `org` or `project`. Roles bindable only at platform scope are not listed here; they are listed by `GET /v1/regions/global/iam/platform/roles` and remain readable by id through `getRole`. The filter reads only each role's `scopes`, never the caller, so every principal listing the same organization receives the same set. A role with mixed scopes (for example `iam-admin`, scopes `platform` and `org`) appears both here and in the platform list. `totalCount` counts this filtered set.
       tags:
         - roles
       x-visibility:
@@ -5909,28 +6396,6 @@ components:
             The opaque, prefixed API key token (e.g., plt_sk_...).
         scope_narrowing:
           $ref: '#/components/schemas/ScopeNarrowing'
-    AuthCodeGrant:
-      type: object
-      required:
-        - grant_type
-        - code
-        - redirect_uri
-      properties:
-        grant_type:
-          type: string
-          enum:
-            - authorization_code
-        code:
-          type: string
-          description: Authorization code from the OAuth2 /authorize flow.
-        redirect_uri:
-          type: string
-          format: uri
-          description: |
-            Redirect URI that was used in the authorization request.
-            Must match exactly.
-        scope_narrowing:
-          $ref: '#/components/schemas/ScopeNarrowing'
     CancelClusterRequest:
       type: object
       description: |
@@ -6132,6 +6597,12 @@ components:
             user action; `deleted` is a short-lived tombstone returned
             until the row is garbage-collected — clients should treat a
             subsequent `404` as the canonical end state.
+
+            A cluster with a hosted control plane also shows `updating` while the
+            platform rolls a change of its control plane settings into it, with the
+            other actions refused (409) meanwhile. If that roll fails, the cluster
+            turns `failed` and can be deleted; the platform's retry returns it to
+            `active`. **Not yet applied:** declared ahead of its implementation.
         stateMessage:
           type: string
           readOnly: true
@@ -6156,14 +6627,23 @@ components:
           readOnly: true
           description: |
             Canonical typed health for the cluster. Always present;
-            observability-only and never reflects or drives the lifecycle
-            `state`. `unknown` until the status-sync path populates it.
+            observability-only and never drives the lifecycle `state`.
+            `unknown` until the status-sync path populates it, and `unknown`
+            (with a `reason`) while `state` is `creating` or `deleting`, even
+            when a fresh observation exists. The
+            `health` list filter matches this surfaced value.
         operation:
           allOf:
             - $ref: '#/components/schemas/Operation'
           readOnly: true
           description: |
             Reference to the cluster's current or last lifecycle operation.
+        progressUpdatedAt:
+          type: string
+          format: date-time
+          readOnly: true
+          description: >-
+            When the node pools' in-flight progress (`nodePools[].progress`) last changed. Present only while an operation is in flight and has reported progress.
         nodeCount:
           type: integer
           minimum: 0
@@ -6176,6 +6656,31 @@ components:
             - $ref: '#/components/schemas/ClusterControlPlane'
           readOnly: true
           description: Control-plane details, including the API server endpoint.
+        controlPlatform:
+          type: string
+          format: uri-reference
+          readOnly: true
+          description: |
+            Operator-only. On a cluster whose control plane is hosted on a Control
+            Platform: that platform's URI. Shown only to callers holding
+            `compute.controlplatforms.read`; absent otherwise. Populated on
+            `getCluster`, `listClusters` and the create's response; other mutation
+            responses omit it, so its absence there carries no information.
+            **Not yet applied:**
+            a create that would place the cluster's control plane is still refused
+            (see `createCluster`), so no cluster carries it yet.
+          example: /v1/regions/us-texas-1/compute/control-platforms/cp-prod-a
+        backingControlPlatform:
+          type: string
+          format: uri-reference
+          readOnly: true
+          description: |
+            Operator-only. On the backing Cluster of a managed Control Platform: the
+            Control Platform whose host cluster it is. Such a Cluster with a hosted
+            control plane carries both fields. Shown only to callers holding
+            `compute.controlplatforms.read`; absent otherwise. **Not yet applied:**
+            declared ahead of its implementation; always absent today.
+          example: /v1/regions/us-texas-1/compute/control-platforms/cp-prod-a
         createdAt:
           type: string
           format: date-time
@@ -6345,6 +6850,7 @@ components:
             (a key cannot be removed from a running cluster). Like every other cluster
             field, `sshAccess` does not require a client-supplied `id`; an omitted `id`
             is server-generated.
+            A `sshPublicKeyCredentials` reference that fails to resolve (unknown, foreign, wrong type or placement) fails the create asynchronously with `INVALID_CONFIGURATION`.
           items:
             $ref: '#/components/schemas/SshUser'
         securityGroups:
@@ -6486,8 +6992,14 @@ components:
           format: uuid
           readOnly: true
           description: >-
-            Infrastructure reservation most recently held for this pool. Absent until the pool is first reserved; a pool scaled to zero keeps the id of its last reservation, which has already been released, until the next scale-up replaces it.
+            Infrastructure reservation most recently held for this pool. Absent until the pool is first reserved; a pool scaled to zero keeps the id of its last reservation, which has already been released, until the next scale-up reserves again. That scale-up may reserve under the same id, so an unchanged value does not mean the pool holds the same servers.
           example: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+        progress:
+          allOf:
+            - $ref: '#/components/schemas/ClusterNodePoolProgress'
+          readOnly: true
+          description: >-
+            In-flight progress while the cluster's operation runs, once the operation has reported progress for this pool. It can be absent early in an operation and for a pool the operation does not report on, and is always absent once the operation settles.
         createdAt:
           type: string
           format: date-time
@@ -6496,6 +7008,59 @@ components:
           type: string
           format: date-time
           readOnly: true
+        instanceRefs:
+          type: array
+          readOnly: true
+          description: |-
+            Every instance this pool holds, as an id and the server it occupies, when the request asked for them with `includeInstanceRefs=true`. `[]` when the pool holds none, so an empty array means "none" and absence never does.
+
+            Absent means exactly one thing here: you did not ask. Unlike the InstanceGroup embed, nothing auto-enables this one — a cluster read has no `showDeleted` — so an over-budget response is always one the caller named and is refused with `422` rather than silently dropped.
+
+            The server slug is included because the instance id alone does not say which machine — a bare list of ids would send every caller straight back for the servers.
+
+            The cheap half of the embed: both fields come from this service's own rows in a single query, with no call to the infrastructure service, so they are neither slowed nor omitted by that service being unreachable. What they cannot tell you is what each host is DOING — that needs `includeInstances` and the live read behind it. Complete rather than paged, and bounded by a response-wide limit — above which the array is never silently shortened: the request is refused with `422`.
+          items:
+            type: object
+            required:
+              - id
+              - serverSlug
+            properties:
+              id:
+                type: string
+                pattern: ^inst-[0-9a-f]{32}$
+                description: The instance's id — what `GET /compute/instances/{id}` takes.
+                example: inst-8f14e45fceea467a9f1f9e1a2b3c4d5e
+              serverSlug:
+                type: string
+                description: The infrastructure server this instance occupies.
+                example: server-42bc614f
+        instances:
+          type: object
+          readOnly: true
+          description: |-
+            A page of this pool's instances in full, when the request asked for them with `includeInstances=true`.
+
+            The same envelope `GET /compute/instances` returns, deliberately: a caller decodes one shape whether it read them inline or followed the listing. The objects are identical to that endpoint's, because they are produced by the same code — including the per-instance rule that a host which cannot be attributed to its instance reports `state: unknown` and publishes nothing about the hardware. `degraded` means the host itself reported a problem, which is a different condition and the only one `inStates=degraded` finds.
+
+            A PAGE, not the membership: a nested array cannot be paged, so an unbounded one would make this response unbounded. Follow `nextPageToken` on `GET /compute/instances?nodePoolUuid={uid}` to continue — the token is minted from the ordering that endpoint pages by, so it resumes rather than restarts.
+
+            Only LIVE instances are embedded. A cluster read has no `showDeleted`, so unlike the InstanceGroup embed this page never interleaves tombstones and the continuation on `GET /compute/instances` resumes into the same set it came from.
+
+            **Absent when the live host read could not answer** — for EVERY pool, and never a partial page. A page that carried only the members needing no read would be indistinguishable from a complete one, and its `nextPageToken` would skip the members that were dropped, so a caller following it would miss them permanently and silently. Absence is the only honest answer.
+
+            Over budget is refused with `422`, never truncated — see `instanceRefs`.
+
+            Unlike the single Instance endpoints, which fail with `503` because there the instance IS the response, a cluster read has its own content and does not fail over an enrichment — the same rule the InstanceGroup embed follows.
+
+            `instanceRefs` is unaffected, because it needs no host read. When both are requested, it still names every instance the pool holds, so the membership survives an outage that costs the full objects. A caller that needs the host detail should read the instances listing, which reports the outage properly.
+          properties:
+            instances:
+              type: array
+              items:
+                $ref: '#/components/schemas/Instance'
+            nextPageToken:
+              type: string
+              description: Absent when the embed holds the pool's whole membership.
     ClusterNodePoolCreateRequest:
       type: object
       description: |
@@ -6524,39 +7089,65 @@ components:
             Override the number of nodes for this pool. Omit to use the source
             ClusterType pool's `nodeCountDefault`; must lie within
             `[nodeCountMin, nodeCountMax]` when those are set.
-    ClusterNodePoolUpdateRequest:
+    ClusterNodePoolProgress:
       type: object
-      description: |
-        Per-pool change entry inside `ClusterUpdateRequest.nodePools[]`. `id`
-        is required and identifies which materialized pool to update; all
-        other fields are sparse — omit to leave unchanged.
+      description: >-
+        In-flight progress of a cluster node pool while a cluster create, scale or upgrade runs (a cluster being deleted reports none): the servers of the pool's reservation by lifecycle state, and how many have a Ready Kubernetes node. Refreshed while the operation runs (see Cluster.progressUpdatedAt) and absent once it settles. Unlike `Cluster.operation.progress`, which counts the operation's stages, this counts the pool's servers.
       additionalProperties: false
+      required:
+        - servers
+        - nodesReady
       properties:
-        id:
-          type: string
-          description: |
-            Slug identifying which pool to update. Must match the `id` of a
-            materialized pool on the cluster (which mirrors a
-            `ClusterTypeNodePool.id` on the bound version).
-          pattern: ^[a-z]([-a-z0-9]*[a-z0-9])?$
-          minLength: 1
-          maxLength: 63
-          example: workers
-        displayName:
-          type: string
-          description: Updated human-friendly display name for the node pool.
-        description:
-          type: string
-          description: Updated description of this resource.
-        nodeCount:
+        servers:
+          type: object
+          additionalProperties: false
+          readOnly: true
+          description: >-
+            Servers held by the pool's reservation, each counted in `total` and in at most one other bucket. A server whose job is paused counts in the bucket of that job.
+          required:
+            - total
+            - provisioning
+            - provisioned
+            - failed
+            - deprovisioning
+            - acquiring
+            - releasing
+          properties:
+            total:
+              type: integer
+              minimum: 0
+              description: >-
+                Servers held by the pool's reservation, including those in no other bucket (claimed by the reservation but not yet moving). Once the pool's reservation is released, its servers are no longer counted.
+            provisioning:
+              type: integer
+              minimum: 0
+              description: Servers whose instance is being created.
+            provisioned:
+              type: integer
+              minimum: 0
+              description: Servers whose instance is ready.
+            failed:
+              type: integer
+              minimum: 0
+              description: Servers whose last lifecycle transition failed.
+            deprovisioning:
+              type: integer
+              minimum: 0
+              description: >-
+                Servers being wiped after their instance was deleted, before they return to the reservation or leave it.
+            acquiring:
+              type: integer
+              minimum: 0
+              description: Servers joining the pool's reservation (a create, or the servers a scale-up adds).
+            releasing:
+              type: integer
+              minimum: 0
+              description: Servers leaving the pool's reservation (the servers a scale-down removes).
+        nodesReady:
           type: integer
           minimum: 0
-          description: Scale to this node count.
-        tags:
-          type: object
-          additionalProperties:
-            type: string
-          description: User-defined metadata labels for this node pool.
+          readOnly: true
+          description: Servers whose Kubernetes node is Ready.
     ClusterPage:
       type: object
       required:
@@ -6566,10 +7157,26 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Cluster'
+        totalCount:
+          type: integer
+          format: int64
+          description: |-
+            Total live clusters in the project matching the active `state`, `health` and `search` filters, so `ceil(totalCount / limit)` is the page count for the current filter.
+
+            Present only on the `offset`/`limit` path, and omitted when the caller passes `includeTotal=false`. Absent on the deprecated `pageToken` path.
+        offset:
+          $ref: '#/components/schemas/PageOffset'
+        limit:
+          $ref: '#/components/schemas/PageLimit'
         nextPageToken:
           type: string
-          description: >-
+          deprecated: true
+          description: |-
+            **Deprecated:** use `offset`, `limit`, and `totalCount`.
+
             Opaque token for the next page of results. Present only when more clusters remain; pass it back verbatim as `pageToken`.
+
+            Emitted only on the deprecated `pageToken` path; absent when the request used `offset`/`limit`.
     ClusterRuntime:
       type: object
       description: |
@@ -6814,10 +7421,12 @@ components:
         createdAt:
           type: string
           format: date-time
+          description: The returned version's creation time on getClusterTypeVersion, setClusterTypeVersionStatus and addClusterTypeVersion; the ClusterType's creation time otherwise.
           readOnly: true
         updatedAt:
           type: string
           format: date-time
+          description: When the ClusterType itself last changed, such as a version being added; a version status change does not move it, and it is the same on every version.
           readOnly: true
     ClusterTypeK8s:
       type: object
@@ -6832,6 +7441,8 @@ components:
         services) are flat; control-plane and worker-node settings are grouped under
         `controlPlane` and `workers`. When present, every field below keeps the
         required-ness and validation it had when these attributes lived at the top level.
+
+        This is the read; a create request sends `ClusterTypeK8sCreateRequest`.
       additionalProperties: false
       required:
         - k0sNetworkProvider
@@ -6891,6 +7502,16 @@ components:
             subnet's SubnetAllocation reports, which the fixed mode does not
             create.
           example: lb
+        nodeNetwork:
+          allOf:
+            - $ref: '#/components/schemas/ClusterTypeK8sNodeNetwork'
+          description: |
+            Cluster-wide node addressing, applied to every node (worker pools
+            and the standalone control plane). A node pool's own
+            `nodeNetwork.interface` overrides the interface. Omit to use the
+            interface holding the IPv4 default route. `interface` is
+            structurally invariant after creation; `legacyAddressDetection`
+            may change in a new version.
         controlPlane:
           type: object
           description: Control-plane topology and configuration.
@@ -6909,7 +7530,31 @@ components:
               type: integer
               format: int32
               minimum: 1
-              description: Number of control plane replicas. Structurally invariant after creation.
+              description: |
+                Number of control plane replicas. Structurally invariant after
+                creation, except with `hcpConfig`: the value is then the HCPConfig's
+                current replica count, and changes with the HCPConfig.
+            hcpConfig:
+              type: string
+              format: uri-reference
+              description: |
+                The HCPConfig supplying the replica count and every hosted control
+                plane setting, by URI. `hcp` ClusterTypes only. The rest of the
+                ClusterType (Kubernetes version, template, network schema, node
+                pools, services) still applies. Set at create (see
+                `ClusterTypeCreateRequest`).
+
+                A property of the ClusterType, not of a version: it is shown in every
+                ClusterType body, version bodies included, and applies to every
+                Cluster of the type, whatever version the Cluster is pinned to.
+
+                **Limited:** once set it never changes, also not through new
+                versions; editing the HCPConfig covers every legitimate change. A
+                legacy `hcp` ClusterType without it is given one once, through
+                `PATCH /cluster-types/{id}`.
+
+                Shown only to callers holding `compute.hcpconfigs.read`.
+              example: /v1/regions/us-texas-1/compute/hcp-configs/hcp-small
             apiServerPort:
               type:
                 - integer
@@ -6936,7 +7581,10 @@ components:
             opConfig:
               allOf:
                 - $ref: '#/components/schemas/ControlPlaneOpConfig'
-              description: Control plane operational configuration. Structurally invariant after creation.
+              description: |
+                Control plane operational configuration. Structurally invariant
+                after creation. With `hcpConfig`, `hcp` is omitted: the HCPConfig
+                holds those settings, and they change with it.
         workers:
           type: object
           description: Worker-node configuration.
@@ -6948,6 +7596,79 @@ components:
               allOf:
                 - $ref: '#/components/schemas/WorkerDefaults'
               description: Default worker node configuration.
+    ClusterTypeK8sNodeNetwork:
+      type: object
+      description: |
+        Cluster-wide node addressing. Selects the host network interface whose IPv4
+        address each Kubernetes node registers as its node address (`InternalIP`,
+        kubelet `--node-ip`). Use it on machines with more than one NIC — for
+        example GPU servers with east-west fabric NICs — to keep Kubernetes traffic
+        (kubelet API, NodePort services and, with Calico, pod traffic) on the
+        intended network.
+
+        The address is resolved on each machine when it boots, before Kubernetes
+        starts. On a standalone control plane it is also used as the node's API
+        server and etcd peer address. If no IPv4 address can be found on the
+        selected interface within a few minutes, the machine's bootstrap stops and
+        the node does not join the cluster, rather than registering an unintended
+        address. With no interface set (neither here nor on the node pool), the
+        interface holding the IPv4 default route is used.
+
+        With the `calico` network provider, Calico is configured to use the same
+        address as the node.
+
+        Unknown keys are rejected (400), so a misspelt key cannot silently select
+        the default-route interface.
+      additionalProperties: false
+      properties:
+        interface:
+          type: string
+          description: >-
+            Name of the host network interface (as shown by `ip link`) to take the node address from, identical on every machine it applies to. 1-15 characters from `A-Z a-z 0-9 _ . -`. Beyond the pattern, `.`, `..` and the loopback interface `lo` (any case) are rejected with 422. Omit the key to use the interface holding the IPv4 default route; an empty string is rejected. Structurally invariant after creation: to use a different interface, create a new ClusterType.
+          pattern: ^[A-Za-z0-9_.-]{1,15}$
+          example: enp1s0
+        legacyAddressDetection:
+          type: boolean
+          default: false
+          description: |
+            Keeps the node addressing of clusters created before node addresses
+            were pinned. When `true`, nodes without an interface (neither here nor
+            on their node pool) are not pinned: each node, and on a standalone
+            control plane the API server and etcd, keep the address the host picks
+            by itself, and Calico keeps its own address detection. Nodes with an
+            interface are pinned either way.
+
+            Set it to `true` in the ClusterType version that existing clusters are
+            upgraded to, before upgrading them: otherwise the upgrade pins every
+            node to the default-route interface, which replaces standalone
+            control-plane machines and can change node addresses. New clusters
+            created from a version with `true` also keep legacy detection.
+
+            Unlike `interface`, this may change from one version to the next.
+            Moving a cluster from a version with `true` to one with `false` pins
+            its nodes, with the same effect as above.
+    ClusterTypeNodeNetwork:
+      type: object
+      description: |
+        A node pool's node address interface: the host network interface whose
+        IPv4 address each of the pool's Kubernetes nodes registers as its node
+        address (`InternalIP`, kubelet `--node-ip`), overriding the ClusterType's
+        cluster-wide `k8s.nodeNetwork.interface`. See ClusterTypeK8sNodeNetwork for
+        how the address is resolved.
+
+        Structurally invariant after creation: the address is fixed when a machine
+        bootstraps, so a change could not reach existing nodes. To use a different
+        interface, create a new ClusterType.
+      additionalProperties: false
+      required:
+        - interface
+      properties:
+        interface:
+          type: string
+          description: >-
+            Name of the host network interface (as shown by `ip link`) to take the node address from, identical on every machine it applies to. 1-15 characters from `A-Z a-z 0-9 _ . -`. Beyond the pattern, `.`, `..` and the loopback interface `lo` (any case) are rejected with 422.
+          pattern: ^[A-Za-z0-9_.-]{1,15}$
+          example: enp1s0
     ClusterTypeNodePool:
       type: object
       description: Node pool definition effective at a given ClusterType version.
@@ -7014,6 +7735,13 @@ components:
             Null means the cluster create must supply `nodeCount` explicitly.
         networkAttachment:
           $ref: '#/components/schemas/NetworkAttachment'
+        nodeNetwork:
+          allOf:
+            - $ref: '#/components/schemas/ClusterTypeNodeNetwork'
+          description: |
+            Node address interface for this pool's nodes, overriding the
+            ClusterType's `k8s.nodeNetwork`. Absent when the pool does not
+            override it. Invariant across versions.
         versionIntroduced:
           type: integer
           format: int32
@@ -7028,9 +7756,25 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/ClusterTypeSummary'
+        totalCount:
+          type: integer
+          format: int64
+          example: 42
+          description: |-
+            Total ClusterTypes in the region that the request's `includeDeprecated` setting lists, so `ceil(totalCount / limit)` is the page count.
+
+            Present only on the `offset`/`limit` path, and omitted when the caller passes `includeTotal=false`. Absent otherwise.
+        offset:
+          $ref: '#/components/schemas/PageOffset'
+        limit:
+          $ref: '#/components/schemas/PageLimit'
         nextPageToken:
           type: string
-          description: Token for next page of results
+          deprecated: true
+          description: |-
+            **Deprecated:** use `offset`, `limit`, and `totalCount`.
+
+            Never emitted: this list has no cursor pagination, and a request with no paging parameter returns the first page only.
     ClusterTypeSummary:
       type: object
       description: ClusterType summary returned in list responses.
@@ -7156,6 +7900,18 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/ClusterTypeVersion'
+        totalCount:
+          type: integer
+          format: int64
+          example: 42
+          description: |-
+            Total versions of this ClusterType matching the request's `status` filter, so `ceil(totalCount / limit)` is the page count.
+
+            Present only on the `offset`/`limit` path, and omitted when the caller passes `includeTotal=false`. Absent when the request carried no paging parameter and the whole history was returned.
+        offset:
+          $ref: '#/components/schemas/PageOffset'
+        limit:
+          $ref: '#/components/schemas/PageLimit'
     ClusterTypeVersionStatus:
       type: string
       enum:
@@ -7197,18 +7953,6 @@ components:
           additionalProperties:
             type: string
           description: User-defined metadata labels for this cluster.
-        nodePools:
-          type: array
-          description: |
-            Sparse per-pool changes. Each entry's `id` identifies which
-            materialized pool to update; pools omitted from this array are
-            unchanged. Duplicate ids ⇒ 422; unknown ids (not on the bound
-            ClusterType version) ⇒ 422.
-          items:
-            allOf:
-              - $ref: '#/components/schemas/ClusterNodePoolUpdateRequest'
-              - required:
-                  - id
         securityGroups:
           type: array
           description: |
@@ -8528,15 +9272,62 @@ components:
             reason:
               type: string
               description: >-
-                Optional top-level machine-readable failure class, present when the HTTP status alone does not distinguish it (e.g. NON_INTERACTIVE_PRINCIPAL on 403s denied by the non-interactive principal policy). Clients can branch on this without parsing the human-readable message. When the class instead rides with structured recovery data it appears in `details[].reason` rather than here. Well-known top-level classes: `NON_INTERACTIVE_PRINCIPAL` (403); `CONFLICT_BACKEND_CAPACITY_EXCEEDED` (409 on compute createFileStore/updateFileStore — the storage system serving the requested class has no sellable capacity left; it also rides in `details[].reason`); `DOMAIN_NOT_OWNED` (422 on organizations createOrganizationInvitation — the invitee's email domain is not registered to any of the target organization's enabled identity providers. Applies to ANY organization that has at least one such provider, and to the platform-tier organizations `vendor`/`provider` unconditionally. An ORDINARY organization with no enabled provider is not subject to it and accepts any valid domain; a platform-tier one with no registered domain is the opposite and refuses every invitation); `PRINCIPAL_TYPE_COLLISION` (409 on the same operation — a platform account already exists for that address with a principal type the organization cannot accept; terminal, retrying does not clear it); `INVALID_DISCOVERY_URL` (422 on iam createProvider/updateProvider — `oidcConfig.discoveryUrl` is not an allowed outbound destination; the server fetches it during login, so by default it must be an `https` URL naming a publicly reachable host, and a deployment may relax the private-address and/or `https` requirement through operator configuration — see the field's own description); `QUOTA_EXCEEDED` (409 on quota-gated compute operations — today createCluster, scaleCluster, updateCluster, createInstanceGroup, scaleInstanceGroup, createFileStore and updateFileStore — the request was well-formed and the resource is in a valid state, but admitting it would exceed a quota limit at the organization or project scope. Distinct from the lifecycle conflicts on the same operations, which carry no reason, and from `INSUFFICIENT_CAPACITY`, which means no matching hardware. The same class is repeated on one `details[]` entry per refused dimension, whose `metadata` carries `dimension`, `requested`, `admissible`, `bindingScope` and `scopes` — see the details description. `requested` and `admissible` are amounts in the refused dimension, not target sizes: for createCluster they are the new cluster's node count or storage ceiling, so requesting at most `admissible` is admitted; for updateCluster they are the ceiling increase in GiB; for scaleCluster they are the aggregate node-count INCREASE across the request's pools, so the client must reduce that increase to at most `admissible` (the pool targets stay absolute — with 4 nodes today, requested 3 and admissible 1, the admitted target is 5, not 1); for createFileStore they are the new store's GiB, and for updateFileStore the GiB increase over the capacity the store's quota hold already covers. Retrying without freeing usage, without reducing the request accordingly, or without raising the binding limit returns the same result); `QUOTA_UNASSIGNED` (409 on the same seven quota-gated compute operations — the organization has no quota profile assigned while the platform requires one, because a default profile is designated. No limit was measured, so there are no `details[]`, and retrying returns the same result until an operator assigns the organization a profile); `QUOTA_ENFORCEMENT_ACKNOWLEDGEMENT_REQUIRED` (409 on organizations updateQuotaDimensionEnforcement: switching a dimension's enforcement on must acknowledge the live number of scopes at or over their limit on it, which the switch would start refusing; the same class is repeated on one `details[]` entry whose `metadata` carries `dimension`, `blockedScopes` and `report`, the near/over-limit report listing those scopes. Review it and repeat the request with `acknowledgedBlockedScopes` = `blockedScopes`); `QUOTA_DIMENSION_NOT_CHARGED` (409 on the same operation: nothing charges the dimension yet, so its usage is always zero and its enforcement cannot be switched on; terminal until the platform charges it); `PROJECT_REGION_MISMATCH` (409 on every compute, networking and storage operation under `/v1/regions/{region}/projects/{project}`: the project is locked to a different region than the one in the URL. A project's region is set once and is immutable thereafter, so retrying the same URL returns the same result; address the project's own region, which the project read returns. The message does not name that region. Organizations' internal bootstrap project create also returns it, naming both regions, when the slug already exists in another region); `CONFLICT_IMMUTABLE` (409 on organizations updateProjectInOrg: the request names `region`, which cannot be changed after the project is created; the same reason also rides in `details[].reason`, where compute's immutable-field 409s carry it).
+                Optional top-level machine-readable failure class, present when the HTTP status alone does not distinguish it (e.g. NON_INTERACTIVE_PRINCIPAL on 403s denied by the non-interactive principal policy). Clients can branch on this without parsing the human-readable message. When the class instead rides with structured recovery data it appears in `details[].reason` rather than here. Well-known top-level classes: `NON_INTERACTIVE_PRINCIPAL` (403); `IDENTITY_MISMATCH` (401 on the sign-in callback — the identity provider authenticated a different account than the email address sent to initiateLogin; no token is issued and the other account is not named); `CONFLICT_BACKEND_CAPACITY_EXCEEDED` (409 on compute createFileStore/updateFileStore — the storage system serving the requested class has no sellable capacity left; it also rides in `details[].reason`); `DOMAIN_NOT_OWNED` (422 on organizations createOrganizationInvitation — the invitee's email domain is not registered to any of the target organization's enabled identity providers. Applies to ANY organization that has at least one such provider, and to the platform-tier organizations `vendor`/`provider` unconditionally. An ORDINARY organization with no enabled provider is not subject to it and accepts any valid domain; a platform-tier one with no registered domain is the opposite and refuses every invitation); `PRINCIPAL_TYPE_COLLISION` (409 on the same operation — a platform account already exists for that address with a principal type the organization cannot accept; terminal, retrying does not clear it); `INVALID_DISCOVERY_URL` (422 on iam createProvider/updateProvider — `oidcConfig.discoveryUrl` is not an allowed outbound destination; the server fetches it during login, so by default it must be an `https` URL naming a publicly reachable host, and a deployment may relax the private-address and/or `https` requirement through operator configuration — see the field's own description); `QUOTA_EXCEEDED` (409 on quota-gated compute operations — today createCluster, scaleCluster, updateCluster, createInstanceGroup, scaleInstanceGroup, createFileStore and updateFileStore — the request was well-formed and the resource is in a valid state, but admitting it would exceed a quota limit at the organization or project scope. Distinct from the lifecycle conflicts on the same operations, which carry no reason, and from `INSUFFICIENT_CAPACITY`, which means no matching hardware, or no host for a hosted control plane. The same class is repeated on one `details[]` entry per refused dimension, whose `metadata` is a `QuotaRefusal`. `requested` and `admissible` are amounts in the refused dimension, not target sizes: for createCluster they are the new cluster's node count or storage ceiling, so requesting at most `admissible` is admitted; for updateCluster they are the ceiling increase in GiB; for scaleCluster they are the aggregate node-count INCREASE across the request's pools, so the client must reduce that increase to at most `admissible` (the pool targets stay absolute — with 4 nodes today, requested 3 and admissible 1, the admitted target is 5, not 1); for createFileStore they are the new store's GiB, and for updateFileStore the GiB increase over the capacity the store's quota hold already covers. Retrying without freeing usage, without reducing the request accordingly, or without raising the binding limit returns the same result); `QUOTA_UNASSIGNED` (409 on the same seven quota-gated compute operations — the organization holds no quota limits while the platform requires them, because a default profile is designated. No limit was measured, so there are no `details[]`, and retrying returns the same result until an operator gives the organization limits, by applying a profile or setting them directly); `QUOTA_ENFORCEMENT_ACKNOWLEDGEMENT_REQUIRED` (409 on organizations updateQuotaDimensionEnforcement: switching a dimension's enforcement on must acknowledge the live number of scopes at or over their limit on it, which the switch would start refusing; the same class is repeated on one `details[]` entry whose `metadata` is a `QuotaEnforcementAcknowledgement`, carrying the near/over-limit report listing those scopes. Review it and repeat the request with `acknowledgedBlockedScopes` = `blockedScopes`); `QUOTA_DIMENSION_NOT_CHARGED` (409 on the same operation: nothing charges the dimension yet, so its usage is always zero and its enforcement cannot be switched on; terminal until the platform charges it); `PROJECT_REGION_MISMATCH` (409 on every compute, networking and storage operation under `/v1/regions/{region}/projects/{project}`: the project is locked to a different region than the one in the URL. A project's region is set once and is immutable thereafter, so retrying the same URL returns the same result; address the project's own region, which the project read returns. The message does not name that region. Also 409 on compute createControlPlatform with `source: managed`, and on updateControlPlatform when `allowedOrganizations` changes while a backing Cluster's control plane is placed on the platform, when the region's operator project is locked to another region. Organizations' internal bootstrap project create also returns it, naming both regions, when the slug already exists in another region); `CONFLICT_IMMUTABLE` (409 on organizations updateProjectInOrg: the request names `region`, which cannot be changed after the project is created; the same reason also rides in `details[].reason`, where compute's immutable-field 409s carry it); `INSUFFICIENT_CAPACITY` (422 on compute createCluster when the hosted control plane of a cluster whose ClusterType references an HCPConfig cannot be placed on any host, and on createControlPlatform when a backing Cluster's own control plane cannot be placed; the request was refused before anything was created. The same class rides in `details[].reason`; see there); `INVALID_EMAIL_TEMPLATE` (422 on organizations putInvitationEmailTemplate and previewInvitationEmailTemplate: the submitted invitation email template breaks one or more syntax or variable rules; every violation is listed as its own `details[]` entry, see the details description. A missing, empty or control-character `html` is a plain 422 without this reason); `CONFIRMATION_REQUIRED` (409 on credential revoke and rotate: a target is unrecoverable and the request did not send `confirm: true`; nothing was changed).
             details:
               type: array
               items:
-                type: object
-                description: |-
-                  A structured failure detail. Conventionally carries a `reason` (machine-readable class), an optional `message`, and an optional `metadata` object of recovery data. Well-known metadata keys: `clusterId` (string) and `selfLink` (string) on compute createCluster 504s; `instanceGroupId` (string) and `selfLink` (string) on compute createInstanceGroup 504s; `addressPoolId` (string) and `selfLink` (string) on compute createAddressPool 504s; `fileStoreId` (string) and `selfLink` (string) on compute createFileStore 504s; `storageBackendId` (string) and `selfLink` (string) on compute createStorageBackend 504s; `securityGroupId` (string) and `selfLink` (string) on compute createSecurityGroup 504s; `batchId` (string) on infrastructure batchCreate 409s; `invalidRoles` and `validRoles` (string arrays) on organizations 422 role-assignment errors; `reservationErrorCode` (string, `not_enough_servers` or `not_enough_symmetric_servers`) on infrastructure addReservationServers 422s; on `QUOTA_EXCEEDED` 409s, one entry per refused quota dimension carrying `dimension` (string, e.g. `node_count`), `requested` (integer, the amount the request asked for in that dimension), `admissible` (integer, the largest amount that would have been admitted — the smallest headroom across the gating scopes), `bindingScope` (string, `tenant` or `project` — the scope whose limit binds) and `scopes` (array of `{scope, targetId, limit, used, headroom}`, one per scope that gates the dimension, so a project limit tighter than the organization's is visible next to the organization's own headroom); on `QUOTA_ENFORCEMENT_ACKNOWLEDGEMENT_REQUIRED` 409s, one entry carrying `dimension` (string), `blockedScopes` (integer, the live count to acknowledge) and `report` (string, the near/over-limit report path listing those scopes).
-                  Well-known detail classes: `INSUFFICIENT_CAPACITY` (422 on infrastructure addReservationServers — the region has no matching servers left, as opposed to the request being invalid; the caller can retry later or ask for fewer hosts); `RESERVATION_ID_CONFLICT` (409 on infrastructure createReservation — the caller-supplied `reservationId` cannot be used for this request; generate a new id and retry); `RESERVATION_ID_COUNT_MISMATCH` (409 on the same operation — the id names a live reservation that differs only in `numberOfServers`, typically the caller's own after a resize; do not mint a new id for it); `QUOTA_EXCEEDED` (409 — the per-dimension breakdown of the top-level class of the same name); `CONFLICT_BACKEND_CAPACITY_EXCEEDED` (409), `CONFLICT_CAPACITY_BELOW_USAGE` (409 on updateFileStore) and `STORAGE_BACKEND_MISSING` / `STORAGE_BACKEND_OUT_OF_SERVICE` / `STORAGE_PLACEMENT_NOT_APPLIED` (422) on compute createFileStore/updateFileStore — see those operations for which precondition each names.
+                $ref: '#/components/schemas/ErrorDetail'
               description: Additional error details
+    ErrorDetail:
+      type: object
+      description: |-
+        A structured failure detail. Conventionally carries a `reason` (machine-readable class), an optional `message`, and an optional `metadata` object of recovery data. The entry's `reason` tells a client which metadata shape applies: `QUOTA_EXCEEDED` entries carry `QuotaRefusal`, `QUOTA_ENFORCEMENT_ACKNOWLEDGEMENT_REQUIRED` entries carry `QuotaEnforcementAcknowledgement`, and every other class carries a free-form object.
+        Well-known metadata keys on the free-form classes: `clusterId` (string) and `selfLink` (string) on compute createCluster 504s; `instanceGroupId` (string) and `selfLink` (string) on compute createInstanceGroup 504s; `addressPoolId` (string) and `selfLink` (string) on compute createAddressPool 504s; `fileStoreId` (string) and `selfLink` (string) on compute createFileStore 504s; `storageBackendId` (string) and `selfLink` (string) on compute createStorageBackend 504s; `securityGroupId` (string) and `selfLink` (string) on compute createSecurityGroup 504s; `controlPlatformId` (string) and `selfLink` (string) on compute createControlPlatform 504s; `batchId` (string) on infrastructure batchCreate 409s; `invalidRoles` and `validRoles` (string arrays) on organizations 422 role-assignment errors; `reservationErrorCode` (string, `not_enough_servers` or `not_enough_symmetric_servers`) on infrastructure addReservationServers 422s; on `INVALID_EMAIL_TEMPLATE` 422s, one entry per violation whose `metadata` carries only the keys that apply: `line` and `column` (integers, 1-based position in the submitted template; `column` is absent when only the line is known, as on a `TEMPLATE_PARSE_ERROR` or `RENDER_ERROR`), and `variable` (string, the template variable).
+        Placement refusals and the refusals of changes to what is placed (operator-only, compute): `controlPlatform` (string, the Control Platform's URI) on each per-platform entry; `dimension` (string: `cpu`, `memory`, `disk` or `loadBalancerAddresses`), `needed` and `free` (integers, in the dimension's capacity unit) on `INSUFFICIENT_CAPACITY` entries; `topologyKey` (string) on a `TOO_FEW_NODES` entry whose count left out workers without a `DoNotSchedule` spread constraint's key, naming that key, and absent otherwise; `cluster` (string, the Cluster's URI) on `HOST_NOT_CONNECTED` and per-Cluster `CONFLICT_IMMUTABLE` entries; `removable` and `requested` (integers, worker counts) on `NODES_HOLD_ETCD_VOLUMES`. Not yet applied: `cluster`, `removable` and `requested`, and every key on the refusals of changes to what is placed, are declared ahead of their implementation.
+        Well-known detail classes: `INSUFFICIENT_CAPACITY` (422 on infrastructure addReservationServers — the region has no matching servers left, as opposed to the request being invalid; the caller can retry later or ask for fewer hosts); `RESERVATION_ID_CONFLICT` (409 on infrastructure createReservation — the caller-supplied `reservationId` cannot be used for this request; generate a new id and retry, or retry the same id once a release in progress completes); `RESERVATION_ID_COUNT_MISMATCH` (409 on the same operation — the id names a live reservation that differs only in `numberOfServers`, typically the caller's own after a resize; do not mint a new id for it); `RESERVATION_REQUEST_EXPIRED` (409 on the same operation — the request came after its `notAfter` and reserved nothing); `QUOTA_EXCEEDED` (409 — the per-dimension breakdown of the top-level class of the same name); `CONFLICT_BACKEND_CAPACITY_EXCEEDED` (409), `CONFLICT_CAPACITY_BELOW_USAGE` (409 on updateFileStore), `CONFLICT_SHARE_TYPE_MISMATCH` (409 on createFileStore) and `STORAGE_BACKEND_MISSING` / `STORAGE_BACKEND_OUT_OF_SERVICE` / `STORAGE_PLACEMENT_NOT_APPLIED` (422) on compute createFileStore/updateFileStore — see those operations for which precondition each names; on `INVALID_EMAIL_TEMPLATE` 422s, one of `TEMPLATE_TOO_LARGE`, `INVALID_ENCODING` (the template is not valid UTF-8), `TEMPLATE_PARSE_ERROR` (the template does not parse), `DISALLOWED_TEMPLATE_ACTION`, `UNKNOWN_VARIABLE`, `MISSING_REQUIRED_VARIABLE` (a required variable is not referenced, or `AcceptURL` is referenced but the accept link does not reach the sent email), `RENDER_ERROR` (the template parses but cannot be rendered, for example `{{if}}` branches that end in different HTML contexts), and a final `TOO_MANY_VIOLATIONS` entry when the list was truncated at 100.
+        `INSUFFICIENT_CAPACITY` also means a hosted control plane that does not fit (422 on compute createCluster and createControlPlatform; 409 on updateHCPConfig, updateClusterType and the scale-down of a Control Platform's backing Cluster). A tenant caller gets a single entry with a generic message; a caller holding `compute.controlplatforms.read` gets one entry per candidate Control Platform with its own reason, one of the `PlacementReason` codes, or, with no candidate, a single `HCPCONFIG_NOT_ACCEPTED` entry naming none. The 409s carry their codes in `details[].reason` only, with no top-level reason. Further compute classes: `HOST_CLUSTER_TYPE_UNSUITABLE` (422 on createControlPlatform — the ClusterType cannot back a host cluster); `OPERATOR_PROJECT_NOT_CONFIGURED` (503 on the same operation, and on updateControlPlatform when `allowedOrganizations` changes while a backing Cluster's control plane is placed on the platform — the region has no operator project, or names one that does not exist); `HOST_NOT_CONNECTED` (409 on updateClusterType — a live Cluster of the type runs on a host cluster not connected as a Control Platform); `NODES_HOLD_ETCD_VOLUMES` (409 on the scale-down of a backing Cluster — fewer workers without etcd volumes than asked to remove). Not yet applied: `HOST_NOT_CONNECTED` and `NODES_HOLD_ETCD_VOLUMES` are declared ahead of their implementation.
+      properties:
+        reason:
+          type: string
+          description: Machine-readable failure class of this entry.
+        message:
+          type: string
+          description: Human-readable description of this entry.
+        metadata:
+          description: Recovery data for this entry. The shape depends on `reason`.
+          anyOf:
+            - $ref: '#/components/schemas/QuotaRefusal'
+            - $ref: '#/components/schemas/QuotaEnforcementAcknowledgement'
+            - $ref: '#/components/schemas/ErrorDetailFreeFormMetadata'
+      allOf:
+        - if:
+            required:
+              - reason
+            properties:
+              reason:
+                const: QUOTA_EXCEEDED
+          then:
+            required:
+              - metadata
+            properties:
+              metadata:
+                $ref: '#/components/schemas/QuotaRefusal'
+        - if:
+            required:
+              - reason
+            properties:
+              reason:
+                const: QUOTA_ENFORCEMENT_ACKNOWLEDGEMENT_REQUIRED
+          then:
+            required:
+              - metadata
+            properties:
+              metadata:
+                $ref: '#/components/schemas/QuotaEnforcementAcknowledgement'
+    ErrorDetailFreeFormMetadata:
+      type: object
+      description: Free-form recovery data for every detail class other than `QUOTA_EXCEEDED` and `QUOTA_ENFORCEMENT_ACKNOWLEDGEMENT_REQUIRED`.
+      additionalProperties: true
     ExportLocation:
       type: object
       readOnly: true
@@ -9118,9 +9909,27 @@ components:
           description: The matching file stores, ordered by creation time descending.
           items:
             $ref: '#/components/schemas/FileStore'
+        totalCount:
+          type: integer
+          format: int64
+          example: 42
+          description: |-
+            Total file stores in the project matching the active `state`, `shareType` and `consumer` filters, so `ceil(totalCount / limit)` is the page count for the current filter.
+
+            Present only on the `offset`/`limit` path, and omitted when the caller passes `includeTotal=false`. Absent on the deprecated `pageToken` path.
+        offset:
+          $ref: '#/components/schemas/PageOffset'
+        limit:
+          $ref: '#/components/schemas/PageLimit'
         nextPageToken:
           type: string
-          description: Opaque cursor for the next page. Absent or empty when this is the last page.
+          deprecated: true
+          description: |-
+            **Deprecated:** use `offset`, `limit`, and `totalCount`.
+
+            Opaque cursor for the next page. Echo it as `pageToken` to fetch the following page. The key is ABSENT when this is the last page — the server omits it rather than returning an empty string — so a consumer must treat a missing `nextPageToken` as "no more results", not as an error or an unset field.
+
+            Emitted only on the deprecated `pageToken` path; absent when the request used `offset`/`limit`.
     FileStoreStateReason:
       type: string
       description: Machine-readable cause of the current lifecycle `state`, drawn from the storage vocabulary (disjoint from `StateReason`); stable and safe to branch on. Absent when no failure is recorded.
@@ -9351,11 +10160,15 @@ components:
     Health:
       type: object
       description: |
-        Canonical health of a managed object. A summary
-        judgement surfaced consistently across services — observability-only, it
-        never drives a lifecycle `state` machine. `state` is always present: it is
-        `unknown` before the first observation and whenever the record has gone stale
-        (read-time substitution once `now` is past `expiresAt`).
+        Canonical health of a managed object. A summary judgement surfaced
+        consistently across services. It never drives a lifecycle `state` machine,
+        though a resource may state its own rule for consulting it — see the health
+        field on each resource.
+
+        `state` is always present: it is
+        `unknown` before the first observation, whenever the record has gone stale
+        (read-time substitution once `now` is past `expiresAt`), and while the owning
+        resource withholds its verdict during a lifecycle phase.
       additionalProperties: false
       required:
         - state
@@ -9370,8 +10183,9 @@ components:
             - unknown
           description: |
             Current canonical health. `healthy`, `degraded` and `unhealthy` are
-            observed states; `unknown` means no fresh observation — either never
-            observed, or the last value has passed `expiresAt`.
+            observed states; `unknown` means no current verdict — never observed,
+            the last value has passed `expiresAt`, or the owning resource withholds
+            it during a lifecycle phase (`reason` says which).
         reason:
           type:
             - string
@@ -9769,9 +10583,14 @@ components:
     Instance:
       type: object
       description: |-
-        A provisioned host of an InstanceGroup. An instance is a server held by a
-        reservation: it is materialized automatically when its group is created or
-        scaled up, and there is no way to create one directly.
+        A provisioned host of an InstanceGroup or of a Cluster. An instance is a
+        server held by a reservation: it is materialized automatically when its owner
+        reserves the host, and there is no way to create one directly.
+
+        Exactly one owner, always. A group-owned instance publishes
+        `instanceGroupUuid`/`instanceGroupId`; a cluster-owned one publishes
+        `clusterUuid`/`clusterId`. Branch on which pair is PRESENT — neither pair is
+        `required`, and the absent one is omitted rather than empty.
 
         Identity and ownership are stored by the compute service; everything about the
         host itself lives in the infrastructure service and is read on every request
@@ -9781,12 +10600,19 @@ components:
       required:
         - id
         - uid
-        - instanceGroupUuid
-        - instanceGroupId
         - nodePoolUuid
         - nodePool
         - serverSlug
         - state
+      dependentRequired:
+        instanceGroupUuid:
+          - instanceGroupId
+        instanceGroupId:
+          - instanceGroupUuid
+        clusterUuid:
+          - clusterId
+        clusterId:
+          - clusterUuid
       properties:
         id:
           type: string
@@ -9798,7 +10624,7 @@ components:
             hyphens. It is not a second identifier, so there is nothing that could
             disagree between the two, and a client may treat either as canonical.
 
-            Stable for the lifetime of the host's membership in its group: it is
+            Stable for the lifetime of the host's membership in its owner: it is
             derived from an identity minted by this service, not by the infrastructure
             provider, so it survives the provider's own instance being destroyed and
             re-created (as a deprovision followed by a re-provision does).
@@ -9823,7 +10649,10 @@ components:
         instanceGroupUuid:
           type: string
           format: uuid
-          description: Uid of the owning InstanceGroup; the value the list endpoint's `instanceGroupUuid` filter takes.
+          description: |-
+            Uid of the owning InstanceGroup; the value the list endpoint's
+            `instanceGroupUuid` filter takes. Absent when the instance belongs to a
+            cluster instead.
           readOnly: true
         instanceGroupId:
           type: string
@@ -9831,17 +10660,37 @@ components:
             Id (slug) of the owning InstanceGroup — what
             `GET .../compute/instance-groups/{id}` is keyed by, so the group can be
             fetched straight from this instance. Read from the group on every request
-            rather than stored here, so the two can never disagree.
+            rather than stored here, so the two can never disagree. Absent when the
+            instance belongs to a cluster instead.
           readOnly: true
           example: ig-0h2wq6dt5m8pjzk3xn4vbr7fcy
+        clusterUuid:
+          type: string
+          format: uuid
+          description: |-
+            Uid of the owning Cluster; the value the list endpoint's `clusterUuid`
+            filter takes. Absent when the instance belongs to an instance group
+            instead.
+          readOnly: true
+        clusterId:
+          type: string
+          description: |-
+            Id of the owning Cluster — what `GET .../compute/clusters/{id}` is keyed
+            by, so the cluster can be fetched straight from this instance. This is the
+            cluster's `id` as that resource publishes it; the service's internal
+            primary key is a different value and never appears here. Read from the
+            cluster on every request rather than stored, so the two can never
+            disagree. Absent when the instance belongs to an instance group instead.
+          readOnly: true
+          example: my-training-cluster
         nodePoolUuid:
           type: string
           format: uuid
-          description: Uid of the group's node pool this host was provisioned into; the value the list endpoint's `nodePoolUuid` filter takes.
+          description: Uid of the owner's node pool this host was provisioned into; the value the list endpoint's `nodePoolUuid` filter takes.
           readOnly: true
         nodePool:
           type: string
-          description: Id (slug) of the group's node pool this host was provisioned into — the name it carries in the group's `nodePools`. A pool has no route of its own.
+          description: Id (slug) of the owner's node pool this host was provisioned into — the name it carries in that owner's `nodePools`. A pool has no route of its own.
           readOnly: true
           example: worker
         reservationUuid:
@@ -9914,7 +10763,7 @@ components:
             and may now be held by another project, so a live read would report the
             current state of a machine that is no longer this tenant's.
 
-            What it does carry is the stored record — identity, the group and pool it
+            What it does carry is the stored record — identity, the owner and pool it
             belonged to, `serverSlug`, timestamps. `serverSlug` is published because it
             is a stored record of which machine this instance used to occupy, not a
             fact about that machine today.
@@ -10054,6 +10903,7 @@ components:
         - state
         - securityGroups
         - sshAccess
+        - serialConsole
         - createdAt
         - updatedAt
       properties:
@@ -10116,12 +10966,21 @@ components:
             time — one entry per Linux user (username, one or more authorized public
             keys, optional sudo, optional displayName). Read-only echo of the access
             set at create; the group is the unit and has no per-entry revoke. Immutable.
+            Keys supplied inline at create are registered as managed credentials and
+            read back as `sshPublicKeyCredentials` references, not literal
+            `sshPublicKeys`; a group created before that behavior may still read back
+            literal keys.
             Always present; `[]` when the group was created with no SSH access. The
             same value is returned on every response, including the asynchronous
             (`202`) securityGroups update.
           readOnly: true
           items:
             $ref: '#/components/schemas/SshUser'
+        serialConsole:
+          allOf:
+            - $ref: '#/components/schemas/InstanceGroupSerialConsole'
+          readOnly: true
+          description: Serial-console state of the group. Always present, including on a tombstone, where all flags are `false`.
         state:
           type: string
           description: |
@@ -10264,7 +11123,7 @@ components:
           type: array
           maxItems: 32
           description: |
-            Optional host-login SSH access for the group — one or more Linux users, each with one or more authorized public keys and an optional sudo grant. Same `SshUser` shape as a cluster create; rendered into every host's cloud-init `users[]`. Immutable after create.
+            Optional host-login SSH access for the group — one or more Linux users, each with one or more authorized public keys and an optional sudo grant. Same `SshUser` shape and behavior as a cluster create: keys may be supplied inline (`sshPublicKeys`) or as `sshPublicKeyCredentials` references to `ssh_public_key` credentials in the request's region and project. Inline keys are registered as managed credentials and read back as references. Rendered into every host's login configuration. Immutable after create.
           items:
             $ref: '#/components/schemas/SshUser'
         securityGroups:
@@ -10314,30 +11173,67 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/InstanceGroup'
+        totalCount:
+          type: integer
+          format: int64
+          description: |-
+            Total instance groups in the project that the `showDeleted` setting selects — live groups only by default, live and deleted with `showDeleted=true` — so `ceil(totalCount / limit)` is the page count for the current request.
+
+            Present only on the `offset`/`limit` path, and omitted when the caller passes `includeTotal=false`. Absent on the deprecated `pageToken` path.
+        offset:
+          $ref: '#/components/schemas/PageOffset'
+        limit:
+          $ref: '#/components/schemas/PageLimit'
         nextPageToken:
           type: string
-          description: Token for next page of results.
+          deprecated: true
+          description: |-
+            **Deprecated:** use `offset`, `limit`, and `totalCount`.
+
+            Token for the next page of results; pass it back verbatim as `pageToken`. Emitted only on the deprecated `pageToken` path; absent when the request used `offset`/`limit`.
     InstanceGroupScaleRequest:
       type: object
       description: |
-        Request to scale up an InstanceGroup's node pools. Each entry identifies a
-        materialized pool by `nodePool` (slug) and supplies the absolute desired host
-        count in `size` (not a delta). Only increases are accepted on this endpoint;
-        decreasing node counts is not yet implemented. The accepted scale atomically moves the
-        group to `updating` and dispatches the asynchronous `instance-group-scale-up`
-        workflow, which adds servers to each pool's existing reservation and provisions
-        the new hosts.
+        Request to scale an InstanceGroup's node pools. The body states a direction by
+        which field it carries, and the two are mutually exclusive: supply exactly
+        one.
+
+        `nodePools` scales UP — per-pool absolute target host counts. `instancesToDelete`
+        scales DOWN — the exact instances to remove, which is all a shrink needs:
+        each instance names its own pool, and each pool's new size is what it holds
+        minus the instances named from it. Supplying both, or neither, is rejected
+        with `422`.
+
+        The accepted scale atomically moves the group to `updating` and dispatches the
+        asynchronous workflow for its direction — `instance-group-scale-up`, which
+        adds servers to each pool's existing reservation and provisions the new hosts,
+        or `instance-group-scale-down`, which removes the named instances' hosts from
+        their reservation and hands them back to the available pool.
       additionalProperties: false
-      required:
-        - nodePools
+      allOf:
+        - if:
+            required:
+              - instancesToDelete
+          then:
+            not:
+              required:
+                - nodePools
+          else:
+            required:
+              - nodePools
       properties:
         nodePools:
           type: array
           minItems: 1
           description: |
-            Per-pool scale targets. Duplicate slugs ⇒ 422; unknown slugs (not on the
-            group) ⇒ 422; a target that does not exceed the pool's settled `size` ⇒
-            422; a pool with no bound infrastructure reservation ⇒ 422.
+            Per-pool absolute target host counts, for a scale-up. Duplicate slugs ⇒
+            422; unknown slugs (not on the group) ⇒ 422; a pool with no bound
+            infrastructure reservation ⇒ 422.
+
+            Mutually exclusive with `instancesToDelete`. A shrink is never expressed
+            here: a target below what a pool holds would say how MANY hosts to remove
+            without saying WHICH, and the platform does not choose hosts on a
+            tenant's behalf.
           items:
             type: object
             additionalProperties: false
@@ -10357,8 +11253,57 @@ components:
                 format: int32
                 minimum: 0
                 description: >-
-                  Absolute desired host count. A scale must EXCEED the hosts the pool holds (scale down is not yet implemented); the desired-size correction described on the endpoint must EQUAL them, which is the one case a size that does not grow the pool is accepted. `0` is therefore only ever a correction — recording that a pool's reservation holds nothing — never a scale.
+                  Absolute desired host count. A scale-up must EXCEED the hosts the pool holds; a size equal to them is the desired-size correction described on the endpoint, which is the one case a size that does not grow the pool is accepted. A size BELOW them is rejected — shrinking is `instancesToDelete`. `0` is therefore only ever a correction, recording that a pool's reservation holds nothing.
                 example: 8
+        instancesToDelete:
+          type: array
+          description: |
+            Instance identifiers to remove from the group, for a scale-down. This is
+            the whole request: each instance names its own node pool, and each pool's
+            new size is derived as the hosts it holds minus the instances named from
+            it, so neither is supplied. The hosts are released from their pools'
+            reservations and return to the available pool; the instances are then
+            gone and their ids stop resolving.
+
+            Every instance must be a member of this instance group, and they MAY span
+            several of its pools. Naming every host a pool holds drains it — see the
+            endpoint for what that costs.
+
+            Only an instance whose host is settled `not_provisioned` can be removed.
+            Any other state refuses the whole request, naming each instance and its
+            state; destroy what is running on those hosts first with
+            `POST .../instance-groups/{id}/deprovision`.
+
+            Mutually exclusive with `nodePools`.
+          items:
+            type: string
+          minItems: 1
+          maxItems: 200
+          uniqueItems: true
+          example:
+            - inst-0123456789abcdef0123456789abcdef
+            - inst-fedcba9876543210fedcba9876543210
+    InstanceGroupSerialConsole:
+      type: object
+      description: >-
+        Serial-console state of an instance group. The platform generates one SSH keypair per group for the serial-console proxy, registers its public half as a NICo ssh key, and binds that key into a site-scoped NICo ssh-key group shared by every host in the group. Presence flags only: neither the key material nor the NICo identifiers are exposed. All `false` until the create workflow gets to them. The flags keep their values while the group is `deleting` and all read `false` once the group is a `deleted` tombstone. Groups created before this field was introduced always report all `false`.
+      required:
+        - generated
+        - nicoKeyRegistered
+        - nicoKeyGroupRegistered
+      properties:
+        generated:
+          type: boolean
+          readOnly: true
+          description: The group's serial-console SSH keypair has been generated and stored.
+        nicoKeyRegistered:
+          type: boolean
+          readOnly: true
+          description: The keypair's public half is registered as a NICo ssh key.
+        nicoKeyGroupRegistered:
+          type: boolean
+          readOnly: true
+          description: The NICo ssh key is bound into a site-scoped NICo ssh-key group.
     InstanceGroupUpdateRequest:
       type: object
       description: |
@@ -10417,8 +11362,24 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Instance'
+        totalCount:
+          type: integer
+          format: int64
+          description: |-
+            Total instances in the project matching every active filter — `inStates` included, judged on the same live host state the page carries — so `ceil(totalCount / limit)` is the page count for the current filter. Deleted instances are counted only when `showDeleted=true` (or `inStates` includes `deleted`).
+
+            Present only on the `offset`/`limit` path, and omitted when the caller passes `includeTotal=false`. Absent on the deprecated `pageToken` path.
+        offset:
+          $ref: '#/components/schemas/PageOffset'
+        limit:
+          $ref: '#/components/schemas/PageLimit'
         nextPageToken:
           type: string
+          deprecated: true
+          description: |-
+            **Deprecated:** use `offset`, `limit`, and `totalCount`.
+
+            Token for the next page of results; pass it back verbatim as `pageToken`. Emitted only on the deprecated `pageToken` path; absent when the request used `offset`/`limit`.
     Kubeconfig:
       type: object
       description: >-
@@ -11942,15 +12903,13 @@ components:
                 - addressAllocator
       properties:
         id:
-          allOf:
-            - $ref: '#/components/schemas/NetworkSchemaRef'
+          $ref: '#/components/schemas/NetworkSchemaRef'
           description: |
             Local id within this schema. Referenced by `networkAttachment`
             cross-refs.
           example: mgmt
         network:
-          allOf:
-            - $ref: '#/components/schemas/NetworkSchemaRef'
+          $ref: '#/components/schemas/NetworkSchemaRef'
           description: |
             Local `id` of an entry in `networks[]`. The referenced network
             must have `type: evpn`.
@@ -12177,7 +13136,8 @@ components:
         reservationId:
           type: string
           format: uuid
-          description: Infrastructure reservation held for this pool, or absent when none.
+          description: >-
+            Infrastructure reservation most recently held for this pool. Absent until the pool is first reserved; it stays after the reservation is released, and a later scale-up may reserve under the same id.
           example: a1b2c3d4-e5f6-7890-abcd-ef1234567890
         desiredCount:
           type: integer
@@ -12412,9 +13372,16 @@ components:
             - project
           description: >-
             Whose event this is (CloudEvents extension attribute), taken from the event type's notification catalog entry when the delivery is sent. `platform` events are about provider-owned infrastructure and are only ever delivered to the provider's own subscriptions. Absent only on a provider delivery whose event type is no longer in the catalog.
+        project:
+          type: string
+          maxLength: 63
+          pattern: '^[a-z]([-a-z0-9]*[a-z0-9])?$'
+          description: >-
+            Slug of the project the event concerns (CloudEvents extension attribute). Absent when no project was recorded: the event concerns no single project, or it was recorded before events carried their project, in which case it may concern one. An organization's webhook subscriptions receive the organization's events whichever project they name, so a receiver that serves one project filters on this field.
+          example: gpu-team
         data:
           description: >-
-            Event payload. Shape depends on `type`; treat it as opaque unless the specific event type is known.
+            Event payload. Shape depends on `type`; treat it as opaque unless the specific event type is known. An organization's subscriptions receive only the fields its event type defines for customers; any other field the producing service sent is left out. An event type with no customer fields arrives with an empty object.
     Operation:
       type: object
       description: |
@@ -12443,12 +13410,18 @@ components:
           readOnly: true
           enum:
             - running
+            - cancelling
             - failed
             - cancelled
             - succeeded
           description: |
             Outcome of the operation. `cancelled` is reported separately from
             `failed`, since either leaves the resource's own `state` failed.
+
+            `cancelling` is a still-running operation for which a cancel has been
+            requested: the resource stays in its transitional `state` until the
+            operation settles, at which point this becomes `cancelled`, or
+            `succeeded` if the run completed before the cancel took effect.
 
             Not a stop condition for a poller: a resource force-failed by the
             watchdog can still converge afterwards, moving this back to
@@ -13021,6 +13994,101 @@ components:
         description:
           type: string
           description: Updated project description
+    QuotaEnforcementAcknowledgement:
+      type: object
+      description: The `metadata` of the `details[]` entry whose `reason` is `QUOTA_ENFORCEMENT_ACKNOWLEDGEMENT_REQUIRED`. Review the report, then repeat the request with `acknowledgedBlockedScopes` set to `blockedScopes`.
+      required:
+        - dimension
+        - blockedScopes
+        - report
+      properties:
+        dimension:
+          type: string
+          description: The quota dimension whose enforcement is being switched on.
+          example: node_count
+        blockedScopes:
+          type: integer
+          format: int64
+          minimum: 0
+          description: The live number of scopes at or over their limit on the dimension, which switching enforcement on would start refusing. This is the count to acknowledge.
+          example: 2
+        report:
+          type: string
+          description: Path of the near/over-limit report that lists those scopes.
+          example: /v1/regions/global/organizations/quota-usage?dimension=node_count&threshold=100
+    QuotaRefusal:
+      type: object
+      description: The `metadata` of each `details[]` entry whose `reason` is `QUOTA_EXCEEDED`. One entry is written per refused quota dimension. What `requested` and `admissible` count differs per operation, so see the operation's 409 description.
+      required:
+        - dimension
+        - requested
+        - admissible
+      properties:
+        dimension:
+          type: string
+          description: The quota dimension that did not fit.
+          example: node_count
+        requested:
+          type: integer
+          format: int32
+          minimum: 0
+          description: The amount the request asked for in that dimension.
+          example: 3
+        admissible:
+          type: integer
+          format: int32
+          minimum: 0
+          description: The largest amount in that dimension that would have been admitted, the smallest headroom across the gating scopes.
+          example: 2
+        bindingScope:
+          type: string
+          description: The scope whose limit binds, `tenant` for the organization or `project`. Absent when no scope is identified.
+          enum:
+            - tenant
+            - project
+        scopes:
+          type: array
+          description: Every scope that gates the dimension, one entry each. Absent when no scope is identified.
+          items:
+            $ref: '#/components/schemas/QuotaRefusalScope'
+    QuotaRefusalScope:
+      type: object
+      description: One scope that gates a refused quota dimension, with its limit, the usage counted against it and the room left. A refusal lists every gating scope, so a project limit tighter than the organization's is visible next to the organization's own headroom.
+      required:
+        - scope
+        - targetId
+        - limit
+        - used
+        - headroom
+      properties:
+        scope:
+          type: string
+          description: 'The admission level: `tenant` is the organization, `project` a project inside it. Same values as `bindingScope` on the refusal.'
+          enum:
+            - tenant
+            - project
+        targetId:
+          type: string
+          description: Public identifier (slug) of the scope's target, the organization slug for `tenant` and the project slug for `project`.
+          example: acme
+        limit:
+          type: integer
+          format: int32
+          minimum: 0
+          description: The scope's effective limit on the dimension.
+          example: 5
+        used:
+          type: integer
+          format: int32
+          minimum: 0
+          description: Usage already counted against the limit.
+          example: 0
+        headroom:
+          type: integer
+          format: int32
+          minimum: 0
+          description: The amount this scope would still admit, the limit less the usage, floored at 0.
+          example: 5
     QuotaViewScope:
       type: object
       description: One admission scope's view of a quota dimension. A request is admitted only if it fits at every scope, so each scope's limit is an independent gate.
@@ -13046,6 +14114,10 @@ components:
           minimum: 0
           description: The scope's cap, in the dimension's unit. Absent when the scope does not cap the dimension (unlimited at this scope).
           example: 5
+        profileId:
+          type: string
+          description: The quota profile this scope's limit was copied from. Absent when the limit was set directly or the scope has no limit for the dimension. A profile that has since been deleted is still named.
+          example: qp-a1b2c3d4
         used:
           type: integer
           format: int64
@@ -13177,7 +14249,7 @@ components:
               - project
           minItems: 1
           uniqueItems: true
-          description: Binding tiers at which this role may be applied. Immutable after creation.
+          description: Binding tiers at which this role may be applied. Immutable after creation. Built-in roles may include `platform`; a custom role cannot be created with it, though custom roles created before this restriction may still report it.
         createdAt:
           type: string
           format: date-time
@@ -13299,13 +14371,10 @@ components:
         name any. Anything else is a `403`, even when the key's owner could
         reach it.
 
-        On `authorization_code` and `refresh_token`, only the access token is
-        narrowed. After a narrowed `refresh_token` request, the refresh token
+        On `refresh_token`, only the access token is narrowed: the refresh token
         keeps the session's full access, so a later refresh without
-        `scope_narrowing` returns a full access token. A refused
-        `authorization_code` request has already spent the code, so the user
-        signs in again; a refused `refresh_token` request leaves the refresh
-        token usable.
+        `scope_narrowing` returns a full access token. A refused `refresh_token`
+        request leaves the refresh token usable.
       additionalProperties: false
       properties:
         scope:
@@ -14249,8 +15318,10 @@ components:
           format: date-time
           description: |
             Credential expiration timestamp. If not set at creation, the
-            credential expires 90 days from creation. No org-level maximum
-            is enforced yet.
+            owning organization's default service-account credential
+            lifetime applies (30 days unless configured otherwise). Never
+            later than the organization's maximum lifetime (180 days unless
+            configured otherwise) at creation time.
         createdBy:
           type: string
           description: |
@@ -14476,9 +15547,27 @@ components:
           description: The share types offered in the region, ordered by `id` ascending.
           items:
             $ref: '#/components/schemas/ShareType'
+        totalCount:
+          type: integer
+          format: int64
+          example: 42
+          description: |-
+            Total share types offered in the region — classes naming a live storage backend — so `ceil(totalCount / limit)` is the page count. This list takes no filters.
+
+            Present only on the `offset`/`limit` path, and omitted when the caller passes `includeTotal=false`. Absent on the deprecated `pageToken` path.
+        offset:
+          $ref: '#/components/schemas/PageOffset'
+        limit:
+          $ref: '#/components/schemas/PageLimit'
         nextPageToken:
           type: string
-          description: Opaque cursor for the next page. Absent or empty when this is the last page.
+          deprecated: true
+          description: |-
+            **Deprecated:** use `offset`, `limit`, and `totalCount`.
+
+            Opaque cursor for the next page. Echo it as `pageToken` to fetch the following page. The key is ABSENT when this is the last page — the server omits it rather than returning an empty string — so a consumer must treat a missing `nextPageToken` as "no more results", not as an error or an unset field.
+
+            Emitted only on the deprecated `pageToken` path; absent when the request used `offset`/`limit`.
     ShareTypePlacement:
       type: object
       description: Placement configuration the class is served under, keyed by what it does rather than by the system that provides it.
@@ -14570,10 +15659,20 @@ components:
     SshUser:
       type: object
       description: >-
-        SSH access for one Linux user: the username, one or more authorized PUBLIC keys (private keys are never stored or generated — the caller supplies the public keys), an optional sudo grant, and an optional display name. Rendered into a cloud-init `users[]` entry on every provisioned node.
+        SSH access for one Linux user: the username, one or more authorized PUBLIC keys, given inline or as `ssh_public_key` credential references (private keys are never stored or generated), an optional sudo grant, and an optional display name. Rendered into a cloud-init `users[]` entry on every provisioned node.
       required:
         - username
-        - sshPublicKeys
+      allOf:
+        - if:
+            required:
+              - sshPublicKeyCredentials
+          then:
+            not:
+              required:
+                - sshPublicKeys
+          else:
+            required:
+              - sshPublicKeys
       properties:
         username:
           type: string
@@ -14588,10 +15687,21 @@ components:
             type: string
             maxLength: 16384
           description: >-
-            One or more SSH public keys (each an `authorized_keys` line) authorized to log in as this user — e.g. the app user's key plus several admins'. Each element must hold exactly one key. Only modern algorithms are accepted: `ssh-ed25519`, `ecdsa-sha2-nistp256/384/521`, `ssh-rsa` (>= 2048 bits), and the `sk-` FIDO security-key variants. SSH certificates, `ssh-dss`, and other legacy types are rejected.
+            One or more SSH public keys (each an `authorized_keys` line) authorized to log in as this user — e.g. the app user's key plus several admins'. Each element must hold exactly one key. Only modern algorithms are accepted: `ssh-ed25519`, `ecdsa-sha2-nistp256/384/521`, `ssh-rsa` (>= 2048 bits), and the `sk-` FIDO security-key variants. SSH certificates, `ssh-dss`, and other legacy types are rejected. Set exactly one of `sshPublicKeys` or `sshPublicKeyCredentials`. On cluster and instance-group create, keys supplied here are registered as managed SSH public-key credentials and returned (and re-read) as `sshPublicKeyCredentials` references.
           example:
             - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAID... app@example
             - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAID... admin@example
+        sshPublicKeyCredentials:
+          type: array
+          minItems: 1
+          maxItems: 32
+          items:
+            type: string
+            format: uri-reference
+            pattern: '^/v1/regions/[^/]+/projects/[^/]+/credentials/mcred-[0-9A-TV-Za-tv-z]{26}$'
+          description: Self-links of `ssh_public_key` credentials in the request's region and project, resolved at provisioning; exclusive with `sshPublicKeys`.
+          example:
+            - /v1/regions/us-texas-1/projects/proj-a1b2c3d4/credentials/mcred-01J9Z3X4Y5W6V7T8S9R0QPNMKH
         sudo:
           type: string
           maxLength: 4096
@@ -14873,20 +15983,20 @@ components:
             Emitted only on the deprecated `pageToken` path; absent when the request used `offset`/`limit`.
     TenantQuotaView:
       type: object
-      description: 'Quota view for an organization or a project: one row per quota dimension that some scope limits, or that is enforced and has recorded usage (a dimension limited nowhere and not enforced has no row), combining the active quota assignment limits at every applicable scope with the usage recorded by the quota enforcement engine. `scopes` lists those scopes, broadest first: the organization (`tenant`) always, then the project on the project view when the project has a quota assignment of its own (a project without one is bounded by its organization alone). `headroom` and `bindingScope` say how much more fits and which scope is binding. A dimension the admission check does not refuse on (nothing charges it, or its enforcement is switched off) reports enforced false and omits used and headroom at every scope: its limits are recorded but nothing refuses past them. profile names the quota profile assigned at the view''s own target and is absent when that target has no active assignment.'
+      description: 'Quota view for an organization or a project: one row per quota dimension that some scope limits, or that is enforced and has recorded usage (a dimension limited nowhere and not enforced has no row), combining the limits held at every applicable scope with the usage recorded by the quota enforcement engine. `scopes` lists those scopes, broadest first: the organization (`tenant`) always, then the project on the project view when the project holds limits of its own (a project without one is bounded by its organization alone). `headroom` and `bindingScope` say how much more fits and which scope is binding. A dimension the admission check does not refuse on (nothing charges it, or its enforcement is switched off) reports enforced false and omits used and headroom at every scope: its limits are recorded but nothing refuses past them. profile names the quota profile that set every limit at the view''s own target, and is absent when that target has no limits or no single profile set them all; each scope''s profileId says where its limit came from.'
       required:
         - dimensions
       properties:
         profile:
           type: object
-          description: Reference to the quota profile assigned at the view's own target (the organization on getTenantQuota, the project on getProjectQuota). Absent when that target has no active quota assignment. Identity fields only; the profile's full spec is operator-facing.
+          description: Reference to the quota profile that set every limit at the view's own target (the organization on getTenantQuota, the project on getProjectQuota). Absent when that target holds no limits, when any of its limits was set directly or by more than one profile, or when the profile has since been deleted. Identity fields only; the profile's full spec is operator-facing.
           required:
             - id
             - displayName
           properties:
             id:
               type: string
-              description: Identifier of the assigned quota profile.
+              description: Identifier of the quota profile the limits were copied from.
               example: qp-a1b2c3d4
             displayName:
               type: string
@@ -14942,7 +16052,7 @@ components:
                 type: integer
                 format: int64
                 deprecated: true
-                description: '**Deprecated:** use `scopes`. The organization (`tenant`) scope''s limit, kept for one release. Absent when the organization has no active assignment or its profile does not cap this dimension.'
+                description: '**Deprecated:** use `scopes`. The organization (`tenant`) scope''s limit, kept for one release. Absent when the organization holds no limit for this dimension.'
                 example: 100
               used:
                 type: integer
@@ -14984,10 +16094,9 @@ components:
           type: string
           description: |
             Refresh token for obtaining new access tokens without
-            re-authentication. Issued for the authorization_code grant and
-            returned (rotated) on the refresh_token grant; not issued for
-            api_key or client_credentials grants. For a browser/cookie-sourced
-            refresh the rotated token is delivered via the
+            re-authentication. Returned (rotated) on the `refresh_token` grant;
+            not issued for `api_key` or `client_credentials`. For a
+            browser/cookie-sourced refresh the rotated token is delivered via the
             k0r_refresh_token Set-Cookie header and omitted from this body;
             body-sourced (non-browser) callers receive it here.
     UpgradeClusterRequest:

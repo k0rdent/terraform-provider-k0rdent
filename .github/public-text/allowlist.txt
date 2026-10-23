@@ -49,7 +49,7 @@ _test\.go$:^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$
 ^internal/provider/error_guidance_internal_test\.go$:^customer$
 
 # The API's own descriptions, copied unchanged so the client matches its spec
-^internal/k0rdent/(spec/openapi\.yaml|[a-z]+\.gen\.go)$:^([Cc]ustomer|partner|MVP|NVIDIA)$
+^internal/k0rdent/(spec/openapi\.yaml|[a-z]+\.gen\.go)$:^([Cc]ustomers?|partner|MVP|NVIDIA)$
 ^internal/k0rdent/(spec/openapi\.yaml|[a-z]+\.gen\.go)$:^(10\.[0-9.]+|172\.(1[6-9]|2[0-9]|3[01])\.[0-9.]+|192\.168\.[0-9.]+)$
 ^internal/k0rdent/spec/openapi\.yaml$:^(ops@vendor\.example\.com|k0smotron@db\.example\.internal)$
 

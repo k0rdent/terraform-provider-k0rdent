@@ -167,9 +167,9 @@ unset TOKEN K0RDENT_CLIENT_SECRET BODY
 
 ## Testing a cancel
 
-A destroy of a cluster that's still `creating` cancels the create, then
-deletes. To test that: do steps 1 to 3, run this instead of steps 4 and 5,
-then do steps 6 and 7.
+A destroy of a cluster that's still `creating` cancels the create, waits for
+it to settle, then deletes. To test that: do steps 1 to 3, run this, then do
+step 4 to wait for the cluster to settle, and then steps 6 and 7. Skip step 5.
 
 ```sh
 EXEC=$(api "$C" | sed '$d' | jq -r .operation.executionId)
@@ -180,8 +180,11 @@ api -X POST -H 'Content-Type: application/json' \
 look
 ```
 
-`200` means the cancel was accepted. The cluster should read `failed`, with
-`stateReason` `CANCELLED`. A `409` means the create already finished.
+`202` means the stop was requested. The cluster stays `creating`, with
+`operation.status` `cancelling`, while the run winds down, then settles
+`failed` with `stateReason` `CANCELLED`. Step 4 waits for that, and a delete
+sent before it is refused with `409`. A `409` here means the create already
+finished.
 
 ## What to send when it fails
 

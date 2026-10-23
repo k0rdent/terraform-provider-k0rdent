@@ -424,8 +424,8 @@ func TestAnImportIDThatIsNotMadeOfIdentifiersIsRefused(t *testing.T) {
 // sent them in when it answered with adam first.
 func sshUsersAsWritten() []k0rdent.SshUser {
 	return []k0rdent.SshUser{
-		{Username: "zoe", SshPublicKeys: []string{"zed", "abe"}, Sudo: ptr("ALL=(ALL) NOPASSWD:ALL")},
-		{Username: "adam", SshPublicKeys: []string{"abe"}, DisplayName: ptr("Adam")},
+		{Username: "zoe", SshPublicKeys: &[]string{"zed", "abe"}, Sudo: ptr("ALL=(ALL) NOPASSWD:ALL")},
+		{Username: "adam", SshPublicKeys: &[]string{"abe"}, DisplayName: ptr("Adam")},
 	}
 }
 
@@ -466,7 +466,7 @@ func TestInstanceGroupStateFromSeesReorderedKeys(t *testing.T) {
 	written := sshUsersAsWritten()
 	prior := sshAccessSet(t, written)
 	echo := sshUsersAsWritten()
-	echo[0].SshPublicKeys = []string{"abe", "zed"}
+	echo[0].SshPublicKeys = &[]string{"abe", "zed"}
 
 	got, _ := instanceGroupStateFrom(context.Background(),
 		k0rdent.InstanceGroup{Id: "hosts", ClusterType: testPinnedRef, SshAccess: &echo},

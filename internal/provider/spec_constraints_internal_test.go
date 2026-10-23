@@ -126,11 +126,12 @@ var specBindings = func() map[string]specBinding {
 	b["createCluster body.clusterType"] = notConfigurable(uriReference)
 	b["createCluster body.auditPolicy"] = notConfigurable("the cluster resource has no audit policy attribute, so the provider never sends one")
 	for _, loc := range []string{"body.sshAccess", "body.sshAccess[].username", "body.sshAccess[].sshPublicKeys",
-		"body.sshAccess[].sshPublicKeys[]", "body.sshAccess[].sudo", "body.sshAccess[].displayName"} {
+		"body.sshAccess[].sshPublicKeys[]", "body.sshAccess[].sudo", "body.sshAccess[].displayName",
+		"body.sshAccess[].sshPublicKeyCredentials", "body.sshAccess[].sshPublicKeyCredentials[]"} {
 		b["createCluster "+loc] = notConfigurable("the cluster resource has no ssh_access attribute, so the provider never sends one")
 	}
-	each([]string{"createCluster", "updateCluster", "scaleCluster"}, "body.nodePools[].id", onResource(cluster, "node_pool", asKey))
-	each([]string{"createCluster", "updateCluster", "scaleCluster"}, "body.nodePools[].nodeCount", onResource(cluster, "node_pool.node_count", asValue))
+	each([]string{"createCluster", "scaleCluster"}, "body.nodePools[].id", onResource(cluster, "node_pool", asKey))
+	each([]string{"createCluster", "scaleCluster"}, "body.nodePools[].nodeCount", onResource(cluster, "node_pool.node_count", asValue))
 	b["scaleCluster body.nodePools"] = notConfigurable("the provider scales only when a pool it manages changes, so the list it sends always has one")
 	each([]string{"createCluster", "updateCluster"}, "body.storage.ceilingGiB", onResource(cluster, "storage_ceiling_gib", asValue))
 	each([]string{"createCluster", "updateCluster"}, "body.securityGroups", onResource(cluster, "security_groups", asSize))
@@ -154,6 +155,10 @@ var specBindings = func() map[string]specBinding {
 	b["createInstanceGroup body.sshAccess[].sshPublicKeys[]"] = onResource(group, "ssh_access.ssh_public_keys", asElement)
 	b["createInstanceGroup body.sshAccess[].sudo"] = onResource(group, "ssh_access.sudo", asValue)
 	b["createInstanceGroup body.sshAccess[].displayName"] = onResource(group, "ssh_access.display_name", asValue)
+	for _, loc := range []string{"body.sshAccess[].sshPublicKeyCredentials", "body.sshAccess[].sshPublicKeyCredentials[]"} {
+		b["createInstanceGroup "+loc] = notConfigurable("ssh_access takes keys, so the provider sends sshPublicKeys and never a credential reference")
+	}
+	b["scaleInstanceGroup body.instancesToDelete"] = notConfigurable("the provider only grows a pool, so it never names instances to remove")
 	for _, op := range []string{"createInstanceGroup", "updateInstanceGroup"} {
 		for _, loc := range []string{"body.securityGroups", "body.securityGroups[]"} {
 			b[op+" "+loc] = notConfigurable("the instance group resource has no security_groups attribute, so the provider never sends one")
@@ -262,6 +267,7 @@ var specBindings = func() map[string]specBinding {
 		"listClusters query:search", "listFileStores query:state", "listInstances query:instanceGroupUuid", "listInstances query:nodePoolUuid",
 		"listInstances query:reservationUuid", "listInstances query:instanceId[]", "listInstances query:inStates[]",
 		"listVPCs query:owner", "listVPCs query:ownerId", "listVPCs query:ownerKind",
+		"listInstances query:clusterUuid", "listProjects query:region",
 	} {
 		b[loc] = notConfigurable(notSent)
 	}
