@@ -35,7 +35,7 @@ import (
 // tainted one can't be refused, since `terraform destroy` runs it first to
 // refresh state, so it warns instead, before the approval, that applying it
 // cancels what the platform is building, with the same advice. A cluster
-// that no Terraform apply made is refused.
+// without this provider's create token is refused.
 //
 // # A delete
 //

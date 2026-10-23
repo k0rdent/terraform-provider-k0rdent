@@ -46,19 +46,19 @@ func TestAccADestroyRunsPastATaintedCreateInEveryState(t *testing.T) {
 		warns []string
 	}{
 		{clusterType, "acc-tainted-creating", neverSettles, "creating",
-			[]string{"is still being created, and applying this plan cancels it", "terraform untaint <address>"}},
+			[]string{"is still being created: applying this plan cancels it if this state holds it", "terraform untaint <address>"}},
 		{clusterType, "acc-tainted-updating", createsSlowly + " " + holdsUpgrade, "updating",
-			[]string{"is still being updated, and applying this plan cancels it", "terraform untaint <address>"}},
+			[]string{"is still being updated: applying this plan cancels it if this state holds it", "terraform untaint <address>"}},
 		{clusterType, "acc-tainted-active", createsSlowly, "active",
-			[]string{"exists, and applying this plan replaces it", "terraform untaint <address>"}},
+			[]string{"exists: applying this plan replaces it if this state holds it", "terraform untaint <address>"}},
 		{clusterType, "acc-tainted-failed", createsSlowly + " " + createFails, "failed",
-			[]string{"failed, and applying this plan replaces it"}},
+			[]string{"failed: applying this plan replaces it if this state holds it"}},
 		{instanceGroupType, "acc-tainted-group-creating", createsForever, "creating",
-			[]string{"is still being created, and applying this plan cancels it", "terraform untaint <address>"}},
+			[]string{"is still being created: applying this plan cancels it if this state holds it", "terraform untaint <address>"}},
 		{instanceGroupType, "acc-tainted-group-active", createsSlowly, "active",
-			[]string{"exists, and applying this plan replaces it", "terraform untaint <address>"}},
+			[]string{"exists: applying this plan replaces it if this state holds it", "terraform untaint <address>"}},
 		{instanceGroupType, "acc-tainted-group-failed", createsSlowly + " " + createFails, "failed",
-			[]string{"failed, and applying this plan replaces it"}},
+			[]string{"failed: applying this plan replaces it if this state holds it"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			c := newCLIRun(t)
@@ -150,7 +150,11 @@ func TestAccAPlanToCreateOverAClusterMadeElsewhereIsRefused(t *testing.T) {
 		t.Fatalf("the plan to create over a cluster made elsewhere passed:\n%s", out)
 	}
 	mustSay(t, "the refused plan", out, "is still being created", "carries no create token",
-		"Nothing was sent: the plan was refused.")
+		"terraform untaint <address>", "terraform import", "Nothing was sent: the plan was refused.")
+	// No token doesn't mean no apply made it: an imported cluster has none.
+	if strings.Contains(out, "wasn't made by a") {
+		t.Errorf("the refusal claims no Terraform apply made it:\n%s", out)
+	}
 }
 
 // taintedObject is a cluster or an instance group whose create stops waiting

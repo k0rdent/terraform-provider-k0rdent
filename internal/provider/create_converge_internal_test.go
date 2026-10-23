@@ -503,3 +503,45 @@ func TestAnAnswerNamingAnotherIDIsRefused(t *testing.T) {
 		})
 	}
 }
+
+// A tag PATCH replaces the platform's tags, and the user's never carry the
+// create token, so the token the platform holds goes back in with them. A
+// removal of every user tag still keeps it, and a cluster that holds none
+// gets none made up.
+func TestATagUpdateKeepsTheCreateToken(t *testing.T) {
+	tok := createTokenTag()
+	for _, tc := range []struct {
+		name  string
+		tags  *map[string]string
+		token string
+		want  map[string]string // nil for a nil result
+	}{
+		{"user tags", &map[string]string{"a": "b"}, "t1", map[string]string{"a": "b", tok: "t1"}},
+		{"every user tag removed", &map[string]string{}, "t1", map[string]string{tok: "t1"}},
+		{"no token held", &map[string]string{"a": "b"}, "", map[string]string{"a": "b"}},
+		{"tags not sent", nil, "t1", nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := keepCreateToken(tc.tags, tc.token)
+			if tc.want == nil {
+				if got != nil {
+					t.Fatalf("got %v, want no tags sent", *got)
+				}
+				return
+			}
+			if got == nil || len(*got) != len(tc.want) {
+				t.Fatalf("got %v, want %v", got, tc.want)
+			}
+			for k, v := range tc.want {
+				if (*got)[k] != v {
+					t.Errorf("%s = %q, want %q", k, (*got)[k], v)
+				}
+			}
+			if tc.tags != nil && tc.token != "" {
+				if _, leaked := (*tc.tags)[tok]; leaked {
+					t.Error("the user's tags were changed in place")
+				}
+			}
+		})
+	}
+}

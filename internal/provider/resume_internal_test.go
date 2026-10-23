@@ -499,7 +499,7 @@ func TestACreateThatStopsWaitingResumesAfterAnUntaint(t *testing.T) {
 					t.Fatalf("the plan to replace the tainted %s was refused, so a destroy would be too: %v", kind, refused)
 				}
 				containsAll(t, "the replacing plan's warning", strings.Join(replace.warnings, "\n"),
-					"is still being created, and applying this plan cancels it",
+					"is still being created: applying this plan cancels it if this state holds it",
 					"terraform untaint <address>\n    terraform apply", "`terraform destroy` shows this warning too")
 
 				// After the untaint. Private state isn't relied on: nil here.
@@ -566,7 +566,7 @@ func TestThePlanToCreateReadsTheIDFirst(t *testing.T) {
 					t.Fatalf("an active instance group was refused: %v", errs)
 				}
 				containsAll(t, "the plan's warning", strings.Join(planned.warnings, "\n"),
-					"exists, and applying this plan replaces it")
+					"exists: applying this plan replaces it if this state holds it")
 				return
 			}
 			containsAll(t, "the refused plan", strings.Join(errs, "\n"), "already exists", "terraform import")
@@ -633,10 +633,10 @@ func TestAPlanSaysWhereTheObjectCameFrom(t *testing.T) {
 // provider's create token is refused in every one of them.
 func TestAPlanPassesATaintedCreateInEveryState(t *testing.T) {
 	for _, state := range []struct{ state, says string }{
-		{"creating", "is still being created, and applying this plan cancels it"},
-		{"updating", "is still being updated, and applying this plan cancels it"},
-		{"active", "exists, and applying this plan replaces it"},
-		{"failed", "failed, and applying this plan replaces it"},
+		{"creating", "is still being created: applying this plan cancels it if this state holds it"},
+		{"updating", "is still being updated: applying this plan cancels it if this state holds it"},
+		{"active", "exists: applying this plan replaces it if this state holds it"},
+		{"failed", "failed: applying this plan replaces it if this state holds it"},
 	} {
 		for _, tc := range []struct {
 			kind   string

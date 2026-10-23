@@ -179,7 +179,7 @@ func TestAccACreateThatTimesOutIsWaitedForAfterAnUntaint(t *testing.T) {
 				t.Fatalf("the plan without the untaint was refused, so a destroy would be too:\n%s", out)
 			}
 			mustSay(t, "the plan without the untaint", out, "is tainted, so must be replaced",
-				"is still being created, and applying this plan cancels it",
+				"is still being created: applying this plan cancels it if this state holds it",
 				"terraform untaint <address> terraform apply")
 
 			if untainted, done := c.run("untaint", addr); !done {
@@ -245,7 +245,7 @@ func TestAccADestroyRunsPastACreateThePlatformFailed(t *testing.T) {
 				t.Fatalf("the plan after the failed create was refused:\n%s", out)
 			}
 			mustSay(t, "the plan", out, "is tainted, so must be replaced", "1 to add, 0 to change, 1 to destroy",
-				"failed, and applying this plan replaces it", "run `terraform destroy` instead")
+				"failed: applying this plan replaces it if this state holds it", "run `terraform destroy` instead")
 
 			out, ok = c.run("destroy", "-auto-approve")
 			if !ok {
