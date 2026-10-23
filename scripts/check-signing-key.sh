@@ -93,17 +93,29 @@ if [ "$mode" = secret ]; then
   done
   [ "$problems" -eq 0 ] || exit 1
   [ -f "$GPG_PASSPHRASE_FILE" ] || { error "Signing secret missing" "GPG_PASSPHRASE_FILE names no file."; exit 1; }
-  # A fingerprint pasted with spaces or in lowercase still signs, so it's
-  # normalized before it's compared.
-  fpr="$(printf '%s' "$GPG_KEY_FINGERPRINT" | tr -d '[:space:]' | tr '[:lower:]' '[:upper:]')"
+  # The value is never printed, raw or cleaned up. GitHub masks a secret only
+  # in the exact form it was set, so a passphrase pasted here by mistake would
+  # show in the log uppercased or with its spaces gone.
+  raw="$GPG_KEY_FINGERPRINT"
+  if [[ ! "$raw" =~ ^[0-9A-Fa-f\ ]+$ ]]; then
+    found=""
+    case "$raw" in *$'\n'*) found+=", a newline" ;; esac
+    case "$raw" in *$'\r'*) found+=", a carriage return" ;; esac
+    case "$raw" in *$'\t'*) found+=", a tab" ;; esac
+    error "Fingerprint isn't a fingerprint" "TERRAFORM_PROVIDER_GPG_KEY_FINGERPRINT is ${#raw} characters, not only hex digits and spaces${found:+ (it holds${found#,})}. Set it to $parent_fpr with nothing around it. The value isn't shown, in case another secret was pasted there."
+    exit 1
+  fi
+  # Spaces and lowercase still sign, so they're allowed, and dropped only for
+  # the comparison. gpg gets the raw value, as the release passes it.
+  fpr="$(printf '%s' "${raw// /}" | tr '[:lower:]' '[:upper:]')"
   if [ "$fpr" != "$parent_fpr" ]; then
-    error "Fingerprint doesn't match" "TERRAFORM_PROVIDER_GPG_KEY_FINGERPRINT is $fpr, and $keyfile holds $parent_fpr."
+    error "Fingerprint doesn't match" "TERRAFORM_PROVIDER_GPG_KEY_FINGERPRINT (${#raw} characters) doesn't name $keyfile's key, $parent_fpr. The value isn't shown, in case another secret was pasted there."
     exit 1
   fi
 
   printf '%s' "$GPG_PRIVATE_KEY" | gpg --batch --import 2>/dev/null ||
     { error "Signing key didn't import" "gpg couldn't import TERRAFORM_PROVIDER_GPG_PRIVATE_KEY."; exit 1; }
-  secret="$(gpg --batch --with-colons --fixed-list-mode --list-secret-keys "$fpr" 2>/dev/null)" ||
+  secret="$(gpg --batch --with-colons --fixed-list-mode --list-secret-keys "$raw" 2>/dev/null)" ||
     { error "Signing key not in the secret" "TERRAFORM_PROVIDER_GPG_PRIVATE_KEY holds no key $fpr."; exit 1; }
 
   # Field 15 of a sec record is # when only a stub of the parent is there.
@@ -125,7 +137,7 @@ if [ "$mode" = secret ]; then
   install -d -m 700 "$verifier"
   printf 'release signing check %s\n' "$now" >"$work/probe"
   if ! gpg --batch --yes --pinentry-mode loopback --passphrase-file "$GPG_PASSPHRASE_FILE" \
-    --local-user "$fpr" --output "$work/probe.sig" --detach-sign "$work/probe" 2>"$work/sign.log"; then
+    --local-user "$raw" --output "$work/probe.sig" --detach-sign "$work/probe" 2>"$work/sign.log"; then
     error "Signing failed" "gpg couldn't sign with $fpr: $(tail -n 1 "$work/sign.log")"
     exit 1
   fi
@@ -149,7 +161,7 @@ if [ "$mode" = secret ]; then
   else
     read -r _ _ signer _ _ _ _ _ signer_algo _ <<<"$validsig"
     accepted_algorithm "$signer_algo" ||
-      error "Unsupported signing key algorithm" "Subkey $signer is algorithm $signer_algo. The registry accepts RSA (1, 2, 3) and DSA (17)."
+      error "Unsupported signing key algorithm" "GitHub signs with subkey $signer, algorithm $signer_algo. The registry accepts RSA (1, 2, 3) and DSA (17)."
     if [ -z "$current" ]; then
       : # Reported below.
     elif [ "$signer" != "$(awk '{ print $2 }' <<<"$current")" ]; then
@@ -192,7 +204,11 @@ check_dates parent "$parent_fpr" "$parent_created" "$parent_expires" "$parent_ro
 if [ -z "$current" ]; then
   error "No signing subkey" "$keyfile has no subkey that can still sign. Releases can't be signed until one is added."
 else
-  read -r _ sub_fpr _ sub_created sub_expires _ _ <<<"$current"
+  read -r _ sub_fpr sub_algo sub_created sub_expires _ _ <<<"$current"
+  # The registry verifies with the subkey that signed, so its algorithm counts
+  # as much as the parent's.
+  accepted_algorithm "$sub_algo" ||
+    error "Unsupported signing key algorithm" "The signing subkey $sub_fpr is algorithm $sub_algo. The registry accepts RSA (1, 2, 3) and DSA (17)."
   check_dates "signing subkey" "$sub_fpr" "$sub_created" "$sub_expires" "$subkey_rotate_days"
 fi
 
