@@ -13,6 +13,9 @@ var (
 	topLevelReadOnly = regexp.MustCompile(`(?m)^permissions:\n  contents: read\n`)
 	releaseDraft     = regexp.MustCompile(`(?m)^  draft: true$`)
 	writePermission  = regexp.MustCompile(`(?m)^\s*(permissions:\s*write-all|[a-z-]+:\s*write)\s*$`)
+	// The same grant written inline, `permissions: {contents: write}`, which
+	// the line-by-line pattern above can't see.
+	inlineWritePermission = regexp.MustCompile(`permissions:\s*\{[^}]*:\s*write\b`)
 )
 
 // validateReleasePublishing keeps the GitHub Release, which the registries
@@ -66,6 +69,9 @@ func validateReleasePublishing(workflows map[string]string, goreleaser string) e
 		}
 		if m := writePermission.FindString(outside); m != "" {
 			return fmt.Errorf("%s grants %q outside the %s job", name, strings.TrimSpace(m), signingJob)
+		}
+		if m := inlineWritePermission.FindString(workflow); m != "" {
+			return fmt.Errorf("%s grants write inline as %q, which this check can't scope to a job; write it as a block", name, m)
 		}
 		if strings.Contains(workflow, "pull_request_target") {
 			return fmt.Errorf("%s runs on pull_request_target, which hands a fork's code this repository's token", name)
@@ -150,6 +156,7 @@ func TestReleasePublishingRejectsRegressions(t *testing.T) {
 		{"write token for every job", replace("ci.yml", "permissions:\n  contents: read\n", "permissions:\n  contents: write\n"), "doesn't start from permissions: contents: read"},
 		{"write token on another job", replace("ci.yml", "  build:\n    name: build\n", "  build:\n    name: build\n    permissions:\n      contents: write\n"), `grants "contents: write" outside`},
 		{"issues token on another job", replace("ci.yml", "  build:\n    name: build\n", "  build:\n    name: build\n    permissions:\n      issues: write\n"), `grants "issues: write" outside`},
+		{"inline write token on another job", replace("ci.yml", "  build:\n    name: build\n", "  build:\n    name: build\n    permissions: {contents: write}\n"), "grants write inline"},
 		{"contents token on the nightly report", replace("nightly.yml", "      issues: write\n", "      issues: write\n      contents: write\n"), `grants "issues: write" outside`},
 		{"pull_request_target", replace("changelog.yml", "  pull_request:\n", "  pull_request_target:\n"), "pull_request_target"},
 		{"never published", replace("release-dispatch.yml", "-F draft=false", "-F draft=true"), "never publishes"},
