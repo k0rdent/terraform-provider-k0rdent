@@ -5,8 +5,11 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
+
+	"go.yaml.in/yaml/v3"
 )
 
 // releaseSigningSecretNames must never appear outside the signing job. Signing
@@ -167,12 +170,9 @@ const (
 )
 
 var (
-	// A trigger other than a dispatch would run the check, with the key, for
-	// an event someone else controls.
-	otherWorkflowTrigger = regexp.MustCompile(`(?m)^[[:space:]]*(push|pull_request|pull_request_target|schedule|workflow_run|workflow_call|repository_dispatch|issue_comment|release):`)
-	actionUse            = regexp.MustCompile(`(?m)^[[:space:]]*-?[[:space:]]*uses:[[:space:]]*(\S+)(.*)$`)
-	commitPin            = regexp.MustCompile(`^[^@\s]+@[0-9a-f]{40}$`)
-	versionComment       = regexp.MustCompile(`^\s+#\s*v[0-9]+\.[0-9]+\.[0-9]+`)
+	actionUse      = regexp.MustCompile(`(?m)^[[:space:]]*-?[[:space:]]*uses:[[:space:]]*(\S+)(.*)$`)
+	commitPin      = regexp.MustCompile(`^[^@\s]+@[0-9a-f]{40}$`)
+	versionComment = regexp.MustCompile(`^\s+#\s*v[0-9]+\.[0-9]+\.[0-9]+`)
 )
 
 // validateSigningCheck holds release-signing-check.yml, the one other
@@ -185,11 +185,17 @@ func validateSigningCheck(workflows map[string]string) (string, error) {
 	if !ok {
 		return "", fmt.Errorf("missing signing check %s", signingCheck)
 	}
-	if !strings.Contains(check, "workflow_dispatch:") {
+	triggers, err := workflowTriggers(check)
+	if err != nil {
+		return "", fmt.Errorf("%s: %w", signingCheck, err)
+	}
+	if !slices.Contains(triggers, "workflow_dispatch") {
 		return "", fmt.Errorf("%s is not manually dispatched", signingCheck)
 	}
-	if m := otherWorkflowTrigger.FindString(check); m != "" {
-		return "", fmt.Errorf("%s runs on %s, and must only be dispatched", signingCheck, strings.TrimSpace(m))
+	for _, trigger := range triggers {
+		if trigger != "workflow_dispatch" {
+			return "", fmt.Errorf("%s runs on %s, and must only be dispatched", signingCheck, trigger)
+		}
 	}
 
 	guard, ok := workflowJobBlock(check, "require-main")
@@ -232,6 +238,50 @@ func validateSigningCheck(workflows map[string]string) (string, error) {
 		}
 	}
 	return job, nil
+}
+
+// workflowTriggers returns the events a workflow's on: names, in any of the
+// forms GitHub takes: one event, a list, or a mapping, in block or flow
+// style. A trigger other than a dispatch would run the signing check, with
+// the key, for an event someone else controls, so a line-based match that
+// misses `on: {workflow_dispatch: {}, workflow_call: {}}` isn't enough.
+func workflowTriggers(workflow string) ([]string, error) {
+	var doc yaml.Node
+	if err := yaml.Unmarshal([]byte(workflow), &doc); err != nil {
+		return nil, fmt.Errorf("parse workflow: %w", err)
+	}
+	if len(doc.Content) == 0 || doc.Content[0].Kind != yaml.MappingNode {
+		return nil, fmt.Errorf("workflow is not a mapping")
+	}
+	top := doc.Content[0]
+	var on *yaml.Node
+	for i := 0; i+1 < len(top.Content); i += 2 {
+		if top.Content[i].Value == "on" {
+			if on != nil {
+				return nil, fmt.Errorf("workflow has on: twice")
+			}
+			on = top.Content[i+1]
+		}
+	}
+	if on == nil {
+		return nil, fmt.Errorf("workflow has no on:")
+	}
+	var triggers []string
+	switch on.Kind {
+	case yaml.ScalarNode:
+		triggers = append(triggers, on.Value)
+	case yaml.SequenceNode:
+		for _, event := range on.Content {
+			triggers = append(triggers, event.Value)
+		}
+	case yaml.MappingNode:
+		for i := 0; i < len(on.Content); i += 2 {
+			triggers = append(triggers, on.Content[i].Value)
+		}
+	default:
+		return nil, fmt.Errorf("workflow on: is not an event, a list or a mapping")
+	}
+	return triggers, nil
 }
 
 // alwaysStepRuns reports whether job has a step marked if: always() that
@@ -499,6 +549,30 @@ func TestProtectedReleaseSigningRejectsSecurityRegressions(t *testing.T) {
 					workflows["release-signing-check.yml"], "  workflow_dispatch:\n", "  workflow_dispatch:\n  schedule:\n    - cron: \"0 0 * * *\"\n", 1)
 			},
 			want: "must only be dispatched",
+		},
+		{
+			name: "signing check on workflow_call in a flow mapping",
+			mutate: func(workflows map[string]string) {
+				workflows["release-signing-check.yml"] = strings.Replace(
+					workflows["release-signing-check.yml"], "on:\n  workflow_dispatch:\n", "on: {workflow_dispatch: {}, workflow_call: {}}\n", 1)
+			},
+			want: "runs on workflow_call, and must only be dispatched",
+		},
+		{
+			name: "signing check on push in a list",
+			mutate: func(workflows map[string]string) {
+				workflows["release-signing-check.yml"] = strings.Replace(
+					workflows["release-signing-check.yml"], "on:\n  workflow_dispatch:\n", "on: [workflow_dispatch, push]\n", 1)
+			},
+			want: "runs on push, and must only be dispatched",
+		},
+		{
+			name: "signing check on one event that isn't a dispatch",
+			mutate: func(workflows map[string]string) {
+				workflows["release-signing-check.yml"] = strings.Replace(
+					workflows["release-signing-check.yml"], "on:\n  workflow_dispatch:\n", "on: push\n", 1)
+			},
+			want: "is not manually dispatched",
 		},
 		{
 			name: "signing check on pull requests",
