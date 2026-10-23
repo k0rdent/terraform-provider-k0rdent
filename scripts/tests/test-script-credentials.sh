@@ -241,6 +241,20 @@ fi
 grep -qx "Authorization: Bearer $OWNER" "$work"/calls/stdin.* \
   || fail "scripts/demo.sh did not hand curl the owner token on stdin"
 
+# cleanup and env source the run directory's secrets file as shell, so a run
+# directory someone else planted, here as a symlink, is refused before it's
+# read.
+mkdir -p "$work/planted-demo-target"
+printf 'http://127.0.0.1:1\n' > "$work/planted-demo-target/endpoint"
+printf 'touch "%s/demo-sourced"; FAKE_OWNER_TOKEN=x\n' "$work" > "$work/planted-demo-target/fake-secrets.env"
+ln -sfn "$work/planted-demo-target" "$work/planted-demo"
+for cmd in cleanup env; do
+  if DEMO_RUN_DIR="$work/planted-demo" PATH="$work/demobin:$PATH" "$here/scripts/demo.sh" "$cmd" > "$work/out" 2>&1; then
+    fail "scripts/demo.sh $cmd used a planted run directory"
+  fi
+  [ ! -e "$work/demo-sourced" ] || fail "scripts/demo.sh $cmd ran a planted secrets file"
+done
+
 # --- 8. capture-live-fixtures writes what it fetched, redacted -------------
 
 # The redactor reads the response on stdin. It once took its own source from a
