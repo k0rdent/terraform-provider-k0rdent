@@ -96,6 +96,20 @@ jobs:
         if: ${{ !cancelled() && matrix.cli == 'terraform' && steps.setup-terraform.outcome == 'success' }}
         run: make bench BENCH_SIZES=100,500,1000 BENCH_PARALLELISM=10 BENCH_BUDGET=internal/tools/bench/budget.json
 
+  # The committed release key, read without any secret. It warns once the
+  # signing subkey is past its rotation date and fails when it, or the parent,
+  # has under 90 days left, so a red nightly says so while there's still time
+  # to rotate. The secret itself is checked by release-signing-check.yml.
+  signing-key:
+    name: signing key dates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: the committed signing key isn't near expiry
+        run: make signing-key-check
+
   # A failed scheduled run only emails whoever last touched the schedule, so
   # nobody else hears of it. One open issue, found by its label, says the
   # nightly is red. A failure opens it. A later failure edits its body to name
@@ -104,7 +118,7 @@ jobs:
   # cancelled or skipped run says nothing either way.
   report:
     name: report the result
-    needs: demo
+    needs: [demo, signing-key]
     if: ${{ always() && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     permissions:
@@ -115,11 +129,19 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
-          RESULT: ${{ needs.demo.result }}
+          DEMO: ${{ needs.demo.result }}
+          SIGNING_KEY: ${{ needs.signing-key.result }}
           RUN_ID: ${{ github.run_id }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           label="nightly-failing"
+          # Red if either job failed, green only if both passed.
+          RESULT=other
+          if [[ "$DEMO" == failure || "$SIGNING_KEY" == failure ]]; then
+            RESULT=failure
+          elif [[ "$DEMO" == success && "$SIGNING_KEY" == success ]]; then
+            RESULT=success
+          fi
           number="$(gh issue list --state open --label "$label" --json number --jq '.[0].number // empty')"
           if [[ "$RESULT" == success ]]; then
             [[ -z "$number" ]] || gh issue close "$number" --comment "Passing again: $RUN_URL"

@@ -12,7 +12,7 @@
 #    step can read it. There are no exceptions: a job that needs more history
 #    asks the checkout for it with fetch-depth.
 # 3. A signing job that leaves the keyring on the runner for the steps after it,
-#    or that restores a Go cache. Another job wrote that cache, and the build
+#    the release's or the signing check's, or that restores a Go cache. Another job wrote that cache, and the build
 #    trusts a cache entry without rebuilding it, so whatever wrote it has a say
 #    in what gets signed.
 # 4. A release toolchain named anywhere but .go-release-version, or a `make
@@ -113,8 +113,24 @@ for f in "${files[@]}"; do
     step !~ /persist-credentials["\047]?[[:space:]]*:[[:space:]]*["\047]?false/')
 done
 
-# 3. The signing job removes the keyring, always, before anything after it
-#    runs. upload-artifact is the step that follows signing.
+# 3. A job that holds the signing key removes the keyring, always, before
+#    anything after it runs. In the release, upload-artifact is the step that
+#    follows signing.
+check="$root/.github/workflows/release-signing-check.yml"
+if [ -f "$check" ]; then
+  if [ -z "$(first "$(steps "$check" 'job == "check-signing-key" &&
+    step ~ /if:[[:space:]]*always\(\)/ &&
+    step ~ /gpgconf --homedir "\$RUNNER_TEMP\/gnupg" --kill/ &&
+    step ~ /rm -rf "\$RUNNER_TEMP\/gnupg"/')")" ]; then
+    report "release-signing-check.yml check-signing-key has no 'if: always()' step that stops gpg-agent and removes \$RUNNER_TEMP/gnupg"
+  fi
+  if [ -z "$(first "$(steps "$check" 'job == "check-signing-key" &&
+    step ~ /if:[[:space:]]*always\(\)/ &&
+    step ~ /rm -f "\$RUNNER_TEMP\/gpg-passphrase"/')")" ]; then
+    report "release-signing-check.yml check-signing-key has no 'if: always()' step that removes \$RUNNER_TEMP/gpg-passphrase"
+  fi
+fi
+
 dispatch="$root/.github/workflows/release-dispatch.yml"
 if [ -f "$dispatch" ]; then
   signing='job == "build-signed-artifacts"'

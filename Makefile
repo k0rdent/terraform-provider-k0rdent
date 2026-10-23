@@ -382,6 +382,14 @@ major-release-gate-test: ## Verify the major version gate refuses and explains
 release-tag-validation-test: ## Run the release dispatch's tag checks against a scratch repository
 	./scripts/tests/test-release-tag-validation.sh
 
+.PHONY: signing-key-check
+signing-key-check: ## Warn when the committed signing subkey is due to rotate, and fail when it's near expiry
+	./scripts/check-signing-key.sh public docs/signing-key.asc
+
+.PHONY: signing-key-check-test
+signing-key-check-test: ## Run the signing key check against throwaway keys
+	./scripts/tests/test-signing-key-check.sh
+
 .PHONY: mod
 mod: ## Download module dependencies that can actually be resolved
 	go build ./...

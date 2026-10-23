@@ -87,6 +87,24 @@ setup
 edit workflows/release-dispatch.yml 's{(      - name: Remove the signing keyring\n.*?rm -rf "\$RUNNER_TEMP/gnupg"\n)(.*)\z}{$2$1}s'
 expect_fail "a keyring removed after upload-artifact was accepted" "after upload-artifact runs"
 
+# The signing check holds the same key, so it has to clean up the same way.
+setup
+edit workflows/release-signing-check.yml 's{rm -rf "\$RUNNER_TEMP/gnupg"}{true}'
+expect_fail "a signing check that keeps its keyring was accepted" "check-signing-key has no 'if: always()' step that stops gpg-agent"
+
+setup
+edit workflows/release-signing-check.yml 's{\n[^\n]*gpgconf --homedir "\$RUNNER_TEMP/gnupg" --kill[^\n]*}{}'
+expect_fail "a signing check that leaves gpg-agent running was accepted" "check-signing-key has no 'if: always()' step that stops gpg-agent"
+
+# The cleanup only when the check passed, which is when it matters least.
+setup
+edit workflows/release-signing-check.yml 's{(- name: Remove the signing keyring\n\s+)if: always\(\)}{${1}if: success()}'
+expect_fail "a signing check whose cleanup can be skipped was accepted" "check-signing-key has no 'if: always()' step that stops gpg-agent"
+
+setup
+edit workflows/release-signing-check.yml 's{rm -f "\$RUNNER_TEMP/gpg-passphrase"}{true}'
+expect_fail "a signing check that keeps the passphrase file was accepted" "removes \$RUNNER_TEMP/gpg-passphrase"
+
 # The signing job restoring a module and build cache another job wrote, both
 # by saying so and by leaving setup-go's default on.
 setup

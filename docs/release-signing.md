@@ -37,6 +37,9 @@ and `make workflow-actions-test` proves it still does. CI runs it.
   That job holds no other secret.
 - **The signing job deletes the keyring** in an `if: always()` step before
   uploading anything.
+- **The signing check holds to the same rules.** It's dispatched by hand from
+  `main`, runs in `release-signing` and deletes the keyring and passphrase
+  file in `if: always()` steps. It's the only other job that gets the key.
 
 ## What a dispatch does
 
@@ -59,6 +62,38 @@ and `make workflow-actions-test` proves it still does. CI runs it.
    `SHA256SUMS` covers exactly those archives, their SBOMs and the registry
    manifest, and that its signature verifies. Then it uploads them as a workflow
    artifact.
+
+## Check the key
+
+The public key is [`signing-key.asc`](signing-key.asc), and its fingerprint is
+in [SECURITY.md](../SECURITY.md#release-signatures).
+
+Run **Check release signing** from `main`:
+
+- after any change to the key or its secrets, such as a new subkey
+- before the first release on a new subkey
+
+A required reviewer approves it, as for a release. It signs a test file with
+the secrets, checks the signature against `signing-key.asc`, and fails if:
+
+- the fingerprint secret doesn't name the committed key
+- the secret holds the parent's secret part, not just the signing subkey
+- the signature doesn't verify against the committed key alone
+- GitHub signs with a subkey that isn't the newest one committed, or isn't
+  committed at all
+
+`scripts/check-signing-key.sh` does the checking, and
+`make signing-key-check-test` proves each refusal against throwaway keys.
+
+The nightly reads `signing-key.asc` with no secret. It warns once the signing
+subkey is a year old or the parent five, which is when they rotate. It fails
+when either has under 90 days left, which turns the nightly red. Run it with
+`make signing-key-check`.
+
+To rotate: add a new signing subkey, put it in
+`TERRAFORM_PROVIDER_GPG_PRIVATE_KEY`, commit the new public key here, upload
+it to both registries, then run the check. Don't revoke the old subkey unless
+it leaked: releases it signed stop verifying.
 
 ## Tags
 
