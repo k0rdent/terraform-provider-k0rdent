@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
-# Refuses a tag whose major version is higher than any release on main or on a
-# release branch, until somebody decides to make it.
+# Refuses a tag whose major version is higher than any published release,
+# until somebody decides to make it.
 #
 # A new major is a compatibility claim to every user, and v1 is also the point
 # at which the repository has to be public for the registry to serve it. Those
@@ -11,17 +11,16 @@
 # The release dispatch's `allow_major` input clears it, and reaches this script
 # as RELEASE_ALLOW_MAJOR=1.
 #
-# A release cut from release-v1.0.x is as released as one cut from main, so
-# the dispatch passes every release branch after main. Without them, the first
-# patch after a v1.0.0 cut on a release branch would look like a new major.
+# Only a release the release workflow published counts, and the dispatch
+# passes their tags. A tag proves nothing: pushing one starts nothing, and the
+# tag ruleset keeps a mistaken one forever. Counted, a v1.0.0-rc.1 pushed by
+# mistake would wave every later v1 through, with nobody deciding anything.
 #
-#   check-major-release.sh <tag> [<ref>...]
+#   check-major-release.sh <tag> [<published tag>...]
 set -euo pipefail
 
-tag="${1:?usage: check-major-release.sh <tag> [<ref>...]}"
+tag="${1:?usage: check-major-release.sh <tag> [<published tag>...]}"
 shift
-refs=("$@")
-[ "${#refs[@]}" -gt 0 ] || refs=(origin/main)
 
 # Strict SemVer with an optional prerelease and no build metadata, as the
 # release dispatch accepts.
@@ -35,20 +34,13 @@ if [[ ! "$tag" =~ $semver ]]; then
 fi
 major="${BASH_REMATCH[1]}"
 
-for ref in "${refs[@]}"; do
-  if ! git rev-parse --verify --quiet "${ref}^{commit}" >/dev/null; then
-    printf 'check-major-release: cannot resolve %q to a commit\n' "$ref" >&2
-    exit 1
-  fi
-done
-
 latest=0
-while IFS= read -r released; do
+for released in "$@"; do
   if [ "$released" != "$tag" ] && [[ "$released" =~ $semver ]] &&
     [ "${BASH_REMATCH[1]}" -gt "$latest" ]; then
     latest="${BASH_REMATCH[1]}"
   fi
-done < <(for ref in "${refs[@]}"; do git tag --list 'v*' --merged "$ref"; done | sort -u)
+done
 
 if [ "$major" -le "$latest" ]; then
   exit 0
