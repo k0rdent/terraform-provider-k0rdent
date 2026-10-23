@@ -139,8 +139,8 @@ func mustSay(t *testing.T, step, out string, wants ...string) {
 //
 //  1. `terraform apply` fails, exit 1, saying it's still being created and to
 //     untaint and apply
-//  2. `terraform apply` again, without the untaint, is refused at plan, so
-//     nothing is destroyed
+//  2. `terraform plan`, without the untaint, plans the replacement and warns
+//     before any approval that applying it cancels the create
 //  3. `terraform untaint` and an apply with `timeouts.create` raised, as the
 //     error suggests, waits for the same object and finishes it
 //
@@ -174,15 +174,13 @@ func TestAccACreateThatTimesOutIsWaitedForAfterAnUntaint(t *testing.T) {
 				}
 			})
 
-			out, ok = c.run("apply", "-auto-approve")
-			if ok {
-				t.Fatalf("the apply that forgot the untaint went ahead:\n%s", out)
+			out, ok = c.run("plan")
+			if !ok {
+				t.Fatalf("the plan without the untaint was refused, so a destroy would be too:\n%s", out)
 			}
-			mustSay(t, "the apply without the untaint", out, "is still being created",
-				"terraform untaint <address> terraform apply", "allow_replace = true")
-			if strings.Contains(out, "Destroying...") {
-				t.Errorf("the refused apply destroyed something:\n%s", out)
-			}
+			mustSay(t, "the plan without the untaint", out, "is tainted, so must be replaced",
+				"is still being created, and applying this plan cancels it",
+				"terraform untaint <address> terraform apply")
 
 			if untainted, done := c.run("untaint", addr); !done {
 				t.Fatalf("untaint failed:\n%s", untainted)

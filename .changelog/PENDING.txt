@@ -1,0 +1,7 @@
+```release-note:bug
+resource/k0rdent_kubernetes_cluster: Fix `terraform destroy` refused at plan after a create's wait timed out, while the cluster was still `creating` or after it settled. A tainted cluster this provider created now plans its replacement in any state, with a warning that says what applying it does
+```
+
+```release-note:bug
+resource/k0rdent_instance_group: Fix `terraform destroy` refused at plan after a create's wait timed out, while the group was still `creating` or after it settled
+```

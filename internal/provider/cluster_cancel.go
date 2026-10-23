@@ -53,8 +53,8 @@ func addClusterWaitError(diags *diag.Diagnostics, summary, advice string, err er
 // long as the operation does, which is said too. It reads state as of the last
 // refresh, so an operation started since is only reported by the apply. It
 // can't see a tainted cluster that's being replaced either: Terraform plans
-// that replacement with a null prior state, so the plan looks like a create
-// and only the apply's warning names the cancel.
+// that replacement with a null prior state, so the plan looks like a create,
+// and createGuard's warning names the cancel instead.
 func warnOnBusyDestroy(ctx context.Context, st tfsdk.State, diags *diag.Diagnostics) {
 	var prior, id, onBusy types.String
 	// Not worth failing a plan over: a state that can't be read warns nobody.

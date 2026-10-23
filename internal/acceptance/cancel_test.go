@@ -60,10 +60,10 @@ func checkFakeState(name, want string) resource.TestCheckFunc {
 }
 
 // A create that never settles times out, fails, and leaves the cluster in
-// state, tainted and still creating. The plan that would replace it is
-// refused. The destroy at the end has to cancel the create, because the
-// platform refuses to delete a cluster mid-operation, and CheckDestroy proves
-// the cluster is gone.
+// state, tainted and still creating. The plan that would replace it warns
+// that applying it cancels the create. The destroy at the end has to cancel
+// the create, because the platform refuses to delete a cluster mid-operation,
+// and CheckDestroy proves the cluster is gone.
 func TestAccDestroyCancelsACreateThatNeverSettled(t *testing.T) {
 	const name = "acc-cancel"
 	resource.Test(t, resource.TestCase{
@@ -75,12 +75,12 @@ func TestAccDestroyCancelsACreateThatNeverSettled(t *testing.T) {
 				ExpectError: regexp.MustCompile(`(?s)is still being created.*terraform untaint <address>`),
 			},
 			{
-				// The tainted cluster's replacement is refused at plan, so
+				// The tainted cluster's replacement plans, with the warning, and
 				// nothing is destroyed until the test's own destroy.
-				PreConfig:   func() { checkFakeStateNow(t, name, "creating") },
-				Config:      stuckClusterConfig(name),
-				PlanOnly:    true,
-				ExpectError: regexp.MustCompile(`(?s)is still being created.*terraform untaint <address>.*allow_replace = true`),
+				PreConfig:          func() { checkFakeStateNow(t, name, "creating") },
+				Config:             stuckClusterConfig(name),
+				PlanOnly:           true,
+				ExpectNonEmptyPlan: true,
 			},
 		},
 	})

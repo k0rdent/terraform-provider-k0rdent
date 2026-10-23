@@ -27,7 +27,7 @@ func hardwareIDAttribute(name string) schema.StringAttribute {
 		MarkdownDescription: name + " name, the one the platform shows, and the id this resource is imported " +
 			"by. Lower-case letters, digits and hyphens, starting with a letter. Required, so that a plan " +
 			"can read it before creating it: a create that stopped waiting leaves it still being built, and " +
-			"the plan that would replace it is refused with the way to wait for it instead.",
+			"the plan that would replace it warns so, with the way to wait for it instead.",
 		PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()},
 		Validators:    idValidators(),
 	}
@@ -56,57 +56,80 @@ type existing struct {
 	target             clusterTarget
 	id, state          string
 	// tagged is false for a kind with no tags to carry a create token.
-	tagged, token bool
+	tagged bool
+	// busyNote follows what applying does to one still being built, when
+	// the kind can be told to wait for it instead.
+	busyNote string
 }
 
 // refuse fails the plan for an object the platform already holds under the
-// configured id, and says how to keep it, replace it, or leave it alone.
+// configured id that no Terraform apply made, and says how to keep it,
+// replace it, or leave it alone.
 func (e existing) refuse(diags *diag.Diagnostics) {
 	summary := fmt.Sprintf("A %s named %q already exists", e.kind, e.id)
-	if e.state == creatingState {
-		summary = fmt.Sprintf("The %s %q is still being created", e.kind, e.id)
-	}
-	origin := fmt.Sprintf("A %s has no tags, so the provider can't tell which configuration made it.", e.kind)
-	switch {
-	case e.tagged && e.token:
-		origin = "It carries this provider's create token, so a Terraform apply made it, most likely this " +
-			"configuration's."
-	case e.tagged:
-		origin = "It carries no create token from this provider, so it wasn't made by a Terraform apply."
+	if verb, busy := inFlight[e.state]; busy {
+		summary = fmt.Sprintf("The %s %q is still being %s", e.kind, e.id, verb)
 	}
 	diags.AddAttributeError(path.Root("id"), summary, redactDiagnosticText(fmt.Sprintf(
-		"The platform reports %s %q as `%s`. This plan would create it, which means either a second "+
-			"%s under an id that's taken, or, when this resource is tainted in state, destroying this "+
-			"one first and creating it again. A destroy cancels whatever the platform is still building. "+
-			"%s\n\n"+
-			"If an earlier apply stopped waiting for it, wait for it instead, replacing <address> with "+
-			"this resource's address, such as %s.example:\n\n"+
-			"    terraform untaint <address>\n"+
-			"    terraform apply\n\n"+
-			"To replace it on purpose, set `allow_replace = true` on this resource. If this state doesn't "+
-			"manage it, import it with `terraform import <address> %s`, or choose another `id`. "+
+		"The platform reports %s %q as `%s`. This plan would create it, which means a second %s under an "+
+			"id that's taken. It carries no create token from this provider, so it wasn't made by a "+
+			"Terraform apply.\n\n"+
+			"If this state should manage it, import it with `terraform import <address> %s`, replacing "+
+			"<address> with this resource's address, such as %s.example. Otherwise choose another `id`. "+
+			"To replace it on purpose, set `allow_replace = true` on this resource. "+
 			"Nothing was sent: the plan was refused.",
-		e.kind, e.id, e.state, e.kind, origin, e.resourceName, scopedImportID(e.target)(e.id))))
+		e.kind, e.id, e.state, e.kind, scopedImportID(e.target)(e.id), e.resourceName)))
 }
 
-// warnReplacingFailed says a plan to create passed over a `failed` object,
-// because applying it deletes that object first when it's tainted, and that
-// delete can fail too. The plan a destroy refreshes with shows it as well,
-// which the warning says, since the provider can't tell the two apart.
-func (e existing) warnReplacingFailed(diags *diag.Diagnostics) {
-	diags.AddAttributeWarning(path.Root("id"),
-		fmt.Sprintf("The %s %q failed, and applying this plan replaces it", e.kind, e.id),
-		fmt.Sprintf("The platform reports %s %q as `failed`. A failed create leaves it tainted in state, so "+
-			"applying this plan deletes it and creates it again. Its delete can fail the way its create did. "+
-			"To only remove it, run `terraform destroy` instead.\n\n"+
-			"`terraform destroy` shows this warning too, from the plan it runs first to refresh state. "+
-			"It replaces nothing.", e.kind, e.id))
+// warnReplacing passes a plan to create over an object the provider can
+// take for this configuration's, and says what applying it does. A tainted
+// object plans this way, and so does the plan a destroy refreshes with, which
+// the provider can't tell apart: refusing it would block the destroy. So the
+// plan passes in every state, and the warning says how to keep the object
+// instead. It's in front of the approval, as the cancel it names would be.
+func (e existing) warnReplacing(diags *diag.Diagnostics) {
+	destroyToo := "\n\n`terraform destroy` shows this warning too, from the plan it runs first to refresh state. " +
+		"It replaces nothing."
+	if e.state == "failed" {
+		diags.AddAttributeWarning(path.Root("id"),
+			fmt.Sprintf("The %s %q failed, and applying this plan replaces it", e.kind, e.id),
+			fmt.Sprintf("The platform reports %s %q as `failed`. A failed create leaves it tainted in state, so "+
+				"applying this plan deletes it and creates it again. Its delete can fail the way its create did. "+
+				"To only remove it, run `terraform destroy` instead.", e.kind, e.id)+destroyToo)
+		return
+	}
+	origin := fmt.Sprintf("A %s has no tags to carry a create token, so it passes on its state alone.", e.kind)
+	if e.tagged {
+		origin = "It carries this provider's create token, so a Terraform apply made it."
+	}
+	keep := fmt.Sprintf("To keep it and wait for it instead, replacing <address> with this resource's address, "+
+		"such as %s.example:\n\n"+
+		"    terraform untaint <address>\n"+
+		"    terraform apply\n\n"+
+		"If this state doesn't hold it, the apply's create is refused because the id is taken, and nothing "+
+		"is deleted.", e.resourceName)
+	summary := fmt.Sprintf("The %s %q exists, and applying this plan replaces it", e.kind, e.id)
+	does := "applying this plan deletes it and creates it again. An earlier apply may have stopped waiting " +
+		"for it before it finished."
+	if verb, busy := inFlight[e.state]; busy {
+		summary = fmt.Sprintf("The %s %q is still being %s, and applying this plan cancels it", e.kind, e.id, verb)
+		does = fmt.Sprintf("applying this plan stops what the platform is still doing, deletes the %s, and "+
+			"creates it again.%s", e.kind, e.busyNote)
+	}
+	diags.AddAttributeWarning(path.Root("id"), summary, redactDiagnosticText(fmt.Sprintf(
+		"The platform reports %s %q as `%s`. %s When it's tainted in state, as a create that stopped waiting "+
+			"leaves it, %s\n\n%s", e.kind, e.id, e.state, origin, does, keep)+destroyToo))
 }
 
-// refuseExisting is createGuard for a cluster. A `failed` one this provider
-// made passes with a warning: nothing is being built, so its replacement only
-// destroys what the platform gave up on, and a destroy's refresh can run past
-// it.
+// inFlight are the states an object is still being built or changed in, by
+// the word a sentence uses for each.
+var inFlight = map[string]string{creatingState: "created", "updating": "updated"}
+
+// refuseExisting is createGuard for a cluster. One that carries this
+// provider's create token passes with a warning, in any state: a Terraform
+// apply made it, and when it's tainted, the plan to replace it is also the
+// plan a destroy refreshes with. One without a token was made some other way,
+// so the plan is refused: it isn't this configuration's to replace.
 func (r *clusterResource) refuseExisting(ctx context.Context, plan tfsdk.Plan, diags *diag.Diagnostics) {
 	target, id, ok := plannedTarget(ctx, r.meta, plan)
 	if !ok || r.meta == nil || r.meta.Client == nil {
@@ -128,16 +151,22 @@ func (r *clusterResource) refuseExisting(ctx context.Context, plan tfsdk.Plan, d
 	}
 	found := existing{
 		kind: "cluster", resourceName: ResourceName(clusterResourceSuffix), target: target, id: id, state: state,
-		tagged: true, token: token,
+		tagged: true,
+		busyNote: " With `on_destroy_busy = \"wait\"`, it waits for the operation to finish instead of " +
+			"cancelling it.",
 	}
-	if state == "failed" && token {
-		found.warnReplacingFailed(diags)
+	if token {
+		found.warnReplacing(diags)
 		return
 	}
 	found.refuse(diags)
 }
 
-// refuseExisting is createGuard for an instance group.
+// refuseExisting is createGuard for an instance group. An instance group has
+// no tags to carry a create token, so it passes on its state alone, with a
+// warning: refusing one would block the destroy of a tainted group. A group
+// this state doesn't hold is still refused, by the create's 409, and nothing
+// is deleted first.
 func (r *instanceGroupResource) refuseExisting(ctx context.Context, plan tfsdk.Plan, diags *diag.Diagnostics) {
 	target, id, ok := plannedTarget(ctx, r.meta, plan)
 	if !ok || r.meta == nil || r.meta.Client == nil {
@@ -150,20 +179,12 @@ func (r *instanceGroupResource) refuseExisting(ctx context.Context, plan tfsdk.P
 		}
 		return
 	}
-	// An instance group has no tags to carry a create token, so a `failed`
-	// one passes on its state alone. Replacing it only happens when it's
-	// tainted in this state, and a plan for a new one is answered 409.
 	state := stateString(got.JSON200.State)
 	if state == "deleting" || state == "deleted" {
 		return
 	}
-	found := existing{
+	existing{
 		kind: "instance group", resourceName: ResourceName(instanceGroupResourceSuffix), target: target, id: id,
 		state: state,
-	}
-	if state == "failed" {
-		found.warnReplacingFailed(diags)
-		return
-	}
-	found.refuse(diags)
+	}.warnReplacing(diags)
 }

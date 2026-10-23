@@ -153,11 +153,12 @@ func (r *clusterResource) Schema(ctx context.Context, _ resource.SchemaRequest, 
 			"A wait that times out, or a run that is interrupted, does not stop the operation, which keeps " +
 			"running on the platform. A create that stops waiting fails, and Terraform taints the cluster. " +
 			"Run `terraform untaint` on it and then `terraform apply`, which waits for the same cluster. " +
-			"A plan that would replace it instead, a create of an `id` the platform holds and isn't " +
-			"deleting, is refused unless `allow_replace = true`, so a forgotten untaint destroys nothing. " +
-			"A cluster this provider created that the platform reports `failed` isn't refused: nothing is " +
-			"being built, so `terraform destroy`, or an apply that replaces it, runs as usual. The plan " +
-			"warns that applying it deletes the failed cluster first, and that delete can fail too. " +
+			"A plan that would replace it instead warns before the approval, in whatever state the " +
+			"platform reports, that applying it cancels what's still being built, or deletes the " +
+			"cluster, and creates it again. `terraform destroy` runs that plan first to refresh state, so " +
+			"it shows the warning too, and then only deletes. A failed cluster's delete can fail too. " +
+			"A create of an `id` the platform holds for a cluster no Terraform apply made, one without " +
+			"this provider's create token, is refused unless `allow_replace = true`. " +
 			"A destroy that stops waiting leaves the cluster in state, and the next `terraform destroy` " +
 			"waits for the same delete without sending another.\n\n" +
 			"The platform deletes a cluster only once nothing is running on it, so destroying one that " +
@@ -166,8 +167,8 @@ func (r *clusterResource) Schema(ctx context.Context, _ resource.SchemaRequest, 
 			"that destroys the cluster, or replaces one that isn't tainted, warns before the approval too " +
 			"when the last refresh saw the operation, because an operation cancelled that way does not " +
 			"finish: a cancelled upgrade leaves the cluster `failed`. A plan that replaces a tainted " +
-			"cluster can't warn, because Terraform plans that replacement as a new cluster and doesn't " +
-			"show the provider the tainted one, so there the apply's warning is the first notice. " +
+			"cluster warns from the platform's read, since Terraform doesn't show the provider the " +
+			"tainted one. " +
 			"Only a destroy cancels an operation, the one that starts an apply replacing the cluster " +
 			"included, and `on_destroy_busy = \"wait\"` makes a destroy wait for the operation to finish " +
 			"instead. To cancel it and keep the cluster, invoke the `" +
