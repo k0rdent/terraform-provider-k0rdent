@@ -6,9 +6,9 @@ package k0rdent
 // the pin: the hash of the release asset the prepared spec was made from.
 const (
 	// ContractRelease is the k0rdent API release tag.
-	ContractRelease = "v1.3.0-dev.4"
+	ContractRelease = "v1.3.0-rc.2"
 	// ContractCommit is the commit the release was cut from.
-	ContractCommit = "5d2dcdcb31cec57c35e28f86315cffed89a2fe9a"
+	ContractCommit = "93639ea7f19b64fdfccc198f6e2361254057f7ea"
 	// ContractSHA256 is the SHA-256 of the release's openapi.yaml asset.
-	ContractSHA256 = "35901e2a487c9cfe95fc4b1d37b57494ca7c19c03d29aaf069fbb348ba84f604"
+	ContractSHA256 = "81f76b9055ffeb2ed06950389f0638e7488a6a4f8fc1855d7d3f45ee25cb51d2"
 )

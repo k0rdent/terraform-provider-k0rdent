@@ -121,7 +121,7 @@ func sshAccessRequest(ctx context.Context, v types.Set) (*[]k0rdent.SshUser, dia
 		diags.Append(u.SSHPublicKeys.ElementsAs(ctx, &keys, false)...)
 		out = append(out, k0rdent.SshUser{
 			Username:      u.Username.ValueString(),
-			SshPublicKeys: keys,
+			SshPublicKeys: &keys,
 			Sudo:          optionalString(u.Sudo),
 			DisplayName:   optionalString(u.DisplayName),
 		})
@@ -148,9 +148,13 @@ func sshAccessValueOver(ctx context.Context, echo *[]k0rdent.SshUser, priorKeys 
 	}
 	users := make([]sshUserModel, 0, len(*echo))
 	for _, u := range *echo {
-		keys, d := types.ListValueFrom(ctx, types.StringType, u.SshPublicKeys)
+		echoed := []string{}
+		if u.SshPublicKeys != nil {
+			echoed = *u.SshPublicKeys
+		}
+		keys, d := types.ListValueFrom(ctx, types.StringType, echoed)
 		diags.Append(d...)
-		if prior, ok := priorKeys[u.Username]; ok && len(u.SshPublicKeys) == 0 {
+		if prior, ok := priorKeys[u.Username]; ok && len(echoed) == 0 {
 			keys = prior
 		}
 		users = append(users, sshUserModel{

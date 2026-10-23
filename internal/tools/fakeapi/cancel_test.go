@@ -52,16 +52,33 @@ func TestDeleteIsRefusedMidOperationAndNamesTheCancel(t *testing.T) {
 	}
 }
 
-func TestCancelSettlesTheClusterFailedAndThenItDeletes(t *testing.T) {
+func TestACancelWindsDownThenSettlesFailedAndThenItDeletes(t *testing.T) {
 	s := newState()
 	createStuck(t, s)
 
 	code, out := cancelNow(t, s)
-	if code != http.StatusOK || out["state"] != "failed" || out["stateReason"] != "CANCELLED" {
+	if code != http.StatusAccepted || out["state"] != "creating" {
 		t.Fatalf("cancel: %d %v", code, out)
 	}
-	if op, ok := out["operation"].(map[string]any); !ok || op["status"] != "cancelled" || op["executionId"] == "" {
+	if op, ok := out["operation"].(map[string]any); !ok || op["status"] != "cancelling" || op["executionId"] == "" {
 		t.Errorf("operation = %v", out["operation"])
+	}
+	if code, out := call(t, s.deleteCluster, http.MethodDelete, "c", ""); code != http.StatusConflict {
+		t.Fatalf("delete while cancelling: %d %v", code, out)
+	}
+
+	settled := false
+	for range settleAfter + 1 {
+		if _, got := read(t, s); got["state"] == "failed" {
+			settled = true
+			if got["stateReason"] != "CANCELLED" || object(t, got["operation"])["status"] != "cancelled" {
+				t.Fatalf("settled = %v", got)
+			}
+			break
+		}
+	}
+	if !settled {
+		t.Fatal("the cancel never settled")
 	}
 	for range 5 {
 		if _, got := read(t, s); got["state"] != "failed" {
@@ -106,18 +123,25 @@ func TestCancelIsRefusedWithNothingInFlight(t *testing.T) {
 }
 
 // The cancelled settle is a failure. The same cancel sent again is answered
-// with that settled cluster, as the contract makes it idempotent, and a cancel
-// naming any other operation has nothing to stop.
+// with the cluster as it stands, winding down or settled, as the contract
+// makes it idempotent, and a cancel naming any other operation has nothing
+// to stop.
 func TestASecondCancelIsIdempotentAndAnyOtherIsRefused(t *testing.T) {
 	s := newState()
 	createStuck(t, s)
 	code, first := cancelNow(t, s)
-	if code != http.StatusOK {
+	if code != http.StatusAccepted {
 		t.Fatalf("cancel: %d %v", code, first)
 	}
 	same := fmt.Sprintf(`{"executionId":%q}`, object(t, first["operation"])["executionId"])
+	if code, out := call(t, s.cancelCluster, http.MethodPost, "c", same); code != http.StatusAccepted || out["state"] != "creating" {
+		t.Errorf("the same cancel while it winds down: %d %v", code, out)
+	}
+	for range settleAfter {
+		read(t, s)
+	}
 	if code, out := call(t, s.cancelCluster, http.MethodPost, "c", same); code != http.StatusOK || out["state"] != "failed" {
-		t.Errorf("the same cancel again: %d %v", code, out)
+		t.Errorf("the same cancel once settled: %d %v", code, out)
 	}
 	if code, out := call(t, s.cancelCluster, http.MethodPost, "c", `{"executionId":"c-op-9"}`); code != http.StatusConflict ||
 		!strings.Contains(errorMessage(out), "failed") {
@@ -164,9 +188,12 @@ func TestCancelledUpgradeKeepsTheBinding(t *testing.T) {
 	if code, out := upgrade(t, s, inferenceV4); code != http.StatusOK {
 		t.Fatalf("upgrade: %d %v", code, out)
 	}
-	code, out := cancelNow(t, s)
-	if code != http.StatusOK || out["state"] != "failed" {
+	if code, out := cancelNow(t, s); code != http.StatusAccepted {
 		t.Fatalf("cancel: %d %v", code, out)
+	}
+	out := settleNow(t, s)
+	if out["state"] != "failed" {
+		t.Fatalf("settled after the cancel: %v", out)
 	}
 	if !strings.HasSuffix(fmt.Sprint(out["clusterType"]), inferenceV2) || out["targetClusterTypeVersionId"] != nil {
 		t.Errorf("binding after a cancelled upgrade: %v target %v", out["clusterType"], out["targetClusterTypeVersionId"])
@@ -205,9 +232,10 @@ func readStages(t *testing.T, s *state) map[string]any {
 func TestAReadAfterACancelReportsTheCancel(t *testing.T) {
 	s := newState()
 	createStuck(t, s)
-	if code, out := cancelNow(t, s); code != http.StatusOK {
+	if code, out := cancelNow(t, s); code != http.StatusAccepted {
 		t.Fatalf("cancel: %d %v", code, out)
 	}
+	settleNow(t, s)
 	_, plain := read(t, s)
 	for name, out := range map[string]map[string]any{"plain": plain, "includeStages": readStages(t, s)} {
 		op := object(t, out["operation"])
@@ -252,7 +280,8 @@ func TestAFailedUpgradeOperationCarriesTheClusterMessage(t *testing.T) {
 func TestTheOperationAfterACancelReplacesIt(t *testing.T) {
 	s := newState()
 	createStuck(t, s)
-	_, cancelled := cancelNow(t, s)
+	cancelNow(t, s)
+	cancelled := settleNow(t, s)
 	if code, out := call(t, s.deleteCluster, http.MethodDelete, "c", ""); code != http.StatusNoContent {
 		t.Fatalf("delete: %d %v", code, out)
 	}

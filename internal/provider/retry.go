@@ -292,6 +292,12 @@ var post503Decisions = map[string]post503Decision{
 		says:    "nothing was changed, retry.",
 		resends: true,
 	},
+	// A dependency of the create, placement included, couldn't answer.
+	"createCluster": {
+		says: "A dependency is unavailable; retry later.",
+		refused: "the contract doesn't say nothing was written, and one of its causes, a placement " +
+			"lookup that isn't configured, never clears, so a resend could only wait it out",
+	},
 	"scaleInstanceGroup": {
 		says: "Nothing is written. Retry",
 		refused: "the service also answers 503 there for causes that never clear, so the instance " +

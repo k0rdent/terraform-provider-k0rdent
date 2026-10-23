@@ -59,12 +59,12 @@ var ErrTokenMint = errors.New("mint access token")
 // Deciding what a 409 means is the caller's job, because in Terraform that
 // decision is the difference between a no-op and a destroy.
 //
-// Details stays in its generated shape. The contract declares
-// `error.details[]` as a bare `type: object` with no properties, so the
-// generated Go is `[]map[string]interface{}` and there is no typed detail to
-// decode into. Writing one here would be a hand-written response struct, which
-// D1 forbids -- it is filed as a spec finding instead. [APIError.DetailReasons]
-// and [APIError.HasReason] read the conventional keys out of the maps.
+// Details holds each `error.details[]` entry as a map. The contract types an
+// entry as [ErrorDetail], whose `metadata` shape depends on `reason`, so the
+// generated entries are re-encoded into maps: `reason`, `message` and the raw
+// `metadata` survive, and callers read the keys they branch on without
+// choosing a metadata variant first. [APIError.DetailReasons] and
+// [APIError.HasReason] read `reason` out of the maps.
 type APIError struct {
 	// StatusCode is the HTTP status code.
 	StatusCode int
@@ -163,7 +163,7 @@ func (e *APIError) decode(body []byte) Envelope {
 				e.RequestID = *inner.RequestId
 			}
 			if inner.Details != nil {
-				e.Details = *inner.Details
+				e.Details = detailMaps(*inner.Details)
 			}
 			return EnvelopeContract
 		}
@@ -184,6 +184,24 @@ func (e *APIError) decode(body []byte) Envelope {
 	}
 
 	return EnvelopeNone
+}
+
+// detailMaps re-encodes the generated detail entries as maps. An entry that
+// fails to round-trip is kept as an empty map, so indexes still line up.
+func detailMaps(details []ErrorDetail) []map[string]any {
+	out := make([]map[string]any, len(details))
+	for i, d := range details {
+		out[i] = map[string]any{}
+		raw, err := json.Marshal(d)
+		if err != nil {
+			continue
+		}
+		m := map[string]any{}
+		if err := json.Unmarshal(raw, &m); err == nil {
+			out[i] = m
+		}
+	}
+	return out
 }
 
 // RequestIDFromHeader returns the platform's request id from a response's

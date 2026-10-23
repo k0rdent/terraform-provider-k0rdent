@@ -293,7 +293,8 @@ func TestNoSSHUsersEitherWayReplacesNothing(t *testing.T) {
 }
 
 // From the k0rdent API v1.3.0-rc.1, keys sent on a cluster create come back as
-// references to SSH key credentials, not the keys. A user with none echoed
+// references to SSH key credentials, not the keys: self-links, as v1.3.0-rc.2
+// types them. A user with none echoed
 // keeps the keys state held for that username, so the plan stays clean
 // instead of proposing a replacement on every refresh. Keys echoed are still
 // the value, and a user state never held has none to keep.
@@ -302,10 +303,10 @@ func TestAClusterReadKeepsKeysTheCredentialReferencesStandFor(t *testing.T) {
 		body string
 		want []string
 	}{
-		"credential references":  {`[{"username":"ops","sshPublicKeyCredentials":[{"id":"cred-ops"}]}]`, []string{"ssh-ed25519 AAAA ops"}},
+		"credential references":  {`[{"username":"ops","sshPublicKeyCredentials":["/v1/regions/test/projects/test/credentials/mcred-01jabcdefghjkmnpqrstvwxyz0"]}]`, []string{"ssh-ed25519 AAAA ops"}},
 		"no keys at all":         {`[{"username":"ops"}]`, []string{"ssh-ed25519 AAAA ops"}},
 		"other keys":             {`[{"username":"ops","sshPublicKeys":["ssh-ed25519 BBBB new"]}]`, []string{"ssh-ed25519 BBBB new"}},
-		"a user state never had": {`[{"username":"eve","sshPublicKeyCredentials":[{"id":"cred-eve"}]}]`, nil},
+		"a user state never had": {`[{"username":"eve","sshPublicKeyCredentials":["/v1/regions/test/projects/test/credentials/mcred-01jabcdefghjkmnpqrstvwxyz1"]}]`, nil},
 	} {
 		t.Run(name, func(t *testing.T) {
 			resp, _ := readCluster(t, sshAccessAPI(t, answerJSON(t, http.StatusOK, tt.body)), opsAccess())

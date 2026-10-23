@@ -256,7 +256,10 @@ func (r *clusterResource) cancelOperation(ctx context.Context, target clusterTar
 			addAPIError(diags, "cancel the cluster's in-flight operation", nil, nil, err)
 			return false
 		}
-		if got.JSON200 != nil {
+		// 202 is the stop requested, with the cluster still winding down; 200
+		// is a retry of a cancel that already settled. The wait below covers
+		// both.
+		if got.JSON200 != nil || got.JSON202 != nil {
 			break
 		}
 		if isNotFound(got.HTTPResponse, got.Body) {

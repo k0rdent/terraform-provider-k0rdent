@@ -56,9 +56,11 @@ func scaleGroupWithin(t *testing.T, server *httptest.Server, timeout, window tim
 	meta.Wait.ProvisionalFailureWindow = window
 	r := &instanceGroupResource{meta: meta}
 	var body k0rdent.InstanceGroupScaleRequest
-	entry := zeroElem(body.NodePools)
+	pools := derefOrNil(body.NodePools)
+	entry := zeroElem(pools)
 	entry.NodePool, entry.Size = "workers", 3
-	body.NodePools = append(body.NodePools, entry)
+	pools = append(pools, entry)
+	body.NodePools = &pools
 	return r.scaleOnce(context.Background(), clusterTarget{region: "test", project: "test"}, "g1", body)
 }
 

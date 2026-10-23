@@ -1548,6 +1548,9 @@ func (s *state) deleteCluster(w http.ResponseWriter, r *http.Request) {
 // A delete is the object table's to finish: see clusterKind. This never
 // finds a cluster gone.
 func (o *objects) advance(c *cluster) bool {
+	if c.settleCancel() {
+		return false
+	}
 	if c.state == "active" || (c.state == "updating" && c.upgradeTo != nil && nameCarries(c.displayName, holdsUpgrade)) {
 		return false
 	}

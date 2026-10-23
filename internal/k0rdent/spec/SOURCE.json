@@ -1,14 +1,14 @@
 {
   "clientsRepo": "k0rdent/k0rdent-clients",
-  "clientsCommit": "e0b3209b9bf3c9af7747a3b78c460b7208e81461",
+  "clientsCommit": "9743a7ef5047200a04d1a79845273f1252933d12",
   "preparedSpec": "go/spec/prepared/openapi.yaml",
-  "preparedSHA256": "0b811104db17d4d40c778a938108a9d9bd246324a8a15811babc97d39c38a6d3",
+  "preparedSHA256": "b5b43f6aa2433256ab294a509b86b4019aee28bc4249f93749f3eb93222c769d",
   "contract": {
-    "releaseTag": "v1.3.0-dev.4",
-    "sourceCommit": "5d2dcdcb31cec57c35e28f86315cffed89a2fe9a",
-    "sha256": "35901e2a487c9cfe95fc4b1d37b57494ca7c19c03d29aaf069fbb348ba84f604"
+    "releaseTag": "v1.3.0-rc.2",
+    "sourceCommit": "93639ea7f19b64fdfccc198f6e2361254057f7ea",
+    "sha256": "81f76b9055ffeb2ed06950389f0638e7488a6a4f8fc1855d7d3f45ee25cb51d2"
   },
   "operations": 75,
   "paths": 52,
-  "components": 196
+  "components": 203
 }

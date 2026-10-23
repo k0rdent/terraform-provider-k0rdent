@@ -104,31 +104,6 @@ func ApiKeyGrantGrantTypeValues() []ApiKeyGrantGrantType {
 	}
 }
 
-// Defines values for AuthCodeGrantGrantType.
-const (
-	AuthCodeGrantGrantTypeAuthorizationCode AuthCodeGrantGrantType = "authorization_code"
-)
-
-// Valid indicates whether the value is a known member of the AuthCodeGrantGrantType enum.
-func (e AuthCodeGrantGrantType) Valid() bool {
-	switch e {
-	case AuthCodeGrantGrantTypeAuthorizationCode:
-		return true
-	default:
-		return false
-	}
-}
-
-// AuthCodeGrantGrantTypeValues returns every member of the enum, in the contract's
-// order. A null member is left out: the generator turns it into a "<nil>"
-// constant that Valid accepts, and no client ever sends that string. The slice
-// is new on each call, so a caller may keep or change it.
-func AuthCodeGrantGrantTypeValues() []AuthCodeGrantGrantType {
-	return []AuthCodeGrantGrantType{
-		AuthCodeGrantGrantTypeAuthorizationCode,
-	}
-}
-
 // Defines values for ClientCredentialsGrantGrantType.
 const (
 	ClientCredentialsGrantGrantTypeClientCredentials ClientCredentialsGrantGrantType = "client_credentials"
@@ -2096,16 +2071,19 @@ func NotificationEventSeverityValues() []NotificationEventSeverity {
 
 // Defines values for OperationStatus.
 const (
-	OperationStatusCancelled OperationStatus = "cancelled"
-	OperationStatusFailed    OperationStatus = "failed"
-	OperationStatusRunning   OperationStatus = "running"
-	OperationStatusSucceeded OperationStatus = "succeeded"
+	OperationStatusCancelled  OperationStatus = "cancelled"
+	OperationStatusCancelling OperationStatus = "cancelling"
+	OperationStatusFailed     OperationStatus = "failed"
+	OperationStatusRunning    OperationStatus = "running"
+	OperationStatusSucceeded  OperationStatus = "succeeded"
 )
 
 // Valid indicates whether the value is a known member of the OperationStatus enum.
 func (e OperationStatus) Valid() bool {
 	switch e {
 	case OperationStatusCancelled:
+		return true
+	case OperationStatusCancelling:
 		return true
 	case OperationStatusFailed:
 		return true
@@ -2125,6 +2103,7 @@ func (e OperationStatus) Valid() bool {
 func OperationStatusValues() []OperationStatus {
 	return []OperationStatus{
 		OperationStatusRunning,
+		OperationStatusCancelling,
 		OperationStatusFailed,
 		OperationStatusCancelled,
 		OperationStatusSucceeded,
@@ -2370,6 +2349,64 @@ func ProjectSummaryItemStatusValues() []ProjectSummaryItemStatus {
 		ProjectSummaryItemStatusSuspended,
 		ProjectSummaryItemStatusDisabled,
 		ProjectSummaryItemStatusDeleting,
+	}
+}
+
+// Defines values for QuotaRefusalBindingScope.
+const (
+	QuotaRefusalBindingScopeProject QuotaRefusalBindingScope = "project"
+	QuotaRefusalBindingScopeTenant  QuotaRefusalBindingScope = "tenant"
+)
+
+// Valid indicates whether the value is a known member of the QuotaRefusalBindingScope enum.
+func (e QuotaRefusalBindingScope) Valid() bool {
+	switch e {
+	case QuotaRefusalBindingScopeProject:
+		return true
+	case QuotaRefusalBindingScopeTenant:
+		return true
+	default:
+		return false
+	}
+}
+
+// QuotaRefusalBindingScopeValues returns every member of the enum, in the contract's
+// order. A null member is left out: the generator turns it into a "<nil>"
+// constant that Valid accepts, and no client ever sends that string. The slice
+// is new on each call, so a caller may keep or change it.
+func QuotaRefusalBindingScopeValues() []QuotaRefusalBindingScope {
+	return []QuotaRefusalBindingScope{
+		QuotaRefusalBindingScopeTenant,
+		QuotaRefusalBindingScopeProject,
+	}
+}
+
+// Defines values for QuotaRefusalScopeScope.
+const (
+	QuotaRefusalScopeScopeProject QuotaRefusalScopeScope = "project"
+	QuotaRefusalScopeScopeTenant  QuotaRefusalScopeScope = "tenant"
+)
+
+// Valid indicates whether the value is a known member of the QuotaRefusalScopeScope enum.
+func (e QuotaRefusalScopeScope) Valid() bool {
+	switch e {
+	case QuotaRefusalScopeScopeProject:
+		return true
+	case QuotaRefusalScopeScopeTenant:
+		return true
+	default:
+		return false
+	}
+}
+
+// QuotaRefusalScopeScopeValues returns every member of the enum, in the contract's
+// order. A null member is left out: the generator turns it into a "<nil>"
+// constant that Valid accepts, and no client ever sends that string. The slice
+// is new on each call, so a caller may keep or change it.
+func QuotaRefusalScopeScopeValues() []QuotaRefusalScopeScope {
+	return []QuotaRefusalScopeScope{
+		QuotaRefusalScopeScopeTenant,
+		QuotaRefusalScopeScopeProject,
 	}
 }
 
@@ -4312,76 +4349,15 @@ type ApiKeyGrant struct {
 	// name any. Anything else is a `403`, even when the key's owner could
 	// reach it.
 	//
-	// On `authorization_code` and `refresh_token`, only the access token is
-	// narrowed. After a narrowed `refresh_token` request, the refresh token
+	// On `refresh_token`, only the access token is narrowed: the refresh token
 	// keeps the session's full access, so a later refresh without
-	// `scope_narrowing` returns a full access token. A refused
-	// `authorization_code` request has already spent the code, so the user
-	// signs in again; a refused `refresh_token` request leaves the refresh
-	// token usable.
+	// `scope_narrowing` returns a full access token. A refused `refresh_token`
+	// request leaves the refresh token usable.
 	ScopeNarrowing *ScopeNarrowing `json:"scope_narrowing,omitempty"`
 }
 
 // ApiKeyGrantGrantType defines model for ApiKeyGrant.GrantType.
 type ApiKeyGrantGrantType string
-
-// AuthCodeGrant defines model for AuthCodeGrant.
-type AuthCodeGrant struct {
-	// Code Authorization code from the OAuth2 /authorize flow.
-	Code      string                 `json:"code"`
-	GrantType AuthCodeGrantGrantType `json:"grant_type"`
-
-	// RedirectUri Redirect URI that was used in the authorization request.
-	// Must match exactly.
-	RedirectUri string `json:"redirect_uri"`
-
-	// ScopeNarrowing Optional narrowing for the minted access token. The token can only get
-	// narrower than the credential, never wider.
-	//
-	// Narrow to one organization or one project with `scope` and `scopeId`,
-	// to a subset of roles with `roles`, or both. At least one is required;
-	// an empty object is rejected with `400`. `null` is the same as leaving
-	// the field out.
-	//
-	// - `scope: organization` keeps only that organization. Its organization
-	//   and project roles are kept.
-	// - `scope: project` keeps only that project and the organization that
-	//   contains it. That organization's own roles are kept as well; list
-	//   `roles` to cap them too. The credential needs a role bound on the
-	//   project itself: access that comes only from an organization role is
-	//   refused with `403`, so narrow to the organization instead.
-	// - `roles` caps the roles at every level (organization, project and
-	//   platform) to the listed roles. A listed role is kept where the
-	//   credential holds it or a higher role in the same family, for example
-	//   `iam-viewer` under `iam-admin`.
-	// - Platform roles are dropped unless they are listed in `roles`.
-	//
-	// A request for an organization, project or role the credential does not
-	// hold is refused with `403`, rather than returning a token with only the
-	// overlap.
-	//
-	// Any field other than `scope`, `scopeId` and `roles` is refused with
-	// `400`, so a misspelled field cannot quietly widen the token.
-	//
-	// An API key's token is always held to the key's own scope, with or
-	// without `scope_narrowing`, and a narrowing applies on top of that. An
-	// organization-scoped key can name its own organization or a project in
-	// it; a project-scoped key can name only that project; a platform key can
-	// name any. Anything else is a `403`, even when the key's owner could
-	// reach it.
-	//
-	// On `authorization_code` and `refresh_token`, only the access token is
-	// narrowed. After a narrowed `refresh_token` request, the refresh token
-	// keeps the session's full access, so a later refresh without
-	// `scope_narrowing` returns a full access token. A refused
-	// `authorization_code` request has already spent the code, so the user
-	// signs in again; a refused `refresh_token` request leaves the refresh
-	// token usable.
-	ScopeNarrowing *ScopeNarrowing `json:"scope_narrowing,omitempty"`
-}
-
-// AuthCodeGrantGrantType defines model for AuthCodeGrant.GrantType.
-type AuthCodeGrantGrantType string
 
 // CancelClusterRequest Request to cancel a cluster's in-flight operation. `executionId` pins the
 // specific operation the caller intends to cancel: it must match the operation
@@ -4441,13 +4417,10 @@ type ClientCredentialsGrant struct {
 	// name any. Anything else is a `403`, even when the key's owner could
 	// reach it.
 	//
-	// On `authorization_code` and `refresh_token`, only the access token is
-	// narrowed. After a narrowed `refresh_token` request, the refresh token
+	// On `refresh_token`, only the access token is narrowed: the refresh token
 	// keeps the session's full access, so a later refresh without
-	// `scope_narrowing` returns a full access token. A refused
-	// `authorization_code` request has already spent the code, so the user
-	// signs in again; a refused `refresh_token` request leaves the refresh
-	// token usable.
+	// `scope_narrowing` returns a full access token. A refused `refresh_token`
+	// request leaves the refresh token usable.
 	ScopeNarrowing *ScopeNarrowing `json:"scope_narrowing,omitempty"`
 }
 
@@ -4456,6 +4429,13 @@ type ClientCredentialsGrantGrantType string
 
 // Cluster Kubernetes cluster resource.
 type Cluster struct {
+	// BackingControlPlatform Operator-only. On the backing Cluster of a managed Control Platform: the
+	// Control Platform whose host cluster it is. Such a Cluster with a hosted
+	// control plane carries both fields. Shown only to callers holding
+	// `compute.controlplatforms.read`; absent otherwise. **Not yet applied:**
+	// declared ahead of its implementation; always absent today.
+	BackingControlPlatform *string `json:"backingControlPlatform,omitempty"`
+
 	// ClusterType URL of the specific ClusterType version this cluster is currently
 	// bound to. Set to the versioned URI the binding resolved to at creation
 	// time — an unversioned create is pinned to the latest `available`
@@ -4477,7 +4457,17 @@ type Cluster struct {
 
 	// ControlPlane Control-plane details, including the API server endpoint.
 	ControlPlane *ClusterControlPlane `json:"controlPlane,omitempty"`
-	CreatedAt    *time.Time           `json:"createdAt,omitempty"`
+
+	// ControlPlatform Operator-only. On a cluster whose control plane is hosted on a Control
+	// Platform: that platform's URI. Shown only to callers holding
+	// `compute.controlplatforms.read`; absent otherwise. Populated on
+	// `getCluster`, `listClusters` and the create's response; other mutation
+	// responses omit it, so its absence there carries no information.
+	// **Not yet applied:**
+	// a create that would place the cluster's control plane is still refused
+	// (see `createCluster`), so no cluster carries it yet.
+	ControlPlatform *string    `json:"controlPlatform,omitempty"`
+	CreatedAt       *time.Time `json:"createdAt,omitempty"`
 
 	// Description An optional description of this resource.
 	Description *string `json:"description,omitempty"`
@@ -4486,8 +4476,11 @@ type Cluster struct {
 	DisplayName *string `json:"displayName,omitempty"`
 
 	// Health Canonical typed health for the cluster. Always present;
-	// observability-only and never reflects or drives the lifecycle
-	// `state`. `unknown` until the status-sync path populates it.
+	// observability-only and never drives the lifecycle `state`.
+	// `unknown` until the status-sync path populates it, and `unknown`
+	// (with a `reason`) while `state` is `creating` or `deleting`, even
+	// when a fresh observation exists. The
+	// `health` list filter matches this surfaced value.
 	Health *Health `json:"health,omitempty"`
 
 	// Id Name of the resource. Provided by the client when the resource is created, or generated by the server if not specified. Must be 1-63 characters long and match the pattern [a-z]([\-a-z0-9]*[a-z0-9])? — the first character must be a lowercase letter, and all following characters must be lowercase letters, digits, or hyphens, with the last character being a letter or digit. Cannot be changed after the resource is created.
@@ -4540,6 +4533,9 @@ type Cluster struct {
 	// Operation Reference to the cluster's current or last lifecycle operation.
 	Operation *Operation `json:"operation,omitempty"`
 
+	// ProgressUpdatedAt When the node pools' in-flight progress (`nodePools[].progress`) last changed. Present only while an operation is in flight and has reported progress.
+	ProgressUpdatedAt *time.Time `json:"progressUpdatedAt,omitempty"`
+
 	// Runtime Advisory runtime status observed from the underlying
 	// ClusterDeployment. Observability-only; never reflects or drives
 	// the lifecycle `state`. Omitted until a runtime status has been
@@ -4577,6 +4573,12 @@ type Cluster struct {
 	// user action; `deleted` is a short-lived tombstone returned
 	// until the row is garbage-collected — clients should treat a
 	// subsequent `404` as the canonical end state.
+	//
+	// A cluster with a hosted control plane also shows `updating` while the
+	// platform rolls a change of its control plane settings into it, with the
+	// other actions refused (409) meanwhile. If that roll fails, the cluster
+	// turns `failed` and can be deleted; the platform's retry returns it to
+	// `active`. **Not yet applied:** declared ahead of its implementation.
 	State *ClusterState `json:"state,omitempty"`
 
 	// StateMessage Caller-safe detail for the current `state`; omitted when there is none and not stable across releases.
@@ -4618,6 +4620,12 @@ type Cluster struct {
 // user action; `deleted` is a short-lived tombstone returned
 // until the row is garbage-collected — clients should treat a
 // subsequent `404` as the canonical end state.
+//
+// A cluster with a hosted control plane also shows `updating` while the
+// platform rolls a change of its control plane settings into it, with the
+// other actions refused (409) meanwhile. If that roll fails, the cluster
+// turns `failed` and can be deleted; the platform's retry returns it to
+// `active`. **Not yet applied:** declared ahead of its implementation.
 type ClusterState string
 
 // ClusterControlPlane Control-plane details for the cluster. Read-only; populated as the control
@@ -4739,6 +4747,7 @@ type ClusterCreateRequest struct {
 	// (a key cannot be removed from a running cluster). Like every other cluster
 	// field, `sshAccess` does not require a client-supplied `id`; an omitted `id`
 	// is server-generated.
+	// A `sshPublicKeyCredentials` reference that fails to resolve (unknown, foreign, wrong type or placement) fails the create asynchronously with `INVALID_CONFIGURATION`.
 	SshAccess *[]SshUser `json:"sshAccess,omitempty"`
 
 	// Storage Storage the cluster declares; charged against the storage_gib quota and not enforced on the storage array.
@@ -4800,10 +4809,50 @@ type ClusterNodePool struct {
 	// changed after creation.
 	Id string `json:"id"`
 
+	// InstanceRefs Every instance this pool holds, as an id and the server it occupies, when the request asked for them with `includeInstanceRefs=true`. `[]` when the pool holds none, so an empty array means "none" and absence never does.
+	//
+	// Absent means exactly one thing here: you did not ask. Unlike the InstanceGroup embed, nothing auto-enables this one — a cluster read has no `showDeleted` — so an over-budget response is always one the caller named and is refused with `422` rather than silently dropped.
+	//
+	// The server slug is included because the instance id alone does not say which machine — a bare list of ids would send every caller straight back for the servers.
+	//
+	// The cheap half of the embed: both fields come from this service's own rows in a single query, with no call to the infrastructure service, so they are neither slowed nor omitted by that service being unreachable. What they cannot tell you is what each host is DOING — that needs `includeInstances` and the live read behind it. Complete rather than paged, and bounded by a response-wide limit — above which the array is never silently shortened: the request is refused with `422`.
+	InstanceRefs *[]struct {
+		// Id The instance's id — what `GET /compute/instances/{id}` takes.
+		Id string `json:"id"`
+
+		// ServerSlug The infrastructure server this instance occupies.
+		ServerSlug string `json:"serverSlug"`
+	} `json:"instanceRefs,omitempty"`
+
+	// Instances A page of this pool's instances in full, when the request asked for them with `includeInstances=true`.
+	//
+	// The same envelope `GET /compute/instances` returns, deliberately: a caller decodes one shape whether it read them inline or followed the listing. The objects are identical to that endpoint's, because they are produced by the same code — including the per-instance rule that a host which cannot be attributed to its instance reports `state: unknown` and publishes nothing about the hardware. `degraded` means the host itself reported a problem, which is a different condition and the only one `inStates=degraded` finds.
+	//
+	// A PAGE, not the membership: a nested array cannot be paged, so an unbounded one would make this response unbounded. Follow `nextPageToken` on `GET /compute/instances?nodePoolUuid={uid}` to continue — the token is minted from the ordering that endpoint pages by, so it resumes rather than restarts.
+	//
+	// Only LIVE instances are embedded. A cluster read has no `showDeleted`, so unlike the InstanceGroup embed this page never interleaves tombstones and the continuation on `GET /compute/instances` resumes into the same set it came from.
+	//
+	// **Absent when the live host read could not answer** — for EVERY pool, and never a partial page. A page that carried only the members needing no read would be indistinguishable from a complete one, and its `nextPageToken` would skip the members that were dropped, so a caller following it would miss them permanently and silently. Absence is the only honest answer.
+	//
+	// Over budget is refused with `422`, never truncated — see `instanceRefs`.
+	//
+	// Unlike the single Instance endpoints, which fail with `503` because there the instance IS the response, a cluster read has its own content and does not fail over an enrichment — the same rule the InstanceGroup embed follows.
+	//
+	// `instanceRefs` is unaffected, because it needs no host read. When both are requested, it still names every instance the pool holds, so the membership survives an outage that costs the full objects. A caller that needs the host detail should read the instances listing, which reports the outage properly.
+	Instances *struct {
+		Instances *[]Instance `json:"instances,omitempty"`
+
+		// NextPageToken Absent when the embed holds the pool's whole membership.
+		NextPageToken *string `json:"nextPageToken,omitempty"`
+	} `json:"instances,omitempty"`
+
 	// NodeCount Settled number of nodes in the pool.
 	NodeCount int `json:"nodeCount"`
 
-	// ReservationId Infrastructure reservation most recently held for this pool. Absent until the pool is first reserved; a pool scaled to zero keeps the id of its last reservation, which has already been released, until the next scale-up replaces it.
+	// Progress In-flight progress while the cluster's operation runs, once the operation has reported progress for this pool. It can be absent early in an operation and for a pool the operation does not report on, and is always absent once the operation settles.
+	Progress *ClusterNodePoolProgress `json:"progress,omitempty"`
+
+	// ReservationId Infrastructure reservation most recently held for this pool. Absent until the pool is first reserved; a pool scaled to zero keeps the id of its last reservation, which has already been released, until the next scale-up reserves again. That scale-up may reserve under the same id, so an unchanged value does not mean the pool holds the same servers.
 	ReservationId *openapi_types.UUID `json:"reservationId,omitempty"`
 
 	// TargetNodeCount Desired node count while a scale is in flight, and on a pool whose
@@ -4832,34 +4881,64 @@ type ClusterNodePoolCreateRequest struct {
 	NodeCount *int `json:"nodeCount,omitempty"`
 }
 
-// ClusterNodePoolUpdateRequest Per-pool change entry inside `ClusterUpdateRequest.nodePools[]`. `id`
-// is required and identifies which materialized pool to update; all
-// other fields are sparse — omit to leave unchanged.
-type ClusterNodePoolUpdateRequest struct {
-	// Description Updated description of this resource.
-	Description *string `json:"description,omitempty"`
+// ClusterNodePoolProgress In-flight progress of a cluster node pool while a cluster create, scale or upgrade runs (a cluster being deleted reports none): the servers of the pool's reservation by lifecycle state, and how many have a Ready Kubernetes node. Refreshed while the operation runs (see Cluster.progressUpdatedAt) and absent once it settles. Unlike `Cluster.operation.progress`, which counts the operation's stages, this counts the pool's servers.
+type ClusterNodePoolProgress struct {
+	// NodesReady Servers whose Kubernetes node is Ready.
+	NodesReady *int `json:"nodesReady,omitempty"`
 
-	// DisplayName Updated human-friendly display name for the node pool.
-	DisplayName *string `json:"displayName,omitempty"`
+	// Servers Servers held by the pool's reservation, each counted in `total` and in at most one other bucket. A server whose job is paused counts in the bucket of that job.
+	Servers *struct {
+		// Acquiring Servers joining the pool's reservation (a create, or the servers a scale-up adds).
+		Acquiring int `json:"acquiring"`
 
-	// Id Slug identifying which pool to update. Must match the `id` of a
-	// materialized pool on the cluster (which mirrors a
-	// `ClusterTypeNodePool.id` on the bound version).
-	Id *string `json:"id,omitempty"`
+		// Deprovisioning Servers being wiped after their instance was deleted, before they return to the reservation or leave it.
+		Deprovisioning int `json:"deprovisioning"`
 
-	// NodeCount Scale to this node count.
-	NodeCount *int `json:"nodeCount,omitempty"`
+		// Failed Servers whose last lifecycle transition failed.
+		Failed int `json:"failed"`
 
-	// Tags User-defined metadata labels for this node pool.
-	Tags *map[string]string `json:"tags,omitempty"`
+		// Provisioned Servers whose instance is ready.
+		Provisioned int `json:"provisioned"`
+
+		// Provisioning Servers whose instance is being created.
+		Provisioning int `json:"provisioning"`
+
+		// Releasing Servers leaving the pool's reservation (the servers a scale-down removes).
+		Releasing int `json:"releasing"`
+
+		// Total Servers held by the pool's reservation, including those in no other bucket (claimed by the reservation but not yet moving). Once the pool's reservation is released, its servers are no longer counted.
+		Total int `json:"total"`
+	} `json:"servers,omitempty"`
 }
 
 // ClusterPage defines model for ClusterPage.
 type ClusterPage struct {
 	Clusters []Cluster `json:"clusters"`
 
-	// NextPageToken Opaque token for the next page of results. Present only when more clusters remain; pass it back verbatim as `pageToken`.
+	// Limit The `limit` applied to this response, echoed as applied. Out-of-range input is rejected rather than clamped, so this always equals the `limit` the request sent, or the default when the request omitted it.
+	//
+	// Present only on the `offset`/`limit` path; absent on the deprecated `pageToken` path.
+	Limit *PageLimit `json:"limit,omitempty"`
+
+	// NextPageToken **Deprecated:** use `offset`, `limit`, and `totalCount`.
+	//
+	// Opaque token for the next page of results. Present only when more clusters remain; pass it back verbatim as `pageToken`.
+	//
+	// Emitted only on the deprecated `pageToken` path; absent when the request used `offset`/`limit`.
+	// Deprecated: this property has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	NextPageToken *string `json:"nextPageToken,omitempty"`
+
+	// Offset The `offset` applied to this response, echoed as applied. Out-of-range input is rejected rather than clamped, so this always equals the `offset` the request sent.
+	//
+	// A client has reached the end of the list when `offset + (number of items returned) >= totalCount`.
+	//
+	// Present only on the `offset`/`limit` path; absent on the deprecated `pageToken` path.
+	Offset *PageOffset `json:"offset,omitempty"`
+
+	// TotalCount Total live clusters in the project matching the active `state`, `health` and `search` filters, so `ceil(totalCount / limit)` is the page count for the current filter.
+	//
+	// Present only on the `offset`/`limit` path, and omitted when the caller passes `includeTotal=false`. Absent on the deprecated `pageToken` path.
+	TotalCount *int64 `json:"totalCount,omitempty"`
 }
 
 // ClusterRuntime Advisory runtime status observed from the underlying Kubernetes
@@ -4960,6 +5039,7 @@ type ClusterStorage struct {
 
 // ClusterType ClusterType catalog template — full response at the current version.
 type ClusterType struct {
+	// CreatedAt The returned version's creation time on getClusterTypeVersion, setClusterTypeVersionStatus and addClusterTypeVersion; the ClusterType's creation time otherwise.
 	CreatedAt *time.Time `json:"createdAt,omitempty"`
 
 	// Description Optional description.
@@ -4987,8 +5067,10 @@ type ClusterType struct {
 	Status ClusterTypeVersionStatus `json:"status"`
 
 	// Uid Server-generated UUID of the head row.
-	Uid       *openapi_types.UUID `json:"uid,omitempty"`
-	UpdatedAt *time.Time          `json:"updatedAt,omitempty"`
+	Uid *openapi_types.UUID `json:"uid,omitempty"`
+
+	// UpdatedAt When the ClusterType itself last changed, such as a version being added; a version status change does not move it, and it is the same on every version.
+	UpdatedAt *time.Time `json:"updatedAt,omitempty"`
 
 	// Version Sequential version number (display only).
 	Version *int32 `json:"version,omitempty"`
@@ -5007,6 +5089,8 @@ type ClusterType struct {
 // services) are flat; control-plane and worker-node settings are grouped under
 // `controlPlane` and `workers`. When present, every field below keeps the
 // required-ness and validation it had when these attributes lived at the top level.
+//
+// This is the read; a create request sends `ClusterTypeK8sCreateRequest`.
 type ClusterTypeK8s struct {
 	// ClusterTemplateName Name of the ClusterTemplate to use.
 	ClusterTemplateName string `json:"clusterTemplateName"`
@@ -5022,10 +5106,32 @@ type ClusterTypeK8s struct {
 		// BootstrapConfig Control plane bootstrap configuration. Structurally invariant after creation.
 		BootstrapConfig ControlPlaneBootstrapConfig `json:"bootstrapConfig"`
 
-		// OpConfig Control plane operational configuration. Structurally invariant after creation.
+		// HcpConfig The HCPConfig supplying the replica count and every hosted control
+		// plane setting, by URI. `hcp` ClusterTypes only. The rest of the
+		// ClusterType (Kubernetes version, template, network schema, node
+		// pools, services) still applies. Set at create (see
+		// `ClusterTypeCreateRequest`).
+		//
+		// A property of the ClusterType, not of a version: it is shown in every
+		// ClusterType body, version bodies included, and applies to every
+		// Cluster of the type, whatever version the Cluster is pinned to.
+		//
+		// **Limited:** once set it never changes, also not through new
+		// versions; editing the HCPConfig covers every legitimate change. A
+		// legacy `hcp` ClusterType without it is given one once, through
+		// `PATCH /cluster-types/{id}`.
+		//
+		// Shown only to callers holding `compute.hcpconfigs.read`.
+		HcpConfig *string `json:"hcpConfig,omitempty"`
+
+		// OpConfig Control plane operational configuration. Structurally invariant
+		// after creation. With `hcpConfig`, `hcp` is omitted: the HCPConfig
+		// holds those settings, and they change with it.
 		OpConfig ControlPlaneOpConfig `json:"opConfig"`
 
-		// Replicas Number of control plane replicas. Structurally invariant after creation.
+		// Replicas Number of control plane replicas. Structurally invariant after
+		// creation, except with `hcpConfig`: the value is then the HCPConfig's
+		// current replica count, and changes with the HCPConfig.
 		Replicas int32 `json:"replicas"`
 
 		// Type Control plane topology. Structurally invariant after creation.
@@ -5047,6 +5153,14 @@ type ClusterTypeK8s struct {
 
 	// K0sVersion k0s version, as `vX.Y.Z` or `vX.Y.Z+k0s.N`. Structurally invariant after creation. Must be at least `v1.34.0`: every Kubernetes-flavor cluster is provisioned with a CEL-based OIDC ClusterAuthentication whose groups expression needs kube-apiserver's CEL `ext.Lists` library, gated to Kubernetes 1.34+. A lower version is rejected with 422 at ClusterType creation, when adding a version (including a below-floor value inherited from the current version), and again at cluster creation. The format is validated strictly: a missing `v` prefix, a non-`+k0s.N` build suffix, or extra components are all rejected.
 	K0sVersion string `json:"k0sVersion"`
+
+	// NodeNetwork Cluster-wide node addressing, applied to every node (worker pools
+	// and the standalone control plane). A node pool's own
+	// `nodeNetwork.interface` overrides the interface. Omit to use the
+	// interface holding the IPv4 default route. `interface` is
+	// structurally invariant after creation; `legacyAddressDetection`
+	// may change in a new version.
+	NodeNetwork *ClusterTypeK8sNodeNetwork `json:"nodeNetwork,omitempty"`
 
 	// PodCidrs Pod CIDR ranges. Structurally invariant after creation.
 	PodCidrs []string `json:"podCidrs"`
@@ -5076,6 +5190,63 @@ type ClusterTypeK8s struct {
 		// Defaults Default worker node configuration.
 		Defaults WorkerDefaults `json:"defaults"`
 	} `json:"workers"`
+}
+
+// ClusterTypeK8sNodeNetwork Cluster-wide node addressing. Selects the host network interface whose IPv4
+// address each Kubernetes node registers as its node address (`InternalIP`,
+// kubelet `--node-ip`). Use it on machines with more than one NIC — for
+// example GPU servers with east-west fabric NICs — to keep Kubernetes traffic
+// (kubelet API, NodePort services and, with Calico, pod traffic) on the
+// intended network.
+//
+// The address is resolved on each machine when it boots, before Kubernetes
+// starts. On a standalone control plane it is also used as the node's API
+// server and etcd peer address. If no IPv4 address can be found on the
+// selected interface within a few minutes, the machine's bootstrap stops and
+// the node does not join the cluster, rather than registering an unintended
+// address. With no interface set (neither here nor on the node pool), the
+// interface holding the IPv4 default route is used.
+//
+// With the `calico` network provider, Calico is configured to use the same
+// address as the node.
+//
+// Unknown keys are rejected (400), so a misspelt key cannot silently select
+// the default-route interface.
+type ClusterTypeK8sNodeNetwork struct {
+	// Interface Name of the host network interface (as shown by `ip link`) to take the node address from, identical on every machine it applies to. 1-15 characters from `A-Z a-z 0-9 _ . -`. Beyond the pattern, `.`, `..` and the loopback interface `lo` (any case) are rejected with 422. Omit the key to use the interface holding the IPv4 default route; an empty string is rejected. Structurally invariant after creation: to use a different interface, create a new ClusterType.
+	Interface *string `json:"interface,omitempty"`
+
+	// LegacyAddressDetection Keeps the node addressing of clusters created before node addresses
+	// were pinned. When `true`, nodes without an interface (neither here nor
+	// on their node pool) are not pinned: each node, and on a standalone
+	// control plane the API server and etcd, keep the address the host picks
+	// by itself, and Calico keeps its own address detection. Nodes with an
+	// interface are pinned either way.
+	//
+	// Set it to `true` in the ClusterType version that existing clusters are
+	// upgraded to, before upgrading them: otherwise the upgrade pins every
+	// node to the default-route interface, which replaces standalone
+	// control-plane machines and can change node addresses. New clusters
+	// created from a version with `true` also keep legacy detection.
+	//
+	// Unlike `interface`, this may change from one version to the next.
+	// Moving a cluster from a version with `true` to one with `false` pins
+	// its nodes, with the same effect as above.
+	LegacyAddressDetection *bool `json:"legacyAddressDetection,omitempty"`
+}
+
+// ClusterTypeNodeNetwork A node pool's node address interface: the host network interface whose
+// IPv4 address each of the pool's Kubernetes nodes registers as its node
+// address (`InternalIP`, kubelet `--node-ip`), overriding the ClusterType's
+// cluster-wide `k8s.nodeNetwork.interface`. See ClusterTypeK8sNodeNetwork for
+// how the address is resolved.
+//
+// Structurally invariant after creation: the address is fixed when a machine
+// bootstraps, so a change could not reach existing nodes. To use a different
+// interface, create a new ClusterType.
+type ClusterTypeNodeNetwork struct {
+	// Interface Name of the host network interface (as shown by `ip link`) to take the node address from, identical on every machine it applies to. 1-15 characters from `A-Z a-z 0-9 _ . -`. Beyond the pattern, `.`, `..` and the loopback interface `lo` (any case) are rejected with 422.
+	Interface string `json:"interface"`
 }
 
 // ClusterTypeNodePool Node pool definition effective at a given ClusterType version.
@@ -5113,6 +5284,11 @@ type ClusterTypeNodePool struct {
 	// Null means no explicit floor above the API-level minimum of 0.
 	NodeCountMin *int32 `json:"nodeCountMin,omitempty"`
 
+	// NodeNetwork Node address interface for this pool's nodes, overriding the
+	// ClusterType's `k8s.nodeNetwork`. Absent when the pool does not
+	// override it. Invariant across versions.
+	NodeNetwork *ClusterTypeNodeNetwork `json:"nodeNetwork,omitempty"`
+
 	// Role Role of a node pool. `control-plane` pools host the cluster's control
 	// plane components; `worker` pools host application workloads. Standalone
 	// Control Plane (SCP) topologies require exactly one `control-plane` pool.
@@ -5129,8 +5305,28 @@ type ClusterTypeNodePool struct {
 type ClusterTypePage struct {
 	ClusterTypes []ClusterTypeSummary `json:"clusterTypes"`
 
-	// NextPageToken Token for next page of results
+	// Limit The `limit` applied to this response, echoed as applied. Out-of-range input is rejected rather than clamped, so this always equals the `limit` the request sent, or the default when the request omitted it.
+	//
+	// Present only on the `offset`/`limit` path; absent on the deprecated `pageToken` path.
+	Limit *PageLimit `json:"limit,omitempty"`
+
+	// NextPageToken **Deprecated:** use `offset`, `limit`, and `totalCount`.
+	//
+	// Never emitted: this list has no cursor pagination, and a request with no paging parameter returns the first page only.
+	// Deprecated: this property has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	NextPageToken *string `json:"nextPageToken,omitempty"`
+
+	// Offset The `offset` applied to this response, echoed as applied. Out-of-range input is rejected rather than clamped, so this always equals the `offset` the request sent.
+	//
+	// A client has reached the end of the list when `offset + (number of items returned) >= totalCount`.
+	//
+	// Present only on the `offset`/`limit` path; absent on the deprecated `pageToken` path.
+	Offset *PageOffset `json:"offset,omitempty"`
+
+	// TotalCount Total ClusterTypes in the region that the request's `includeDeprecated` setting lists, so `ceil(totalCount / limit)` is the page count.
+	//
+	// Present only on the `offset`/`limit` path, and omitted when the caller passes `includeTotal=false`. Absent otherwise.
+	TotalCount *int64 `json:"totalCount,omitempty"`
 }
 
 // ClusterTypeSummary ClusterType summary returned in list responses.
@@ -5194,7 +5390,23 @@ type ClusterTypeVersion struct {
 
 // ClusterTypeVersionPage defines model for ClusterTypeVersionPage.
 type ClusterTypeVersionPage struct {
-	Versions []ClusterTypeVersion `json:"versions"`
+	// Limit The `limit` applied to this response, echoed as applied. Out-of-range input is rejected rather than clamped, so this always equals the `limit` the request sent, or the default when the request omitted it.
+	//
+	// Present only on the `offset`/`limit` path; absent on the deprecated `pageToken` path.
+	Limit *PageLimit `json:"limit,omitempty"`
+
+	// Offset The `offset` applied to this response, echoed as applied. Out-of-range input is rejected rather than clamped, so this always equals the `offset` the request sent.
+	//
+	// A client has reached the end of the list when `offset + (number of items returned) >= totalCount`.
+	//
+	// Present only on the `offset`/`limit` path; absent on the deprecated `pageToken` path.
+	Offset *PageOffset `json:"offset,omitempty"`
+
+	// TotalCount Total versions of this ClusterType matching the request's `status` filter, so `ceil(totalCount / limit)` is the page count.
+	//
+	// Present only on the `offset`/`limit` path, and omitted when the caller passes `includeTotal=false`. Absent when the request carried no paging parameter and the whole history was returned.
+	TotalCount *int64               `json:"totalCount,omitempty"`
+	Versions   []ClusterTypeVersion `json:"versions"`
 }
 
 // ClusterTypeVersionStatus Lifecycle status of a ClusterType version. Forward-only:
@@ -5220,29 +5432,6 @@ type ClusterUpdateRequest struct {
 	// `additionalProperties: false` gate does not reject old payloads.
 	// Deprecated: this property has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	KubernetesVersion *string `json:"kubernetesVersion,omitempty"`
-
-	// NodePools Sparse per-pool changes. Each entry's `id` identifies which
-	// materialized pool to update; pools omitted from this array are
-	// unchanged. Duplicate ids ⇒ 422; unknown ids (not on the bound
-	// ClusterType version) ⇒ 422.
-	NodePools *[]struct {
-		// Description Updated description of this resource.
-		Description *string `json:"description,omitempty"`
-
-		// DisplayName Updated human-friendly display name for the node pool.
-		DisplayName *string `json:"displayName,omitempty"`
-
-		// Id Slug identifying which pool to update. Must match the `id` of a
-		// materialized pool on the cluster (which mirrors a
-		// `ClusterTypeNodePool.id` on the bound version).
-		Id string `json:"id"`
-
-		// NodeCount Scale to this node count.
-		NodeCount *int `json:"nodeCount,omitempty"`
-
-		// Tags User-defined metadata labels for this node pool.
-		Tags *map[string]string `json:"tags,omitempty"`
-	} `json:"nodePools,omitempty"`
 
 	// SecurityGroups Replace this cluster's whole security-group binding.
 	//
@@ -6335,18 +6524,42 @@ type Error struct {
 		Code int `json:"code"`
 
 		// Details Additional error details
-		Details *[]map[string]interface{} `json:"details,omitempty"`
+		Details *[]ErrorDetail `json:"details,omitempty"`
 
 		// Message Error message
 		Message string `json:"message"`
 
-		// Reason Optional top-level machine-readable failure class, present when the HTTP status alone does not distinguish it (e.g. NON_INTERACTIVE_PRINCIPAL on 403s denied by the non-interactive principal policy). Clients can branch on this without parsing the human-readable message. When the class instead rides with structured recovery data it appears in `details[].reason` rather than here. Well-known top-level classes: `NON_INTERACTIVE_PRINCIPAL` (403); `CONFLICT_BACKEND_CAPACITY_EXCEEDED` (409 on compute createFileStore/updateFileStore — the storage system serving the requested class has no sellable capacity left; it also rides in `details[].reason`); `DOMAIN_NOT_OWNED` (422 on organizations createOrganizationInvitation — the invitee's email domain is not registered to any of the target organization's enabled identity providers. Applies to ANY organization that has at least one such provider, and to the platform-tier organizations `vendor`/`provider` unconditionally. An ORDINARY organization with no enabled provider is not subject to it and accepts any valid domain; a platform-tier one with no registered domain is the opposite and refuses every invitation); `PRINCIPAL_TYPE_COLLISION` (409 on the same operation — a platform account already exists for that address with a principal type the organization cannot accept; terminal, retrying does not clear it); `INVALID_DISCOVERY_URL` (422 on iam createProvider/updateProvider — `oidcConfig.discoveryUrl` is not an allowed outbound destination; the server fetches it during login, so by default it must be an `https` URL naming a publicly reachable host, and a deployment may relax the private-address and/or `https` requirement through operator configuration — see the field's own description); `QUOTA_EXCEEDED` (409 on quota-gated compute operations — today createCluster, scaleCluster, updateCluster, createInstanceGroup, scaleInstanceGroup, createFileStore and updateFileStore — the request was well-formed and the resource is in a valid state, but admitting it would exceed a quota limit at the organization or project scope. Distinct from the lifecycle conflicts on the same operations, which carry no reason, and from `INSUFFICIENT_CAPACITY`, which means no matching hardware. The same class is repeated on one `details[]` entry per refused dimension, whose `metadata` carries `dimension`, `requested`, `admissible`, `bindingScope` and `scopes` — see the details description. `requested` and `admissible` are amounts in the refused dimension, not target sizes: for createCluster they are the new cluster's node count or storage ceiling, so requesting at most `admissible` is admitted; for updateCluster they are the ceiling increase in GiB; for scaleCluster they are the aggregate node-count INCREASE across the request's pools, so the client must reduce that increase to at most `admissible` (the pool targets stay absolute — with 4 nodes today, requested 3 and admissible 1, the admitted target is 5, not 1); for createFileStore they are the new store's GiB, and for updateFileStore the GiB increase over the capacity the store's quota hold already covers. Retrying without freeing usage, without reducing the request accordingly, or without raising the binding limit returns the same result); `QUOTA_UNASSIGNED` (409 on the same seven quota-gated compute operations — the organization has no quota profile assigned while the platform requires one, because a default profile is designated. No limit was measured, so there are no `details[]`, and retrying returns the same result until an operator assigns the organization a profile); `QUOTA_ENFORCEMENT_ACKNOWLEDGEMENT_REQUIRED` (409 on organizations updateQuotaDimensionEnforcement: switching a dimension's enforcement on must acknowledge the live number of scopes at or over their limit on it, which the switch would start refusing; the same class is repeated on one `details[]` entry whose `metadata` carries `dimension`, `blockedScopes` and `report`, the near/over-limit report listing those scopes. Review it and repeat the request with `acknowledgedBlockedScopes` = `blockedScopes`); `QUOTA_DIMENSION_NOT_CHARGED` (409 on the same operation: nothing charges the dimension yet, so its usage is always zero and its enforcement cannot be switched on; terminal until the platform charges it); `PROJECT_REGION_MISMATCH` (409 on every compute, networking and storage operation under `/v1/regions/{region}/projects/{project}`: the project is locked to a different region than the one in the URL. A project's region is set once and is immutable thereafter, so retrying the same URL returns the same result; address the project's own region, which the project read returns. The message does not name that region. Organizations' internal bootstrap project create also returns it, naming both regions, when the slug already exists in another region); `CONFLICT_IMMUTABLE` (409 on organizations updateProjectInOrg: the request names `region`, which cannot be changed after the project is created; the same reason also rides in `details[].reason`, where compute's immutable-field 409s carry it).
+		// Reason Optional top-level machine-readable failure class, present when the HTTP status alone does not distinguish it (e.g. NON_INTERACTIVE_PRINCIPAL on 403s denied by the non-interactive principal policy). Clients can branch on this without parsing the human-readable message. When the class instead rides with structured recovery data it appears in `details[].reason` rather than here. Well-known top-level classes: `NON_INTERACTIVE_PRINCIPAL` (403); `IDENTITY_MISMATCH` (401 on the sign-in callback — the identity provider authenticated a different account than the email address sent to initiateLogin; no token is issued and the other account is not named); `CONFLICT_BACKEND_CAPACITY_EXCEEDED` (409 on compute createFileStore/updateFileStore — the storage system serving the requested class has no sellable capacity left; it also rides in `details[].reason`); `DOMAIN_NOT_OWNED` (422 on organizations createOrganizationInvitation — the invitee's email domain is not registered to any of the target organization's enabled identity providers. Applies to ANY organization that has at least one such provider, and to the platform-tier organizations `vendor`/`provider` unconditionally. An ORDINARY organization with no enabled provider is not subject to it and accepts any valid domain; a platform-tier one with no registered domain is the opposite and refuses every invitation); `PRINCIPAL_TYPE_COLLISION` (409 on the same operation — a platform account already exists for that address with a principal type the organization cannot accept; terminal, retrying does not clear it); `INVALID_DISCOVERY_URL` (422 on iam createProvider/updateProvider — `oidcConfig.discoveryUrl` is not an allowed outbound destination; the server fetches it during login, so by default it must be an `https` URL naming a publicly reachable host, and a deployment may relax the private-address and/or `https` requirement through operator configuration — see the field's own description); `QUOTA_EXCEEDED` (409 on quota-gated compute operations — today createCluster, scaleCluster, updateCluster, createInstanceGroup, scaleInstanceGroup, createFileStore and updateFileStore — the request was well-formed and the resource is in a valid state, but admitting it would exceed a quota limit at the organization or project scope. Distinct from the lifecycle conflicts on the same operations, which carry no reason, and from `INSUFFICIENT_CAPACITY`, which means no matching hardware, or no host for a hosted control plane. The same class is repeated on one `details[]` entry per refused dimension, whose `metadata` is a `QuotaRefusal`. `requested` and `admissible` are amounts in the refused dimension, not target sizes: for createCluster they are the new cluster's node count or storage ceiling, so requesting at most `admissible` is admitted; for updateCluster they are the ceiling increase in GiB; for scaleCluster they are the aggregate node-count INCREASE across the request's pools, so the client must reduce that increase to at most `admissible` (the pool targets stay absolute — with 4 nodes today, requested 3 and admissible 1, the admitted target is 5, not 1); for createFileStore they are the new store's GiB, and for updateFileStore the GiB increase over the capacity the store's quota hold already covers. Retrying without freeing usage, without reducing the request accordingly, or without raising the binding limit returns the same result); `QUOTA_UNASSIGNED` (409 on the same seven quota-gated compute operations — the organization holds no quota limits while the platform requires them, because a default profile is designated. No limit was measured, so there are no `details[]`, and retrying returns the same result until an operator gives the organization limits, by applying a profile or setting them directly); `QUOTA_ENFORCEMENT_ACKNOWLEDGEMENT_REQUIRED` (409 on organizations updateQuotaDimensionEnforcement: switching a dimension's enforcement on must acknowledge the live number of scopes at or over their limit on it, which the switch would start refusing; the same class is repeated on one `details[]` entry whose `metadata` is a `QuotaEnforcementAcknowledgement`, carrying the near/over-limit report listing those scopes. Review it and repeat the request with `acknowledgedBlockedScopes` = `blockedScopes`); `QUOTA_DIMENSION_NOT_CHARGED` (409 on the same operation: nothing charges the dimension yet, so its usage is always zero and its enforcement cannot be switched on; terminal until the platform charges it); `PROJECT_REGION_MISMATCH` (409 on every compute, networking and storage operation under `/v1/regions/{region}/projects/{project}`: the project is locked to a different region than the one in the URL. A project's region is set once and is immutable thereafter, so retrying the same URL returns the same result; address the project's own region, which the project read returns. The message does not name that region. Also 409 on compute createControlPlatform with `source: managed`, and on updateControlPlatform when `allowedOrganizations` changes while a backing Cluster's control plane is placed on the platform, when the region's operator project is locked to another region. Organizations' internal bootstrap project create also returns it, naming both regions, when the slug already exists in another region); `CONFLICT_IMMUTABLE` (409 on organizations updateProjectInOrg: the request names `region`, which cannot be changed after the project is created; the same reason also rides in `details[].reason`, where compute's immutable-field 409s carry it); `INSUFFICIENT_CAPACITY` (422 on compute createCluster when the hosted control plane of a cluster whose ClusterType references an HCPConfig cannot be placed on any host, and on createControlPlatform when a backing Cluster's own control plane cannot be placed; the request was refused before anything was created. The same class rides in `details[].reason`; see there); `INVALID_EMAIL_TEMPLATE` (422 on organizations putInvitationEmailTemplate and previewInvitationEmailTemplate: the submitted invitation email template breaks one or more syntax or variable rules; every violation is listed as its own `details[]` entry, see the details description. A missing, empty or control-character `html` is a plain 422 without this reason); `CONFIRMATION_REQUIRED` (409 on credential revoke and rotate: a target is unrecoverable and the request did not send `confirm: true`; nothing was changed).
 		Reason *string `json:"reason,omitempty"`
 
 		// RequestId Optional opaque correlation id for this request, mirrored from the gateway's `X-Kong-Request-Id` response header (and the services' `X-Request-Id`). It is non-sensitive — a random per-request token, not derived from any client or resource identifier — so it is safe to surface in the body without reintroducing the generic-body hardening the envelope otherwise preserves. Quote it to support: the same id appears in the gateway audit stream and, for backend-origin failures, the upstream service log. Present whenever an id is available for the request.
 		RequestId *string `json:"requestId,omitempty"`
 	} `json:"error"`
 }
+
+// ErrorDetail A structured failure detail. Conventionally carries a `reason` (machine-readable class), an optional `message`, and an optional `metadata` object of recovery data. The entry's `reason` tells a client which metadata shape applies: `QUOTA_EXCEEDED` entries carry `QuotaRefusal`, `QUOTA_ENFORCEMENT_ACKNOWLEDGEMENT_REQUIRED` entries carry `QuotaEnforcementAcknowledgement`, and every other class carries a free-form object.
+// Well-known metadata keys on the free-form classes: `clusterId` (string) and `selfLink` (string) on compute createCluster 504s; `instanceGroupId` (string) and `selfLink` (string) on compute createInstanceGroup 504s; `addressPoolId` (string) and `selfLink` (string) on compute createAddressPool 504s; `fileStoreId` (string) and `selfLink` (string) on compute createFileStore 504s; `storageBackendId` (string) and `selfLink` (string) on compute createStorageBackend 504s; `securityGroupId` (string) and `selfLink` (string) on compute createSecurityGroup 504s; `controlPlatformId` (string) and `selfLink` (string) on compute createControlPlatform 504s; `batchId` (string) on infrastructure batchCreate 409s; `invalidRoles` and `validRoles` (string arrays) on organizations 422 role-assignment errors; `reservationErrorCode` (string, `not_enough_servers` or `not_enough_symmetric_servers`) on infrastructure addReservationServers 422s; on `INVALID_EMAIL_TEMPLATE` 422s, one entry per violation whose `metadata` carries only the keys that apply: `line` and `column` (integers, 1-based position in the submitted template; `column` is absent when only the line is known, as on a `TEMPLATE_PARSE_ERROR` or `RENDER_ERROR`), and `variable` (string, the template variable).
+// Placement refusals and the refusals of changes to what is placed (operator-only, compute): `controlPlatform` (string, the Control Platform's URI) on each per-platform entry; `dimension` (string: `cpu`, `memory`, `disk` or `loadBalancerAddresses`), `needed` and `free` (integers, in the dimension's capacity unit) on `INSUFFICIENT_CAPACITY` entries; `topologyKey` (string) on a `TOO_FEW_NODES` entry whose count left out workers without a `DoNotSchedule` spread constraint's key, naming that key, and absent otherwise; `cluster` (string, the Cluster's URI) on `HOST_NOT_CONNECTED` and per-Cluster `CONFLICT_IMMUTABLE` entries; `removable` and `requested` (integers, worker counts) on `NODES_HOLD_ETCD_VOLUMES`. Not yet applied: `cluster`, `removable` and `requested`, and every key on the refusals of changes to what is placed, are declared ahead of their implementation.
+// Well-known detail classes: `INSUFFICIENT_CAPACITY` (422 on infrastructure addReservationServers — the region has no matching servers left, as opposed to the request being invalid; the caller can retry later or ask for fewer hosts); `RESERVATION_ID_CONFLICT` (409 on infrastructure createReservation — the caller-supplied `reservationId` cannot be used for this request; generate a new id and retry, or retry the same id once a release in progress completes); `RESERVATION_ID_COUNT_MISMATCH` (409 on the same operation — the id names a live reservation that differs only in `numberOfServers`, typically the caller's own after a resize; do not mint a new id for it); `RESERVATION_REQUEST_EXPIRED` (409 on the same operation — the request came after its `notAfter` and reserved nothing); `QUOTA_EXCEEDED` (409 — the per-dimension breakdown of the top-level class of the same name); `CONFLICT_BACKEND_CAPACITY_EXCEEDED` (409), `CONFLICT_CAPACITY_BELOW_USAGE` (409 on updateFileStore), `CONFLICT_SHARE_TYPE_MISMATCH` (409 on createFileStore) and `STORAGE_BACKEND_MISSING` / `STORAGE_BACKEND_OUT_OF_SERVICE` / `STORAGE_PLACEMENT_NOT_APPLIED` (422) on compute createFileStore/updateFileStore — see those operations for which precondition each names; on `INVALID_EMAIL_TEMPLATE` 422s, one of `TEMPLATE_TOO_LARGE`, `INVALID_ENCODING` (the template is not valid UTF-8), `TEMPLATE_PARSE_ERROR` (the template does not parse), `DISALLOWED_TEMPLATE_ACTION`, `UNKNOWN_VARIABLE`, `MISSING_REQUIRED_VARIABLE` (a required variable is not referenced, or `AcceptURL` is referenced but the accept link does not reach the sent email), `RENDER_ERROR` (the template parses but cannot be rendered, for example `{{if}}` branches that end in different HTML contexts), and a final `TOO_MANY_VIOLATIONS` entry when the list was truncated at 100.
+// `INSUFFICIENT_CAPACITY` also means a hosted control plane that does not fit (422 on compute createCluster and createControlPlatform; 409 on updateHCPConfig, updateClusterType and the scale-down of a Control Platform's backing Cluster). A tenant caller gets a single entry with a generic message; a caller holding `compute.controlplatforms.read` gets one entry per candidate Control Platform with its own reason, one of the `PlacementReason` codes, or, with no candidate, a single `HCPCONFIG_NOT_ACCEPTED` entry naming none. The 409s carry their codes in `details[].reason` only, with no top-level reason. Further compute classes: `HOST_CLUSTER_TYPE_UNSUITABLE` (422 on createControlPlatform — the ClusterType cannot back a host cluster); `OPERATOR_PROJECT_NOT_CONFIGURED` (503 on the same operation, and on updateControlPlatform when `allowedOrganizations` changes while a backing Cluster's control plane is placed on the platform — the region has no operator project, or names one that does not exist); `HOST_NOT_CONNECTED` (409 on updateClusterType — a live Cluster of the type runs on a host cluster not connected as a Control Platform); `NODES_HOLD_ETCD_VOLUMES` (409 on the scale-down of a backing Cluster — fewer workers without etcd volumes than asked to remove). Not yet applied: `HOST_NOT_CONNECTED` and `NODES_HOLD_ETCD_VOLUMES` are declared ahead of their implementation.
+type ErrorDetail struct {
+	// Message Human-readable description of this entry.
+	Message *string `json:"message,omitempty"`
+
+	// Metadata Recovery data for this entry. The shape depends on `reason`.
+	Metadata *ErrorDetail_Metadata `json:"metadata,omitempty"`
+
+	// Reason Machine-readable failure class of this entry.
+	Reason *string `json:"reason,omitempty"`
+}
+
+// ErrorDetail_Metadata Recovery data for this entry. The shape depends on `reason`.
+type ErrorDetail_Metadata struct {
+	union json.RawMessage
+}
+
+// ErrorDetailFreeFormMetadata Free-form recovery data for every detail class other than `QUOTA_EXCEEDED` and `QUOTA_ENFORCEMENT_ACKNOWLEDGEMENT_REQUIRED`.
+type ErrorDetailFreeFormMetadata map[string]interface{}
 
 // ExportLocation One mount target published by the platform for a file store. Locations
 // appear only once the store reaches `state: active`; a store that is still
@@ -6780,8 +6993,30 @@ type FileStorePage struct {
 	// FileStores The matching file stores, ordered by creation time descending.
 	FileStores *[]FileStore `json:"fileStores,omitempty"`
 
-	// NextPageToken Opaque cursor for the next page. Absent or empty when this is the last page.
+	// Limit The `limit` applied to this response, echoed as applied. Out-of-range input is rejected rather than clamped, so this always equals the `limit` the request sent, or the default when the request omitted it.
+	//
+	// Present only on the `offset`/`limit` path; absent on the deprecated `pageToken` path.
+	Limit *PageLimit `json:"limit,omitempty"`
+
+	// NextPageToken **Deprecated:** use `offset`, `limit`, and `totalCount`.
+	//
+	// Opaque cursor for the next page. Echo it as `pageToken` to fetch the following page. The key is ABSENT when this is the last page — the server omits it rather than returning an empty string — so a consumer must treat a missing `nextPageToken` as "no more results", not as an error or an unset field.
+	//
+	// Emitted only on the deprecated `pageToken` path; absent when the request used `offset`/`limit`.
+	// Deprecated: this property has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	NextPageToken *string `json:"nextPageToken,omitempty"`
+
+	// Offset The `offset` applied to this response, echoed as applied. Out-of-range input is rejected rather than clamped, so this always equals the `offset` the request sent.
+	//
+	// A client has reached the end of the list when `offset + (number of items returned) >= totalCount`.
+	//
+	// Present only on the `offset`/`limit` path; absent on the deprecated `pageToken` path.
+	Offset *PageOffset `json:"offset,omitempty"`
+
+	// TotalCount Total file stores in the project matching the active `state`, `shareType` and `consumer` filters, so `ceil(totalCount / limit)` is the page count for the current filter.
+	//
+	// Present only on the `offset`/`limit` path, and omitted when the caller passes `includeTotal=false`. Absent on the deprecated `pageToken` path.
+	TotalCount *int64 `json:"totalCount,omitempty"`
 }
 
 // FileStoreStateReason Machine-readable cause of the current lifecycle `state`, drawn from the storage vocabulary (disjoint from `StateReason`); stable and safe to branch on. Absent when no failure is recorded.
@@ -6935,11 +7170,15 @@ type HardwareSpecs struct {
 	} `json:"ram,omitempty"`
 }
 
-// Health Canonical health of a managed object. A summary
-// judgement surfaced consistently across services — observability-only, it
-// never drives a lifecycle `state` machine. `state` is always present: it is
-// `unknown` before the first observation and whenever the record has gone stale
-// (read-time substitution once `now` is past `expiresAt`).
+// Health Canonical health of a managed object. A summary judgement surfaced
+// consistently across services. It never drives a lifecycle `state` machine,
+// though a resource may state its own rule for consulting it — see the health
+// field on each resource.
+//
+// `state` is always present: it is
+// `unknown` before the first observation, whenever the record has gone stale
+// (read-time substitution once `now` is past `expiresAt`), and while the owning
+// resource withholds its verdict during a lifecycle phase.
 type Health struct {
 	// ExpiresAt Staleness boundary — once `now` is past this the read path returns
 	// `state: unknown`. Null when no staleness boundary applies (for example a
@@ -6954,14 +7193,16 @@ type Health struct {
 	Reason *string `json:"reason,omitempty"`
 
 	// State Current canonical health. `healthy`, `degraded` and `unhealthy` are
-	// observed states; `unknown` means no fresh observation — either never
-	// observed, or the last value has passed `expiresAt`.
+	// observed states; `unknown` means no current verdict — never observed,
+	// the last value has passed `expiresAt`, or the owning resource withholds
+	// it during a lifecycle phase (`reason` says which).
 	State *HealthState `json:"state,omitempty"`
 }
 
 // HealthState Current canonical health. `healthy`, `degraded` and `unhealthy` are
-// observed states; `unknown` means no fresh observation — either never
-// observed, or the last value has passed `expiresAt`.
+// observed states; `unknown` means no current verdict — never observed,
+// the last value has passed `expiresAt`, or the owning resource withholds
+// it during a lifecycle phase (`reason` says which).
 type HealthState string
 
 // HostedControlPlane Advisory status observed from the cluster's backing `K0smotronControlPlane`
@@ -7363,9 +7604,14 @@ type HostedControlPlane struct {
 // deprecated.
 type HostedControlPlaneState string
 
-// Instance A provisioned host of an InstanceGroup. An instance is a server held by a
-// reservation: it is materialized automatically when its group is created or
-// scaled up, and there is no way to create one directly.
+// Instance A provisioned host of an InstanceGroup or of a Cluster. An instance is a
+// server held by a reservation: it is materialized automatically when its owner
+// reserves the host, and there is no way to create one directly.
+//
+// Exactly one owner, always. A group-owned instance publishes
+// `instanceGroupUuid`/`instanceGroupId`; a cluster-owned one publishes
+// `clusterUuid`/`clusterId`. Branch on which pair is PRESENT — neither pair is
+// `required`, and the absent one is omitted rather than empty.
 //
 // Identity and ownership are stored by the compute service; everything about the
 // host itself lives in the infrastructure service and is read on every request
@@ -7373,7 +7619,19 @@ type HostedControlPlaneState string
 // that read is not an enrichment: when the infrastructure service cannot be
 // reached the request fails with `503` instead of returning a stored skeleton.
 type Instance struct {
-	CreatedAt *time.Time `json:"createdAt,omitempty"`
+	// ClusterId Id of the owning Cluster — what `GET .../compute/clusters/{id}` is keyed
+	// by, so the cluster can be fetched straight from this instance. This is the
+	// cluster's `id` as that resource publishes it; the service's internal
+	// primary key is a different value and never appears here. Read from the
+	// cluster on every request rather than stored, so the two can never
+	// disagree. Absent when the instance belongs to an instance group instead.
+	ClusterId *string `json:"clusterId,omitempty"`
+
+	// ClusterUuid Uid of the owning Cluster; the value the list endpoint's `clusterUuid`
+	// filter takes. Absent when the instance belongs to an instance group
+	// instead.
+	ClusterUuid *openapi_types.UUID `json:"clusterUuid,omitempty"`
+	CreatedAt   *time.Time          `json:"createdAt,omitempty"`
 
 	// DeletedAt When this instance was deleted. Present ONLY on a tombstone, which is only returned when the request asked with `showDeleted=true` — so its presence identifies a deleted instance without parsing `state`.
 	DeletedAt *time.Time `json:"deletedAt,omitempty"`
@@ -7415,7 +7673,7 @@ type Instance struct {
 	// hyphens. It is not a second identifier, so there is nothing that could
 	// disagree between the two, and a client may treat either as canonical.
 	//
-	// Stable for the lifetime of the host's membership in its group: it is
+	// Stable for the lifetime of the host's membership in its owner: it is
 	// derived from an identity minted by this service, not by the infrastructure
 	// provider, so it survives the provider's own instance being destroyed and
 	// re-created (as a deprovision followed by a re-provision does).
@@ -7424,10 +7682,13 @@ type Instance struct {
 	// InstanceGroupId Id (slug) of the owning InstanceGroup — what
 	// `GET .../compute/instance-groups/{id}` is keyed by, so the group can be
 	// fetched straight from this instance. Read from the group on every request
-	// rather than stored here, so the two can never disagree.
+	// rather than stored here, so the two can never disagree. Absent when the
+	// instance belongs to a cluster instead.
 	InstanceGroupId *string `json:"instanceGroupId,omitempty"`
 
-	// InstanceGroupUuid Uid of the owning InstanceGroup; the value the list endpoint's `instanceGroupUuid` filter takes.
+	// InstanceGroupUuid Uid of the owning InstanceGroup; the value the list endpoint's
+	// `instanceGroupUuid` filter takes. Absent when the instance belongs to a
+	// cluster instead.
 	InstanceGroupUuid *openapi_types.UUID `json:"instanceGroupUuid,omitempty"`
 
 	// Inventory Hardware the host actually has, from its latest infrastructure inventory snapshot. An empty object when none has been collected.
@@ -7439,10 +7700,10 @@ type Instance struct {
 	// NetworkConfiguration The host's runtime network interfaces, as the infrastructure service reports them right now. Not stored by this service.
 	NetworkConfiguration *[]NetworkInterfaceConfig `json:"networkConfiguration,omitempty"`
 
-	// NodePool Id (slug) of the group's node pool this host was provisioned into — the name it carries in the group's `nodePools`. A pool has no route of its own.
+	// NodePool Id (slug) of the owner's node pool this host was provisioned into — the name it carries in that owner's `nodePools`. A pool has no route of its own.
 	NodePool *string `json:"nodePool,omitempty"`
 
-	// NodePoolUuid Uid of the group's node pool this host was provisioned into; the value the list endpoint's `nodePoolUuid` filter takes.
+	// NodePoolUuid Uid of the owner's node pool this host was provisioned into; the value the list endpoint's `nodePoolUuid` filter takes.
 	NodePoolUuid *openapi_types.UUID `json:"nodePoolUuid,omitempty"`
 
 	// ReservationUuid Infrastructure reservation holding this server, or absent when none is recorded.
@@ -7511,7 +7772,7 @@ type Instance struct {
 	// and may now be held by another project, so a live read would report the
 	// current state of a machine that is no longer this tenant's.
 	//
-	// What it does carry is the stored record — identity, the group and pool it
+	// What it does carry is the stored record — identity, the owner and pool it
 	// belonged to, `serverSlug`, timestamps. `serverSlug` is published because it
 	// is a stored record of which machine this instance used to occupy, not a
 	// fact about that machine today.
@@ -7617,7 +7878,7 @@ type InstanceExecutionType string
 // and may now be held by another project, so a live read would report the
 // current state of a machine that is no longer this tenant's.
 //
-// What it does carry is the stored record — identity, the group and pool it
+// What it does carry is the stored record — identity, the owner and pool it
 // belonged to, `serverSlug`, timestamps. `serverSlug` is published because it
 // is a stored record of which machine this instance used to occupy, not a
 // fact about that machine today.
@@ -7724,10 +7985,17 @@ type InstanceGroup struct {
 	// SelfLink Server-defined URL for this resource.
 	SelfLink *string `json:"selfLink,omitempty"`
 
+	// SerialConsole Serial-console state of the group. Always present, including on a tombstone, where all flags are `false`.
+	SerialConsole *InstanceGroupSerialConsole `json:"serialConsole,omitempty"`
+
 	// SshAccess Host-login SSH access baked into every host in the group at provisioning
 	// time — one entry per Linux user (username, one or more authorized public
 	// keys, optional sudo, optional displayName). Read-only echo of the access
 	// set at create; the group is the unit and has no per-entry revoke. Immutable.
+	// Keys supplied inline at create are registered as managed credentials and
+	// read back as `sshPublicKeyCredentials` references, not literal
+	// `sshPublicKeys`; a group created before that behavior may still read back
+	// literal keys.
 	// Always present; `[]` when the group was created with no SSH access. The
 	// same value is returned on every response, including the asynchronous
 	// (`202`) securityGroups update.
@@ -7807,7 +8075,7 @@ type InstanceGroupCreateRequest struct {
 	// unresolvable id at once; a group already being deleted does not resolve.
 	SecurityGroups *[]string `json:"securityGroups,omitempty"`
 
-	// SshAccess Optional host-login SSH access for the group — one or more Linux users, each with one or more authorized public keys and an optional sudo grant. Same `SshUser` shape as a cluster create; rendered into every host's cloud-init `users[]`. Immutable after create.
+	// SshAccess Optional host-login SSH access for the group — one or more Linux users, each with one or more authorized public keys and an optional sudo grant. Same `SshUser` shape and behavior as a cluster create: keys may be supplied inline (`sshPublicKeys`) or as `sshPublicKeyCredentials` references to `ssh_public_key` credentials in the request's region and project. Inline keys are registered as managed credentials and read back as references. Rendered into every host's login configuration. Immutable after create.
 	SshAccess *[]SshUser `json:"sshAccess,omitempty"`
 }
 
@@ -7815,28 +8083,92 @@ type InstanceGroupCreateRequest struct {
 type InstanceGroupPage struct {
 	InstanceGroups []InstanceGroup `json:"instanceGroups"`
 
-	// NextPageToken Token for next page of results.
+	// Limit The `limit` applied to this response, echoed as applied. Out-of-range input is rejected rather than clamped, so this always equals the `limit` the request sent, or the default when the request omitted it.
+	//
+	// Present only on the `offset`/`limit` path; absent on the deprecated `pageToken` path.
+	Limit *PageLimit `json:"limit,omitempty"`
+
+	// NextPageToken **Deprecated:** use `offset`, `limit`, and `totalCount`.
+	//
+	// Token for the next page of results; pass it back verbatim as `pageToken`. Emitted only on the deprecated `pageToken` path; absent when the request used `offset`/`limit`.
+	// Deprecated: this property has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	NextPageToken *string `json:"nextPageToken,omitempty"`
+
+	// Offset The `offset` applied to this response, echoed as applied. Out-of-range input is rejected rather than clamped, so this always equals the `offset` the request sent.
+	//
+	// A client has reached the end of the list when `offset + (number of items returned) >= totalCount`.
+	//
+	// Present only on the `offset`/`limit` path; absent on the deprecated `pageToken` path.
+	Offset *PageOffset `json:"offset,omitempty"`
+
+	// TotalCount Total instance groups in the project that the `showDeleted` setting selects — live groups only by default, live and deleted with `showDeleted=true` — so `ceil(totalCount / limit)` is the page count for the current request.
+	//
+	// Present only on the `offset`/`limit` path, and omitted when the caller passes `includeTotal=false`. Absent on the deprecated `pageToken` path.
+	TotalCount *int64 `json:"totalCount,omitempty"`
 }
 
-// InstanceGroupScaleRequest Request to scale up an InstanceGroup's node pools. Each entry identifies a
-// materialized pool by `nodePool` (slug) and supplies the absolute desired host
-// count in `size` (not a delta). Only increases are accepted on this endpoint;
-// decreasing node counts is not yet implemented. The accepted scale atomically moves the
-// group to `updating` and dispatches the asynchronous `instance-group-scale-up`
-// workflow, which adds servers to each pool's existing reservation and provisions
-// the new hosts.
+// InstanceGroupScaleRequest Request to scale an InstanceGroup's node pools. The body states a direction by
+// which field it carries, and the two are mutually exclusive: supply exactly
+// one.
+//
+// `nodePools` scales UP — per-pool absolute target host counts. `instancesToDelete`
+// scales DOWN — the exact instances to remove, which is all a shrink needs:
+// each instance names its own pool, and each pool's new size is what it holds
+// minus the instances named from it. Supplying both, or neither, is rejected
+// with `422`.
+//
+// The accepted scale atomically moves the group to `updating` and dispatches the
+// asynchronous workflow for its direction — `instance-group-scale-up`, which
+// adds servers to each pool's existing reservation and provisions the new hosts,
+// or `instance-group-scale-down`, which removes the named instances' hosts from
+// their reservation and hands them back to the available pool.
 type InstanceGroupScaleRequest struct {
-	// NodePools Per-pool scale targets. Duplicate slugs ⇒ 422; unknown slugs (not on the
-	// group) ⇒ 422; a target that does not exceed the pool's settled `size` ⇒
-	// 422; a pool with no bound infrastructure reservation ⇒ 422.
-	NodePools []struct {
+	// InstancesToDelete Instance identifiers to remove from the group, for a scale-down. This is
+	// the whole request: each instance names its own node pool, and each pool's
+	// new size is derived as the hosts it holds minus the instances named from
+	// it, so neither is supplied. The hosts are released from their pools'
+	// reservations and return to the available pool; the instances are then
+	// gone and their ids stop resolving.
+	//
+	// Every instance must be a member of this instance group, and they MAY span
+	// several of its pools. Naming every host a pool holds drains it — see the
+	// endpoint for what that costs.
+	//
+	// Only an instance whose host is settled `not_provisioned` can be removed.
+	// Any other state refuses the whole request, naming each instance and its
+	// state; destroy what is running on those hosts first with
+	// `POST .../instance-groups/{id}/deprovision`.
+	//
+	// Mutually exclusive with `nodePools`.
+	InstancesToDelete *[]string `json:"instancesToDelete,omitempty"`
+
+	// NodePools Per-pool absolute target host counts, for a scale-up. Duplicate slugs ⇒
+	// 422; unknown slugs (not on the group) ⇒ 422; a pool with no bound
+	// infrastructure reservation ⇒ 422.
+	//
+	// Mutually exclusive with `instancesToDelete`. A shrink is never expressed
+	// here: a target below what a pool holds would say how MANY hosts to remove
+	// without saying WHICH, and the platform does not choose hosts on a
+	// tenant's behalf.
+	NodePools *[]struct {
 		// NodePool Source `ClusterTypeNodePool` id (slug) — the pool to grow.
 		NodePool string `json:"nodePool"`
 
-		// Size Absolute desired host count. A scale must EXCEED the hosts the pool holds (scale down is not yet implemented); the desired-size correction described on the endpoint must EQUAL them, which is the one case a size that does not grow the pool is accepted. `0` is therefore only ever a correction — recording that a pool's reservation holds nothing — never a scale.
+		// Size Absolute desired host count. A scale-up must EXCEED the hosts the pool holds; a size equal to them is the desired-size correction described on the endpoint, which is the one case a size that does not grow the pool is accepted. A size BELOW them is rejected — shrinking is `instancesToDelete`. `0` is therefore only ever a correction, recording that a pool's reservation holds nothing.
 		Size int32 `json:"size"`
-	} `json:"nodePools"`
+	} `json:"nodePools,omitempty"`
+}
+
+// InstanceGroupSerialConsole Serial-console state of an instance group. The platform generates one SSH keypair per group for the serial-console proxy, registers its public half as a NICo ssh key, and binds that key into a site-scoped NICo ssh-key group shared by every host in the group. Presence flags only: neither the key material nor the NICo identifiers are exposed. All `false` until the create workflow gets to them. The flags keep their values while the group is `deleting` and all read `false` once the group is a `deleted` tombstone. Groups created before this field was introduced always report all `false`.
+type InstanceGroupSerialConsole struct {
+	// Generated The group's serial-console SSH keypair has been generated and stored.
+	Generated *bool `json:"generated,omitempty"`
+
+	// NicoKeyGroupRegistered The NICo ssh key is bound into a site-scoped NICo ssh-key group.
+	NicoKeyGroupRegistered *bool `json:"nicoKeyGroupRegistered,omitempty"`
+
+	// NicoKeyRegistered The keypair's public half is registered as a NICo ssh key.
+	NicoKeyRegistered *bool `json:"nicoKeyRegistered,omitempty"`
 }
 
 // InstanceGroupUpdateRequest Request body for updating an InstanceGroup. Only `displayName` and `description` are mutable. Immutable fields (`id`, `clusterType`, `nodePools`, `sshAccess`) present in the body are rejected with `409 CONFLICT_IMMUTABLE`; unknown keys are rejected with `400 INVALID_ARGUMENT`. At least one mutable field must be supplied.
@@ -7879,8 +8211,30 @@ type InstanceGroupUpdateRequest struct {
 
 // InstancePage defines model for InstancePage.
 type InstancePage struct {
-	Instances     []Instance `json:"instances"`
-	NextPageToken *string    `json:"nextPageToken,omitempty"`
+	Instances []Instance `json:"instances"`
+
+	// Limit The `limit` applied to this response, echoed as applied. Out-of-range input is rejected rather than clamped, so this always equals the `limit` the request sent, or the default when the request omitted it.
+	//
+	// Present only on the `offset`/`limit` path; absent on the deprecated `pageToken` path.
+	Limit *PageLimit `json:"limit,omitempty"`
+
+	// NextPageToken **Deprecated:** use `offset`, `limit`, and `totalCount`.
+	//
+	// Token for the next page of results; pass it back verbatim as `pageToken`. Emitted only on the deprecated `pageToken` path; absent when the request used `offset`/`limit`.
+	// Deprecated: this property has been marked as deprecated upstream, but no `x-deprecated-reason` was set
+	NextPageToken *string `json:"nextPageToken,omitempty"`
+
+	// Offset The `offset` applied to this response, echoed as applied. Out-of-range input is rejected rather than clamped, so this always equals the `offset` the request sent.
+	//
+	// A client has reached the end of the list when `offset + (number of items returned) >= totalCount`.
+	//
+	// Present only on the `offset`/`limit` path; absent on the deprecated `pageToken` path.
+	Offset *PageOffset `json:"offset,omitempty"`
+
+	// TotalCount Total instances in the project matching every active filter — `inStates` included, judged on the same live host state the page carries — so `ceil(totalCount / limit)` is the page count for the current filter. Deleted instances are counted only when `showDeleted=true` (or `inStates` includes `deleted`).
+	//
+	// Present only on the `offset`/`limit` path, and omitted when the caller passes `includeTotal=false`. Absent on the deprecated `pageToken` path.
+	TotalCount *int64 `json:"totalCount,omitempty"`
 }
 
 // Kubeconfig Kubeconfig connection-descriptor resource for a cluster. It carries the cluster's server URL and CA only — it grants nothing on its own, is not a credential, and is not a secret to be revoked; a caller's usable kubeconfig is assembled by minting a short-lived OIDC token for them at request time.
@@ -9093,7 +9447,7 @@ type NodePool struct {
 	// Little is lost by the omission: a scale against the same pool is refused too, though not always with the same status — `503` when the pool's size cannot be confirmed, `409` when the reservation has been released or is unknown to the infrastructure service.
 	ReadyCount *int32 `json:"readyCount,omitempty"`
 
-	// ReservationId Infrastructure reservation held for this pool, or absent when none.
+	// ReservationId Infrastructure reservation most recently held for this pool. Absent until the pool is first reserved; it stays after the reservation is released, and a later scale-up may reserve under the same id.
 	ReservationId *openapi_types.UUID `json:"reservationId,omitempty"`
 
 	// ReservationPhase Current reservation phase while the owning InstanceGroup is in flight.
@@ -9133,7 +9487,7 @@ type NotificationEvent struct {
 	// Correlationid Optional cross-step trace identifier (CloudEvents extension attribute), carried through a multi-step workflow.
 	Correlationid *string `json:"correlationid,omitempty"`
 
-	// Data Event payload. Shape depends on `type`; treat it as opaque unless the specific event type is known.
+	// Data Event payload. Shape depends on `type`; treat it as opaque unless the specific event type is known. An organization's subscriptions receive only the fields its event type defines for customers; any other field the producing service sent is left out. An event type with no customer fields arrives with an empty object.
 	Data interface{} `json:"data,omitempty"`
 
 	// Datacontenttype Media type of `data`.
@@ -9147,6 +9501,9 @@ type NotificationEvent struct {
 
 	// Priority Resolved delivery priority (CloudEvents extension attribute), the finer-grained partner of `severity`. Present only on delivered webhook bodies; absent for a delivery enqueued before this field existed.
 	Priority *NotificationEventPriority `json:"priority,omitempty"`
+
+	// Project Slug of the project the event concerns (CloudEvents extension attribute). Absent when no project was recorded: the event concerns no single project, or it was recorded before events carried their project, in which case it may concern one. An organization's webhook subscriptions receive the organization's events whichever project they name, so a receiver that serves one project filters on this field.
+	Project *string `json:"project,omitempty"`
 
 	// Region Region the event originated in (CloudEvents extension attribute).
 	Region string `json:"region"`
@@ -9229,6 +9586,11 @@ type Operation struct {
 	// Status Outcome of the operation. `cancelled` is reported separately from
 	// `failed`, since either leaves the resource's own `state` failed.
 	//
+	// `cancelling` is a still-running operation for which a cancel has been
+	// requested: the resource stays in its transitional `state` until the
+	// operation settles, at which point this becomes `cancelled`, or
+	// `succeeded` if the run completed before the cancel took effect.
+	//
 	// Not a stop condition for a poller: a resource force-failed by the
 	// watchdog can still converge afterwards, moving this back to
 	// `succeeded`.
@@ -9237,6 +9599,11 @@ type Operation struct {
 
 // OperationStatus Outcome of the operation. `cancelled` is reported separately from
 // `failed`, since either leaves the resource's own `state` failed.
+//
+// `cancelling` is a still-running operation for which a cancel has been
+// requested: the resource stays in its transitional `state` until the
+// operation settles, at which point this becomes `cancelled`, or
+// `succeeded` if the run completed before the cancel took effect.
 //
 // Not a stop condition for a poller: a resource force-failed by the
 // watchdog can still converge afterwards, moving this back to
@@ -9712,6 +10079,60 @@ type ProjectUpdateRequest struct {
 	DisplayName *string `json:"displayName,omitempty"`
 }
 
+// QuotaEnforcementAcknowledgement The `metadata` of the `details[]` entry whose `reason` is `QUOTA_ENFORCEMENT_ACKNOWLEDGEMENT_REQUIRED`. Review the report, then repeat the request with `acknowledgedBlockedScopes` set to `blockedScopes`.
+type QuotaEnforcementAcknowledgement struct {
+	// BlockedScopes The live number of scopes at or over their limit on the dimension, which switching enforcement on would start refusing. This is the count to acknowledge.
+	BlockedScopes int64 `json:"blockedScopes"`
+
+	// Dimension The quota dimension whose enforcement is being switched on.
+	Dimension string `json:"dimension"`
+
+	// Report Path of the near/over-limit report that lists those scopes.
+	Report string `json:"report"`
+}
+
+// QuotaRefusal The `metadata` of each `details[]` entry whose `reason` is `QUOTA_EXCEEDED`. One entry is written per refused quota dimension. What `requested` and `admissible` count differs per operation, so see the operation's 409 description.
+type QuotaRefusal struct {
+	// Admissible The largest amount in that dimension that would have been admitted, the smallest headroom across the gating scopes.
+	Admissible int32 `json:"admissible"`
+
+	// BindingScope The scope whose limit binds, `tenant` for the organization or `project`. Absent when no scope is identified.
+	BindingScope *QuotaRefusalBindingScope `json:"bindingScope,omitempty"`
+
+	// Dimension The quota dimension that did not fit.
+	Dimension string `json:"dimension"`
+
+	// Requested The amount the request asked for in that dimension.
+	Requested int32 `json:"requested"`
+
+	// Scopes Every scope that gates the dimension, one entry each. Absent when no scope is identified.
+	Scopes *[]QuotaRefusalScope `json:"scopes,omitempty"`
+}
+
+// QuotaRefusalBindingScope The scope whose limit binds, `tenant` for the organization or `project`. Absent when no scope is identified.
+type QuotaRefusalBindingScope string
+
+// QuotaRefusalScope One scope that gates a refused quota dimension, with its limit, the usage counted against it and the room left. A refusal lists every gating scope, so a project limit tighter than the organization's is visible next to the organization's own headroom.
+type QuotaRefusalScope struct {
+	// Headroom The amount this scope would still admit, the limit less the usage, floored at 0.
+	Headroom int32 `json:"headroom"`
+
+	// Limit The scope's effective limit on the dimension.
+	Limit int32 `json:"limit"`
+
+	// Scope The admission level: `tenant` is the organization, `project` a project inside it. Same values as `bindingScope` on the refusal.
+	Scope QuotaRefusalScopeScope `json:"scope"`
+
+	// TargetId Public identifier (slug) of the scope's target, the organization slug for `tenant` and the project slug for `project`.
+	TargetId string `json:"targetId"`
+
+	// Used Usage already counted against the limit.
+	Used int32 `json:"used"`
+}
+
+// QuotaRefusalScopeScope The admission level: `tenant` is the organization, `project` a project inside it. Same values as `bindingScope` on the refusal.
+type QuotaRefusalScopeScope string
+
 // QuotaViewScope One admission scope's view of a quota dimension. A request is admitted only if it fits at every scope, so each scope's limit is an independent gate.
 type QuotaViewScope struct {
 	// Headroom Remaining under this scope's limit (limit minus used, floored at 0). Present only when limit is present and the dimension is enforced.
@@ -9722,6 +10143,9 @@ type QuotaViewScope struct {
 
 	// OverLimit True when usage exceeds this scope's limit, which happens when a limit is lowered below current usage. New admissions at this scope are refused until usage falls back under the limit. Always false for a dimension that is not enforced.
 	OverLimit bool `json:"overLimit"`
+
+	// ProfileId The quota profile this scope's limit was copied from. Absent when the limit was set directly or the scope has no limit for the dimension. A profile that has since been deleted is still named.
+	ProfileId *string `json:"profileId,omitempty"`
 
 	// Scope The admission level: `tenant` is the organization, `project` a project inside it. Same values as `bindingScope` and as the QUOTA_EXCEEDED refusal's `scopes[].scope`.
 	Scope QuotaViewScopeScope `json:"scope"`
@@ -9787,13 +10211,10 @@ type RefreshTokenGrant struct {
 	// name any. Anything else is a `403`, even when the key's owner could
 	// reach it.
 	//
-	// On `authorization_code` and `refresh_token`, only the access token is
-	// narrowed. After a narrowed `refresh_token` request, the refresh token
+	// On `refresh_token`, only the access token is narrowed: the refresh token
 	// keeps the session's full access, so a later refresh without
-	// `scope_narrowing` returns a full access token. A refused
-	// `authorization_code` request has already spent the code, so the user
-	// signs in again; a refused `refresh_token` request leaves the refresh
-	// token usable.
+	// `scope_narrowing` returns a full access token. A refused `refresh_token`
+	// request leaves the refresh token usable.
 	ScopeNarrowing *ScopeNarrowing `json:"scope_narrowing,omitempty"`
 }
 
@@ -9837,7 +10258,7 @@ type Role struct {
 	// Permissions List of permissions granted by this role
 	Permissions []string `json:"permissions"`
 
-	// Scopes Binding tiers at which this role may be applied. Immutable after creation.
+	// Scopes Binding tiers at which this role may be applied. Immutable after creation. Built-in roles may include `platform`; a custom role cannot be created with it, though custom roles created before this restriction may still report it.
 	Scopes []RoleScopes `json:"scopes"`
 
 	// SelfLink Server-defined URL for this resource.
@@ -9931,13 +10352,10 @@ type RotateWebhookSubscriptionSecretResult struct {
 // name any. Anything else is a `403`, even when the key's owner could
 // reach it.
 //
-// On `authorization_code` and `refresh_token`, only the access token is
-// narrowed. After a narrowed `refresh_token` request, the refresh token
+// On `refresh_token`, only the access token is narrowed: the refresh token
 // keeps the session's full access, so a later refresh without
-// `scope_narrowing` returns a full access token. A refused
-// `authorization_code` request has already spent the code, so the user
-// signs in again; a refused `refresh_token` request leaves the refresh
-// token usable.
+// `scope_narrowing` returns a full access token. A refused `refresh_token`
+// request leaves the refresh token usable.
 type ScopeNarrowing struct {
 	// Roles Roles to keep. Omit to keep every role held in the narrowed scope
 	// (platform roles are still dropped). Each listed role must end up in
@@ -10673,8 +11091,10 @@ type ServiceAccountCredential struct {
 	CreatedBy *string `json:"createdBy,omitempty"`
 
 	// ExpiresAt Credential expiration timestamp. If not set at creation, the
-	// credential expires 90 days from creation. No org-level maximum
-	// is enforced yet.
+	// owning organization's default service-account credential
+	// lifetime applies (30 days unless configured otherwise). Never
+	// later than the organization's maximum lifetime (180 days unless
+	// configured otherwise) at creation time.
 	ExpiresAt *time.Time `json:"expiresAt,omitempty"`
 
 	// Id Credential identifier. Server-generated, immutable.
@@ -10865,11 +11285,33 @@ type ShareTypeState string
 
 // ShareTypePage defines model for ShareTypePage.
 type ShareTypePage struct {
-	// NextPageToken Opaque cursor for the next page. Absent or empty when this is the last page.
+	// Limit The `limit` applied to this response, echoed as applied. Out-of-range input is rejected rather than clamped, so this always equals the `limit` the request sent, or the default when the request omitted it.
+	//
+	// Present only on the `offset`/`limit` path; absent on the deprecated `pageToken` path.
+	Limit *PageLimit `json:"limit,omitempty"`
+
+	// NextPageToken **Deprecated:** use `offset`, `limit`, and `totalCount`.
+	//
+	// Opaque cursor for the next page. Echo it as `pageToken` to fetch the following page. The key is ABSENT when this is the last page — the server omits it rather than returning an empty string — so a consumer must treat a missing `nextPageToken` as "no more results", not as an error or an unset field.
+	//
+	// Emitted only on the deprecated `pageToken` path; absent when the request used `offset`/`limit`.
+	// Deprecated: this property has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	NextPageToken *string `json:"nextPageToken,omitempty"`
+
+	// Offset The `offset` applied to this response, echoed as applied. Out-of-range input is rejected rather than clamped, so this always equals the `offset` the request sent.
+	//
+	// A client has reached the end of the list when `offset + (number of items returned) >= totalCount`.
+	//
+	// Present only on the `offset`/`limit` path; absent on the deprecated `pageToken` path.
+	Offset *PageOffset `json:"offset,omitempty"`
 
 	// ShareTypes The share types offered in the region, ordered by `id` ascending.
 	ShareTypes *[]ShareType `json:"shareTypes,omitempty"`
+
+	// TotalCount Total share types offered in the region — classes naming a live storage backend — so `ceil(totalCount / limit)` is the page count. This list takes no filters.
+	//
+	// Present only on the `offset`/`limit` path, and omitted when the caller passes `includeTotal=false`. Absent on the deprecated `pageToken` path.
+	TotalCount *int64 `json:"totalCount,omitempty"`
 }
 
 // ShareTypePlacement Placement configuration the class is served under, keyed by what it does rather than by the system that provides it.
@@ -10914,13 +11356,16 @@ type ShareTypePlacementDataPlanePoolsPermission string
 // ShareTypePlacementProtocols defines model for ShareTypePlacement.Protocols.
 type ShareTypePlacementProtocols string
 
-// SshUser SSH access for one Linux user: the username, one or more authorized PUBLIC keys (private keys are never stored or generated — the caller supplies the public keys), an optional sudo grant, and an optional display name. Rendered into a cloud-init `users[]` entry on every provisioned node.
+// SshUser SSH access for one Linux user: the username, one or more authorized PUBLIC keys, given inline or as `ssh_public_key` credential references (private keys are never stored or generated), an optional sudo grant, and an optional display name. Rendered into a cloud-init `users[]` entry on every provisioned node.
 type SshUser struct {
 	// DisplayName Optional human-friendly name for this SSH access entry.
 	DisplayName *string `json:"displayName,omitempty"`
 
-	// SshPublicKeys One or more SSH public keys (each an `authorized_keys` line) authorized to log in as this user — e.g. the app user's key plus several admins'. Each element must hold exactly one key. Only modern algorithms are accepted: `ssh-ed25519`, `ecdsa-sha2-nistp256/384/521`, `ssh-rsa` (>= 2048 bits), and the `sk-` FIDO security-key variants. SSH certificates, `ssh-dss`, and other legacy types are rejected.
-	SshPublicKeys []string `json:"sshPublicKeys"`
+	// SshPublicKeyCredentials Self-links of `ssh_public_key` credentials in the request's region and project, resolved at provisioning; exclusive with `sshPublicKeys`.
+	SshPublicKeyCredentials *[]string `json:"sshPublicKeyCredentials,omitempty"`
+
+	// SshPublicKeys One or more SSH public keys (each an `authorized_keys` line) authorized to log in as this user — e.g. the app user's key plus several admins'. Each element must hold exactly one key. Only modern algorithms are accepted: `ssh-ed25519`, `ecdsa-sha2-nistp256/384/521`, `ssh-rsa` (>= 2048 bits), and the `sk-` FIDO security-key variants. SSH certificates, `ssh-dss`, and other legacy types are rejected. Set exactly one of `sshPublicKeys` or `sshPublicKeyCredentials`. On cluster and instance-group create, keys supplied here are registered as managed SSH public-key credentials and returned (and re-read) as `sshPublicKeyCredentials` references.
+	SshPublicKeys *[]string `json:"sshPublicKeys,omitempty"`
 
 	// Sudo Optional sudo fragment granting privileges to the user.
 	Sudo *string `json:"sudo,omitempty"`
@@ -11105,7 +11550,7 @@ type SubnetPage struct {
 	TotalCount *int64 `json:"totalCount,omitempty"`
 }
 
-// TenantQuotaView Quota view for an organization or a project: one row per quota dimension that some scope limits, or that is enforced and has recorded usage (a dimension limited nowhere and not enforced has no row), combining the active quota assignment limits at every applicable scope with the usage recorded by the quota enforcement engine. `scopes` lists those scopes, broadest first: the organization (`tenant`) always, then the project on the project view when the project has a quota assignment of its own (a project without one is bounded by its organization alone). `headroom` and `bindingScope` say how much more fits and which scope is binding. A dimension the admission check does not refuse on (nothing charges it, or its enforcement is switched off) reports enforced false and omits used and headroom at every scope: its limits are recorded but nothing refuses past them. profile names the quota profile assigned at the view's own target and is absent when that target has no active assignment.
+// TenantQuotaView Quota view for an organization or a project: one row per quota dimension that some scope limits, or that is enforced and has recorded usage (a dimension limited nowhere and not enforced has no row), combining the limits held at every applicable scope with the usage recorded by the quota enforcement engine. `scopes` lists those scopes, broadest first: the organization (`tenant`) always, then the project on the project view when the project holds limits of its own (a project without one is bounded by its organization alone). `headroom` and `bindingScope` say how much more fits and which scope is binding. A dimension the admission check does not refuse on (nothing charges it, or its enforcement is switched off) reports enforced false and omits used and headroom at every scope: its limits are recorded but nothing refuses past them. profile names the quota profile that set every limit at the view's own target, and is absent when that target has no limits or no single profile set them all; each scope's profileId says where its limit came from.
 type TenantQuotaView struct {
 	// Dimensions Per-dimension quota rows, sorted by dimension name.
 	Dimensions []struct {
@@ -11121,7 +11566,7 @@ type TenantQuotaView struct {
 		// Headroom The smallest headroom across the scopes that cap the dimension (how much more fits). Absent when no scope caps it or the dimension is not enforced.
 		Headroom *int64 `json:"headroom,omitempty"`
 
-		// Limit **Deprecated:** use `scopes`. The organization (`tenant`) scope's limit, kept for one release. Absent when the organization has no active assignment or its profile does not cap this dimension.
+		// Limit **Deprecated:** use `scopes`. The organization (`tenant`) scope's limit, kept for one release. Absent when the organization holds no limit for this dimension.
 		// Deprecated: this property has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 		Limit *int64 `json:"limit,omitempty"`
 
@@ -11143,12 +11588,12 @@ type TenantQuotaView struct {
 		Used *int64 `json:"used,omitempty"`
 	} `json:"dimensions"`
 
-	// Profile Reference to the quota profile assigned at the view's own target (the organization on getTenantQuota, the project on getProjectQuota). Absent when that target has no active quota assignment. Identity fields only; the profile's full spec is operator-facing.
+	// Profile Reference to the quota profile that set every limit at the view's own target (the organization on getTenantQuota, the project on getProjectQuota). Absent when that target holds no limits, when any of its limits was set directly or by more than one profile, or when the profile has since been deleted. Identity fields only; the profile's full spec is operator-facing.
 	Profile *struct {
 		// DisplayName Human-readable profile name for UI labeling.
 		DisplayName string `json:"displayName"`
 
-		// Id Identifier of the assigned quota profile.
+		// Id Identifier of the quota profile the limits were copied from.
 		Id string `json:"id"`
 	} `json:"profile,omitempty"`
 }
@@ -11167,10 +11612,9 @@ type TokenResponse struct {
 	ExpiresIn int `json:"expires_in"`
 
 	// RefreshToken Refresh token for obtaining new access tokens without
-	// re-authentication. Issued for the authorization_code grant and
-	// returned (rotated) on the refresh_token grant; not issued for
-	// api_key or client_credentials grants. For a browser/cookie-sourced
-	// refresh the rotated token is delivered via the
+	// re-authentication. Returned (rotated) on the `refresh_token` grant;
+	// not issued for `api_key` or `client_credentials`. For a
+	// browser/cookie-sourced refresh the rotated token is delivered via the
 	// k0r_refresh_token Set-Cookie header and omitted from this body;
 	// body-sourced (non-browser) callers receive it here.
 	RefreshToken *string `json:"refresh_token,omitempty"`
@@ -12058,6 +12502,9 @@ type ListProjectsParams struct {
 	// rejected with 422. The same applies to the organization-only transients
 	// `provisioning` and `failed`, which a project can never hold.
 	Status *ListProjectsParamsStatus `form:"status,omitempty" json:"status,omitempty"`
+
+	// Region Optional region id; returns only the projects locked to that region. Takes a single value shaped like a region id (the ids `GET /v1/regions` lists are the regions projects can be locked to). Omitting it, or sending an empty value, returns the projects of every region. The filter is applied before paging; with `offset` and `limit`, `totalCount` counts the filtered set. Combines with `search`, `status` and `organizationId` (logical AND) and never widens the caller's visible set. A non-empty value that is not shaped like a region id is rejected with 422; a well-formed region that no project is locked to, including one the platform does not list, returns an empty list. A project that has no region recorded matches no `region` value, so it appears only when the parameter is omitted.
+	Region *string `form:"region,omitempty" json:"region,omitempty"`
 }
 
 // ListProjectsParamsStatus defines parameters for ListProjects.
@@ -12067,6 +12514,31 @@ type ListProjectsParamsStatus string
 type ListClusterTypesParams struct {
 	// IncludeDeprecated Include deprecated ClusterTypes in the response.
 	IncludeDeprecated *bool `form:"includeDeprecated,omitempty" json:"includeDeprecated,omitempty"`
+
+	// Offset Number of items to skip in the filtered, searched, and sorted result set. Zero-based, so `0` returns the first page. Combines with `limit` to select a page.
+	//
+	// An offset past the end of the result set is not an error: the response carries an empty items array, so a client holding a stale page number renders an empty page rather than an error. `totalCount` accompanies it unless the request set `includeTotal=false`, in which case no total is returned on any page.
+	//
+	// Clients must send identical filter, search, and sort parameters on every page request. Changing any of them changes the result set `offset` indexes into, so the client must reset `offset` to `0`.
+	//
+	// The offset style (`offset`, `limit`, `includeTotal`) and the deprecated cursor style (`pageToken`, `pageSize`) are mutually exclusive. Supplying any parameter from both styles in one request is rejected with 422 — the rule is style-wide, not pairwise, so `?offset=5&pageSize=10` and `?limit=5&pageToken=abc` are rejected too.
+	//
+	// Bounded above by the signed 32-bit maximum, `2147483647`. A larger value is rejected with 422 rather than wrapped. Any offset near the bound returns an empty page long beforehand, so this is a type-range ceiling and not a limit on how far a client may page.
+	Offset *Offset `form:"offset,omitempty" json:"offset,omitempty"`
+
+	// Limit Maximum number of items to return in one page. Values outside the accepted range are rejected with 422 rather than clamped, so the page size applied is always the page size requested.
+	//
+	// The offset style (`offset`, `limit`, `includeTotal`) and the deprecated cursor style (`pageToken`, `pageSize`) are mutually exclusive. Supplying any parameter from both styles in one request is rejected with 422 — the rule is style-wide, not pairwise, so `?offset=5&pageSize=10` and `?limit=5&pageToken=abc` are rejected too.
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// IncludeTotal Whether to compute `totalCount`. Defaults to `true`.
+	//
+	// Set to `false` to skip the count query on hot paths, or for callers that page through an entire collection and never need a page count. When `false`, `totalCount` is omitted from the response body.
+	//
+	// The offset style (`offset`, `limit`, `includeTotal`) and the deprecated cursor style (`pageToken`, `pageSize`) are mutually exclusive. Supplying any parameter from both styles in one request is rejected with 422 — the rule is style-wide, not pairwise, so `?offset=5&pageSize=10` and `?limit=5&pageToken=abc` are rejected too.
+	//
+	// With `includeTotal=false` the response carries neither `totalCount` nor `nextPageToken`, so the end-of-list rule published on the `offset` response field is not computable. Fall back to page length: a page shorter than the requested `limit` is the last page.
+	IncludeTotal *IncludeTotal `form:"includeTotal,omitempty" json:"includeTotal,omitempty"`
 
 	// PageToken **Deprecated.** Cursor pagination is being replaced by offset pagination (`offset` and `limit`).
 	//
@@ -12089,6 +12561,31 @@ type ListClusterTypesParams struct {
 type ListClusterTypeVersionsParams struct {
 	// Status Filter to versions with this lifecycle status. Omit to return every version.
 	Status *ClusterTypeVersionStatus `form:"status,omitempty" json:"status,omitempty"`
+
+	// Offset Number of items to skip in the filtered, searched, and sorted result set. Zero-based, so `0` returns the first page. Combines with `limit` to select a page.
+	//
+	// An offset past the end of the result set is not an error: the response carries an empty items array, so a client holding a stale page number renders an empty page rather than an error. `totalCount` accompanies it unless the request set `includeTotal=false`, in which case no total is returned on any page.
+	//
+	// Clients must send identical filter, search, and sort parameters on every page request. Changing any of them changes the result set `offset` indexes into, so the client must reset `offset` to `0`.
+	//
+	// The offset style (`offset`, `limit`, `includeTotal`) and the deprecated cursor style (`pageToken`, `pageSize`) are mutually exclusive. Supplying any parameter from both styles in one request is rejected with 422 — the rule is style-wide, not pairwise, so `?offset=5&pageSize=10` and `?limit=5&pageToken=abc` are rejected too.
+	//
+	// Bounded above by the signed 32-bit maximum, `2147483647`. A larger value is rejected with 422 rather than wrapped. Any offset near the bound returns an empty page long beforehand, so this is a type-range ceiling and not a limit on how far a client may page.
+	Offset *Offset `form:"offset,omitempty" json:"offset,omitempty"`
+
+	// Limit Maximum number of items to return in one page. Values outside the accepted range are rejected with 422 rather than clamped, so the page size applied is always the page size requested.
+	//
+	// The offset style (`offset`, `limit`, `includeTotal`) and the deprecated cursor style (`pageToken`, `pageSize`) are mutually exclusive. Supplying any parameter from both styles in one request is rejected with 422 — the rule is style-wide, not pairwise, so `?offset=5&pageSize=10` and `?limit=5&pageToken=abc` are rejected too.
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// IncludeTotal Whether to compute `totalCount`. Defaults to `true`.
+	//
+	// Set to `false` to skip the count query on hot paths, or for callers that page through an entire collection and never need a page count. When `false`, `totalCount` is omitted from the response body.
+	//
+	// The offset style (`offset`, `limit`, `includeTotal`) and the deprecated cursor style (`pageToken`, `pageSize`) are mutually exclusive. Supplying any parameter from both styles in one request is rejected with 422 — the rule is style-wide, not pairwise, so `?offset=5&pageSize=10` and `?limit=5&pageToken=abc` are rejected too.
+	//
+	// With `includeTotal=false` the response carries neither `totalCount` nor `nextPageToken`, so the end-of-list rule published on the `offset` response field is not computable. Fall back to page length: a page shorter than the requested `limit` is the last page.
+	IncludeTotal *IncludeTotal `form:"includeTotal,omitempty" json:"includeTotal,omitempty"`
 }
 
 // ListAddressPoolsParams defines parameters for ListAddressPools.
@@ -12137,6 +12634,54 @@ type ListAddressPoolsParams struct {
 
 // ListClustersParams defines parameters for ListClusters.
 type ListClustersParams struct {
+	// IncludeInstanceRefs Embed each node pool's instances as `{id, serverSlug}` in
+	// `nodePools[].instanceRefs`. This service's own rows in one query, with no
+	// call to the infrastructure service.
+	//
+	// The limit is on the WHOLE response, not one cluster, so a listing of large
+	// clusters reaches it sooner than a single read does: over it is a `422`, and
+	// the lever is a smaller `limit` (or `pageSize`) — or
+	// `GET /compute/instances?clusterId=`, which pages over one cluster's hosts
+	// instead.
+	IncludeInstanceRefs *bool `form:"includeInstanceRefs,omitempty" json:"includeInstanceRefs,omitempty"`
+
+	// IncludeInstances Embed a page of each node pool's instances in full, in
+	// `nodePools[].instances`. Needs a live read of every host, so it is
+	// omitted for every pool when the infrastructure service cannot answer —
+	// a cluster read never fails over an enrichment.
+	//
+	// Each pool embeds one page; the limit is on the whole response, so it
+	// counts those pages across every cluster the listing returns. Over it is a
+	// `422`, and the lever is a smaller `limit` (or `pageSize`) — or
+	// `GET /compute/instances?clusterId=`, which pages over one cluster's hosts
+	// instead.
+	IncludeInstances *bool `form:"includeInstances,omitempty" json:"includeInstances,omitempty"`
+
+	// Offset Number of items to skip in the filtered, searched, and sorted result set. Zero-based, so `0` returns the first page. Combines with `limit` to select a page.
+	//
+	// An offset past the end of the result set is not an error: the response carries an empty items array, so a client holding a stale page number renders an empty page rather than an error. `totalCount` accompanies it unless the request set `includeTotal=false`, in which case no total is returned on any page.
+	//
+	// Clients must send identical filter, search, and sort parameters on every page request. Changing any of them changes the result set `offset` indexes into, so the client must reset `offset` to `0`.
+	//
+	// The offset style (`offset`, `limit`, `includeTotal`) and the deprecated cursor style (`pageToken`, `pageSize`) are mutually exclusive. Supplying any parameter from both styles in one request is rejected with 422 — the rule is style-wide, not pairwise, so `?offset=5&pageSize=10` and `?limit=5&pageToken=abc` are rejected too.
+	//
+	// Bounded above by the signed 32-bit maximum, `2147483647`. A larger value is rejected with 422 rather than wrapped. Any offset near the bound returns an empty page long beforehand, so this is a type-range ceiling and not a limit on how far a client may page.
+	Offset *Offset `form:"offset,omitempty" json:"offset,omitempty"`
+
+	// Limit Maximum number of items to return in one page. Values outside the accepted range are rejected with 422 rather than clamped, so the page size applied is always the page size requested.
+	//
+	// The offset style (`offset`, `limit`, `includeTotal`) and the deprecated cursor style (`pageToken`, `pageSize`) are mutually exclusive. Supplying any parameter from both styles in one request is rejected with 422 — the rule is style-wide, not pairwise, so `?offset=5&pageSize=10` and `?limit=5&pageToken=abc` are rejected too.
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// IncludeTotal Whether to compute `totalCount`. Defaults to `true`.
+	//
+	// Set to `false` to skip the count query on hot paths, or for callers that page through an entire collection and never need a page count. When `false`, `totalCount` is omitted from the response body.
+	//
+	// The offset style (`offset`, `limit`, `includeTotal`) and the deprecated cursor style (`pageToken`, `pageSize`) are mutually exclusive. Supplying any parameter from both styles in one request is rejected with 422 — the rule is style-wide, not pairwise, so `?offset=5&pageSize=10` and `?limit=5&pageToken=abc` are rejected too.
+	//
+	// With `includeTotal=false` the response carries neither `totalCount` nor `nextPageToken`, so the end-of-list rule published on the `offset` response field is not computable. Fall back to page length: a page shorter than the requested `limit` is the last page.
+	IncludeTotal *IncludeTotal `form:"includeTotal,omitempty" json:"includeTotal,omitempty"`
+
 	// PageToken **Deprecated.** Cursor pagination is being replaced by offset pagination (`offset` and `limit`).
 	//
 	// Opaque cursor for the next page. Retained for existing clients during the migration and removed in a future major version.
@@ -12165,9 +12710,10 @@ type ListClustersParams struct {
 
 	// Health Filter by canonical `health.state`. Combines with `state` using
 	// logical AND. Matches the read-time materialized health: a cluster whose
-	// health has gone stale, or that has never been observed, matches
-	// `health=unknown` (and not its last observed value). An unknown value is
-	// rejected with 422. Omitting it returns clusters of any health.
+	// health has gone stale, that has never been observed, or whose `state` is
+	// `creating` or `deleting` matches `health=unknown` (and not its last
+	// observed value). An unknown value is rejected with 422. Omitting it
+	// returns clusters of any health.
 	Health *ListClustersParamsHealth `form:"health,omitempty" json:"health,omitempty"`
 }
 
@@ -12198,6 +12744,18 @@ type ListKubeconfigsParams struct {
 
 // GetClusterParams defines parameters for GetCluster.
 type GetClusterParams struct {
+	// IncludeInstanceRefs Embed each node pool's instances as `{id, serverSlug}` in
+	// `nodePools[].instanceRefs`. This service's own rows in one query, with no
+	// call to the infrastructure service. Over the response limit is a `422`.
+	IncludeInstanceRefs *bool `form:"includeInstanceRefs,omitempty" json:"includeInstanceRefs,omitempty"`
+
+	// IncludeInstances Embed a page of each node pool's instances in full, in
+	// `nodePools[].instances`. Needs a live read of every host, so it is
+	// omitted for every pool when the infrastructure service cannot answer —
+	// a cluster read never fails over an enrichment. Over the response limit
+	// is a `422`.
+	IncludeInstances *bool `form:"includeInstances,omitempty" json:"includeInstances,omitempty"`
+
 	// IncludeStages Include `operation.progress` and `operation.stages` for the cluster's current or last operation.
 	IncludeStages *bool `form:"includeStages,omitempty" json:"includeStages,omitempty"`
 }
@@ -12231,6 +12789,31 @@ type ListClusterRuntimeEventsParamsStage string
 
 // ListInstanceGroupsParams defines parameters for ListInstanceGroups.
 type ListInstanceGroupsParams struct {
+	// Offset Number of items to skip in the filtered, searched, and sorted result set. Zero-based, so `0` returns the first page. Combines with `limit` to select a page.
+	//
+	// An offset past the end of the result set is not an error: the response carries an empty items array, so a client holding a stale page number renders an empty page rather than an error. `totalCount` accompanies it unless the request set `includeTotal=false`, in which case no total is returned on any page.
+	//
+	// Clients must send identical filter, search, and sort parameters on every page request. Changing any of them changes the result set `offset` indexes into, so the client must reset `offset` to `0`.
+	//
+	// The offset style (`offset`, `limit`, `includeTotal`) and the deprecated cursor style (`pageToken`, `pageSize`) are mutually exclusive. Supplying any parameter from both styles in one request is rejected with 422 — the rule is style-wide, not pairwise, so `?offset=5&pageSize=10` and `?limit=5&pageToken=abc` are rejected too.
+	//
+	// Bounded above by the signed 32-bit maximum, `2147483647`. A larger value is rejected with 422 rather than wrapped. Any offset near the bound returns an empty page long beforehand, so this is a type-range ceiling and not a limit on how far a client may page.
+	Offset *Offset `form:"offset,omitempty" json:"offset,omitempty"`
+
+	// Limit Maximum number of items to return in one page. Values outside the accepted range are rejected with 422 rather than clamped, so the page size applied is always the page size requested.
+	//
+	// The offset style (`offset`, `limit`, `includeTotal`) and the deprecated cursor style (`pageToken`, `pageSize`) are mutually exclusive. Supplying any parameter from both styles in one request is rejected with 422 — the rule is style-wide, not pairwise, so `?offset=5&pageSize=10` and `?limit=5&pageToken=abc` are rejected too.
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// IncludeTotal Whether to compute `totalCount`. Defaults to `true`.
+	//
+	// Set to `false` to skip the count query on hot paths, or for callers that page through an entire collection and never need a page count. When `false`, `totalCount` is omitted from the response body.
+	//
+	// The offset style (`offset`, `limit`, `includeTotal`) and the deprecated cursor style (`pageToken`, `pageSize`) are mutually exclusive. Supplying any parameter from both styles in one request is rejected with 422 — the rule is style-wide, not pairwise, so `?offset=5&pageSize=10` and `?limit=5&pageToken=abc` are rejected too.
+	//
+	// With `includeTotal=false` the response carries neither `totalCount` nor `nextPageToken`, so the end-of-list rule published on the `offset` response field is not computable. Fall back to page length: a page shorter than the requested `limit` is the last page.
+	IncludeTotal *IncludeTotal `form:"includeTotal,omitempty" json:"includeTotal,omitempty"`
+
 	// PageToken **Deprecated.** Cursor pagination is being replaced by offset pagination (`offset` and `limit`).
 	//
 	// Opaque cursor for the next page. Retained for existing clients during the migration and removed in a future major version.
@@ -12255,7 +12838,7 @@ type ListInstanceGroupsParams struct {
 	//
 	// For the same reason, deleted instances do not count against the limit on how many instances one response may embed — that limit bounds the live read. They DO count against the refs limit, which bounds response size.
 	//
-	// An embed this flag turned on is OMITTED when the response would exceed its budget; it does not fail the read. Nothing reaps tombstones, so a group rebuilt often enough crosses the refs limit on its own, and refusing there would make `showDeleted` permanently unusable for that project with no parameter to drop — at `pageSize=1` there is no smaller page to ask for. An embed you requested EXPLICITLY is still refused with `422`, because you named it. Either way the complete membership is available from `GET /compute/instances?instanceGroupId=&showDeleted=true`, which pages.
+	// An embed this flag turned on is OMITTED when the response would exceed its budget; it does not fail the read. Nothing reaps tombstones, so a group rebuilt often enough crosses the refs limit on its own, and refusing there would make `showDeleted` permanently unusable for that project with no parameter to drop — at `limit=1` (or `pageSize=1`) there is no smaller page to ask for. An embed you requested EXPLICITLY is still refused with `422`, because you named it. Either way the complete membership is available from `GET /compute/instances?instanceGroupId=&showDeleted=true`, which pages.
 	//
 	// What a deleted group does NOT carry is `readyCount`/`notReadyCount`: those are read from its reservation, which was released and may now be held by another project.
 	//
@@ -12296,6 +12879,31 @@ type GetInstanceGroupParams struct {
 
 // ListInstancesParams defines parameters for ListInstances.
 type ListInstancesParams struct {
+	// Offset Number of items to skip in the filtered, searched, and sorted result set. Zero-based, so `0` returns the first page. Combines with `limit` to select a page.
+	//
+	// An offset past the end of the result set is not an error: the response carries an empty items array, so a client holding a stale page number renders an empty page rather than an error. `totalCount` accompanies it unless the request set `includeTotal=false`, in which case no total is returned on any page.
+	//
+	// Clients must send identical filter, search, and sort parameters on every page request. Changing any of them changes the result set `offset` indexes into, so the client must reset `offset` to `0`.
+	//
+	// The offset style (`offset`, `limit`, `includeTotal`) and the deprecated cursor style (`pageToken`, `pageSize`) are mutually exclusive. Supplying any parameter from both styles in one request is rejected with 422 — the rule is style-wide, not pairwise, so `?offset=5&pageSize=10` and `?limit=5&pageToken=abc` are rejected too.
+	//
+	// Bounded above by the signed 32-bit maximum, `2147483647`. A larger value is rejected with 422 rather than wrapped. Any offset near the bound returns an empty page long beforehand, so this is a type-range ceiling and not a limit on how far a client may page.
+	Offset *Offset `form:"offset,omitempty" json:"offset,omitempty"`
+
+	// Limit Maximum number of instances to return in one page, capped at 200 for this operation because every instance in a page is read from the infrastructure service in a single batched request. Values outside the accepted range are rejected with 422 rather than clamped, so the page size applied is always the page size requested.
+	//
+	// The offset style (`offset`, `limit`, `includeTotal`) and the deprecated cursor style (`pageToken`, `pageSize`) are mutually exclusive. Supplying any parameter from both styles in one request is rejected with 422.
+	Limit *int32 `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// IncludeTotal Whether to compute `totalCount`. Defaults to `true`.
+	//
+	// Set to `false` to skip the count query on hot paths, or for callers that page through an entire collection and never need a page count. When `false`, `totalCount` is omitted from the response body.
+	//
+	// The offset style (`offset`, `limit`, `includeTotal`) and the deprecated cursor style (`pageToken`, `pageSize`) are mutually exclusive. Supplying any parameter from both styles in one request is rejected with 422 — the rule is style-wide, not pairwise, so `?offset=5&pageSize=10` and `?limit=5&pageToken=abc` are rejected too.
+	//
+	// With `includeTotal=false` the response carries neither `totalCount` nor `nextPageToken`, so the end-of-list rule published on the `offset` response field is not computable. Fall back to page length: a page shorter than the requested `limit` is the last page.
+	IncludeTotal *IncludeTotal `form:"includeTotal,omitempty" json:"includeTotal,omitempty"`
+
 	// PageToken **Deprecated.** Cursor pagination is being replaced by offset pagination (`offset` and `limit`).
 	//
 	// Opaque cursor for the next page. Retained for existing clients during the migration and removed in a future major version.
@@ -12319,15 +12927,36 @@ type ListInstancesParams struct {
 	// the same value each instance reports as `instanceGroupId`, so a listing can
 	// be narrowed without first looking the group's uid up. A slug naming no
 	// group is an empty page, not an error.
+	//
+	// An id is unique among LIVE groups only: a deleted group keeps its row but
+	// releases the id, so a later group may be created with the same one. With
+	// `showDeleted=true` this filter then spans every group that held it. A uid
+	// is never reused, so `instanceGroupUuid` always names exactly one.
 	InstanceGroupId *string `form:"instanceGroupId,omitempty" json:"instanceGroupId,omitempty"`
 
-	// NodePoolUuid Return only instances belonging to this node pool.
+	// ClusterUuid Return only instances belonging to this Cluster.
+	ClusterUuid *openapi_types.UUID `form:"clusterUuid,omitempty" json:"clusterUuid,omitempty"`
+
+	// ClusterId Return only instances belonging to the Cluster with this id — the same
+	// value each instance reports as `clusterId` and the one
+	// `GET .../compute/clusters/{id}` takes. An id naming no cluster is an empty
+	// page, not an error. An instance has ONE owner, so combining this with
+	// `instanceGroupId` or `instanceGroupUuid` matches nothing.
+	//
+	// An id is unique among LIVE clusters only: a deleted cluster keeps its row
+	// but releases the id, so a later cluster may be created with the same one.
+	// With `showDeleted=true` this filter then spans every cluster that held it.
+	// A uid is never reused, so `clusterUuid` always names exactly one.
+	ClusterId *string `form:"clusterId,omitempty" json:"clusterId,omitempty"`
+
+	// NodePoolUuid Return only instances belonging to this node pool. The pool reference is
+	// shared by both owners, so this needs no cluster/group variant.
 	NodePoolUuid *openapi_types.UUID `form:"nodePoolUuid,omitempty" json:"nodePoolUuid,omitempty"`
 
 	// NodePool Return only instances provisioned into a node pool with this id (slug).
 	// Pool slugs come from the ClusterType, so on its own this matches across
-	// every group of the project that has a pool by that name; combine it with
-	// `instanceGroupId` for one group's pool.
+	// every cluster and group of the project that has a pool by that name;
+	// combine it with `instanceGroupId` or `clusterId` for one owner's pool.
 	NodePool *string `form:"nodePool,omitempty" json:"nodePool,omitempty"`
 
 	// ReservationUuid Return only instances held by this infrastructure reservation.
@@ -12358,7 +12987,11 @@ type ListInstancesParams struct {
 	//
 	// **`inStates=unknown` is slower for a different reason.** An instance is also `unknown` when its host cannot be attributed to it, which is a disagreement between the two services — invisible to the infrastructure service, and able to sit on a host reporting itself perfectly healthy. That cannot be resolved by a query, so a request including `unknown` reads pages and filters them.
 	//
-	// A page may return FEWER rows than `pageSize` while `nextPageToken` is still set: the final verdict is applied after each page is read. A short page is not the end of the list — follow the token until it is absent.
+	// On the deprecated cursor style, a page may return FEWER rows than `pageSize` while `nextPageToken` is still set: the final verdict is applied after each page is read. A short page is not the end of the list — follow the token until it is absent.
+	//
+	// On the offset style, `offset` and `totalCount` are exact: the instances matching every other filter are read and judged first, and the page is cut from the ones that match. That read is bounded at 5000 instances: when more than that remain after every other filter (and after the state's own narrowing, where it applies), the request is rejected with `422` — narrow it with an owner, pool, reservation, `serverSlug` or `instanceId` filter. Deleted instances count toward the bound when they are included. Every page holds exactly `limit` items except the last.
+	//
+	// Because the total is exact, the offset style answers `503` rather than a short total when the infrastructure service's answer is incomplete — part of the host read failed, or the reservation read did — and `504` when judging the instances takes longer than the request allows (about 30 seconds); narrow the request the same way.
 	InStates *[]ListInstancesParamsInStates `form:"inStates,omitempty" json:"inStates,omitempty"`
 }
 
@@ -12664,6 +13297,31 @@ type ListVPCPeeringsParams struct {
 
 // ListFileStoresParams defines parameters for ListFileStores.
 type ListFileStoresParams struct {
+	// Offset Number of items to skip in the filtered, searched, and sorted result set. Zero-based, so `0` returns the first page. Combines with `limit` to select a page.
+	//
+	// An offset past the end of the result set is not an error: the response carries an empty items array, so a client holding a stale page number renders an empty page rather than an error. `totalCount` accompanies it unless the request set `includeTotal=false`, in which case no total is returned on any page.
+	//
+	// Clients must send identical filter, search, and sort parameters on every page request. Changing any of them changes the result set `offset` indexes into, so the client must reset `offset` to `0`.
+	//
+	// The offset style (`offset`, `limit`, `includeTotal`) and the deprecated cursor style (`pageToken`, `pageSize`) are mutually exclusive. Supplying any parameter from both styles in one request is rejected with 422 — the rule is style-wide, not pairwise, so `?offset=5&pageSize=10` and `?limit=5&pageToken=abc` are rejected too.
+	//
+	// Bounded above by the signed 32-bit maximum, `2147483647`. A larger value is rejected with 422 rather than wrapped. Any offset near the bound returns an empty page long beforehand, so this is a type-range ceiling and not a limit on how far a client may page.
+	Offset *Offset `form:"offset,omitempty" json:"offset,omitempty"`
+
+	// Limit Maximum number of items to return in one page. Values outside the accepted range are rejected with 422 rather than clamped, so the page size applied is always the page size requested.
+	//
+	// The offset style (`offset`, `limit`, `includeTotal`) and the deprecated cursor style (`pageToken`, `pageSize`) are mutually exclusive. Supplying any parameter from both styles in one request is rejected with 422 — the rule is style-wide, not pairwise, so `?offset=5&pageSize=10` and `?limit=5&pageToken=abc` are rejected too.
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// IncludeTotal Whether to compute `totalCount`. Defaults to `true`.
+	//
+	// Set to `false` to skip the count query on hot paths, or for callers that page through an entire collection and never need a page count. When `false`, `totalCount` is omitted from the response body.
+	//
+	// The offset style (`offset`, `limit`, `includeTotal`) and the deprecated cursor style (`pageToken`, `pageSize`) are mutually exclusive. Supplying any parameter from both styles in one request is rejected with 422 — the rule is style-wide, not pairwise, so `?offset=5&pageSize=10` and `?limit=5&pageToken=abc` are rejected too.
+	//
+	// With `includeTotal=false` the response carries neither `totalCount` nor `nextPageToken`, so the end-of-list rule published on the `offset` response field is not computable. Fall back to page length: a page shorter than the requested `limit` is the last page.
+	IncludeTotal *IncludeTotal `form:"includeTotal,omitempty" json:"includeTotal,omitempty"`
+
 	// PageToken **Deprecated.** Cursor pagination is being replaced by offset pagination (`offset` and `limit`).
 	//
 	// Opaque cursor for the next page. Retained for existing clients during the migration and removed in a future major version.
@@ -12738,6 +13396,31 @@ type DeleteFileStoreParams struct {
 
 // ListShareTypesParams defines parameters for ListShareTypes.
 type ListShareTypesParams struct {
+	// Offset Number of items to skip in the filtered, searched, and sorted result set. Zero-based, so `0` returns the first page. Combines with `limit` to select a page.
+	//
+	// An offset past the end of the result set is not an error: the response carries an empty items array, so a client holding a stale page number renders an empty page rather than an error. `totalCount` accompanies it unless the request set `includeTotal=false`, in which case no total is returned on any page.
+	//
+	// Clients must send identical filter, search, and sort parameters on every page request. Changing any of them changes the result set `offset` indexes into, so the client must reset `offset` to `0`.
+	//
+	// The offset style (`offset`, `limit`, `includeTotal`) and the deprecated cursor style (`pageToken`, `pageSize`) are mutually exclusive. Supplying any parameter from both styles in one request is rejected with 422 — the rule is style-wide, not pairwise, so `?offset=5&pageSize=10` and `?limit=5&pageToken=abc` are rejected too.
+	//
+	// Bounded above by the signed 32-bit maximum, `2147483647`. A larger value is rejected with 422 rather than wrapped. Any offset near the bound returns an empty page long beforehand, so this is a type-range ceiling and not a limit on how far a client may page.
+	Offset *Offset `form:"offset,omitempty" json:"offset,omitempty"`
+
+	// Limit Maximum number of items to return in one page. Values outside the accepted range are rejected with 422 rather than clamped, so the page size applied is always the page size requested.
+	//
+	// The offset style (`offset`, `limit`, `includeTotal`) and the deprecated cursor style (`pageToken`, `pageSize`) are mutually exclusive. Supplying any parameter from both styles in one request is rejected with 422 — the rule is style-wide, not pairwise, so `?offset=5&pageSize=10` and `?limit=5&pageToken=abc` are rejected too.
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// IncludeTotal Whether to compute `totalCount`. Defaults to `true`.
+	//
+	// Set to `false` to skip the count query on hot paths, or for callers that page through an entire collection and never need a page count. When `false`, `totalCount` is omitted from the response body.
+	//
+	// The offset style (`offset`, `limit`, `includeTotal`) and the deprecated cursor style (`pageToken`, `pageSize`) are mutually exclusive. Supplying any parameter from both styles in one request is rejected with 422 — the rule is style-wide, not pairwise, so `?offset=5&pageSize=10` and `?limit=5&pageToken=abc` are rejected too.
+	//
+	// With `includeTotal=false` the response carries neither `totalCount` nor `nextPageToken`, so the end-of-list rule published on the `offset` response field is not computable. Fall back to page length: a page shorter than the requested `limit` is the last page.
+	IncludeTotal *IncludeTotal `form:"includeTotal,omitempty" json:"includeTotal,omitempty"`
+
 	// PageToken **Deprecated.** Cursor pagination is being replaced by offset pagination (`offset` and `limit`).
 	//
 	// Opaque cursor for the next page. Retained for existing clients during the migration and removed in a future major version.
@@ -12838,6 +13521,94 @@ type UpdateFileStoreJSONRequestBody = FileStoreUpdateRequest
 
 // DeliverWebhookEventJSONRequestBody defines body for DeliverWebhookEvent for application/json ContentType.
 type DeliverWebhookEventJSONRequestBody = NotificationEvent
+
+// AsQuotaRefusal returns the union data inside the ErrorDetail_Metadata as a QuotaRefusal
+func (t ErrorDetail_Metadata) AsQuotaRefusal() (QuotaRefusal, error) {
+	var body QuotaRefusal
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromQuotaRefusal overwrites any union data inside the ErrorDetail_Metadata as the provided QuotaRefusal
+func (t *ErrorDetail_Metadata) FromQuotaRefusal(v QuotaRefusal) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeQuotaRefusal performs a merge with any union data inside the ErrorDetail_Metadata, using the provided QuotaRefusal
+func (t *ErrorDetail_Metadata) MergeQuotaRefusal(v QuotaRefusal) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsQuotaEnforcementAcknowledgement returns the union data inside the ErrorDetail_Metadata as a QuotaEnforcementAcknowledgement
+func (t ErrorDetail_Metadata) AsQuotaEnforcementAcknowledgement() (QuotaEnforcementAcknowledgement, error) {
+	var body QuotaEnforcementAcknowledgement
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromQuotaEnforcementAcknowledgement overwrites any union data inside the ErrorDetail_Metadata as the provided QuotaEnforcementAcknowledgement
+func (t *ErrorDetail_Metadata) FromQuotaEnforcementAcknowledgement(v QuotaEnforcementAcknowledgement) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeQuotaEnforcementAcknowledgement performs a merge with any union data inside the ErrorDetail_Metadata, using the provided QuotaEnforcementAcknowledgement
+func (t *ErrorDetail_Metadata) MergeQuotaEnforcementAcknowledgement(v QuotaEnforcementAcknowledgement) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsErrorDetailFreeFormMetadata returns the union data inside the ErrorDetail_Metadata as a ErrorDetailFreeFormMetadata
+func (t ErrorDetail_Metadata) AsErrorDetailFreeFormMetadata() (ErrorDetailFreeFormMetadata, error) {
+	var body ErrorDetailFreeFormMetadata
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromErrorDetailFreeFormMetadata overwrites any union data inside the ErrorDetail_Metadata as the provided ErrorDetailFreeFormMetadata
+func (t *ErrorDetail_Metadata) FromErrorDetailFreeFormMetadata(v ErrorDetailFreeFormMetadata) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeErrorDetailFreeFormMetadata performs a merge with any union data inside the ErrorDetail_Metadata, using the provided ErrorDetailFreeFormMetadata
+func (t *ErrorDetail_Metadata) MergeErrorDetailFreeFormMetadata(v ErrorDetailFreeFormMetadata) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t ErrorDetail_Metadata) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	return b, err
+}
+
+func (t *ErrorDetail_Metadata) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	return err
+}
 
 // AsNetworkEVPN returns the union data inside the Network as a NetworkEVPN
 func (t Network) AsNetworkEVPN() (NetworkEVPN, error) {
@@ -13484,40 +14255,6 @@ func (t *NetworkSchemaNetwork) UnmarshalJSON(b []byte) error {
 	return err
 }
 
-// AsAuthCodeGrant returns the union data inside the MintTokenJSONBody as a AuthCodeGrant
-func (t MintTokenJSONBody) AsAuthCodeGrant() (AuthCodeGrant, error) {
-	var body AuthCodeGrant
-	err := json.Unmarshal(t.union, &body)
-	return body, err
-}
-
-// FromAuthCodeGrant overwrites any union data inside the MintTokenJSONBody as the provided AuthCodeGrant
-func (t *MintTokenJSONBody) FromAuthCodeGrant(v AuthCodeGrant) error {
-	b, err := json.Marshal(v)
-	if err != nil {
-		return err
-	}
-	b, err = runtime.JSONMerge(b, []byte(`{"grant_type":"authorization_code"}`))
-	t.union = b
-	return err
-}
-
-// MergeAuthCodeGrant performs a merge with any union data inside the MintTokenJSONBody, using the provided AuthCodeGrant
-func (t *MintTokenJSONBody) MergeAuthCodeGrant(v AuthCodeGrant) error {
-	b, err := json.Marshal(v)
-	if err != nil {
-		return err
-	}
-	b, err = runtime.JSONMerge(b, []byte(`{"grant_type":"authorization_code"}`))
-	if err != nil {
-		return err
-	}
-
-	merged, err := runtime.JSONMerge(t.union, b)
-	t.union = merged
-	return err
-}
-
 // AsApiKeyGrant returns the union data inside the MintTokenJSONBody as a ApiKeyGrant
 func (t MintTokenJSONBody) AsApiKeyGrant() (ApiKeyGrant, error) {
 	var body ApiKeyGrant
@@ -13636,8 +14373,6 @@ func (t MintTokenJSONBody) ValueByDiscriminator() (interface{}, error) {
 	switch discriminator {
 	case "api_key":
 		return t.AsApiKeyGrant()
-	case "authorization_code":
-		return t.AsAuthCodeGrant()
 	case "client_credentials":
 		return t.AsClientCredentialsGrant()
 	case "refresh_token":

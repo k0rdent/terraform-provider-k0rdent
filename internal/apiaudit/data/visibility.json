@@ -4,6 +4,9 @@
    "internal",
    "public"
   ],
+  "activatePlatformCiamProvider": [
+   "internal"
+  ],
   "addAddressPoolPrefix": [
    "internal"
   ],
@@ -63,6 +66,9 @@
   "createClusterType": [
    "internal"
   ],
+  "createControlPlatform": [
+   "internal"
+  ],
   "createFileStore": [
    "internal",
    "public"
@@ -73,6 +79,9 @@
   "createGroup": [
    "internal",
    "public"
+  ],
+  "createHCPConfig": [
+   "internal"
   ],
   "createInstanceGroup": [
    "internal",
@@ -88,6 +97,12 @@
   "createNotificationCatalogEntry": [
    "internal"
   ],
+  "createNotificationMute": [
+   "public"
+  ],
+  "createNotificationRoutingRule": [
+   "internal"
+  ],
   "createNotificationSubscription": [
    "public"
   ],
@@ -99,6 +114,9 @@
    "public"
   ],
   "createPlatformCiamProvider": [
+   "internal"
+  ],
+  "createPlatformCiamProviderRow": [
    "internal"
   ],
   "createPlatformPolicy": [
@@ -181,6 +199,9 @@
   "deleteClusterType": [
    "internal"
   ],
+  "deleteControlPlatform": [
+   "internal"
+  ],
   "deleteFileStore": [
    "internal",
    "public"
@@ -192,14 +213,17 @@
    "internal",
    "public"
   ],
+  "deleteHCPConfig": [
+   "internal"
+  ],
   "deleteInboxNotification": [
    "public"
   ],
-  "deleteInstance": [
+  "deleteInstanceGroup": [
    "internal",
    "public"
   ],
-  "deleteInstanceGroup": [
+  "deleteInvitationEmailTemplate": [
    "internal",
    "public"
   ],
@@ -210,6 +234,12 @@
    "internal",
    "public"
   ],
+  "deleteNotificationMute": [
+   "public"
+  ],
+  "deleteNotificationRoutingRule": [
+   "internal"
+  ],
   "deleteNotificationSubscription": [
    "public"
   ],
@@ -217,6 +247,9 @@
    "internal"
   ],
   "deletePlatformCiamProvider": [
+   "internal"
+  ],
+  "deletePlatformCiamProviderRow": [
    "internal"
   ],
   "deletePlatformCredential": [
@@ -353,6 +386,10 @@
    "internal",
    "public"
   ],
+  "getClusterStorageUsage": [
+   "internal",
+   "public"
+  ],
   "getClusterType": [
    "internal",
    "public"
@@ -360,6 +397,12 @@
   "getClusterTypeVersion": [
    "internal",
    "public"
+  ],
+  "getControlPlatform": [
+   "internal"
+  ],
+  "getControlPlatformCapacity": [
+   "internal"
   ],
   "getFileStore": [
    "internal",
@@ -376,6 +419,12 @@
    "internal",
    "public"
   ],
+  "getHCPConfig": [
+   "internal"
+  ],
+  "getHostedControlPlane": [
+   "internal"
+  ],
   "getInboxNotification": [
    "public"
   ],
@@ -387,6 +436,10 @@
    "public"
   ],
   "getInstanceGroup": [
+   "internal",
+   "public"
+  ],
+  "getInvitationEmailTemplate": [
    "internal",
    "public"
   ],
@@ -415,6 +468,9 @@
   "getNotificationCatalogEntry": [
    "internal"
   ],
+  "getNotificationRoutingRule": [
+   "internal"
+  ],
   "getOIDCDiscovery": [
    "internal",
    "public"
@@ -436,6 +492,9 @@
    "public"
   ],
   "getPlatformCiamProvider": [
+   "internal"
+  ],
+  "getPlatformCiamProviderRow": [
    "internal"
   ],
   "getPlatformCredential": [
@@ -548,6 +607,9 @@
    "internal",
    "public"
   ],
+  "getUserNotificationPreferencesSupport": [
+   "internal"
+  ],
   "getUserProfile": [
    "internal",
    "public"
@@ -602,6 +664,9 @@
    "internal",
    "public"
   ],
+  "listControlPlatforms": [
+   "internal"
+  ],
   "listDeliveryStatus": [
    "public"
   ],
@@ -623,6 +688,12 @@
   "listGroups": [
    "internal",
    "public"
+  ],
+  "listHCPConfigs": [
+   "internal"
+  ],
+  "listHostedControlPlanes": [
+   "internal"
   ],
   "listInboxNotifications": [
    "public"
@@ -653,7 +724,19 @@
   "listNotificationCatalog": [
    "internal"
   ],
+  "listNotificationCategories": [
+   "public"
+  ],
+  "listNotificationMutes": [
+   "public"
+  ],
   "listNotificationPreferences": [
+   "public"
+  ],
+  "listNotificationRoutingRules": [
+   "internal"
+  ],
+  "listNotificationSubscriptionScopes": [
    "public"
   ],
   "listNotificationSubscriptions": [
@@ -674,6 +757,12 @@
   "listPlatformApiKeys": [
    "internal"
   ],
+  "listPlatformCiamProviders": [
+   "internal"
+  ],
+  "listPlatformCredentialDistributions": [
+   "public"
+  ],
   "listPlatformCredentials": [
    "public"
   ],
@@ -684,6 +773,9 @@
   "listPlatformPolicies": [
    "internal"
   ],
+  "listPlatformRoles": [
+   "internal"
+  ],
   "listPlatformServiceAccountCredentials": [
    "internal"
   ],
@@ -692,6 +784,9 @@
   ],
   "listPolicies": [
    "internal",
+   "public"
+  ],
+  "listProjectCredentialDistributions": [
    "public"
   ],
   "listProjectCredentials": [
@@ -717,6 +812,9 @@
    "internal"
   ],
   "listQuotaDimensions": [
+   "internal"
+  ],
+  "listQuotaLimitChanges": [
    "internal"
   ],
   "listQuotaOverrides": [
@@ -823,8 +921,9 @@
   "patchServerProviderSpecificData": [
    "internal"
   ],
-  "previewGlobalQuotaProfileUpdate": [
-   "internal"
+  "previewInvitationEmailTemplate": [
+   "internal",
+   "public"
   ],
   "previewPlatformCredentialRevocation": [
    "public"
@@ -838,9 +937,6 @@
   "previewProjectCredentialRotation": [
    "public"
   ],
-  "previewQuotaProfileUpdateInOrg": [
-   "internal"
-  ],
   "previewTemplate": [
    "internal"
   ],
@@ -849,6 +945,10 @@
   ],
   "provisionSingleServer": [
    "internal"
+  ],
+  "putInvitationEmailTemplate": [
+   "internal",
+   "public"
   ],
   "putQuotaAssignmentInOrg": [
    "internal"
@@ -880,6 +980,9 @@
   "releaseReservation": [
    "internal"
   ],
+  "releaseServerExternalManagement": [
+   "internal"
+  ],
   "removeAddressPoolPrefix": [
    "internal"
   ],
@@ -906,6 +1009,9 @@
    "public"
   ],
   "resumeOrganization": [
+   "internal"
+  ],
+  "retryHCPConfigRollout": [
    "internal"
   ],
   "revokeOrganizationInvitation": [
@@ -984,6 +1090,9 @@
    "internal",
    "public"
   ],
+  "startPlatformCiamProviderRowSignInTest": [
+   "internal"
+  ],
   "startPlatformCiamProviderSignInTest": [
    "internal"
   ],
@@ -1020,6 +1129,12 @@
    "internal",
    "public"
   ],
+  "updateClusterType": [
+   "internal"
+  ],
+  "updateControlPlatform": [
+   "internal"
+  ],
   "updateFileStore": [
    "internal",
    "public"
@@ -1030,6 +1145,9 @@
   "updateGroup": [
    "internal",
    "public"
+  ],
+  "updateHCPConfig": [
+   "internal"
   ],
   "updateInstanceGroup": [
    "internal",
@@ -1049,11 +1167,17 @@
   "updateNotificationCatalogEntry": [
    "internal"
   ],
+  "updateNotificationRoutingRule": [
+   "internal"
+  ],
   "updateOrganization": [
    "internal",
    "public"
   ],
   "updatePlatformCiamProvider": [
+   "internal"
+  ],
+  "updatePlatformCiamProviderRow": [
    "internal"
   ],
   "updatePolicy": [
@@ -1110,6 +1234,9 @@
   "upsertNotificationPreference": [
    "public"
   ],
+  "upsertUserNotificationPreferenceSupport": [
+   "internal"
+  ],
   "validateProvider": [
    "internal",
    "public"
@@ -1120,12 +1247,19 @@
   ],
   "validateServer": [
    "internal"
+  ],
+  "verifyAuditEvents": [
+   "public"
   ]
  },
  "routes": {
   "acceptOrganizationInvitation": {
    "method": "POST",
    "path": "/v1/regions/global/organizations/{id}/invitations/{invitationId}/accept"
+  },
+  "activatePlatformCiamProvider": {
+   "method": "POST",
+   "path": "/v1/regions/global/iam/platform/ciam-providers/{id}/activate"
   },
   "addAddressPoolPrefix": {
    "method": "POST",
@@ -1195,6 +1329,10 @@
    "method": "POST",
    "path": "/v1/regions/{region}/compute/cluster-types"
   },
+  "createControlPlatform": {
+   "method": "POST",
+   "path": "/v1/regions/{region}/compute/control-platforms"
+  },
   "createFileStore": {
    "method": "POST",
    "path": "/v1/regions/{region}/projects/{project}/storage/file-stores"
@@ -1206,6 +1344,10 @@
   "createGroup": {
    "method": "POST",
    "path": "/v1/regions/global/organizations/{orgId}/iam/groups"
+  },
+  "createHCPConfig": {
+   "method": "POST",
+   "path": "/v1/regions/{region}/compute/hcp-configs"
   },
   "createInstanceGroup": {
    "method": "POST",
@@ -1223,6 +1365,14 @@
    "method": "POST",
    "path": "/v1/regions/global/notifications/catalog"
   },
+  "createNotificationMute": {
+   "method": "POST",
+   "path": "/v1/regions/global/notifications/users/me/mutes"
+  },
+  "createNotificationRoutingRule": {
+   "method": "POST",
+   "path": "/v1/regions/global/notifications/routing-rules"
+  },
   "createNotificationSubscription": {
    "method": "POST",
    "path": "/v1/regions/global/notifications/users/me/subscriptions"
@@ -1238,6 +1388,10 @@
   "createPlatformCiamProvider": {
    "method": "POST",
    "path": "/v1/regions/global/iam/platform/ciam-provider"
+  },
+  "createPlatformCiamProviderRow": {
+   "method": "POST",
+   "path": "/v1/regions/global/iam/platform/ciam-providers"
   },
   "createPlatformPolicy": {
    "method": "POST",
@@ -1331,6 +1485,10 @@
    "method": "DELETE",
    "path": "/v1/regions/{region}/compute/cluster-types/{id}"
   },
+  "deleteControlPlatform": {
+   "method": "DELETE",
+   "path": "/v1/regions/{region}/compute/control-platforms/{id}"
+  },
   "deleteFileStore": {
    "method": "DELETE",
    "path": "/v1/regions/{region}/projects/{project}/storage/file-stores/{id}"
@@ -1343,17 +1501,21 @@
    "method": "DELETE",
    "path": "/v1/regions/global/organizations/{orgId}/iam/groups/{id}"
   },
+  "deleteHCPConfig": {
+   "method": "DELETE",
+   "path": "/v1/regions/{region}/compute/hcp-configs/{id}"
+  },
   "deleteInboxNotification": {
    "method": "DELETE",
    "path": "/v1/regions/global/notifications/inbox/{id}"
   },
-  "deleteInstance": {
-   "method": "DELETE",
-   "path": "/v1/regions/{region}/projects/{project}/compute/instances/{id}"
-  },
   "deleteInstanceGroup": {
    "method": "DELETE",
    "path": "/v1/regions/{region}/projects/{project}/compute/instance-groups/{id}"
+  },
+  "deleteInvitationEmailTemplate": {
+   "method": "DELETE",
+   "path": "/v1/regions/global/organizations/{id}/invitations/settings/email-template"
   },
   "deleteMachineType": {
    "method": "DELETE",
@@ -1362,6 +1524,14 @@
   "deleteNetwork": {
    "method": "DELETE",
    "path": "/v1/regions/{region}/projects/{project}/networking/networks/{id}"
+  },
+  "deleteNotificationMute": {
+   "method": "DELETE",
+   "path": "/v1/regions/global/notifications/users/me/mutes"
+  },
+  "deleteNotificationRoutingRule": {
+   "method": "DELETE",
+   "path": "/v1/regions/global/notifications/routing-rules/{id}"
   },
   "deleteNotificationSubscription": {
    "method": "DELETE",
@@ -1374,6 +1544,10 @@
   "deletePlatformCiamProvider": {
    "method": "DELETE",
    "path": "/v1/regions/global/iam/platform/ciam-provider"
+  },
+  "deletePlatformCiamProviderRow": {
+   "method": "DELETE",
+   "path": "/v1/regions/global/iam/platform/ciam-providers/{id}"
   },
   "deletePlatformCredential": {
    "method": "DELETE",
@@ -1527,6 +1701,10 @@
    "method": "GET",
    "path": "/v1/regions/{region}/projects/{project}/compute/clusters/{clusterId}/kubeconfig"
   },
+  "getClusterStorageUsage": {
+   "method": "GET",
+   "path": "/v1/regions/{region}/projects/{project}/compute/clusters/{id}/storage/usage"
+  },
   "getClusterType": {
    "method": "GET",
    "path": "/v1/regions/{region}/compute/cluster-types/{id}"
@@ -1534,6 +1712,14 @@
   "getClusterTypeVersion": {
    "method": "GET",
    "path": "/v1/regions/{region}/compute/cluster-types/{id}/versions/{versionId}"
+  },
+  "getControlPlatform": {
+   "method": "GET",
+   "path": "/v1/regions/{region}/compute/control-platforms/{id}"
+  },
+  "getControlPlatformCapacity": {
+   "method": "GET",
+   "path": "/v1/regions/{region}/compute/control-platforms/{id}/capacity"
   },
   "getFileStore": {
    "method": "GET",
@@ -1551,6 +1737,14 @@
    "method": "GET",
    "path": "/v1/regions/global/organizations/{orgId}/iam/groups/{groupId}/members/{id}"
   },
+  "getHCPConfig": {
+   "method": "GET",
+   "path": "/v1/regions/{region}/compute/hcp-configs/{id}"
+  },
+  "getHostedControlPlane": {
+   "method": "GET",
+   "path": "/v1/regions/{region}/compute/hosted-control-planes/{clusterUid}"
+  },
   "getInboxNotification": {
    "method": "GET",
    "path": "/v1/regions/global/notifications/inbox/{id}"
@@ -1566,6 +1760,10 @@
   "getInstanceGroup": {
    "method": "GET",
    "path": "/v1/regions/{region}/projects/{project}/compute/instance-groups/{id}"
+  },
+  "getInvitationEmailTemplate": {
+   "method": "GET",
+   "path": "/v1/regions/global/organizations/{id}/invitations/settings/email-template"
   },
   "getInvitationSettings": {
    "method": "GET",
@@ -1595,6 +1793,10 @@
    "method": "GET",
    "path": "/v1/regions/global/notifications/catalog/{event_type}"
   },
+  "getNotificationRoutingRule": {
+   "method": "GET",
+   "path": "/v1/regions/global/notifications/routing-rules/{id}"
+  },
   "getOIDCDiscovery": {
    "method": "GET",
    "path": "/v1/regions/global/auth/.well-known/openid-configuration"
@@ -1618,6 +1820,10 @@
   "getPlatformCiamProvider": {
    "method": "GET",
    "path": "/v1/regions/global/iam/platform/ciam-provider"
+  },
+  "getPlatformCiamProviderRow": {
+   "method": "GET",
+   "path": "/v1/regions/global/iam/platform/ciam-providers/{id}"
   },
   "getPlatformCredential": {
    "method": "GET",
@@ -1747,6 +1953,10 @@
    "method": "GET",
    "path": "/v1/regions/global/organizations/{orgId}/iam/users/{id}"
   },
+  "getUserNotificationPreferencesSupport": {
+   "method": "GET",
+   "path": "/v1/regions/global/notifications/users/{userId}/preferences"
+  },
   "getUserProfile": {
    "method": "GET",
    "path": "/v1/regions/global/iam/users/profile"
@@ -1803,6 +2013,10 @@
    "method": "GET",
    "path": "/v1/regions/{region}/projects/{project}/compute/clusters"
   },
+  "listControlPlatforms": {
+   "method": "GET",
+   "path": "/v1/regions/{region}/compute/control-platforms"
+  },
   "listDeliveryStatus": {
    "method": "GET",
    "path": "/v1/regions/global/notifications/deliveries"
@@ -1826,6 +2040,14 @@
   "listGroups": {
    "method": "GET",
    "path": "/v1/regions/global/organizations/{orgId}/iam/groups"
+  },
+  "listHCPConfigs": {
+   "method": "GET",
+   "path": "/v1/regions/{region}/compute/hcp-configs"
+  },
+  "listHostedControlPlanes": {
+   "method": "GET",
+   "path": "/v1/regions/{region}/compute/hosted-control-planes"
   },
   "listInboxNotifications": {
    "method": "GET",
@@ -1859,9 +2081,25 @@
    "method": "GET",
    "path": "/v1/regions/global/notifications/catalog"
   },
+  "listNotificationCategories": {
+   "method": "GET",
+   "path": "/v1/regions/global/notifications/users/me/categories"
+  },
+  "listNotificationMutes": {
+   "method": "GET",
+   "path": "/v1/regions/global/notifications/users/me/mutes"
+  },
   "listNotificationPreferences": {
    "method": "GET",
    "path": "/v1/regions/global/notifications/users/me/preferences"
+  },
+  "listNotificationRoutingRules": {
+   "method": "GET",
+   "path": "/v1/regions/global/notifications/routing-rules"
+  },
+  "listNotificationSubscriptionScopes": {
+   "method": "GET",
+   "path": "/v1/regions/global/notifications/users/me/subscriptions/scopes"
   },
   "listNotificationSubscriptions": {
    "method": "GET",
@@ -1883,6 +2121,14 @@
    "method": "GET",
    "path": "/v1/regions/global/iam/platform/apikeys"
   },
+  "listPlatformCiamProviders": {
+   "method": "GET",
+   "path": "/v1/regions/global/iam/platform/ciam-providers"
+  },
+  "listPlatformCredentialDistributions": {
+   "method": "GET",
+   "path": "/v1/regions/{region}/credentials/{id}/distributions"
+  },
   "listPlatformCredentials": {
    "method": "GET",
    "path": "/v1/regions/{region}/credentials"
@@ -1895,6 +2141,10 @@
    "method": "GET",
    "path": "/v1/regions/global/iam/platform/policies"
   },
+  "listPlatformRoles": {
+   "method": "GET",
+   "path": "/v1/regions/global/iam/platform/roles"
+  },
   "listPlatformServiceAccountCredentials": {
    "method": "GET",
    "path": "/v1/regions/global/iam/platform/service-accounts/{saId}/credentials"
@@ -1906,6 +2156,10 @@
   "listPolicies": {
    "method": "GET",
    "path": "/v1/regions/global/organizations/{orgId}/iam/policies"
+  },
+  "listProjectCredentialDistributions": {
+   "method": "GET",
+   "path": "/v1/regions/{region}/projects/{project}/credentials/{id}/distributions"
   },
   "listProjectCredentials": {
    "method": "GET",
@@ -1934,6 +2188,10 @@
   "listQuotaDimensions": {
    "method": "GET",
    "path": "/v1/regions/global/quota-dimensions"
+  },
+  "listQuotaLimitChanges": {
+   "method": "GET",
+   "path": "/v1/regions/global/organizations/{orgId}/quota-limit-changes"
   },
   "listQuotaOverrides": {
    "method": "GET",
@@ -2055,9 +2313,9 @@
    "method": "PATCH",
    "path": "/v1/regions/{region}/infrastructure/servers/{id}/providerSpecificData"
   },
-  "previewGlobalQuotaProfileUpdate": {
+  "previewInvitationEmailTemplate": {
    "method": "POST",
-   "path": "/v1/regions/global/quota-profiles/{id}/preview"
+   "path": "/v1/regions/global/organizations/{id}/invitations/settings/email-template/preview"
   },
   "previewPlatformCredentialRevocation": {
    "method": "POST",
@@ -2075,10 +2333,6 @@
    "method": "POST",
    "path": "/v1/regions/{region}/projects/{project}/credentials/{id}/preview-rotation"
   },
-  "previewQuotaProfileUpdateInOrg": {
-   "method": "POST",
-   "path": "/v1/regions/global/organizations/{orgId}/quota-profiles/{id}/preview"
-  },
   "previewTemplate": {
    "method": "POST",
    "path": "/v1/regions/global/notifications/templates/preview"
@@ -2090,6 +2344,10 @@
   "provisionSingleServer": {
    "method": "POST",
    "path": "/v1/regions/{region}/infrastructure/servers/{id}/provision"
+  },
+  "putInvitationEmailTemplate": {
+   "method": "PUT",
+   "path": "/v1/regions/global/organizations/{id}/invitations/settings/email-template"
   },
   "putQuotaAssignmentInOrg": {
    "method": "PUT",
@@ -2127,6 +2385,10 @@
    "method": "POST",
    "path": "/v1/regions/{region}/infrastructure/reservations/{reservationId}/release"
   },
+  "releaseServerExternalManagement": {
+   "method": "POST",
+   "path": "/v1/regions/{region}/infrastructure/servers/{id}/releaseExternalManagement"
+  },
   "removeAddressPoolPrefix": {
    "method": "POST",
    "path": "/v1/regions/{region}/networking/address-pools/{id}/prefixes/remove"
@@ -2151,6 +2413,10 @@
    "method": "POST",
    "path": "/v1/regions/{region}/infrastructure/servers/{id}/externalState"
   },
+  "requestQuotaAllowance": {
+   "method": "POST",
+   "path": "/v1/regions/global/organizations/{orgId}/quota-allowance-requests"
+  },
   "resendOrganizationInvitation": {
    "method": "POST",
    "path": "/v1/regions/global/organizations/{id}/invitations/{invitationId}/resend"
@@ -2158,6 +2424,10 @@
   "resumeOrganization": {
    "method": "POST",
    "path": "/v1/regions/global/organizations/{id}/resume"
+  },
+  "retryHCPConfigRollout": {
+   "method": "POST",
+   "path": "/v1/regions/{region}/compute/hcp-configs/{id}/retry-rollout"
   },
   "revokeOrganizationInvitation": {
    "method": "DELETE",
@@ -2251,6 +2521,10 @@
    "method": "POST",
    "path": "/v1/regions/{region}/projects/{project}/networking/vpcs/{id}"
   },
+  "startPlatformCiamProviderRowSignInTest": {
+   "method": "POST",
+   "path": "/v1/regions/global/iam/platform/ciam-providers/{id}/test-signin"
+  },
   "startPlatformCiamProviderSignInTest": {
    "method": "POST",
    "path": "/v1/regions/global/iam/platform/ciam-provider/test-signin"
@@ -2295,6 +2569,14 @@
    "method": "PATCH",
    "path": "/v1/regions/{region}/projects/{project}/compute/clusters/{id}"
   },
+  "updateClusterType": {
+   "method": "PATCH",
+   "path": "/v1/regions/{region}/compute/cluster-types/{id}"
+  },
+  "updateControlPlatform": {
+   "method": "PATCH",
+   "path": "/v1/regions/{region}/compute/control-platforms/{id}"
+  },
   "updateFileStore": {
    "method": "PATCH",
    "path": "/v1/regions/{region}/projects/{project}/storage/file-stores/{id}"
@@ -2306,6 +2588,10 @@
   "updateGroup": {
    "method": "PATCH",
    "path": "/v1/regions/global/organizations/{orgId}/iam/groups/{id}"
+  },
+  "updateHCPConfig": {
+   "method": "PATCH",
+   "path": "/v1/regions/{region}/compute/hcp-configs/{id}"
   },
   "updateInstanceGroup": {
    "method": "PATCH",
@@ -2327,6 +2613,10 @@
    "method": "PATCH",
    "path": "/v1/regions/global/notifications/catalog/{event_type}"
   },
+  "updateNotificationRoutingRule": {
+   "method": "PATCH",
+   "path": "/v1/regions/global/notifications/routing-rules/{id}"
+  },
   "updateOrganization": {
    "method": "PATCH",
    "path": "/v1/regions/global/organizations/{id}"
@@ -2334,6 +2624,10 @@
   "updatePlatformCiamProvider": {
    "method": "PATCH",
    "path": "/v1/regions/global/iam/platform/ciam-provider"
+  },
+  "updatePlatformCiamProviderRow": {
+   "method": "PATCH",
+   "path": "/v1/regions/global/iam/platform/ciam-providers/{id}"
   },
   "updatePolicy": {
    "method": "PATCH",
@@ -2395,6 +2689,10 @@
    "method": "PATCH",
    "path": "/v1/regions/global/notifications/users/me/preferences"
   },
+  "upsertUserNotificationPreferenceSupport": {
+   "method": "PATCH",
+   "path": "/v1/regions/global/notifications/users/{userId}/preferences"
+  },
   "validateProvider": {
    "method": "POST",
    "path": "/v1/regions/global/organizations/{orgId}/iam/providers/validate"
@@ -2406,10 +2704,14 @@
   "validateServer": {
    "method": "POST",
    "path": "/v1/regions/{region}/infrastructure/servers/{id}/validate"
+  },
+  "verifyAuditEvents": {
+   "method": "GET",
+   "path": "/v1/regions/{region}/audit-events/verify"
   }
  },
  "source": {
-  "releaseTag": "v1.3.0-dev.4",
-  "sha256": "35901e2a487c9cfe95fc4b1d37b57494ca7c19c03d29aaf069fbb348ba84f604"
+  "releaseTag": "v1.3.0-rc.2",
+  "sha256": "81f76b9055ffeb2ed06950389f0638e7488a6a4f8fc1855d7d3f45ee25cb51d2"
  }
 }

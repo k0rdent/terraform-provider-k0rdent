@@ -11,9 +11,12 @@ import (
 const neverSettles = "fake-never-settles"
 
 // cancelCluster models `cancelCluster`: admitted only while `creating` or
-// `updating`, it settles the cluster `failed` with reason `CANCELLED` and
-// `operation.status` `cancelled`, synchronously. Nothing the operation was
-// doing lands, so an upgrade leaves the binding where it was.
+// `updating`, it answers 202 with the cluster still in that state and
+// `operation.status` `cancelling`. The cluster settles `failed` with reason
+// `CANCELLED` and `operation.status` `cancelled` settleAfter reads later, and
+// a delete in between is refused like any other while it is in flight.
+// Nothing the operation was doing lands, so an upgrade leaves the binding
+// where it was.
 func (s *state) cancelCluster(w http.ResponseWriter, r *http.Request) {
 	region := r.PathValue("region")
 
@@ -44,6 +47,11 @@ func (s *state) cancelCluster(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, s.clusterBody(region, c, false))
 		return
 	}
+	// Retrying one still winding down answers it as it stands.
+	if c.op != nil && c.op.status == "cancelling" && running == body.ExecutionID {
+		writeJSON(w, http.StatusAccepted, s.clusterBody(region, c, false))
+		return
+	}
 	if (c.state == "creating" || c.state == "updating") && running != body.ExecutionID {
 		errorEnvelope(w, http.StatusConflict, "", fmt.Sprintf(
 			"cluster %q is running operation %q, not %q; re-read the cluster and cancel its current operation",
@@ -58,10 +66,25 @@ func (s *state) cancelCluster(w http.ResponseWriter, r *http.Request) {
 
 	c.targets = nil
 	c.upgradeTo = nil
+	c.op.status = "cancelling"
+	c.reads = 0
+	writeJSON(w, http.StatusAccepted, s.clusterBody(region, c, false))
+}
+
+// settleCancel ends a cancel that is winding down, settleAfter reads after it
+// was asked for. It reports whether it handled the read.
+func (c *cluster) settleCancel() bool {
+	if c.op == nil || c.op.status != "cancelling" {
+		return false
+	}
+	c.reads++
+	if c.reads < settleAfter {
+		return true
+	}
+	c.reads = 0
 	c.state = "failed"
 	c.stateReason = "CANCELLED"
 	c.stateMessage = "the in-flight operation was cancelled"
 	c.finish("cancelled")
-	c.reads = 0
-	writeJSON(w, http.StatusOK, s.clusterBody(region, c, false))
+	return true
 }
