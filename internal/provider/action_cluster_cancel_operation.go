@@ -69,6 +69,8 @@ func (a *clusterCancelOperationAction) Schema(ctx context.Context, _ action.Sche
 			"the platform reports, or only the one `execution_id` names. The platform settles a cancelled " +
 			"cluster `failed`, with `operation.status` `cancelled`, and the action waits for that and " +
 			"reports each state it reads as progress. Whatever the operation was doing doesn't finish. " +
+			"An accepted cancel can still lose the race: when the operation finishes or fails first, the " +
+			"action says so, with a warning that nothing was cancelled. " +
 			"The platform admits neither a scale nor an upgrade from `failed`, so the cluster then waits " +
 			"on the platform to recover it, or on a destroy.\n\n" +
 			"A plan that invokes it reads the cluster and warns what it will cancel. Left unpinned, the " +
@@ -386,12 +388,14 @@ func (c cancelRun) settle(ctx context.Context, was clusterNow) {
 	c.say(ctx, "The platform accepted the cancel of %s.", was.execution)
 	var last k0rdent.ClusterState
 	var lastSaid time.Time
+	var final clusterNow
 	gone := false
 	err := waitFor(ctx, c.wait, "the cluster whose operation was cancelled", func(ctx context.Context) (bool, error) {
 		after, readErr := readClusterNow(ctx, c.client, c.target, c.id)
 		if readErr != nil {
 			return false, readErr
 		}
+		final = after
 		if !after.found {
 			gone = true
 			return true, nil
@@ -422,7 +426,34 @@ func (c cancelRun) settle(ctx context.Context, was clusterNow) {
 				"delete started after the cancel. A delete has no cancel, so the action leaves it running.",
 				was.execution, c.id, last)))
 	default:
-		c.say(ctx, "Cancelled operation %s. Cluster %s is %s, with nothing in flight.", was.execution, c.id, last)
+		c.ended(ctx, was, final)
+	}
+}
+
+// ended says how an accepted cancel ended, from the operation the settled
+// cluster reports. Only `cancelled` is a cancel that stopped anything. One
+// that finished or failed first succeeds with a warning that nothing was
+// cancelled, as an operation that ended before the cancel was sent does.
+func (c cancelRun) ended(ctx context.Context, was, after clusterNow) {
+	switch cancelEndOf(was, after) {
+	case cancelEndCancelled:
+		c.say(ctx, "Cancelled operation %s. Cluster %s is %s, with nothing in flight.", was.execution, c.id, after.state)
+	case cancelEndFinished:
+		c.say(ctx, "Operation %s finished before the cancel took effect. Cluster %s is %s.", was.execution, c.id, after.state)
+		c.diags.AddWarning(redactDiagnosticText("Operation "+was.execution+" finished before the cancel took effect"),
+			redactDiagnosticText(fmt.Sprintf("The platform accepted the cancel of `%s`, but the operation reads "+
+				"`succeeded` and cluster `%s` is `%s`: what it was doing landed. Nothing was cancelled.",
+				was.execution, c.id, after.state)))
+	case cancelEndFailed:
+		c.say(ctx, "Operation %s failed before the cancel took effect. Cluster %s is %s.", was.execution, c.id, after.state)
+		c.diags.AddWarning(redactDiagnosticText("Operation "+was.execution+" failed before the cancel took effect"),
+			redactDiagnosticText(fmt.Sprintf("The platform accepted the cancel of `%s`, but the operation reads "+
+				"`failed` and cluster `%s` is `%s`: it failed on its own first. Nothing was cancelled. The "+
+				"cluster's `stateReason` on the platform says why.", was.execution, c.id, after.state)))
+	default:
+		c.say(ctx, "Cluster %s is %s.", c.id, after.state)
+		c.diags.AddWarning(redactDiagnosticText("Can't tell whether the cancel of "+was.execution+" stopped it"),
+			redactDiagnosticText("The platform accepted the cancel of `"+was.execution+"`. "+unknownCancelEnd(after)))
 	}
 }
 

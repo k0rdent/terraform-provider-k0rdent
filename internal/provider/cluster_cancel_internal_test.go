@@ -17,6 +17,8 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-go/tftypes"
+
+	"github.com/k0rdent/terraform-provider-k0rdent/internal/k0rdent"
 )
 
 // cancelAPI is one cluster that follows the contract's delete and cancel
@@ -855,5 +857,52 @@ func TestNarrowingNodePoolOnABusyClusterSendsNothing(t *testing.T) {
 	}
 	if got := stateAttr(t, resp.State, "state"); got != "creating" {
 		t.Errorf("state = %q, want the prior %q", got, "creating")
+	}
+}
+
+// A destroy's warning about its cancel says how the cancel ended, from the
+// operation the settled cluster reports, never "did not finish" for one that
+// did.
+func TestADestroySaysHowItsCancelEnded(t *testing.T) {
+	was := clusterNow{found: true, state: k0rdent.ClusterStateCreating, execution: "e1",
+		status: k0rdent.OperationStatusRunning}
+	for _, tc := range []struct {
+		name  string
+		after clusterNow
+		says  []string
+		never string
+	}{
+		{"cancelled", clusterNow{found: true, state: k0rdent.ClusterStateFailed, execution: "e1",
+			status: k0rdent.OperationStatusCancelled},
+			[]string{"Cancelled the cluster's in-flight operation", "reads `cancelled`", "did not finish"}, "landed"},
+		{"finished anyway", clusterNow{found: true, state: k0rdent.ClusterStateActive, execution: "e1",
+			status: k0rdent.OperationStatusSucceeded},
+			[]string{"finished before the cancel took effect", "reads `succeeded`", "`active`", "Nothing was cancelled"},
+			"did not finish"},
+		{"failed first", clusterNow{found: true, state: k0rdent.ClusterStateFailed, execution: "e1",
+			status: k0rdent.OperationStatusFailed},
+			[]string{"failed before the cancel took effect", "reads `failed`", "Nothing was cancelled"}, "did not finish"},
+		{"another operation", clusterNow{found: true, state: k0rdent.ClusterStateActive, execution: "e2",
+			status: k0rdent.OperationStatusSucceeded},
+			[]string{"Asked the platform to cancel", "operation `e2` reading `succeeded`", "can't be read"}, "did not finish"},
+		{"gone", clusterNow{},
+			[]string{"Asked the platform to cancel", "gone by the next read"}, "did not finish"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var diags diag.Diagnostics
+			warnCancelEnded(&diags, k0rdent.ClusterStateCreating, was, tc.after)
+			if diags.HasError() || len(diags.Warnings()) != 1 {
+				t.Fatalf("want one warning, got %v", diags)
+			}
+			said := diags.Warnings()[0].Summary() + " " + diags.Warnings()[0].Detail()
+			for _, want := range tc.says {
+				if !strings.Contains(said, want) {
+					t.Errorf("the warning doesn't say %q: %s", want, said)
+				}
+			}
+			if strings.Contains(said, tc.never) {
+				t.Errorf("the warning says %q: %s", tc.never, said)
+			}
+		})
 	}
 }

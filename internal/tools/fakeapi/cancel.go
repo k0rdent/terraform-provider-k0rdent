@@ -10,11 +10,19 @@ import (
 // timed out, and that a destroy then meets mid-create, is reached.
 const neverSettles = "fake-never-settles"
 
+// cancelLoses in a cluster's display name lets a cancel lose the race to the
+// operation it names. The cancel is still answered 202 `cancelling`, and then
+// the operation lands anyway: the cluster settles `active` and the operation
+// `succeeded`. Recorded on v1.3.0-rc.2 in MOCK_MODE, where the mock
+// provisioner finishes a create the cancel reached too late to stop.
+const cancelLoses = "fake-cancel-loses"
+
 // cancelCluster models `cancelCluster`: admitted only while `creating` or
 // `updating`, it answers 202 with the cluster still in that state and
 // `operation.status` `cancelling`. The cluster settles `failed` with reason
 // `CANCELLED` and `operation.status` `cancelled` settleAfter reads later, and
-// a delete in between is refused like any other while it is in flight.
+// a delete in between is refused like any other while it is in flight. One
+// carrying cancelLoses settles as if the cancel never arrived.
 // Nothing the operation was doing lands, so an upgrade leaves the binding
 // where it was.
 func (s *state) cancelCluster(w http.ResponseWriter, r *http.Request) {
@@ -64,8 +72,10 @@ func (s *state) cancelCluster(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	c.targets = nil
-	c.upgradeTo = nil
+	if !nameCarries(c.displayName, cancelLoses) {
+		c.targets = nil
+		c.upgradeTo = nil
+	}
 	c.op.status = "cancelling"
 	c.reads = 0
 	writeJSON(w, http.StatusAccepted, s.clusterBody(region, c, false))
@@ -82,6 +92,10 @@ func (c *cluster) settleCancel() bool {
 		return true
 	}
 	c.reads = 0
+	if nameCarries(c.displayName, cancelLoses) {
+		c.complete()
+		return true
+	}
 	c.state = "failed"
 	c.stateReason = "CANCELLED"
 	c.stateMessage = "the in-flight operation was cancelled"

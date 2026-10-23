@@ -301,24 +301,107 @@ func (r *clusterResource) cancelOperation(ctx context.Context, target clusterTar
 		return false
 	}
 
-	diags.AddWarning("Cancelled the cluster's in-flight operation to destroy it", redactDiagnosticText(fmt.Sprintf(
-		"The cluster was `%s`, and the platform deletes a cluster only once nothing is running on it, "+
-			"so the provider cancelled that operation (`%s`) before deleting the cluster. Whatever the "+
-			"operation was doing did not finish.", from, now.execution)))
-	tflog.Info(ctx, "cancelled the cluster's in-flight operation", fields)
+	tflog.Info(ctx, "the platform accepted the cancel of the cluster's in-flight operation", fields)
 
+	var after clusterNow
 	err := waitFor(ctx, r.meta.Wait, "the cancelled cluster to settle", func(ctx context.Context) (bool, error) {
-		after, readErr := r.clusterNow(ctx, target, id)
+		var readErr error
+		after, readErr = r.clusterNow(ctx, target, id)
 		if readErr != nil || !after.found {
 			return !after.found, readErr
 		}
 		return probeVerdict(settledAfterCancel(after.state))
 	})
 	if err != nil {
-		addWaitError(diags, "The cluster did not settle after its operation was cancelled", err)
+		addAdvisedError(diags, "The cluster did not settle after its operation was cancelled", fmt.Sprintf(
+			"The platform accepted the cancel of `%s`, and that isn't undone. Nothing was deleted, and the "+
+				"cluster stays in state. Run `terraform destroy` again: it reads the cluster first, and "+
+				"deletes it once it settles.", now.execution), err)
 		return false
 	}
+	warnCancelEnded(diags, from, now, after)
 	return true
+}
+
+// cancelEnd is how an accepted cancel ended, read from the operation the
+// settled cluster reports. An accepted cancel can still lose the race: API
+// v1.3.0-rc.2 answered one 202 `cancelling`, then settled the cluster
+// `active` with its operation `succeeded`.
+type cancelEnd int
+
+const (
+	// cancelEndUnknown is a cluster that's gone, or that names another
+	// operation or no status, so how the cancel ended can't be read.
+	cancelEndUnknown cancelEnd = iota
+	// cancelEndCancelled is an operation that reads `cancelled`: it stopped.
+	cancelEndCancelled
+	// cancelEndFinished is one that reads `succeeded`: it finished before
+	// the cancel took effect.
+	cancelEndFinished
+	// cancelEndFailed is one that reads `failed`: it failed on its own first.
+	cancelEndFailed
+)
+
+// cancelEndOf reads how the cancel of was's operation ended from after, the
+// cluster once it settled.
+func cancelEndOf(was, after clusterNow) cancelEnd {
+	if !after.found || (after.execution != "" && after.execution != was.execution) {
+		return cancelEndUnknown
+	}
+	switch after.status {
+	case k0rdent.OperationStatusCancelled:
+		return cancelEndCancelled
+	case k0rdent.OperationStatusSucceeded:
+		return cancelEndFinished
+	case k0rdent.OperationStatusFailed:
+		return cancelEndFailed
+	default:
+		return cancelEndUnknown
+	}
+}
+
+// warnCancelEnded tells a destroy how the cancel it sent ended, from the
+// operation the settled cluster reports. The destroy deletes the cluster
+// either way, so each is a warning.
+func warnCancelEnded(diags *diag.Diagnostics, from k0rdent.ClusterState, was, after clusterNow) {
+	asked := fmt.Sprintf("The cluster was `%s`, and the platform deletes a cluster only once nothing is running "+
+		"on it, so the provider asked it to cancel that operation (`%s`) before deleting the cluster. ",
+		from, was.execution)
+	summary, detail := "", ""
+	switch cancelEndOf(was, after) {
+	case cancelEndCancelled:
+		summary = "Cancelled the cluster's in-flight operation to destroy it"
+		detail = "The operation reads `cancelled`: whatever it was doing did not finish."
+	case cancelEndFinished:
+		summary = "The cluster's operation finished before the cancel took effect"
+		detail = fmt.Sprintf("The platform accepted the cancel, but the operation reads `succeeded` and the "+
+			"cluster `%s`: what it was doing landed. Nothing was cancelled. The destroy deletes the cluster "+
+			"as the operation left it.", after.state)
+	case cancelEndFailed:
+		summary = "The cluster's operation failed before the cancel took effect"
+		detail = fmt.Sprintf("The platform accepted the cancel, but the operation reads `failed` and the "+
+			"cluster `%s`: it failed on its own first. Nothing was cancelled. The destroy deletes the "+
+			"cluster.", after.state)
+	default:
+		summary = "Asked the platform to cancel the cluster's in-flight operation to destroy it"
+		detail = "The platform accepted the cancel. " + unknownCancelEnd(after) + " The destroy deletes the cluster."
+	}
+	diags.AddWarning(summary, redactDiagnosticText(asked+detail))
+}
+
+// unknownCancelEnd says what the settled cluster showed when it doesn't say
+// how the cancel ended.
+func unknownCancelEnd(after clusterNow) string {
+	switch {
+	case !after.found:
+		return "The cluster was gone by the next read, so how the cancel ended can't be read."
+	case after.execution != "":
+		return fmt.Sprintf("The cluster then read `%s`, with operation `%s` reading `%s`, so how the cancel "+
+			"ended can't be read from it.", after.state, after.execution, after.status)
+	default:
+		return fmt.Sprintf("The cluster then read `%s` and named no operation, so how the cancel ended "+
+			"can't be read from it.", after.state)
+	}
 }
 
 // clusterNow reads the cluster's lifecycle state and the operation it's

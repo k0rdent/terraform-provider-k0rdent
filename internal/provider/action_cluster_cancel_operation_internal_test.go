@@ -12,6 +12,8 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-go/tftypes"
+
+	"github.com/k0rdent/terraform-provider-k0rdent/internal/k0rdent"
 )
 
 // The cancel action is the one way to stop a cluster's operation and keep the
@@ -469,6 +471,55 @@ func TestCancelActionSaysWhereTheClusterWentAfterTheCancel(t *testing.T) {
 			}
 			if warned := hasWarning(got.diags, "being deleted"); warned != tc.warns {
 				t.Errorf("warned about the delete = %v, want %v: %v", warned, tc.warns, got.diags)
+			}
+		})
+	}
+}
+
+// The action says how an accepted cancel ended, from the operation the
+// settled cluster reports. Only `cancelled` says it cancelled anything, and
+// every other end succeeds with a warning that says what happened instead.
+func TestTheCancelActionSaysHowTheCancelEnded(t *testing.T) {
+	was := clusterNow{found: true, state: k0rdent.ClusterStateCreating, execution: "e1",
+		status: k0rdent.OperationStatusRunning}
+	settled := func(state k0rdent.ClusterState, execution string, status k0rdent.OperationStatus) clusterNow {
+		return clusterNow{found: true, state: state, execution: execution, status: status}
+	}
+	for _, tc := range []struct {
+		name     string
+		after    clusterNow
+		progress string
+		warning  string // "" for none
+	}{
+		{"cancelled", settled(k0rdent.ClusterStateFailed, "e1", k0rdent.OperationStatusCancelled),
+			"Cancelled operation e1. Cluster c1 is failed, with nothing in flight.", ""},
+		{"finished anyway", settled(k0rdent.ClusterStateActive, "e1", k0rdent.OperationStatusSucceeded),
+			"Operation e1 finished before the cancel took effect. Cluster c1 is active.", "reads `succeeded`"},
+		{"failed first", settled(k0rdent.ClusterStateFailed, "e1", k0rdent.OperationStatusFailed),
+			"Operation e1 failed before the cancel took effect. Cluster c1 is failed.", "reads `failed`"},
+		{"another operation", settled(k0rdent.ClusterStateActive, "e2", k0rdent.OperationStatusSucceeded),
+			"Cluster c1 is active.", "operation `e2` reading `succeeded`"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var diags diag.Diagnostics
+			var said []string
+			run := cancelRun{id: "c1", diags: &diags,
+				send: func(e action.InvokeProgressEvent) { said = append(said, e.Message) }}
+			run.ended(context.Background(), was, tc.after)
+			if len(said) != 1 || said[0] != tc.progress {
+				t.Errorf("progress = %q, want %q", said, tc.progress)
+			}
+			if diags.HasError() {
+				t.Fatalf("an accepted cancel failed the action: %v", diags)
+			}
+			switch {
+			case tc.warning == "" && len(diags.Warnings()) > 0:
+				t.Errorf("warned on a cancel that landed: %v", diags.Warnings())
+			case tc.warning != "" && (len(diags.Warnings()) != 1 || !strings.Contains(diags.Warnings()[0].Detail(), tc.warning)):
+				t.Errorf("the warning doesn't say %q: %v", tc.warning, diags.Warnings())
+			case tc.warning != "" && tc.name != "another operation" &&
+				!strings.Contains(diags.Warnings()[0].Detail(), "Nothing was cancelled"):
+				t.Errorf("the warning doesn't say nothing was cancelled: %v", diags.Warnings())
 			}
 		})
 	}

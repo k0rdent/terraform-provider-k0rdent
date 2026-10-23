@@ -5,3 +5,11 @@ resource/k0rdent_kubernetes_cluster: Fix `terraform destroy` refused at plan aft
 ```release-note:bug
 resource/k0rdent_instance_group: Fix `terraform destroy` refused at plan after a create's wait timed out, while the group was still `creating` or after it settled
 ```
+
+```release-note:bug
+resource/k0rdent_kubernetes_cluster: Fix a destroy saying it cancelled the cluster's operation when the operation finished or failed before the cancel took effect
+```
+
+```release-note:bug
+action/k0rdent_cluster_cancel_operation: Fix the action saying it cancelled the operation when the operation finished or failed before the cancel took effect. It now says what happened, with a warning that nothing was cancelled
+```

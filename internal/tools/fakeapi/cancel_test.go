@@ -293,3 +293,32 @@ func TestTheOperationAfterACancelReplacesIt(t *testing.T) {
 		t.Errorf("operation after the delete: %v (cancelled one was %v)", op, was)
 	}
 }
+
+// A cancel that loses the race is accepted like any other, and then the
+// operation lands anyway: the cluster settles `active` and the operation
+// `succeeded`, with no CANCELLED reason. A cluster without the marker still
+// settles cancelled, which the test above holds.
+func TestACancelThatLosesTheRaceSettlesActiveAndSucceeded(t *testing.T) {
+	s := newState()
+	body := `{"id":"c","clusterType":"` + inferenceRef + `/versions/` + inferenceV2 +
+		`","displayName":"` + neverSettles + ` ` + cancelLoses + `"}`
+	if code, out := call(t, s.createCluster, http.MethodPost, "", body); code != http.StatusCreated {
+		t.Fatalf("create: %d %v", code, out)
+	}
+	code, out := cancelNow(t, s)
+	if code != http.StatusAccepted || object(t, out["operation"])["status"] != "cancelling" {
+		t.Fatalf("cancel: %d %v", code, out)
+	}
+	for range settleAfter + 1 {
+		_, got := read(t, s)
+		if got["state"] == "creating" {
+			continue
+		}
+		if got["state"] != "active" || got["stateReason"] != nil ||
+			object(t, got["operation"])["status"] != "succeeded" {
+			t.Fatalf("settled = %v", got)
+		}
+		return
+	}
+	t.Fatal("the cancel never settled")
+}
