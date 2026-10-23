@@ -425,8 +425,8 @@ func (r *webhookSubscriptionResource) Update(ctx context.Context, req resource.U
 			k0rdent.RotateWebhookSubscriptionSecretJSONRequestBody{Secret: optionalString(secret), Overlap: &overlap})
 		r.meta.webhookList.forget()
 		// A body that doesn't decode comes back with its error, and a 2xx is
-		// still a rotation. Only a rotation with no answer at all is a
-		// transport failure.
+		// still a rotation. A nil answer is a failure: the request didn't
+		// complete, or its body couldn't be read.
 		if rotated == nil {
 			addAPIErrorHiding(&resp.Diagnostics, secret.ValueString(), "rotate the webhook subscription's secret", nil, nil, err)
 			return
@@ -440,11 +440,21 @@ func (r *webhookSubscriptionResource) Update(ctx context.Context, req resource.U
 		// version this rotation applied, so the next apply doesn't rotate
 		// again: a second rotation would move the receivers' current secret
 		// out of the overlap. A 2xx the client couldn't decode is a rotation
-		// all the same, and the read fills in what it moved.
+		// all the same, and the read fills in what it moved. Until then
+		// secret_version is null: the one state had would make the next
+		// refresh take this rotation for one made outside Terraform, and
+		// rotate again.
 		if rotated.JSON200 != nil {
 			plan.SecretVersion = types.Int64Value(int64(rotated.JSON200.SecretVersion))
 			plan.RotatedAt = timeOrNull(&rotated.JSON200.RotatedAt)
 			plan.PreviousSecretExpiresAt = timeOrNull(rotated.JSON200.PreviousSecretExpiresAt)
+		} else {
+			plan.SecretVersion, plan.RotatedAt, plan.PreviousSecretExpiresAt =
+				types.Int64Null(), types.StringNull(), types.StringNull()
+			// Local: a 2xx whose body the provider couldn't decode.
+			resp.Diagnostics.AddWarning("The rotation's answer couldn't be read",
+				fmt.Sprintf("The platform accepted the rotation with %d, and its body didn't decode, so the "+
+					"new secret_version is read back from the subscription list instead.", status))
 		}
 		resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 	}
