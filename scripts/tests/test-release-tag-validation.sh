@@ -97,11 +97,12 @@ chmod +x "$work/bin/gh"
 full_rules='[{"type":"deletion"},{"type":"non_fast_forward"},{"type":"required_signatures"},
   {"type":"pull_request","parameters":{"required_approving_review_count":1}},
   {"type":"required_status_checks","parameters":{"required_status_checks":[{"context":"CI"}]}}]'
-# pr_merge BRANCH SHA [APPROVER]: a pull request by "author", number 7,
-# merged into BRANCH as SHA, approved by APPROVER (a reviewer by default).
+# pr_merge BRANCH SHA [APPROVER] [APPROVED_HEAD]: a pull request by "author",
+# number 7, whose head h2 merged into BRANCH as SHA, approved by APPROVER (a
+# reviewer by default) at APPROVED_HEAD (h2 by default).
 pr_merge() {
-  printf '[{"number":7,"user":{"login":"author"},"merged_at":"2026-01-01T00:00:00Z","base":{"ref":"%s"},"merge_commit_sha":"%s"}]' "$1" "$2" > "$work/stub/pulls-$2.json"
-  printf '[{"state":"COMMENTED","user":{"login":"someone"}},{"state":"APPROVED","user":{"login":"%s"}}]' "${3:-reviewer}" > "$work/stub/reviews-7.json"
+  printf '[{"number":7,"user":{"login":"author"},"merged_at":"2026-01-01T00:00:00Z","base":{"ref":"%s"},"merge_commit_sha":"%s","head":{"sha":"h2"}}]' "$1" "$2" > "$work/stub/pulls-$2.json"
+  printf '[{"state":"COMMENTED","user":{"login":"someone"},"commit_id":"h2"},{"state":"APPROVED","user":{"login":"%s"},"commit_id":"%s"}]' "${3:-reviewer}" "${4:-h2}" > "$work/stub/reviews-7.json"
 }
 
 # validate TAG: clone origin fresh, run the step's script, report its status.
@@ -158,6 +159,10 @@ refused v0.1.1 "a pull request nobody approved" "nobody but its author approved"
 reset
 pr_merge release-v0.1.x "$merged" author
 refused v0.1.1 "a pull request only its author approved" "nobody but its author approved"
+
+reset
+pr_merge release-v0.1.x "$merged" reviewer h1
+refused v0.1.1 "an approval of an earlier head than the one that merged" "nobody but its author approved"
 
 reset
 touch "$work/stub/fail"
