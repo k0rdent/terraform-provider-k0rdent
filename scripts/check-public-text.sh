@@ -37,6 +37,9 @@ if sys.argv[1:2] == ["--hash"]:
     if len(sys.argv) != 5 or sys.argv[3] not in ("i", "-"):
         print("usage: check-public-text.sh --hash NAME i|- WORD", file=sys.stderr)
         sys.exit(2)
+    if len(re.split(r"[-.]", sys.argv[4].strip("-."))) > 4:
+        print("check-public-text.sh: a hashed name has at most 4 parts split at \"-\" or \".\"", file=sys.stderr)
+        sys.exit(2)
     print(f"{sys.argv[2]}:{sys.argv[3]}:{digest(sys.argv[4], sys.argv[3])}")
     sys.exit(0)
 
@@ -81,6 +84,8 @@ for n, line in entries(HASHED):
     hashed[parts[1]][parts[2]] = parts[0]
 
 WORD = re.compile(r"#?[A-Za-z0-9][A-Za-z0-9._-]*")
+# The most "-" and "." separated parts a hashed name may have.
+MAX_PARTS = 4
 
 
 def hashed_hits(line):
@@ -93,11 +98,12 @@ def hashed_hits(line):
         cuts = [0] + [i + 1 for i, c in enumerate(word) if c in "-."]
         ends = [i for i, c in enumerate(word) if c in "-."] + [len(word)]
         tries = set()
-        for a in cuts:
-            for b in ends:
-                if b > a:
-                    tries.add(word[a:b])
-                    tries.add(word[a:b + 1])
+        # A run is at most MAX_PARTS parts, so a long hyphenated or dotted
+        # word costs a few tries per part rather than one per pair of parts.
+        for n, a in enumerate(cuts):
+            for b in ends[n:n + MAX_PARTS]:
+                tries.add(word[a:b])
+                tries.add(word[a:b + 1])
         for t in tries:
             for flags, table in hashed.items():
                 rule = table.get(digest(t, flags))
