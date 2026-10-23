@@ -212,11 +212,10 @@ jobs:
         with:
           go-version-file: .go-release-version
           cache: false
-      # goreleaser shells out to syft for the SBOMs. Pinned to a commit, not a
-      # tag: an SBOM generator that changes underneath a release changes the
-      # release, and `@v0` is a moving tag that said "pinned" without being it.
-      # This step runs in the job that holds the signing key.
-      - uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610  # v0.24.0
+      # goreleaser shells out to syft for the SBOMs. make release fetches the
+      # pinned release with scripts/install-syft.sh, which checks its checksum:
+      # an SBOM generator that changes underneath a release changes the
+      # release, and it runs beside the signing key.
       - name: Import the organization signing key
         env:
           GPG_PRIVATE_KEY: ${{ secrets.TERRAFORM_PROVIDER_GPG_PRIVATE_KEY }}
