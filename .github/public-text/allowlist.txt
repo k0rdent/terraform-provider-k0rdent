@@ -5,7 +5,7 @@
 # for it, and say the reason in a comment above it.
 
 # The rules themselves, and this file's reasons
-^\.github/public-text/(denylist|allowlist)\.txt$:.
+^\.github/public-text/(denylist|allowlist|hashed)\.txt$:.
 
 # ticket: standards and encodings, not tickets
 .:^(SHA|UTF|RFC|ISO|HTTP|CVE|TLS|AES|ECDSA|RSA|PKCS|X|LICENSE|GPL|BSD|MIT|EC|P|ARM|AMD|ED|IPV|IPv|CP|DES|SHA3|HMAC|ECMA|DNS)-[0-9]+$

@@ -1,0 +1,34 @@
+# Names that don't belong in this public repository, kept as hashes so this
+# file doesn't spell them out. scripts/check-public-text.sh reads it beside
+# denylist.txt. One per line: NAME:FLAGS:SHA256
+#   NAME    the rule's id in the report
+#   FLAGS   "i" hashes the word lowercased, "-" as written
+#   SHA256  of the word, which is matched against each word of a line, and
+#           against the parts of one split at a "-" or a "."
+# Print a line to add with: scripts/check-public-text.sh --hash NAME FLAGS WORD
+# A hash of a common word can be guessed, so this keeps the names out of the
+# file, not secret. Exceptions go in allowlist.txt, as for denylist.txt.
+
+slack:i:1266b399d0833fc0a9b0b785690a191c77c111d6f6677380d16eae0538321a0c
+pulse:i:05d8afc521b1482c918b858a7723f984931ea2f669b8ba95b5d407f322dd62af
+gh-login:i:51264ad310558c6744c6e5a80463df6f9bb92edf1023b63f2a8da507e7b5d5fa
+gh-login:i:a526225bed8ecdb6c9a2cbbee682d9814d65745241f2178b99b42af9fe7d8ec7
+person:-:46df21c3bf897655ba14e556391adf6a78fc3c5cc681d883be97de47456488ed
+person:-:8d289ec537b6e2edd43e9f464fcbf2b42c1f34fcaf0aea680d411cb4656a3d97
+person:-:6dd8b7d7d3c5c4689b33e51b9f10bc6a9be89fe8fa2a127c8c6c03cd05d68ace
+person:-:9d43787966c3555d00ac345bc2235b6d52cbcc2b059360ac8a04bddc20e91ddb
+person:-:493c93bece75a330b5270c6dc483f761c122d6d4f4fbfacdc0bb495c21f75a82
+person:-:7b717950ea1e02ee962fa49549667f329547b833ebce209cd53da66b6b9b264c
+person:-:84454f9711ca1429dbdf32e961305902365b6ba89407d9b9f6715879eaf12671
+person:-:6136ce1b6ce6fd788927800c45bb9cbad2aaf6046f8726da66d235fd9c385769
+person:-:8e618ba1eccc99bfb27a0bedc20c86265a0275586c558612b889e1614f6bf85d
+person:-:1eb280afea794b94355bd56ce341a4ed51d6a3734a2b30111c6de6ed9a97fa3c
+deal:-:0890f456684a70f1a9f1dbcee40c1fe847b76f338581a9a1d9202c76b1c175f4
+deal:-:f96dcd14273d3eb067b188a7536c7ce8cde51374525d0d2822aa8d7a534248b4
+deal:-:4cd775451baa86b1ad8c8a77dffb4d4298cbded778a944a546a8a411b400fe08
+deal:-:fdc478e04211a499fc563a8f0041fcb92d064c968cbac9945e4b2dc1f4ea390a
+private-repo:-:37433d0bbd14260190c68bfb5c70d72c10c12511c82e8b695c01b9a5a90a2fb5
+private-repo:-:e4d7f94f4af7593a2f2154fe5032263fd9a94c18a2c50abd44f06ee604b6d3ab
+stack-name:i:dc11175b667428625fc5733b61681b81c84097448535bbd52640a2d1e4be4bfe
+stack-name:i:67385810435a4235d601c92ab18f2174fcc36d6e1b0019342a33115a33baf29f
+stack-name:i:4e981741f813e5c73cdbfcbcd066a112b4367295a9250554a9711317dbb9068d
