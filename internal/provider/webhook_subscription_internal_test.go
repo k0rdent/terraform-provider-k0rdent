@@ -26,17 +26,32 @@ func num(n int64) tftypes.Value { return tftypes.NewValue(tftypes.Number, big.Ne
 // fails. Otherwise state keeps the old secret_wo_version, and the next apply
 // rotates again: a second new secret_version, and with the overlap on, the
 // secret the receivers were on before the first rotation stops working.
+//
+// A 2xx whose body the client can't decode is a rotation all the same, and
+// is recorded too. It holds the secret_version state had, which the next read
+// moves on.
 func TestARotationIsRecordedWhenTheReadAfterItFails(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		answer        string
+		secretVersion int64
+	}{
+		{"an answer it reads", `{"id":"` + testSubscriptionID + `","signing_secret":"s","secret_version":2,` +
+			`"previous_secret_expires_at":"2026-10-12T00:00:00Z","rotated_at":"2026-10-11T00:00:00Z"}`, 2},
+		{"an answer it can't decode", `{"id":"` + testSubscriptionID + `","secret_version":"two"}`, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) { rotationRecordedWhenReadFails(t, tc.answer, tc.secretVersion) })
+	}
+}
+
+func rotationRecordedWhenReadFails(t *testing.T, answer string, secretVersion int64) {
 	var rotations int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/rotate"):
 			rotations++
-			if err := json.NewEncoder(w).Encode(map[string]any{
-				"id": testSubscriptionID, "signing_secret": "s", "secret_version": 2,
-				"previous_secret_expires_at": "2026-10-12T00:00:00Z", "rotated_at": "2026-10-11T00:00:00Z",
-			}); err != nil {
+			if _, err := w.Write([]byte(answer)); err != nil {
 				t.Error(err)
 			}
 		default:
@@ -86,9 +101,9 @@ func TestARotationIsRecordedWhenTheReadAfterItFails(t *testing.T) {
 	}
 	var got webhookSubscriptionModel
 	resp.Diagnostics.Append(resp.State.Get(context.Background(), &got)...)
-	if got.SecretWOVersion.ValueInt64() != 2 || got.SecretVersion.ValueInt64() != 2 {
-		t.Errorf("state after the rotation has secret_wo_version %v and secret_version %v, want 2 and 2",
-			got.SecretWOVersion, got.SecretVersion)
+	if got.SecretWOVersion.ValueInt64() != 2 || got.SecretVersion.ValueInt64() != secretVersion {
+		t.Errorf("state after the rotation has secret_wo_version %v and secret_version %v, want 2 and %d",
+			got.SecretWOVersion, got.SecretVersion, secretVersion)
 	}
 	if !resp.State.Raw.IsFullyKnown() {
 		t.Error("state after the rotation holds an unknown value")
