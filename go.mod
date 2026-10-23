@@ -8,7 +8,7 @@ go 1.26.0
 require (
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/terraform-plugin-framework v1.19.0
-	github.com/hashicorp/terraform-plugin-log v0.10.0
+	github.com/hashicorp/terraform-plugin-log v0.11.0
 	github.com/oapi-codegen/runtime v1.7.0
 )
 
