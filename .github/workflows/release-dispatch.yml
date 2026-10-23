@@ -130,19 +130,22 @@ jobs:
             fi
             # Each pull request also needs an approval from someone other than
             # its author, since the rule may have been added, or loosened,
-            # after it merged.
+            # after it merged. The approval has to be of the head that merged:
+            # GitHub keeps an approval through later pushes unless stale
+            # reviews are dismissed, so an approval of an earlier head proves
+            # nothing about what merged.
             while IFS= read -r commit; do
               pull="$(gh api "repos/$GITHUB_REPOSITORY/commits/$commit/pulls" \
-                --jq "[.[] | select(.merged_at != null and .base.ref == \"$release_branch\" and .merge_commit_sha == \"$commit\")] | .[0] | if . == null then \"\" else \"\\(.number) \\(.user.login)\" end")"
+                --jq "[.[] | select(.merged_at != null and .base.ref == \"$release_branch\" and .merge_commit_sha == \"$commit\")] | .[0] | if . == null then \"\" else \"\\(.number) \\(.user.login) \\(.head.sha)\" end")"
               if [[ -z "$pull" ]]; then
                 echo "::error title=Release branch has an unreviewed commit::$commit on $release_branch is not the merge of a pull request into it. Release from a branch that only takes pull requests."
                 exit 1
               fi
-              read -r number author <<< "$pull"
+              read -r number author head <<< "$pull"
               approvals="$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$number/reviews" \
-                --jq "[.[] | select(.state == \"APPROVED\" and .user.login != \"$author\")] | length" | jq -s add)"
+                --jq "[.[] | select(.state == \"APPROVED\" and .user.login != \"$author\" and .commit_id == \"$head\")] | length" | jq -s add)"
               if (( approvals < 1 )); then
-                echo "::error title=Release branch has an unreviewed commit::$commit on $release_branch merged pull request #$number, which nobody but its author approved."
+                echo "::error title=Release branch has an unreviewed commit::$commit on $release_branch merged pull request #$number, whose merged head $head nobody but its author approved."
                 exit 1
               fi
             done < <(git rev-list --first-parent "$tag_commit" "^$branch_point")
