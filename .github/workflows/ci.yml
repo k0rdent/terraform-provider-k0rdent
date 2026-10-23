@@ -349,6 +349,58 @@ jobs:
   # Branch protection requires a context named CI, and GitHub publishes one per
   # job, not per workflow. A skipped required check satisfies protection, so a
   # bare needs would pass here.
+  # The release tag check's checkout, run on every pull request. The release
+  # dispatch can't run before a release, so this is where its checkout is
+  # proven: it has to hold every branch and tag the step reads, and no token.
+  # internal/repocheck holds the two checkouts' settings equal.
+  release-checkout:
+    name: release checkout
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - name: the checkout holds every branch and tag, and keeps no token
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          fail() { echo "::error title=Release checkout::$*"; exit 1; }
+
+          # main, as the remote has it now. A push to main between the checkout
+          # and this call fails the job; rerun it.
+          remote_main="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)"
+          local_main="$(git rev-parse --verify --quiet refs/remotes/origin/main)" ||
+            fail "refs/remotes/origin/main is missing"
+          [ "$local_main" = "$remote_main" ] ||
+            fail "origin/main is $local_main, but the remote's main is $remote_main"
+
+          # Every branch the remote has, so a release-v*.x branch is there too.
+          remote_branches="$(gh api --paginate "repos/$GITHUB_REPOSITORY/branches?per_page=100" --jq '.[].name' | sort)"
+          local_branches="$(git for-each-ref --format='%(refname:strip=3)' refs/remotes/origin | grep -vx HEAD | sort)"
+          missing="$(comm -23 <(printf '%s\n' "$remote_branches") <(printf '%s\n' "$local_branches"))"
+          [ -z "$missing" ] || fail "branches the checkout didn't fetch: $(tr '\n' ' ' <<< "$missing")"
+
+          # Every tag.
+          remote_tags="$(gh api --paginate "repos/$GITHUB_REPOSITORY/tags?per_page=100" --jq '.[].name' | sort)"
+          local_tags="$(git tag -l | sort)"
+          missing="$(comm -23 <(printf '%s\n' "$remote_tags") <(printf '%s\n' "$local_tags"))"
+          [ -z "$missing" ] || fail "tags the checkout didn't fetch: $(tr '\n' ' ' <<< "$missing")"
+
+          # No credential left behind in this checkout's config: no auth header, no
+          # included config, no helper.
+          header="$(git config --local --get-all http.https://github.com/.extraheader || true)"
+          [ -z "$header" ] || fail "the checkout left an http.extraheader in .git/config"
+          included="$(git config --local --name-only --get-regexp '^includeif\.' || true)"
+          [ -z "$included" ] || fail "the checkout left includeIf config: $included"
+          helper="$(git config --local --get-all credential.helper || true)"
+          [ -z "$helper" ] || fail "the checkout left a credential helper"
+          if grep -qi 'authorization' .git/config; then fail ".git/config holds an authorization line"; fi
+          echo "origin/main is $local_main; $(wc -l <<< "$local_branches") branches and $(git tag -l | wc -l) tags fetched; no token kept"
+
   ci:
     name: CI
     runs-on: ubuntu-latest
@@ -367,6 +419,7 @@ jobs:
       - against-fake
       - plan-quality
       - release-validation
+      - release-checkout
     steps:
       - name: require every job to have succeeded
         env:
