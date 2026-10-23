@@ -30,7 +30,7 @@ jobs:
       # The one checkout that keeps its token: the step below fetches main and
       # the tag from this internal repository, which needs it. This job holds
       # no other secret. scripts/check-workflow-actions.sh lists the exception.
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           ref: main
           fetch-depth: 0
@@ -98,7 +98,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           ref: ${{ needs.validate-release-tag.outputs.tag_commit }}
           fetch-depth: 1
@@ -126,7 +126,7 @@ jobs:
       # No cache. Other jobs on main write the module and build caches, and
       # Go trusts a build cache entry without rebuilding it, so a restored
       # cache would let a job that never held this key shape what it signs.
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff  # v5.6.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
         with:
           go-version-file: .go-release-version
           cache: false
@@ -195,7 +195,7 @@ jobs:
           fi
           rm -rf "$RUNNER_TEMP/gnupg"
       - name: Retain signed artifacts for distribution publishing
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: terraform-provider-k0rdent-${{ needs.validate-release-tag.outputs.tag }}
           path: dist/*
