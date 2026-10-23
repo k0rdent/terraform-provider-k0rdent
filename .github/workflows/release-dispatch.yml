@@ -117,11 +117,21 @@ jobs:
               echo "::error title=Release branch doesn't start from main::$release_branch leaves main at $branch_point, which is not a commit of main's own history."
               exit 1
             fi
+            # Each pull request also needs an approval from someone other than
+            # its author, since the rule may have been added, or loosened,
+            # after it merged.
             while IFS= read -r commit; do
-              merged="$(gh api "repos/$GITHUB_REPOSITORY/commits/$commit/pulls" \
-                --jq "[.[] | select(.merged_at != null and .base.ref == \"$release_branch\" and .merge_commit_sha == \"$commit\")] | length")"
-              if (( merged < 1 )); then
+              pull="$(gh api "repos/$GITHUB_REPOSITORY/commits/$commit/pulls" \
+                --jq "[.[] | select(.merged_at != null and .base.ref == \"$release_branch\" and .merge_commit_sha == \"$commit\")] | .[0] | if . == null then \"\" else \"\\(.number) \\(.user.login)\" end")"
+              if [[ -z "$pull" ]]; then
                 echo "::error title=Release branch has an unreviewed commit::$commit on $release_branch is not the merge of a pull request into it. Release from a branch that only takes pull requests."
+                exit 1
+              fi
+              read -r number author <<< "$pull"
+              approvals="$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$number/reviews" \
+                --jq "[.[] | select(.state == \"APPROVED\" and .user.login != \"$author\")] | length" | jq -s add)"
+              if (( approvals < 1 )); then
+                echo "::error title=Release branch has an unreviewed commit::$commit on $release_branch merged pull request #$number, which nobody but its author approved."
                 exit 1
               fi
             done < <(git rev-list --first-parent "$tag_commit" "^$branch_point")

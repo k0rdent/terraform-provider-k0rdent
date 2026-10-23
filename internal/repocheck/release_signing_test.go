@@ -90,6 +90,8 @@ func validateProtectedReleaseSigning(workflows map[string]string) error {
 		{`git merge-base origin/main "origin/$release_branch"`, "a branch point on main's own history"},
 		{`commits/$commit/pulls`, "a pull request behind every commit"},
 		{`merge_commit_sha == \"$commit\"`, "the pull request's own merge"},
+		{`pulls/$number/reviews`, "an approval behind every pull request"},
+		{`.user.login != \"$author\"`, "an approval from someone other than the author"},
 	}
 	for _, check := range releaseBranchChecks {
 		if !strings.Contains(dispatch, check.text) {
@@ -305,6 +307,18 @@ func TestProtectedReleaseSigningRejectsSecurityRegressions(t *testing.T) {
 				)
 			},
 			want: "a pull request behind every commit",
+		},
+		{
+			name: "release branch pull requests not checked for approval",
+			mutate: func(workflows map[string]string) {
+				workflows["release-dispatch.yml"] = strings.Replace(
+					workflows["release-dispatch.yml"],
+					`.user.login != \"$author\"`,
+					`.user.login != \"\"`,
+					1,
+				)
+			},
+			want: "someone other than the author",
 		},
 		{
 			name: "release branch cut from anywhere",

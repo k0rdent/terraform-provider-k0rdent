@@ -84,7 +84,7 @@ branch, `release-vMAJOR.MINOR.x`, so `main` can take new work meanwhile.
   tag on a release branch, the dispatch also checks:
   - the branch leaves `main` at a commit of `main`'s own history
   - every commit on the branch's own history since then is the merge of a
-    pull request into that branch
+    pull request into that branch, approved by someone other than its author
 
   Cut the branch at a `main` commit, as above, and change it only by merging
   pull requests.
@@ -213,7 +213,7 @@ The workflow names each failure in its error title.
 | Release tag is not a commit of a release branch | The tag is on the own history of neither `main` nor its version's release branch: on another branch, or on a branch merged into one of them, usually because it was made before the merge | Don't move the tag. Tag the merge commit, or a commit on one of them, as the next version |
 | Release branch is not protected | The release branch lacks one of the rules the dispatch checks, its pull requests need no approval, or it doesn't require `CI` | Fix the release-branch ruleset, then dispatch again |
 | Release branch doesn't start from main | The branch was cut from a commit that isn't on `main`'s own history | Cut a new release branch for the next version from `main` |
-| Release branch has an unreviewed commit | A commit was pushed to the release branch rather than merged through a pull request | Don't move the tag. Revert it through a pull request and tag the next version |
+| Release branch has an unreviewed commit | A commit was pushed to the release branch rather than merged through a pull request, or its pull request has no approval from someone other than its author | Don't move the tag. Revert it through a pull request and tag the next version |
 | Dispatcher must run from main | The dispatch used another `--ref` | Dispatch with `--ref main` |
 | Invalid release tag | Not a valid version | Use `vMAJOR.MINOR.PATCH` or a prerelease |
 | Required release secret is not set | One of the three GPG secrets is empty. Nothing was built | Set it, then dispatch again |

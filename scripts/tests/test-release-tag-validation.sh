@@ -50,16 +50,24 @@ g checkout -q main
 mkdir -p "$work/bin" "$work/stub"
 cat > "$work/bin/gh" <<'EOF'
 #!/usr/bin/env bash
-# gh api PATH [--jq EXPR]: answers from $STUB, or fails like an API error.
+# gh api [--paginate] PATH [--jq EXPR]: answers from $STUB, or fails like an API error.
 set -euo pipefail
 [ "$1" = api ] || exit 2
-path="$2"; shift 2
+shift
+path=""
 jq_expr=.
-while [ $# -gt 0 ]; do case "$1" in --jq) jq_expr="$2"; shift 2 ;; *) shift ;; esac; done
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --jq) jq_expr="$2"; shift 2 ;;
+    -*) shift ;;
+    *) path="$1"; shift ;;
+  esac
+done
 [ -e "$STUB/fail" ] && { echo "gh: HTTP 502" >&2; exit 1; }
 case "$path" in
   */rules/branches/*) file="$STUB/rules.json" ;;
   */commits/*/pulls) sha="${path%/pulls}"; sha="${sha##*/}"; file="$STUB/pulls-$sha.json"; [ -e "$file" ] || echo '[]' > "$file" ;;
+  */pulls/*/reviews) n="${path%/reviews}"; n="${n##*/}"; file="$STUB/reviews-$n.json"; [ -e "$file" ] || echo '[]' > "$file" ;;
   *) exit 2 ;;
 esac
 jq -r "$jq_expr" "$file"
@@ -69,7 +77,12 @@ chmod +x "$work/bin/gh"
 full_rules='[{"type":"deletion"},{"type":"non_fast_forward"},{"type":"required_signatures"},
   {"type":"pull_request","parameters":{"required_approving_review_count":1}},
   {"type":"required_status_checks","parameters":{"required_status_checks":[{"context":"CI"}]}}]'
-pr_merge() { printf '[{"merged_at":"2026-01-01T00:00:00Z","base":{"ref":"%s"},"merge_commit_sha":"%s"}]' "$1" "$2" > "$work/stub/pulls-$2.json"; }
+# pr_merge BRANCH SHA [APPROVER]: a pull request by "author", number 7,
+# merged into BRANCH as SHA, approved by APPROVER (a reviewer by default).
+pr_merge() {
+  printf '[{"number":7,"user":{"login":"author"},"merged_at":"2026-01-01T00:00:00Z","base":{"ref":"%s"},"merge_commit_sha":"%s"}]' "$1" "$2" > "$work/stub/pulls-$2.json"
+  printf '[{"state":"COMMENTED","user":{"login":"someone"}},{"state":"APPROVED","user":{"login":"%s"}}]' "${3:-reviewer}" > "$work/stub/reviews-7.json"
+}
 
 # validate TAG: clone origin fresh, run the step's script, report its status.
 validate() {
@@ -112,6 +125,14 @@ refused v0.1.1 "required checks without CI" "doesn't require the CI check"
 reset
 pr_merge main "$merged"
 refused v0.1.1 "a merge whose pull request went to another branch" "is not the merge of a pull request"
+
+reset
+echo '[{"state":"COMMENTED","user":{"login":"reviewer"}}]' > "$work/stub/reviews-7.json"
+refused v0.1.1 "a pull request nobody approved" "nobody but its author approved"
+
+reset
+pr_merge release-v0.1.x "$merged" author
+refused v0.1.1 "a pull request only its author approved" "nobody but its author approved"
 
 reset
 touch "$work/stub/fail"

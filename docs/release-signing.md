@@ -48,7 +48,8 @@ and `make workflow-actions-test` proves it still does. CI runs it.
    history, or on a protected `release-vMAJOR.MINOR.x` branch for its version, and
    records its commit. For a release branch it also checks the branch's rules,
    that the branch left `main` at a commit of `main`'s own history, and that
-   every commit on it since is the merge of a pull request into it. It
+   every commit on it since is the merge of a pull request into it, approved
+   by someone other than its author. It
    refuses a new major until the dispatch sets `allow_major`, counting
    releases on `main` and on every release branch.
 4. A required reviewer approves. Only then does the signing job get the key,
