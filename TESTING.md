@@ -202,7 +202,7 @@ The same steps as `make demo`, against the real API.
 | --- | --- |
 | `LIVE_CONFIRM` | Required. The endpoint's host |
 | `LIVE_CLUSTER` | The cluster id. Default `tf-live-<epoch>` |
-| `LIVE_KEEP=1` | Skip the destroy, to inspect what was made |
+| `LIVE_KEEP=1` | Skip the destroy, to inspect what was made. Writes the variables the cluster ended on to `.live/kept.tfvars` |
 | `LIVE_WORKERS` | Worker count. Default 0 |
 | `LIVE_UPGRADE=1` | Run the upgrade steps. On by default for localhost only |
 | `TF_VAR_organization_id` | Create a project in this organization, and delete it after |
@@ -275,19 +275,19 @@ SWEEP_CONFIRM=api.example.com make sweep SWEEP_REGION=<region id>
 Keep what `make live` made, then refresh and plan a few minutes apart. A plan
 that doesn't exit 0 is a finding.
 
-- `worker_nodes` is the count the run ended on, from the `scale` line in
-  `.live/results.txt`.
-- `V` holds the variables every command needs.
+- `.live/kept.tfvars` holds the variables the run ended on: the cluster id,
+  the worker count after the scale, and the version the upgrade pinned.
+  Without the version, every plan moves the cluster back to the unversioned
+  reference.
 - Use the `acc-` prefix, so `make sweep` can clean up a killed run.
 
 ```sh
 LIVE_KEEP=1 LIVE_CONFIRM=api.example.com LIVE_CLUSTER=acc-live-drift make live
 export TF_CLI_CONFIG_FILE="$PWD/.live/terraform.rc"
 cd examples/live
-V="-var cluster_name=acc-live-drift -var worker_nodes=1"
-terraform apply -refresh-only -auto-approve $V
-terraform plan -detailed-exitcode $V
-terraform destroy -auto-approve $V
+terraform apply -refresh-only -auto-approve -var-file=../../.live/kept.tfvars
+terraform plan -detailed-exitcode -var-file=../../.live/kept.tfvars
+terraform destroy -auto-approve -var-file=../../.live/kept.tfvars
 ```
 
 ## Looks like a failure, isn't
