@@ -7,7 +7,7 @@
 #
 #   signing-key-reminder.sh DUE_FILE
 #
-# - Something due, no open issue: opens one.
+# - Something due, none of the workflow's own issues open: opens one.
 # - Something due, an issue open: edits its title and body to the latest, and
 #   comments only when the title changed, so a due key is one notification,
 #   not one a night.
@@ -16,15 +16,38 @@
 #   about the key.
 #
 # The issue is found by its label, never by its title, so there's never a
-# second one. Needs GH_TOKEN with issues: write, and GH_REPO.
+# second one. Only an issue this workflow opened is managed: anyone who can
+# label can put the label on an issue, and that issue is never edited or
+# closed. If several carry the label, the oldest of the workflow's own is
+# managed, and each other one gets a single comment pointing to it.
+# Needs GH_TOKEN with issues: write, and GH_REPO.
 set -euo pipefail
 
 due_file="${1:?usage: signing-key-reminder.sh DUE_FILE}"
 label="signing-key-rotation"
+bot="github-actions[bot]"
+pointer="<!-- signing-key-rotation pointer -->"
 vault="k0rdent - Terraform"
 note="k0rdent Terraform Provider signing key: how to use it"
 
-number="$(gh issue list --state open --label "$label" --json number --jq '.[0].number // empty')"
+# Open issues with the label, oldest first: number, then author. Pull
+# requests come back from this endpoint too, so they're dropped.
+labeled="$(gh api "repos/$GH_REPO/issues?state=open&labels=$label&sort=created&direction=asc&per_page=100" \
+  --jq '.[] | select(.pull_request | not) | "\(.number)\t\(.user.login)"')"
+number="$(awk -F'\t' -v bot="$bot" '$2 == bot { print $1; exit }' <<<"$labeled")"
+
+# point_others: one comment on every other labeled issue, naming the managed
+# one. Never twice, and never an edit or a close.
+point_others() {
+  local other seen
+  while IFS=$'\t' read -r other _; do
+    [ -n "$other" ] && [ "$other" != "$number" ] || continue
+    seen="$(gh api "repos/$GH_REPO/issues/$other/comments?per_page=100" \
+      --jq "[.[] | select(.user.login == \"$bot\" and (.body | contains(\"$pointer\")))] | length")"
+    [ "$seen" = 0 ] || continue
+    gh issue comment "$other" --body "The signing key rotation is tracked in #$number, which the nightly keeps up to date. This issue isn't changed by it. $pointer"
+  done <<<"$labeled"
+}
 
 due=""
 [ -f "$due_file" ] && due="$(grep -v '^[[:space:]]*$' "$due_file" || true)"
@@ -54,9 +77,12 @@ body="$(
 
 if [ -z "$number" ]; then
   gh label create "$label" --color FBCA04 --description "The release signing key is due to rotate" >/dev/null 2>&1 || true
-  gh issue create --title "$title" --label "$label" --body "$body"
-  exit 0
+  url="$(gh issue create --title "$title" --label "$label" --body "$body")"
+  echo "$url"
+  number="${url##*/}"
+else
+  before="$(gh issue view "$number" --json title --jq '.title')"
+  gh issue edit "$number" --title "$title" --body "$body"
+  [ "$before" = "$title" ] || gh issue comment "$number" --body "Now due: $title. ${RUN_URL:-}"
 fi
-before="$(gh issue view "$number" --json title --jq '.title')"
-gh issue edit "$number" --title "$title" --body "$body"
-[ "$before" = "$title" ] || gh issue comment "$number" --body "Now due: $title. ${RUN_URL:-}"
+point_others

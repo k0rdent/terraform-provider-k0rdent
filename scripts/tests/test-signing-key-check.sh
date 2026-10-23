@@ -222,47 +222,68 @@ SIGNING_KEY_DUE_FILE="$work/due" SIGNING_KEY_NOW=$((created + 700 * day)) "$chec
   fail "a subkey near expiry passed"
 grep -q '^signing subkey	' "$work/due" || fail "a subkey near expiry wasn't written to the due file"
 
-# The reminder, against a stub gh that keeps one issue's state in files.
+# The reminder, against a stub gh that keeps each issue's state in a
+# directory: its author, whether it's open, its title and body, and how many
+# pointer comments it has.
 stub="$work/stub"
 mkdir -p "$stub"
 cat >"$stub/gh" <<'STUB'
 #!/usr/bin/env bash
 state="$GH_STATE"
 echo "$*" >>"$state/calls"
-case "$1 $2" in
-  "issue list") [ -f "$state/open" ] && cat "$state/open"; exit 0 ;;
-  "issue view") cat "$state/title"; exit 0 ;;
-  "label create") exit 0 ;;
+flag() { local want="$1"; shift; while [ $# -gt 0 ]; do [ "$1" = "$want" ] && { printf '%s' "$2"; return; }; shift; done; }
+case "$1" in
+  label) exit 0 ;;
+  api)
+    case "$2" in
+      */comments*) n="${2#*/issues/}"; n="${n%%/*}"; cat "$state/issues/$n/pointers" 2>/dev/null || echo 0 ;;
+      *) for d in $(ls "$state/issues" 2>/dev/null | sort -n); do
+           [ -f "$state/issues/$d/open" ] && printf '%s\t%s\n' "$d" "$(cat "$state/issues/$d/author")"
+         done ;;
+    esac
+    exit 0 ;;
 esac
-args=("$@")
-for ((i = 0; i < ${#args[@]}; i++)); do
-  case "${args[$i]}" in
-    --title) printf '%s' "${args[$((i + 1))]}" >"$state/title" ;;
-    --body) printf '%s' "${args[$((i + 1))]}" >"$state/body" ;;
-  esac
-done
 case "$1 $2" in
-  "issue create") echo 7 >"$state/open" ;;
-  "issue close") rm -f "$state/open" ;;
+  "issue create")
+    n=$(( $(ls "$state/issues" 2>/dev/null | sort -n | tail -n 1 || true) + 0 ))
+    n=$(( n < 7 ? 7 : n + 1 ))
+    mkdir -p "$state/issues/$n"
+    echo "github-actions[bot]" >"$state/issues/$n/author"
+    : >"$state/issues/$n/open"
+    flag --title "$@" >"$state/issues/$n/title"
+    flag --body "$@" >"$state/issues/$n/body"
+    echo "https://github.com/k0rdent/terraform-provider-k0rdent/issues/$n" ;;
+  "issue view") cat "$state/issues/$3/title" ;;
+  "issue edit") flag --title "$@" >"$state/issues/$3/title"; flag --body "$@" >"$state/issues/$3/body" ;;
+  "issue comment")
+    case "$(flag --body "$@")" in
+      *"signing-key-rotation pointer"*) echo $(( $(cat "$state/issues/$3/pointers" 2>/dev/null || echo 0) + 1 )) >"$state/issues/$3/pointers" ;;
+    esac ;;
+  "issue close") rm -f "$state/issues/$3/open" ;;
 esac
 STUB
 chmod +x "$stub/gh"
 remind() {
-  GH_STATE="$work/gh" PATH="$stub:$PATH" RESULT="$1" RUN_URL=https://example.invalid/run \
+  GH_STATE="$work/gh" GH_REPO=k0rdent/terraform-provider-k0rdent PATH="$stub:$PATH" RESULT="$1" RUN_URL=https://example.invalid/run \
     "$PWD/scripts/signing-key-reminder.sh" "$2" >"$work/out" 2>&1 || { cat "$work/out" >&2; fail "the reminder failed"; }
 }
 calls() { grep -c "^issue $1" "$work/gh/calls" || true; }
-rm -rf "$work/gh" && mkdir -p "$work/gh"
+# add_issue NUMBER AUTHOR: an open issue carrying the label.
+add_issue() { mkdir -p "$work/gh/issues/$1" && echo "$2" >"$work/gh/issues/$1/author" && : >"$work/gh/issues/$1/open" && echo "theirs" >"$work/gh/issues/$1/title"; }
+is_open() { [ -f "$work/gh/issues/$1/open" ]; }
+pointers() { cat "$work/gh/issues/$1/pointers" 2>/dev/null || echo 0; }
+fresh() { rm -rf "$work/gh" && mkdir -p "$work/gh/issues" && : >"$work/gh/calls"; }
+fresh
 printf 'signing subkey\tABCD\t2027-10-23\t2028-10-22\n' >"$work/due1"
 
 # Due, nothing open: one issue, titled with the date, saying where the how-to is.
 remind failure "$work/due1"
 [ "$(calls create)" = 1 ] || fail "a due key didn't open an issue"
-grep -Fxq "Rotate the release signing subkey (due 2027-10-23)" "$work/gh/title" || { cat "$work/gh/title" >&2; fail "wrong issue title"; }
+grep -Fxq "Rotate the release signing subkey (due 2027-10-23)" "$work/gh/issues/7/title" || { cat "$work/gh/issues/7/title" >&2; fail "wrong issue title"; }
 for needle in ABCD "rotate by 2027-10-23" "expires 2028-10-22" '"k0rdent - Terraform" 1Password vault' "how to use it"; do
-  grep -Fq "$needle" "$work/gh/body" || { cat "$work/gh/body" >&2; fail "the issue body doesn't say $needle"; }
+  grep -Fq "$needle" "$work/gh/issues/7/body" || { cat "$work/gh/issues/7/body" >&2; fail "the issue body doesn't say $needle"; }
 done
-grep -Eq '@[A-Za-z0-9]' "$work/gh/body" && fail "the issue body mentions someone"
+grep -Eq '@[A-Za-z0-9]' "$work/gh/issues/7/body" && fail "the issue body mentions someone"
 
 # Due again the next night: the same issue, edited, with no comment and no
 # second issue.
@@ -274,7 +295,7 @@ remind success "$work/due1"
 # The parent comes due too: the title changes, and that comments once.
 printf 'parent\tEF01\t2031-10-23\t2036-10-20\nsigning subkey\tABCD\t2027-10-23\t2028-10-22\n' >"$work/due2"
 remind success "$work/due2"
-grep -Fxq "Rotate the release signing parent and subkey (due 2027-10-23)" "$work/gh/title" || { cat "$work/gh/title" >&2; fail "wrong title for two keys"; }
+grep -Fxq "Rotate the release signing parent and subkey (due 2027-10-23)" "$work/gh/issues/7/title" || { cat "$work/gh/issues/7/title" >&2; fail "wrong title for two keys"; }
 [ "$(calls comment)" = 1 ] || fail "a changed reminder didn't comment"
 [ "$(calls create)" = 1 ] || fail "a changed reminder opened a duplicate"
 
@@ -286,11 +307,42 @@ remind failure "$work/none"
 # Rotated: a clean check closes it.
 remind success "$work/none"
 [ "$(calls close)" = 1 ] || fail "a clean check didn't close the reminder"
-[ ! -f "$work/gh/open" ] || fail "the reminder is still open"
+is_open 7 && fail "the reminder is still open"
 
 # Clean with nothing open: nothing happens.
 remind success "$work/none"
 [ "$(calls close)" = 1 ] || fail "a clean check with nothing open closed something"
+
+# Someone else put the label on an issue. It's never adopted, edited or
+# closed. The workflow opens its own and points there once.
+fresh
+add_issue 3 someone
+remind failure "$work/due1"
+[ "$(calls create)" = 1 ] || fail "a labeled issue someone else opened stopped the reminder opening its own"
+grep -q '^issue edit 3 ' "$work/gh/calls" && fail "the reminder edited someone else's issue"
+[ "$(pointers 3)" = 1 ] || fail "someone else's labeled issue wasn't pointed to the reminder"
+remind success "$work/due1"
+[ "$(pointers 3)" = 1 ] || fail "someone else's labeled issue was pointed to the reminder twice"
+grep -q '^issue edit 3 ' "$work/gh/calls" && fail "the reminder edited someone else's issue"
+remind success "$work/none"
+is_open 3 || fail "the reminder closed someone else's issue"
+is_open 7 && fail "the reminder's own issue didn't close"
+
+# Two of the workflow's own: the oldest is managed, the other pointed to it
+# once and otherwise left alone.
+fresh
+add_issue 10 "github-actions[bot]"
+add_issue 11 "github-actions[bot]"
+remind success "$work/due1"
+[ "$(calls create)" = 0 ] || fail "two open reminders led to a third"
+grep -q '^issue edit 10 ' "$work/gh/calls" || fail "the oldest reminder wasn't the one updated"
+grep -q '^issue edit 11 ' "$work/gh/calls" && fail "the newer reminder was edited"
+[ "$(pointers 11)" = 1 ] || fail "the newer reminder wasn't pointed to the oldest"
+remind success "$work/due1"
+[ "$(pointers 11)" = 1 ] || fail "the newer reminder was pointed twice"
+remind success "$work/none"
+is_open 11 || fail "the newer reminder was closed"
+is_open 10 && fail "the managed reminder didn't close"
 
 # The committed key itself.
 "$check" public docs/signing-key.asc >"$work/out" 2>&1 ||
