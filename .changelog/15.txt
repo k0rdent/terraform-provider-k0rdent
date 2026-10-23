@@ -1,0 +1,7 @@
+```release-note:bug
+resource/k0rdent_kubernetes_cluster: Fix destroying a cluster mid-operation against API v1.3.0-rc.2, which answers a cancel with 202 while it winds down
+```
+
+```release-note:bug
+action/k0rdent_cluster_cancel_operation: Accept the 202 that API v1.3.0-rc.2 answers a cancel with, and wait for the cluster to settle
+```
