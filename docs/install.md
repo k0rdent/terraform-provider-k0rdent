@@ -70,13 +70,15 @@ machine checks a signature. Download the release's `SHA256SUMS` and its
 `.sig`, then:
 
 ```bash
-gpg --import docs/signing-key.asc
+curl -fsSLO https://raw.githubusercontent.com/k0rdent/terraform-provider-k0rdent/main/docs/signing-key.asc
+gpg --import signing-key.asc
 gpg --verify terraform-provider-k0rdent_0.1.0_SHA256SUMS.sig \
              terraform-provider-k0rdent_0.1.0_SHA256SUMS
 sha256sum --check --ignore-missing terraform-provider-k0rdent_0.1.0_SHA256SUMS
 ```
 
-Check the primary key fingerprint gpg prints is the one in
+From a checkout of this repository, `gpg --import docs/signing-key.asc` does
+the same. Check the primary key fingerprint gpg prints is the one in
 [SECURITY.md](../SECURITY.md#release-signatures).
 
 Then, in the configuration the isolated site will apply, record the lock file

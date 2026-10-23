@@ -32,7 +32,8 @@ Every release's `SHA256SUMS` is signed with this key:
 To check a release you downloaded:
 
 ```sh
-gpg --import docs/signing-key.asc
+curl -fsSLO https://raw.githubusercontent.com/k0rdent/terraform-provider-k0rdent/main/docs/signing-key.asc
+gpg --import signing-key.asc
 gpg --verify terraform-provider-k0rdent_0.1.0_SHA256SUMS.sig \
              terraform-provider-k0rdent_0.1.0_SHA256SUMS
 sha256sum --check --ignore-missing terraform-provider-k0rdent_0.1.0_SHA256SUMS
