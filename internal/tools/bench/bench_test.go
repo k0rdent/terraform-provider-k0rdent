@@ -198,14 +198,15 @@ func TestTheCommittedBudgetHoldsThePublishedFigures(t *testing.T) {
 		size                          int
 		plan, refresh, apply, destroy float64
 		planLists, applyLists         int
+		destroyLists                  int
 	}{
-		{10, 0.14, 0.13, 1.50, 0.86, 1, 1},
-		{100, 0.30, 0.22, 2.63, 2.08, 3, 4},
-		{500, 0.99, 0.60, 12.72, 10.60, 11, 20},
-		{1000, 1.77, 1.05, 26.35, 25.88, 21, 40},
+		{10, 0.14, 0.14, 1.52, 0.85, 1, 5, 3},
+		{100, 0.36, 0.25, 2.95, 2.51, 3, 8, 5},
+		{500, 1.18, 0.69, 14.00, 11.56, 11, 32, 21},
+		{1000, 2.22, 1.24, 29.01, 28.34, 21, 62, 41},
 	} {
-		perResource := map[string]float64{"plan": 1.02, "refresh": 1.02, "apply": 4.77, "destroy": 4.52}
-		lists := map[string]int{"plan": row.planLists, "refresh": row.planLists, "apply": row.applyLists, "destroy": row.planLists}
+		perResource := map[string]float64{"plan": 1.02, "refresh": 1.02, "apply": 5.27, "destroy": 5.65}
+		lists := map[string]int{"plan": row.planLists, "refresh": row.planLists, "apply": row.applyLists, "destroy": row.destroyLists}
 		for phase, secs := range map[string]float64{"plan": row.plan, "refresh": row.refresh, "apply": row.apply, "destroy": row.destroy} {
 			published = append(published, measurement{Size: row.size, Parallelism: 10, Phase: phase, Seconds: secs,
 				PerResource: perResource[phase], Requests: requestCounts{ListReads: lists[phase]}})

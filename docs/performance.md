@@ -11,9 +11,9 @@ At that size, with Terraform's default `-parallelism=10`:
 
 | Command | Local platform (3ms a request) | Remote platform (50ms a request) |
 | --- | ---: | ---: |
-| `terraform plan` | 2s | 6s |
+| `terraform plan` | 2s | 7s |
 | `terraform plan -refresh-only` | 1s | 6s |
-| `terraform apply`, creating all 1,000 | 26s | 49s |
+| `terraform apply`, creating all 1,000 | 29s | 54s |
 
 Apply times leave out how long the platform takes to build each object. The
 50ms column is a model, not a measurement of a real deployment.
@@ -40,7 +40,7 @@ or through `terraform_remote_state`.
 - Don't use `-target` or `-refresh=false` to speed up routine plans. Both
   hide part of the estate from the plan.
 - A higher `-parallelism` speeds up apply against a slow platform. At 50ms,
-  apply of 1,000 went from 49s at 10 to 17s at 32. Past the platform's rate
+  apply of 1,000 went from 54s at 10 to 20s at 32. Past the platform's rate
   limit it stops helping, and the provider backs off when told to.
 
 ## Figures at `-parallelism=10`
@@ -49,10 +49,10 @@ From `make bench` against the local fake, 3ms a request:
 
 | Resources | plan (s) | refresh (s) | apply (s) | destroy (s) |
 | ---: | ---: | ---: | ---: | ---: |
-| 10 | 0.14 | 0.13 | 1.50 | 0.86 |
-| 100 | 0.30 | 0.22 | 2.63 | 2.08 |
-| 500 | 0.99 | 0.60 | 12.72 | 10.60 |
-| 1,000 | 1.77 | 1.05 | 26.35 | 25.88 |
+| 10 | 0.14 | 0.14 | 1.52 | 0.85 |
+| 100 | 0.36 | 0.25 | 2.95 | 2.51 |
+| 500 | 1.18 | 0.69 | 14.00 | 11.56 |
+| 1,000 | 2.22 | 1.24 | 29.01 | 28.34 |
 
 - 3ms is the median request time of a local kind stack.
 - Apply makes about 5 requests a resource against the fake. A real platform
@@ -88,7 +88,7 @@ make bench BENCH_SIZES=100,500,1000 BENCH_PARALLELISM=10 BENCH_BUDGET=internal/t
 
 | Limit | Value | What breaking it means |
 | --- | --- | --- |
-| Requests a resource | plan and refresh 1.15, apply 5.0, destroy 4.75 | A command sends more requests per resource than before |
+| Requests a resource | plan and refresh 1.15, apply 5.5, destroy 5.9 | A command sends more requests per resource than before |
 | Lists read | exact counts at each size, 21 in a plan of 1,000 | A lookup that lists every object for each object is back |
 | Growth | plan and refresh time a resource, at the largest size over 100: 2.0 | The work no longer grows in step with the size |
 | Seconds at 1,000 | plan 15, refresh 10, apply 120, destroy 150 | A large slowdown |
