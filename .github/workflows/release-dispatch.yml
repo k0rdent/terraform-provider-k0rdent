@@ -76,11 +76,20 @@ jobs:
           # commit made on it. Release branches never merge back into main, so
           # a tag that is reachable from main but not on its own history takes
           # the release-branch path below and has to pass it.
-          if ! git rev-list --first-parent origin/main | grep -qxF "$tag_commit"; then
+          # Whether commit $1 is on ref $2's own history. rev-list's output is
+          # taken whole before grep looks at it. Piped, grep would stop at the
+          # first match, rev-list would die of SIGPIPE, and pipefail would
+          # turn the match into a failure.
+          on_own_history() {
+            local history
+            history="$(git rev-list --first-parent "$2")"
+            grep -qxF "$1" <<< "$history"
+          }
+          if ! on_own_history "$tag_commit" origin/main; then
             [[ "$RELEASE_TAG" =~ ^v([0-9]+)\.([0-9]+)\. ]]
             release_branch="release-v${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.x"
             if ! git fetch --no-tags origin "refs/heads/$release_branch:refs/remotes/origin/$release_branch" ||
-              ! git rev-list --first-parent "origin/$release_branch" | grep -qxF "$tag_commit"; then
+              ! on_own_history "$tag_commit" "origin/$release_branch"; then
               echo "::error title=Release tag is not a commit of a release branch::$RELEASE_TAG resolves to $tag_commit, which is on the own history of neither origin/main nor origin/$release_branch. Tag a commit made on one of them, such as a pull request's merge."
               exit 1
             fi
@@ -113,7 +122,7 @@ jobs:
             # every commit on its own history since then has to be the merge
             # of a pull request into it.
             branch_point="$(git merge-base origin/main "origin/$release_branch")"
-            if ! git rev-list --first-parent origin/main | grep -qxF "$branch_point"; then
+            if ! on_own_history "$branch_point" origin/main; then
               echo "::error title=Release branch doesn't start from main::$release_branch leaves main at $branch_point, which is not a commit of main's own history."
               exit 1
             fi

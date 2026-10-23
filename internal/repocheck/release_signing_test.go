@@ -74,7 +74,9 @@ func validateProtectedReleaseSigning(workflows map[string]string) error {
 	if !strings.Contains(dispatch, "ref: main") || !strings.Contains(dispatch, `"$GITHUB_REF" != "refs/heads/main"`) {
 		return fmt.Errorf("%s does not require execution from main", dispatcher)
 	}
-	if !strings.Contains(dispatch, `git rev-list --first-parent origin/main | grep -qxF "$tag_commit"`) {
+	if !strings.Contains(dispatch, `history="$(git rev-list --first-parent "$2")"`) ||
+		!strings.Contains(dispatch, `grep -qxF "$1" <<< "$history"`) ||
+		!strings.Contains(dispatch, `if ! on_own_history "$tag_commit" origin/main; then`) {
 		return fmt.Errorf("%s accepts a tag that isn't on main's own history", dispatcher)
 	}
 	// A tag off main is built only from its own minor's release branch, and
@@ -82,12 +84,13 @@ func validateProtectedReleaseSigning(workflows map[string]string) error {
 	// merged pull requests. Each piece is named, so removing one fails here.
 	releaseBranchChecks := []struct{ text, what string }{
 		{`release_branch="release-v${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.x"`, "its own minor's release branch"},
-		{`git rev-list --first-parent "origin/$release_branch" | grep -qxF "$tag_commit"`, "the tag on the branch's own history"},
+		{`on_own_history "$tag_commit" "origin/$release_branch"`, "the tag on the branch's own history"},
 		{`rules/branches/$release_branch`, "the branch's rules"},
 		{"for rule in pull_request required_signatures required_status_checks non_fast_forward deletion; do", "every rule main has, plus deletion"},
 		{".parameters.required_approving_review_count", "at least one approval"},
 		{`index("CI")`, "the CI check"},
 		{`git merge-base origin/main "origin/$release_branch"`, "a branch point on main's own history"},
+		{`on_own_history "$branch_point" origin/main`, "a branch point on main's own history"},
 		{`commits/$commit/pulls`, "a pull request behind every commit"},
 		{`merge_commit_sha == \"$commit\"`, "the pull request's own merge"},
 		{`pulls/$number/reviews`, "an approval behind every pull request"},
@@ -265,8 +268,8 @@ func TestProtectedReleaseSigningRejectsSecurityRegressions(t *testing.T) {
 			mutate: func(workflows map[string]string) {
 				workflows["release-dispatch.yml"] = strings.Replace(
 					workflows["release-dispatch.yml"],
-					`git rev-list --first-parent origin/main | grep -qxF "$tag_commit"`,
-					`git merge-base --is-ancestor "$tag_commit" origin/main`,
+					`if ! on_own_history "$tag_commit" origin/main; then`,
+					`if ! git merge-base --is-ancestor "$tag_commit" origin/main; then`,
 					1,
 				)
 			},

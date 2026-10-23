@@ -22,12 +22,25 @@ awk '
 ' .github/workflows/release-dispatch.yml > "$work/validate.sh"
 grep -q 'commits/$commit/pulls' "$work/validate.sh" || fail "could not cut the validation script out of release-dispatch.yml"
 
+# Nothing in the background: the long history below would start gc or
+# maintenance after a fetch, and it would rewrite a clone while the next case
+# removes and remakes it.
+export GIT_CONFIG_COUNT=2 GIT_CONFIG_KEY_0=gc.auto GIT_CONFIG_VALUE_0=0 \
+  GIT_CONFIG_KEY_1=maintenance.auto GIT_CONFIG_VALUE_1=false
 g() { git -c user.name=t -c user.email=t@example.invalid -c commit.gpgsign=false -c tag.gpgsign=false "$@"; }
 
 # origin: main with a merged feature branch, and release-v0.1.x cut from main.
 git init -q -b main "$work/origin"
 cd "$work/origin"
 g commit -q --allow-empty -m first
+# A long history, so rev-list prints more than a pipe holds. A check that
+# stops reading at the first match then kills rev-list with SIGPIPE, and
+# under pipefail that reads as a failure. A short history would hide it.
+tree="$(git rev-parse 'HEAD^{tree}')"
+head="$(git rev-parse HEAD)"
+for i in $(seq 1 2000); do head="$(g commit-tree "$tree" -p "$head" -m "history $i")"; done
+git update-ref refs/heads/main "$head"
+git reset -q --hard
 g checkout -q -b feature; g commit -q --allow-empty -m feature; feature="$(git rev-parse HEAD)"
 g checkout -q main; g merge -q --no-ff -m "merge feature" feature
 g tag v0.1.0
