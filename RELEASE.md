@@ -75,9 +75,11 @@ gh secret set TERRAFORM_PROVIDER_GPG_PRIVATE_KEY --env release-signing < private
 - **Every version is permanent.** A published release can't be replaced, and
   users' lock files and caches hold its checksums. If one is wrong, fix
   forward with the next version.
-- **Leave GitHub's pre-release box unticked**, on candidates too. The release
-  job publishes every release as a normal one, and the version itself marks a
-  candidate.
+- **Only the newest final version is Latest.** GitHub marks a release Latest
+  by date unless told otherwise, and `/releases/latest` and the repository
+  page point people to it. The release job publishes a candidate, and a
+  patch to an older minor, with `make_latest=false`. The version's `-rc.N`,
+  not any GitHub setting, is what Terraform and OpenTofu read.
 - **A tag push starts nothing.** A release is built only when someone
   dispatches the release workflow from `main` and a second maintainer
   approves it.
@@ -125,22 +127,33 @@ branch, `release-vMAJOR.MINOR.x`, so `main` can take new work meanwhile.
    `v0.1.0-rc.1`. See [Versions](#versions). Build metadata (`+...`) is refused. A new major is
    refused until the dispatch sets `allow_major` (step 5).
 
-2. **Update `CHANGELOG.md` in a pull request.** Render the section from
-   `.changelog/`:
+2. **Update `CHANGELOG.md`, for a final version only.** A candidate doesn't
+   change it: skip to step 3. Every candidate for `0.1.0` ships the same
+   entries, and they all belong in the `0.1.0` section.
+
+   For the final version, render the section on the release branch, whose
+   `.changelog/` holds exactly what ships. `main` may already hold entries
+   for the next minor.
 
    ```sh
+   git switch --detach origin/release-v0.1.x
    make changelog VERSION="$VERSION" CHANGELOG_DATE=YYYY-MM-DD
    ```
 
-   - Put it under the preamble, above the previous release.
-   - Delete the `.changelog/<number>.txt` files it used, in the same pull
-     request. Keep `.changelog/README.md`.
+   Then, like any fix, `main` first:
+
+   - Open a pull request to `main` that adds that section under the preamble,
+     above the previous release, and deletes the `.changelog/<number>.txt`
+     files it used. Keep `.changelog/README.md`, and keep any entry the
+     release branch doesn't have.
+   - Backport it to the release branch with `git cherry-pick -x`, so both
+     branches carry the same section and neither renders those entries again.
    - A new major also needs a migration in `docs/public-compatibility.md` for
      each BREAKING CHANGES line.
-   - First release only: rename the hand-written `## [Unreleased]` section to
-     `## [VERSION] - YYYY-MM-DD, recorded before .changelog/` and keep its
-     text. The first release replaces the
-     `[0.1.0] - planned, not published` placeholder.
+   - First final release only: rename the hand-written `## [Unreleased]`
+     section to `## [VERSION] - YYYY-MM-DD, recorded before .changelog/` and
+     keep its text. It replaces the `[0.1.0] - planned, not published`
+     placeholder, which candidates leave in place.
    - A dated heading makes `TestNoReleaseIsRecordedInTheChangelog` fail on
      purpose. Rewrite `docs/distribution.md`, which says nothing is published,
      in the same pull request.
@@ -154,8 +167,10 @@ branch, `release-vMAJOR.MINOR.x`, so `main` can take new work meanwhile.
 
    `release-validate` builds an unsigned snapshot and checks its files.
 
-4. **Tag the merged commit and push the tag.** Use the release branch for a
-   candidate or a patch, or `main`. `-s` signs the tag.
+4. **Tag the merged commit and push the tag.** `-s` signs the tag. `BRANCH`
+   is the release branch for a candidate, the final version and its patches.
+   It's `main` only for a version released straight from `main`, with no
+   release branch.
 
    ```sh
    BRANCH=release-v0.1.x
