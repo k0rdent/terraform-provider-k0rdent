@@ -27,8 +27,6 @@ due_file="${1:?usage: signing-key-reminder.sh DUE_FILE}"
 label="signing-key-rotation"
 bot="github-actions[bot]"
 pointer="<!-- signing-key-rotation pointer -->"
-vault="k0rdent - Terraform"
-note="k0rdent Terraform Provider signing key: how to use it"
 
 # Open issues with the label, oldest first: number, then author. Pull
 # requests come back from this endpoint too, so they're dropped.
@@ -70,7 +68,7 @@ body="$(
     echo "- **$what** \`$fpr\`: rotate by $rotate, expires $expiry"
   done <<<"$due"
   echo
-  echo "How to rotate: the \"$note\" Secure Note in the \"$vault\" 1Password vault. After rotating, commit the new public key to \`docs/signing-key.asc\` and run **Check release signing**, as [docs/release-signing.md](docs/release-signing.md) says."
+  echo "How to rotate: the maintainers' runbook, kept with the key. After rotating, commit the new public key to \`docs/signing-key.asc\` and run **Check release signing**, as [docs/release-signing.md](docs/release-signing.md) says."
   echo
   echo "This issue closes itself once the nightly's signing key check finds nothing due.${RUN_URL:+ Latest run: $RUN_URL}"
 )"

@@ -18,7 +18,8 @@ fail() { echo "public text test: FAIL - $1" >&2; exit 1; }
 
 git -C "$work" init -q
 mkdir -p "$work/.github/public-text" "$work/internal/provider"
-cp "$here/.github/public-text/denylist.txt" "$here/.github/public-text/allowlist.txt" "$work/.github/public-text/"
+cp "$here/.github/public-text/denylist.txt" "$here/.github/public-text/allowlist.txt" \
+  "$here/.github/public-text/hashed.txt" "$work/.github/public-text/"
 
 ticket="$(printf '%s-%s' ABC 123)"
 editor="$(printf '%s%s' Cur sor)"
@@ -76,6 +77,23 @@ printf 'Fixed.\n' > "$work/planted.md"
 track planted.md internal/k0rdent/spec/openapi.yaml
 expect 0 "the machine type in the API's spec"
 
+# hashed.txt: a name as a word, a host under another subdomain, and a
+# repository name with a suffix. The hit names the rule, never the hash.
+person="$(printf 'Jus%s' tin)"
+host="$(printf 'ci.pulse.k0%s.com' labs)"
+repo="$(printf 'k0rdent-inter%s-2' nal)"
+for planted in "Ask $person." "See https://$host/x." "From $repo."; do
+  printf '%s\n' "$planted" > "$work/planted.md"
+  track planted.md
+  expect 1 "a hashed name: $planted"
+done
+grep -q '^== private-repo (1 hits)' "$work/out" || fail "the report doesn't name the hashed rule"
+printf 'Justice and a pulse.\n' > "$work/planted.md"
+track planted.md
+expect 0 "words that only contain a hashed name"
+[ "$("$gate" --hash person - "$person")" = "$(grep -m1 '^person:-:' "$here/.github/public-text/hashed.txt")" ] \
+  || fail "--hash doesn't print the line hashed.txt holds"
+
 # Named files only.
 printf 'See %s.\n' "$ticket" > "$work/planted.md"
 track planted.md
@@ -98,6 +116,10 @@ expect 2 "a deny-list rule that doesn't compile"
 printf 'no flags here\n' > "$work/.github/public-text/denylist.txt"
 expect 2 "a deny-list line without NAME:FLAGS:REGEX"
 mv "$work/deny.bak" "$work/.github/public-text/denylist.txt"
+cp "$work/.github/public-text/hashed.txt" "$work/hashed.bak"
+printf 'person:-:not-a-hash\n' >> "$work/.github/public-text/hashed.txt"
+expect 2 "a hashed.txt line without a SHA-256"
+mv "$work/hashed.bak" "$work/.github/public-text/hashed.txt"
 mv "$work/.github/public-text/allowlist.txt" "$work/allow.bak"
 expect 2 "a missing allowlist"
 mv "$work/allow.bak" "$work/.github/public-text/allowlist.txt"
