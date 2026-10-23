@@ -13,7 +13,7 @@ check each setting. Publishing to the registries is in
 | `main` needs a reviewed pull request and passing checks, and refuses force pushes | Unreviewed code reaching a release. The workflow only checks the tag is on `main`, so `main` has to be protected |
 | `release-v*` branches have the same rules, and refuse deletion | Unreviewed code reaching a candidate or a patch. The workflow refuses a release branch without them, and also checks the branch left `main` at one of its commits and holds only merged pull requests since, because rules don't cover the push that creates a branch |
 | A `release-signing` environment with required reviewers, no self-review and no admin bypass | One person signing a release alone |
-| The environment deploys from protected branches only | A signing job started from another branch |
+| The environment deploys from `main` only. Both jobs that use it refuse to run unless started from `main`, and the release builds a release branch's tags from `main` by their name | A signing job started from another branch, including a new `release-v*` branch, which is protected but could carry an edited workflow |
 | A ruleset on `v*` tags that refuses delete and update | A released tag being moved to other code |
 | The three GPG secrets are `release-signing` environment secrets, and nowhere else | Any other job reading the signing key |
 | The old tag-triggered `release.yml` workflow is disabled | A tag on an old commit running that commit's old release workflow |

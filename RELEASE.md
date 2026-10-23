@@ -33,13 +33,16 @@ Each needs a repository admin. Check them before a release.
 | Not at organization scope | Organization settings | `gh api $R/actions/organization-secrets --jq '[.secrets[].name \| select(startswith("TERRAFORM_PROVIDER_GPG"))]'` | `[]` |
 | Two or more reviewers, no self-review | `release-signing`, Required reviewers | `gh api $R/environments/release-signing --jq '.protection_rules[] \| select(.type == "required_reviewers") \| {prevent_self_review, reviewers: (.reviewers \| length)}'` | `reviewers` 2 or more, `prevent_self_review: true` |
 | No admin bypass | `release-signing`, "Allow administrators to bypass" | `gh api $R/environments/release-signing --jq .can_admins_bypass` | `false` |
-| Deploys from protected branches only | `release-signing`, Deployment branches | `gh api $R/environments/release-signing --jq .deployment_branch_policy` | `protected_branches: true` |
+| Deploys from `main` only | `release-signing`, Deployment branches, "Selected branches and tags" | `gh api $R/environments/release-signing/deployment-branch-policies --jq '[.branch_policies[] \| {name, type}]'` | `[{"name":"main","type":"branch"}]`, and `.deployment_branch_policy` shows `custom_branch_policies: true` |
 | Fork runs get no secrets | Settings, Actions, General | `gh api $R/actions/permissions/fork-pr-workflows-private-repos` | `send_secrets_and_variables: false`, or approval required |
 | Old tag workflow disabled | Actions, "Retired tag release workflow" | `gh api $R/actions/workflows/release.yml --jq .state` | `disabled_manually` |
 | Release tags can't change | Settings, Rules, Rulesets, the `refs/tags/v*` ruleset | `gh api $R/rulesets --jq '.[].name'`, then that ruleset's `[.rules[].type]` | `deletion`, `non_fast_forward` and `update` |
 | `main` protected | Settings, Rules | `gh api $R/rules/branches/main --jq '[.[].type]'` | A pull request with one approval, signed commits, the `CI` check, no force push |
 | Release branches protected | Settings, Rules, a ruleset on `refs/heads/release-v*` | `gh api $R/rules/branches/release-v0.1.x --jq '[.[].type]'` | The same as `main`, plus `deletion`. The dispatch refuses a branch without `pull_request` with one approval or more, `required_signatures`, `required_status_checks` including `CI`, `non_fast_forward` and `deletion` |
 
+- `main` only, not every protected branch: both jobs that use the
+  environment refuse to run unless started from `main`, and the release
+  builds a release branch's tags from `main` by their name.
 - The fork-run setting matters only while the repository is private.
 - The tag ruleset needs `update` too, since moving a tag forward counts as a
   fast-forward.
