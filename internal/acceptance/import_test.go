@@ -534,7 +534,9 @@ import {
 // the one spelling the import can't guess: the import records the
 // unversioned reference, so the plan after it updates `cluster_type` in place
 // to the pinned spelling. It mustn't be refused as a replacement, on either
-// resource, and once applied nothing is left to plan.
+// resource, and once applied nothing is left to plan. The binding doesn't
+// move, so that plan moves `cluster_type` and nothing else: a cluster's
+// `node_count` stays known.
 func TestAccImportAPinToTheCurrentVersion(t *testing.T) {
 	pinned := clusterTypeRef + "/versions/33333333-3333-3333-3333-333333333333"
 	cases := map[string]string{
@@ -568,11 +570,9 @@ resource %q "test" {
 				Steps: []resource.TestStep{
 					{Config: seed},
 					{
-						Config: adopt(config, typ, "us-texas-1/demo/"+id),
-						ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{
-							plancheck.ExpectResourceAction(addr, plancheck.ResourceActionUpdate),
-						}},
-						Check: resource.TestCheckResourceAttr(addr, "cluster_type", pinned),
+						Config:           adopt(config, typ, "us-texas-1/demo/"+id),
+						ConfigPlanChecks: updates(addr, expectOnly(addr, "cluster_type")),
+						Check:            resource.TestCheckResourceAttr(addr, "cluster_type", pinned),
 					},
 					{Config: config, PlanOnly: true},
 				},

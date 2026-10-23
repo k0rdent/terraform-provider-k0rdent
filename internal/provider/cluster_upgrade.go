@@ -376,6 +376,23 @@ func (r *clusterResource) settledCounts(ctx context.Context, target clusterTarge
 	return out, true
 }
 
+// bindingMoves reports whether the planned `cluster_type` names another
+// version than the one the cluster is bound to. A new spelling of the bound
+// version, such as an import's unversioned reference written as the pin it
+// resolved to, moves nothing. A value the plan doesn't know yet counts as a
+// move.
+func bindingMoves(ctx context.Context, plan tfsdk.Plan, state tfsdk.State, diags *diag.Diagnostics) bool {
+	var configured types.String
+	var prior clusterModel
+	diags.Append(plan.GetAttribute(ctx, path.Root("cluster_type"), &configured)...)
+	diags.Append(state.Get(ctx, &prior)...)
+	if diags.HasError() || configured.IsUnknown() {
+		return true
+	}
+	change, _ := classifyRefChange(configured.ValueString(), boundRef(prior), "")
+	return change != refUnchanged
+}
+
 // boundRef is the version the platform last reported the cluster bound to.
 func boundRef(m clusterModel) string {
 	if v := m.ClusterTypeResolved.ValueString(); v != "" {

@@ -67,11 +67,14 @@ func TestAccClusterUpgradesAcrossTwoVersions(t *testing.T) {
 			{
 				Config: inferenceConfig(name, 4, 2),
 				// The plan shows the Kubernetes version the upgrade reaches,
-				// v4's, rather than "known after apply".
+				// v4's, rather than "known after apply". The node total is
+				// left to the apply, since a new version can bring or drop
+				// pools.
 				ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{
 					plancheck.ExpectResourceAction(clusterAddr, plancheck.ResourceActionUpdate),
 					plancheck.ExpectKnownValue(clusterAddr, tfjsonpath.New("kubernetes_version"),
 						knownvalue.StringExact("v1.35.1+k0s.0")),
+					unknownAfterApply(clusterAddr, "node_count"),
 				}},
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr(clusterAddr, "kubernetes_version", "v1.35.1+k0s.0"),

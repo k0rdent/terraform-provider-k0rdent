@@ -447,8 +447,11 @@ func (r *clusterResource) ModifyPlan(ctx context.Context, req resource.ModifyPla
 	}
 	// The total over every pool, the ones the configuration doesn't name
 	// included, so only a scale or a new ClusterType version moves it. A
-	// rename, new tags or new security groups leave it as it is.
-	if inputsChanged(ctx, resp.Plan, req.State, []string{"node_pool", "cluster_type"}, &resp.Diagnostics) {
+	// rename, new tags or new security groups leave it as it is, and so does
+	// `cluster_type` spelling the version already bound, as it does after an
+	// import.
+	if inputsChanged(ctx, resp.Plan, req.State, []string{"node_pool"}, &resp.Diagnostics) ||
+		bindingMoves(ctx, resp.Plan, req.State, &resp.Diagnostics) {
 		resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, path.Root("node_count"), types.Int64Unknown())...)
 	}
 	planSettledState(ctx, clusterStates.settle, req, resp)
