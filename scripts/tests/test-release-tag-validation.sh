@@ -165,6 +165,14 @@ pr_merge release-v0.1.x "$merged" reviewer h1
 refused v0.1.1 "an approval of an earlier head than the one that merged" "nobody but its author approved"
 
 reset
+echo '[{"state":"APPROVED","user":{"login":"reviewer"},"commit_id":"h2"},{"state":"CHANGES_REQUESTED","user":{"login":"reviewer"},"commit_id":"h2"}]' > "$work/stub/reviews-7.json"
+refused v0.1.1 "an approval its reviewer followed with changes requested" "nobody but its author approved"
+
+reset
+echo '[{"state":"CHANGES_REQUESTED","user":{"login":"reviewer"},"commit_id":"h2"},{"state":"APPROVED","user":{"login":"reviewer"},"commit_id":"h2"},{"state":"CHANGES_REQUESTED","user":{"login":"other"},"commit_id":"h2"}]' > "$work/stub/reviews-7.json"
+accepted v0.1.1 "an approval after changes requested, beside another reviewer's changes requested"
+
+reset
 touch "$work/stub/fail"
 if validate v0.1.1; then fail "v0.1.1 was accepted when GitHub's API failed"; fi
 

@@ -98,6 +98,9 @@ func validateProtectedReleaseSigning(workflows map[string]string) error {
 		{`merge_commit_sha == \"$commit\"`, "the pull request's own merge"},
 		{`pulls/$number/reviews`, "an approval behind every pull request"},
 		{`.user.login != \"$author\"`, "an approval from someone other than the author"},
+		{`\\(.head.sha)`, "the head the pull request merged"},
+		{`.commit_id == \"$head\"`, "an approval of that head"},
+		{`last[$1] = $2`, "each reviewer's last word"},
 	}
 	for _, check := range releaseBranchChecks {
 		if !strings.Contains(dispatch, check.text) {
