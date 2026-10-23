@@ -101,8 +101,13 @@ func validateProtectedReleaseSigning(workflows map[string]string) error {
 			return fmt.Errorf("%s builds from a release branch without checking %s", dispatcher, check.what)
 		}
 	}
-	if !strings.Contains(dispatch, `check-major-release.sh "$RELEASE_TAG" origin/main "${release_branches[@]}"`) {
-		return fmt.Errorf("%s doesn't give the major version gate the release branches", dispatcher)
+	// The major gate counts only releases this workflow published, so a
+	// mistaken tag, which can never be deleted, doesn't count as a release.
+	if !strings.Contains(dispatch, `check-major-release.sh "$RELEASE_TAG" "${published_tags[@]}"`) {
+		return fmt.Errorf("%s doesn't give the major version gate the published releases", dispatcher)
+	}
+	if !strings.Contains(dispatch, `select((.draft | not) and .author.login == "github-actions[bot]")`) {
+		return fmt.Errorf("%s counts a draft or a hand-made release as published", dispatcher)
 	}
 	if strings.Contains(dispatch, "push:") || workflowTagTrigger.MatchString(dispatch) {
 		return fmt.Errorf("%s must not be tag-triggered", dispatcher)
@@ -336,16 +341,40 @@ func TestProtectedReleaseSigningRejectsSecurityRegressions(t *testing.T) {
 			want: "a branch point on main's own history",
 		},
 		{
-			name: "major gate blind to release branches",
+			name: "major gate given no published releases",
 			mutate: func(workflows map[string]string) {
 				workflows["release-dispatch.yml"] = strings.Replace(
 					workflows["release-dispatch.yml"],
-					`check-major-release.sh "$RELEASE_TAG" origin/main "${release_branches[@]}"`,
-					`check-major-release.sh "$RELEASE_TAG" origin/main`,
+					`check-major-release.sh "$RELEASE_TAG" "${published_tags[@]}"`,
+					`check-major-release.sh "$RELEASE_TAG"`,
 					1,
 				)
 			},
-			want: "doesn't give the major version gate the release branches",
+			want: "doesn't give the major version gate the published releases",
+		},
+		{
+			name: "major gate counts drafts",
+			mutate: func(workflows map[string]string) {
+				workflows["release-dispatch.yml"] = strings.Replace(
+					workflows["release-dispatch.yml"],
+					`select((.draft | not) and .author.login == "github-actions[bot]")`,
+					`select(.author.login == "github-actions[bot]")`,
+					1,
+				)
+			},
+			want: "counts a draft or a hand-made release as published",
+		},
+		{
+			name: "major gate counts hand-made releases",
+			mutate: func(workflows map[string]string) {
+				workflows["release-dispatch.yml"] = strings.Replace(
+					workflows["release-dispatch.yml"],
+					`select((.draft | not) and .author.login == "github-actions[bot]")`,
+					`select(.draft | not)`,
+					1,
+				)
+			},
+			want: "counts a draft or a hand-made release as published",
 		},
 		{
 			name: "retired workflow triggered by tags",

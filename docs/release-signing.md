@@ -50,8 +50,9 @@ and `make workflow-actions-test` proves it still does. CI runs it.
    that the branch left `main` at a commit of `main`'s own history, and that
    every commit on it since is the merge of a pull request into it, approved
    by someone other than its author. It
-   refuses a new major until the dispatch sets `allow_major`, counting
-   releases on `main` and on every release branch.
+   refuses a new major until the dispatch sets `allow_major`, counting only
+   releases this workflow published. A tag that was never released doesn't
+   count.
 4. A required reviewer approves. Only then does the signing job get the key,
    check out that commit and build.
 5. The job checks the five archives carry the tag's version, that

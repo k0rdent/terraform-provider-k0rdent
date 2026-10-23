@@ -148,11 +148,14 @@ jobs:
 
           # A major version is a decision, not a step. The gate prints what is
           # still open rather than only refusing, because the person holding
-          # the tag is the person who has to answer it. Majors released from a
-          # release branch count, so every release branch is passed after main.
-          git fetch --no-tags origin '+refs/heads/release-v*:refs/remotes/origin/release-v*'
-          mapfile -t release_branches < <(git for-each-ref --format='%(refname:short)' 'refs/remotes/origin/release-v*')
-          RELEASE_ALLOW_MAJOR="$ALLOW_MAJOR" ./scripts/check-major-release.sh "$RELEASE_TAG" origin/main "${release_branches[@]}"
+          # the tag is the person who has to answer it. A major counts as
+          # released only once this workflow has published it: not a draft,
+          # and made by this workflow's token rather than by hand. A tag alone
+          # doesn't count, since a mistaken one can never be deleted.
+          published="$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            --jq '.[] | select((.draft | not) and .author.login == "github-actions[bot]") | .tag_name')"
+          mapfile -t published_tags <<< "$published"
+          RELEASE_ALLOW_MAJOR="$ALLOW_MAJOR" ./scripts/check-major-release.sh "$RELEASE_TAG" "${published_tags[@]}"
 
           {
             echo "tag=$RELEASE_TAG"
