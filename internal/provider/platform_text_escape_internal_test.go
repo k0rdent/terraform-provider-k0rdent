@@ -41,3 +41,20 @@ func TestTheNoRegionErrorEscapesTheRegionList(t *testing.T) {
 		t.Errorf("detail = %q", d)
 	}
 }
+
+// A list result's name is one line, and its id half is platform text too.
+func TestAListResultNameStaysOneEscapedLine(t *testing.T) {
+	for _, c := range []struct {
+		display *string
+		id      string
+	}{
+		{ptr("web\nWarning: fake"), "c1"},
+		{ptr("a\tb"), "c1"},
+		{nil, "c\n1"},
+		{ptr("ok"), "c\x1b]0;pwn\x07"},
+	} {
+		if got := displayName(c.display, c.id); strings.ContainsAny(got, "\n\t\x1b\x07") {
+			t.Errorf("displayName(%v, %q) = %q", deref(c.display), c.id, got)
+		}
+	}
+}

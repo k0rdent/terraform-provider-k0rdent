@@ -307,9 +307,9 @@ func sortListed(found []listedObject) {
 // displayName is how a result is shown: the object's display name with its id
 // beside it, or the id alone when there's no display name or it's the id.
 func displayName(display *string, id string) string {
-	// Platform free text reaches the terminal, so control characters are
-	// escaped.
-	d := escapeControl(strings.TrimSpace(deref(display)))
+	// Both halves are platform text on their way to the terminal, and the
+	// result is one line, so newline and tab are escaped too.
+	d, id := oneLine(strings.TrimSpace(deref(display))), oneLine(id)
 	if d == "" || d == id {
 		return id
 	}
