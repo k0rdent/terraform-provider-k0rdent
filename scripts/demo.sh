@@ -174,8 +174,16 @@ cmd_setup() {
 }
 
 # Both source the run directory's secrets file, so they check the directory
-# the way setup does before trusting what's in it.
-cmd_cleanup() { private_dir "$RUN_DIR"; stop_fake; }
+# the way setup does before trusting what's in it. A run directory that isn't
+# there has no fake to stop, and cleanup doesn't make one.
+cmd_cleanup() {
+  if [ ! -e "$RUN_DIR" ] && [ ! -L "$RUN_DIR" ]; then
+    note "no owned fake was running"
+    return
+  fi
+  private_dir "$RUN_DIR"
+  stop_fake
+}
 
 cmd_env() {
   private_dir "$RUN_DIR"

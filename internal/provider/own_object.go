@@ -23,8 +23,14 @@ import (
 // adopting it. A webhook subscription's id is the platform's own UUID, so it
 // needs none of this.
 //
-// A row an import or an earlier version wrote has none, and takes the first
-// uid it reads.
+// A row with none recorded takes the first uid it reads: one an import or an
+// earlier version wrote, and a create whose wait failed or whose answer
+// couldn't be confirmed, which records the row before it has read the object.
+//
+// The check also rests on a live object keeping its uid. The contract says
+// so for a file store and a security group, and calls the uid the handle to
+// record for the rest. If a kind ever changed it, its rows would drop with
+// this warning and need an import, and nothing would be deleted.
 
 // uidKey is the private state key the row's uid is kept under.
 const uidKey = "uid"

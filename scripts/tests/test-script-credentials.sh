@@ -254,6 +254,10 @@ for cmd in cleanup env; do
   fi
   [ ! -e "$work/demo-sourced" ] || fail "scripts/demo.sh $cmd ran a planted secrets file"
 done
+# A cleanup with no run directory has nothing to stop, and makes none.
+DEMO_RUN_DIR="$work/no-demo/run" PATH="$work/demobin:$PATH" "$here/scripts/demo.sh" cleanup > "$work/out" 2>&1 ||
+  { cat "$work/out" >&2; fail "scripts/demo.sh cleanup failed with no run directory"; }
+[ ! -e "$work/no-demo" ] || fail "scripts/demo.sh cleanup made the run directory it was asked to clean up"
 
 # --- 8. capture-live-fixtures writes what it fetched, redacted -------------
 

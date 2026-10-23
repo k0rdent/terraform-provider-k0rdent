@@ -60,6 +60,7 @@ func (a *regionsAPI) serve(t *testing.T) *httptest.Server {
 			w.WriteHeader(http.StatusCreated)
 			body := projectBody("active", "", "")
 			body["id"], body["region"] = a.created["id"], a.created["region"]
+			body["uid"] = "00000000-0000-4000-8000-00000000000c"
 			if err := json.NewEncoder(w).Encode(body); err != nil {
 				t.Errorf("write: %v", err)
 			}

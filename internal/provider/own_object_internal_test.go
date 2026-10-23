@@ -118,6 +118,9 @@ func TestEveryKindDropsAnObjectRecreatedUnderItsID(t *testing.T) {
 		{"project", func(m *Meta) resource.Resource { return &projectResource{meta: m} },
 			map[string]tftypes.Value{"id": str("x1"), "organization_id": str("org-1")},
 			map[string]any{"id": "x1", "organizationId": "org-1", "region": "test"}},
+		{"VPC security groups", func(m *Meta) resource.Resource { return &vpcSecurityGroupsResource{meta: m} },
+			map[string]tftypes.Value{"vpc": str("x1"), "region": str("test"), "project": str("test")},
+			map[string]any{"id": "x1", "state": "active", "securityGroups": []any{}}},
 	} {
 		for _, tc := range []struct {
 			name     string
@@ -156,4 +159,39 @@ func TestEveryKindDropsAnObjectRecreatedUnderItsID(t *testing.T) {
 			})
 		}
 	}
+}
+
+// A create keeps the uid of what it made, so a refresh after it can tell that
+// object from one made later under the same id.
+func TestACreateRecordsTheUIDOfWhatItMade(t *testing.T) {
+	t.Run("cluster", func(t *testing.T) {
+		var g groupsServer
+		r := &clusterResource{meta: testClusterMeta(t, g.start(t).URL, time.Minute)}
+		planRaw, s := testValue(t, r, existingCluster(nil))
+		resp := resource.CreateResponse{State: tfsdk.State{Raw: tftypes.NewValue(planRaw.Type(), nil), Schema: s.Schema}}
+		freshPrivate(t, &resp.Private, nil)
+		r.Create(context.Background(), resource.CreateRequest{Plan: tfsdk.Plan{Raw: planRaw, Schema: s.Schema}}, &resp)
+		if resp.Diagnostics.HasError() {
+			t.Fatalf("create: %v", resp.Diagnostics.Errors())
+		}
+		if held, _ := heldObject(context.Background(), resp.Private, "x"); held != "00000000-0000-4000-8000-000000000009" {
+			t.Errorf("recorded uid = %q", held)
+		}
+	})
+	t.Run("project", func(t *testing.T) {
+		api := &regionsAPI{regions: []map[string]any{region("local", true)}}
+		r := &projectResource{meta: regionsMeta(t, api, "local")}
+		planRaw, s := testValue(t, r, map[string]tftypes.Value{
+			"id": str("cp-production"), "organization_id": str("org-ml"), "region": str("local"),
+		})
+		resp := resource.CreateResponse{State: tfsdk.State{Raw: planRaw, Schema: s.Schema}}
+		freshPrivate(t, &resp.Private, nil)
+		r.Create(context.Background(), resource.CreateRequest{Plan: tfsdk.Plan{Raw: planRaw, Schema: s.Schema}}, &resp)
+		if resp.Diagnostics.HasError() {
+			t.Fatal(resp.Diagnostics)
+		}
+		if held, _ := heldObject(context.Background(), resp.Private, "x"); held != "00000000-0000-4000-8000-00000000000c" {
+			t.Errorf("recorded uid = %q", held)
+		}
+	})
 }
