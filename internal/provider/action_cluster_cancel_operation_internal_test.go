@@ -451,13 +451,14 @@ func TestCancelActionCutOffMidCancelSaysItMayHaveLanded(t *testing.T) {
 // After an accepted cancel the cluster may go before it settles. A delete
 // started elsewhere is warned about, since the action doesn't stop it, and a
 // cluster that's gone is said to be gone, not to have nothing in flight.
+// Neither says the cancel worked: the operation that would show it is gone
+// or replaced by the delete.
 func TestCancelActionSaysWhereTheClusterWentAfterTheCancel(t *testing.T) {
 	for _, tc := range []struct {
-		after, last string
-		warns       bool
+		after, last, warning string
 	}{
-		{"deleting", "being deleted", true},
-		{"gone", "is gone", false},
+		{"deleting", "being deleted", "being deleted"},
+		{"gone", "is gone", "Can't tell whether the cancel"},
 	} {
 		t.Run(tc.after, func(t *testing.T) {
 			api := &cancelAPI{state: "updating", afterCancel: tc.after}
@@ -469,8 +470,17 @@ func TestCancelActionSaysWhereTheClusterWentAfterTheCancel(t *testing.T) {
 			if !strings.Contains(last, tc.last) || strings.Contains(last, "nothing in flight") {
 				t.Errorf("the last progress line is %q, want it to say %q", last, tc.last)
 			}
-			if warned := hasWarning(got.diags, "being deleted"); warned != tc.warns {
-				t.Errorf("warned about the delete = %v, want %v: %v", warned, tc.warns, got.diags)
+			if !hasWarning(got.diags, tc.warning) {
+				t.Errorf("no warning saying %q: %v", tc.warning, got.diags)
+			}
+			said := got.said()
+			for _, claim := range []string{"Cancelled operation", "The platform cancelled"} {
+				if strings.Contains(said, claim) {
+					t.Errorf("the action claims the cancel worked (%q) with no operation to show it:\n%s", claim, said)
+				}
+			}
+			if !strings.Contains(said, "can't be read") {
+				t.Errorf("the action never said how the cancel ended can't be read:\n%s", said)
 			}
 		})
 	}

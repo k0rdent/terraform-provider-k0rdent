@@ -415,16 +415,28 @@ func (c cancelRun) settle(ctx context.Context, was clusterNow) {
 	}
 	switch {
 	case gone:
-		c.say(ctx, "Cancelled operation %s. Cluster %s is gone.", was.execution, c.id)
+		// Nothing is left to read the operation from, so the action can't say
+		// the cancel stopped it.
+		c.say(ctx, "Cluster %s is gone, so how the cancel of %s ended can't be read.", c.id, was.execution)
+		c.diags.AddWarning(redactDiagnosticText("Can't tell whether the cancel of "+was.execution+" stopped it"),
+			redactDiagnosticText(fmt.Sprintf("The platform accepted the cancel of `%s`. %s", was.execution,
+				unknownCancelEnd(final))))
 	case last == k0rdent.ClusterStateDeleting || last == k0rdent.ClusterStateDeleted:
-		// The cancel landed, and then something else started a delete. The
+		// Something else started a delete after the cancel was accepted. The
 		// action doesn't stop a delete, which has no cancel, so it says so
-		// rather than call the cluster settled.
-		c.say(ctx, "Cancelled operation %s. Cluster %s is now being deleted.", was.execution, c.id)
+		// rather than call the cluster settled, and says what the cancel did
+		// only when the operation still reads it.
+		ending := "The cluster now reports the delete, so how the cancel ended can't be read from it."
+		if cancelEndOf(was, final) == cancelEndCancelled {
+			ending = "The operation reads `cancelled`: whatever it was doing did not finish."
+			c.say(ctx, "Cancelled operation %s. Cluster %s is now being deleted.", was.execution, c.id)
+		} else {
+			c.say(ctx, "Cluster %s is now being deleted, so how the cancel of %s ended can't be read.", c.id, was.execution)
+		}
 		c.diags.AddWarning(redactDiagnosticText("Cluster "+c.id+" is being deleted"),
-			redactDiagnosticText(fmt.Sprintf("The platform cancelled `%s`, and cluster `%s` then read `%s`: a "+
-				"delete started after the cancel. A delete has no cancel, so the action leaves it running.",
-				was.execution, c.id, last)))
+			redactDiagnosticText(fmt.Sprintf("The platform accepted the cancel of `%s`, and cluster `%s` then "+
+				"read `%s`: a delete started after the cancel. %s A delete has no cancel, so the action leaves "+
+				"it running.", was.execution, c.id, last, ending)))
 	default:
 		c.ended(ctx, was, final)
 	}
