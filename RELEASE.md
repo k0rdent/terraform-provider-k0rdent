@@ -219,12 +219,13 @@ branch, `release-vMAJOR.MINOR.x`, so `main` can take new work meanwhile.
    signature and every file's checksum:
 
    ```sh
+   gpg --import docs/signing-key.asc
    cd "release-v$VERSION"
    gpg --verify "terraform-provider-k0rdent_${VERSION}_SHA256SUMS.sig" "terraform-provider-k0rdent_${VERSION}_SHA256SUMS"
    sha256sum --check "terraform-provider-k0rdent_${VERSION}_SHA256SUMS"
    ```
 
-   Check the fingerprint gpg prints is the published one. To rerun the full
+   Check the primary key fingerprint gpg prints is the one in `SECURITY.md`. To rerun the full
    check from the repository root, on Linux:
 
    ```sh

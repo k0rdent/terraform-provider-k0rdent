@@ -22,6 +22,28 @@ Leave real credentials, tokens and kubeconfigs out. Describe them instead.
 - The fix ships in a new release, and the advisory is published with it.
 - You're credited unless you ask not to be.
 
+## Release signatures
+
+Every release's `SHA256SUMS` is signed with this key:
+
+- Fingerprint `B217 83BF D3FD 4F36 5F33  DE67 F36C A5FC E570 B234`
+- Public key: [`docs/signing-key.asc`](docs/signing-key.asc)
+
+To check a release you downloaded:
+
+```sh
+gpg --import docs/signing-key.asc
+gpg --verify terraform-provider-k0rdent_0.1.0_SHA256SUMS.sig \
+             terraform-provider-k0rdent_0.1.0_SHA256SUMS
+sha256sum --check --ignore-missing terraform-provider-k0rdent_0.1.0_SHA256SUMS
+```
+
+gpg names a signing subkey, then the primary key fingerprint, which has to be
+the one above. The subkey changes every year, and the primary key doesn't.
+
+A signature that doesn't verify, or a release signed by any other key, is a
+vulnerability. Report it as above.
+
 ## Supported versions
 
 Fixes go into the latest release. There's no long-term support branch while
