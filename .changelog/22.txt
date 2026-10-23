@@ -1,0 +1,11 @@
+```release-note:bug
+resource/k0rdent_webhook_subscription: Fix a secret rotation the platform accepted being made again on the next apply when the provider couldn't read the platform's answer
+```
+
+```release-note:note
+resource/k0rdent_kubernetes_cluster: The warning for a failed cluster that reports no SSH users now says its nodes may still take the keys, since SSH access can't be removed from a running node. Only a destroy or replace revokes it
+```
+
+```release-note:note
+resource/k0rdent_instance_group: The warning for a failed group that reports no SSH users now says its hosts may still take the keys, since SSH access can't be removed from a running host. Only a destroy or replace revokes it
+```
