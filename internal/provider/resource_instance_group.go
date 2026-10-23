@@ -949,9 +949,11 @@ func instanceGroupStateFrom(ctx context.Context, g k0rdent.InstanceGroup, prior 
 			"The platform reports no SSH users on this failed instance group",
 			fmt.Sprintf("%q is `failed` and the platform answers no SSH users for it, which is what a "+
 				"delete whose teardown failed leaves. State keeps the configured `ssh_access` so a "+
-				"destroy can run again. If the group is meant to stay, its hosts no longer have those "+
-				"users: destroy it, or replace it with `terraform apply -replace`. Removing "+
-				"`ssh_access` from the configuration records that it has none, without a replacement.", g.Id),
+				"destroy can run again. If the group is meant to stay, only the platform's record of "+
+				"those users is gone: SSH access is set when a host is provisioned and isn't removed "+
+				"from a running one, so its hosts may still take their keys. To revoke them, destroy "+
+				"the group or replace it with `terraform apply -replace`. Removing `ssh_access` from "+
+				"the configuration only records that state has none, and changes nothing on the hosts.", g.Id),
 		)
 	}
 
