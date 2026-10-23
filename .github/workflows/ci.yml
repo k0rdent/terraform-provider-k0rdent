@@ -300,9 +300,11 @@ jobs:
       # repositories, so this keeps each of them pinned to a commit.
       - name: verify action pins and checkout credentials
         run: make workflow-actions-test
-      # Nothing else runs these two.
+      # Nothing else runs these three.
       - name: verify the major version gate
         run: make major-release-gate-test
+      - name: verify the release tag checks
+        run: make release-tag-validation-test
       - name: verify the setup doctor
         run: make doctor-script-test
       # The rehearsal takes most of this workflow's time, and a pull request

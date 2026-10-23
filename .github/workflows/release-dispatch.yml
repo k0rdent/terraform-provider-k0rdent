@@ -23,21 +23,27 @@ jobs:
   validate-release-tag:
     name: Validate release tag
     runs-on: ubuntu-latest
+    # Read-only. pull-requests: read lets the release-branch check ask which
+    # pull request merged each commit.
+    permissions:
+      contents: read
+      pull-requests: read
     outputs:
       tag: ${{ steps.validate.outputs.tag }}
       tag_commit: ${{ steps.validate.outputs.tag_commit }}
     steps:
-      # The one checkout that keeps its token: the step below fetches main and
-      # the tag from this internal repository, which needs it. This job holds
+      # The one checkout that keeps its token: the step below fetches main, a
+      # release branch and the tag from this repository, which needs it. This job holds
       # no other secret. scripts/check-workflow-actions.sh lists the exception.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           ref: main
           fetch-depth: 0
       - id: validate
-        name: Validate SemVer tag and protected-main ancestry
+        name: Validate SemVer tag and protected-branch ancestry
         shell: bash
         env:
+          GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ inputs.tag }}
           ALLOW_MAJOR: ${{ inputs.allow_major && '1' || '0' }}
         run: |
@@ -61,24 +67,92 @@ jobs:
           git fetch --no-tags origin main
           git fetch --force --no-tags origin "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"
           tag_commit="$(git rev-parse "refs/tags/${RELEASE_TAG}^{}")"
-          if ! git merge-base --is-ancestor "$tag_commit" origin/main; then
-            echo "::error title=Release tag is not on protected main::$RELEASE_TAG resolves to $tag_commit, which is not reachable from origin/main."
-            exit 1
-          fi
-          # Reachable isn't reviewed. main takes merge commits, so every commit
-          # on a merged branch is reachable, including one a later commit on
-          # that branch undid before review saw the result. A release is built
-          # only from main's own history: a merge, or a commit made on main.
-          first_parent="$(git rev-list --first-parent origin/main)"
-          if ! grep -qxF "$tag_commit" <<< "$first_parent"; then
-            echo "::error title=Release tag is not a main commit::$RELEASE_TAG resolves to $tag_commit, which is on a branch merged into main rather than on main's own history. Tag the merge commit instead."
-            exit 1
+          # A tag is built from main's own history, or from its own minor's
+          # release branch: v0.1.0-rc.2 and v0.1.1 from release-v0.1.x.
+          # Reachable isn't reviewed. Both branches take merge commits, so every
+          # commit on a merged branch is reachable, including one a later commit
+          # on that branch undid before review saw the result. A release is
+          # built only from a branch's own first-parent history: a merge, or a
+          # commit made on it. Release branches never merge back into main, so
+          # a tag that is reachable from main but not on its own history takes
+          # the release-branch path below and has to pass it.
+          # Whether commit $1 is on ref $2's own history. rev-list's output is
+          # taken whole before grep looks at it. Piped, grep would stop at the
+          # first match, rev-list would die of SIGPIPE, and pipefail would
+          # turn the match into a failure.
+          on_own_history() {
+            local history
+            history="$(git rev-list --first-parent "$2")"
+            grep -qxF "$1" <<< "$history"
+          }
+          if ! on_own_history "$tag_commit" origin/main; then
+            [[ "$RELEASE_TAG" =~ ^v([0-9]+)\.([0-9]+)\. ]]
+            release_branch="release-v${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.x"
+            if ! git fetch --no-tags origin "refs/heads/$release_branch:refs/remotes/origin/$release_branch" ||
+              ! on_own_history "$tag_commit" "origin/$release_branch"; then
+              echo "::error title=Release tag is not a commit of a release branch::$RELEASE_TAG resolves to $tag_commit, which is on the own history of neither origin/main nor origin/$release_branch. Tag a commit made on one of them, such as a pull request's merge."
+              exit 1
+            fi
+
+            # The branch's rules, as GitHub enforces them now. Every one main
+            # has, plus no deletion. A failed or empty answer stops here, since
+            # set -e and the padded match below both fail closed.
+            rules="$(gh api "repos/$GITHUB_REPOSITORY/rules/branches/$release_branch")"
+            types=" $(jq -r '[.[].type] | join(" ")' <<< "$rules") "
+            for rule in pull_request required_signatures required_status_checks non_fast_forward deletion; do
+              if [[ "$types" != *" $rule "* ]]; then
+                echo "::error title=Release branch is not protected::$release_branch has no $rule rule. Protect it like main before releasing from it."
+                exit 1
+              fi
+            done
+            approvals="$(jq '[.[] | select(.type == "pull_request") | .parameters.required_approving_review_count // 0] | max' <<< "$rules")"
+            if (( approvals < 1 )); then
+              echo "::error title=Release branch is not protected::$release_branch lets a pull request merge without an approval."
+              exit 1
+            fi
+            if ! jq -e '[.[] | select(.type == "required_status_checks") | .parameters.required_status_checks[].context] | index("CI")' <<< "$rules" >/dev/null; then
+              echo "::error title=Release branch is not protected::$release_branch doesn't require the CI check."
+              exit 1
+            fi
+
+            # Rules say what GitHub refuses from now on, not how the branch got
+            # its commits. A pull_request rule doesn't stop the push that
+            # creates a branch, so a branch could start with commits nobody
+            # reviewed. The branch has to start from main's own history, and
+            # every commit on its own history since then has to be the merge
+            # of a pull request into it.
+            branch_point="$(git merge-base origin/main "origin/$release_branch")"
+            if ! on_own_history "$branch_point" origin/main; then
+              echo "::error title=Release branch doesn't start from main::$release_branch leaves main at $branch_point, which is not a commit of main's own history."
+              exit 1
+            fi
+            # Each pull request also needs an approval from someone other than
+            # its author, since the rule may have been added, or loosened,
+            # after it merged.
+            while IFS= read -r commit; do
+              pull="$(gh api "repos/$GITHUB_REPOSITORY/commits/$commit/pulls" \
+                --jq "[.[] | select(.merged_at != null and .base.ref == \"$release_branch\" and .merge_commit_sha == \"$commit\")] | .[0] | if . == null then \"\" else \"\\(.number) \\(.user.login)\" end")"
+              if [[ -z "$pull" ]]; then
+                echo "::error title=Release branch has an unreviewed commit::$commit on $release_branch is not the merge of a pull request into it. Release from a branch that only takes pull requests."
+                exit 1
+              fi
+              read -r number author <<< "$pull"
+              approvals="$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$number/reviews" \
+                --jq "[.[] | select(.state == \"APPROVED\" and .user.login != \"$author\")] | length" | jq -s add)"
+              if (( approvals < 1 )); then
+                echo "::error title=Release branch has an unreviewed commit::$commit on $release_branch merged pull request #$number, which nobody but its author approved."
+                exit 1
+              fi
+            done < <(git rev-list --first-parent "$tag_commit" "^$branch_point")
           fi
 
           # A major version is a decision, not a step. The gate prints what is
           # still open rather than only refusing, because the person holding
-          # the tag is the person who has to answer it.
-          RELEASE_ALLOW_MAJOR="$ALLOW_MAJOR" ./scripts/check-major-release.sh "$RELEASE_TAG" origin/main
+          # the tag is the person who has to answer it. Majors released from a
+          # release branch count, so every release branch is passed after main.
+          git fetch --no-tags origin '+refs/heads/release-v*:refs/remotes/origin/release-v*'
+          mapfile -t release_branches < <(git for-each-ref --format='%(refname:short)' 'refs/remotes/origin/release-v*')
+          RELEASE_ALLOW_MAJOR="$ALLOW_MAJOR" ./scripts/check-major-release.sh "$RELEASE_TAG" origin/main "${release_branches[@]}"
 
           {
             echo "tag=$RELEASE_TAG"
@@ -228,9 +302,24 @@ jobs:
           done
           echo "id=$(jq -r .id "$RUNNER_TEMP/draft.json")" >> "$GITHUB_OUTPUT"
       # Last, because it can't be undone: the registries read a published
-      # release, and an immutable release's files lock now.
+      # release, and an immutable release's files lock now. GitHub would
+      # otherwise mark it Latest by date, so a candidate, or a patch to an
+      # older minor published after a newer one, would become what
+      # /releases/latest and the repository page point people to. Only a
+      # final version at least as new as every published final one is Latest.
       - name: Publish the GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_ID: ${{ steps.draft.outputs.id }}
-        run: gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" -F draft=false --jq .html_url
+          RELEASE_TAG: ${{ needs.validate-release-tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          latest=false
+          if [[ "$RELEASE_TAG" != *-* ]]; then
+            # Its own line, so a failed answer stops the step here.
+            published="$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+              --jq '.[] | select((.draft or .prerelease) | not) | .tag_name')"
+            newest="$(printf '%s\n' "$published" "$RELEASE_TAG" | grep -v -e '-' | sort -V | tail -n 1)"
+            if [[ "$newest" == "$RELEASE_TAG" ]]; then latest=true; fi
+          fi
+          gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" -F draft=false -f make_latest="$latest" --jq .html_url

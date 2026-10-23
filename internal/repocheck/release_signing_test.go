@@ -74,11 +74,35 @@ func validateProtectedReleaseSigning(workflows map[string]string) error {
 	if !strings.Contains(dispatch, "ref: main") || !strings.Contains(dispatch, `"$GITHUB_REF" != "refs/heads/main"`) {
 		return fmt.Errorf("%s does not require execution from main", dispatcher)
 	}
-	if !strings.Contains(dispatch, `git merge-base --is-ancestor "$tag_commit" origin/main`) {
-		return fmt.Errorf("%s does not verify tag ancestry from main", dispatcher)
+	if !strings.Contains(dispatch, `history="$(git rev-list --first-parent "$2")"`) ||
+		!strings.Contains(dispatch, `grep -qxF "$1" <<< "$history"`) ||
+		!strings.Contains(dispatch, `if ! on_own_history "$tag_commit" origin/main; then`) {
+		return fmt.Errorf("%s accepts a tag that isn't on main's own history", dispatcher)
 	}
-	if !strings.Contains(dispatch, `git rev-list --first-parent origin/main`) {
-		return fmt.Errorf("%s accepts a tag on a merged branch, not only on main's own history", dispatcher)
+	// A tag off main is built only from its own minor's release branch, and
+	// only once that branch is protected like main and holds nothing but
+	// merged pull requests. Each piece is named, so removing one fails here.
+	releaseBranchChecks := []struct{ text, what string }{
+		{`release_branch="release-v${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.x"`, "its own minor's release branch"},
+		{`on_own_history "$tag_commit" "origin/$release_branch"`, "the tag on the branch's own history"},
+		{`rules/branches/$release_branch`, "the branch's rules"},
+		{"for rule in pull_request required_signatures required_status_checks non_fast_forward deletion; do", "every rule main has, plus deletion"},
+		{".parameters.required_approving_review_count", "at least one approval"},
+		{`index("CI")`, "the CI check"},
+		{`git merge-base origin/main "origin/$release_branch"`, "a branch point on main's own history"},
+		{`on_own_history "$branch_point" origin/main`, "a branch point on main's own history"},
+		{`commits/$commit/pulls`, "a pull request behind every commit"},
+		{`merge_commit_sha == \"$commit\"`, "the pull request's own merge"},
+		{`pulls/$number/reviews`, "an approval behind every pull request"},
+		{`.user.login != \"$author\"`, "an approval from someone other than the author"},
+	}
+	for _, check := range releaseBranchChecks {
+		if !strings.Contains(dispatch, check.text) {
+			return fmt.Errorf("%s builds from a release branch without checking %s", dispatcher, check.what)
+		}
+	}
+	if !strings.Contains(dispatch, `check-major-release.sh "$RELEASE_TAG" origin/main "${release_branches[@]}"`) {
+		return fmt.Errorf("%s doesn't give the major version gate the release branches", dispatcher)
 	}
 	if strings.Contains(dispatch, "push:") || workflowTagTrigger.MatchString(dispatch) {
 		return fmt.Errorf("%s must not be tag-triggered", dispatcher)
@@ -240,28 +264,88 @@ func TestProtectedReleaseSigningRejectsSecurityRegressions(t *testing.T) {
 			want: "is not gated by the release-signing environment",
 		},
 		{
-			name: "tag accepted without main ancestry",
+			name: "tag accepted off main's own history",
 			mutate: func(workflows map[string]string) {
 				workflows["release-dispatch.yml"] = strings.Replace(
 					workflows["release-dispatch.yml"],
-					`git merge-base --is-ancestor "$tag_commit" origin/main`,
-					"# tag ancestry check removed",
+					`if ! on_own_history "$tag_commit" origin/main; then`,
+					`if ! git merge-base --is-ancestor "$tag_commit" origin/main; then`,
 					1,
 				)
 			},
-			want: "does not verify tag ancestry from main",
+			want: "isn't on main's own history",
 		},
 		{
-			name: "tag accepted from a merged branch",
+			name: "release branch accepted without its rules",
 			mutate: func(workflows map[string]string) {
 				workflows["release-dispatch.yml"] = strings.Replace(
 					workflows["release-dispatch.yml"],
-					`git rev-list --first-parent origin/main`,
-					"# first-parent check removed",
+					"for rule in pull_request required_signatures required_status_checks non_fast_forward deletion; do",
+					"for rule in pull_request non_fast_forward deletion; do",
 					1,
 				)
 			},
-			want: "accepts a tag on a merged branch",
+			want: "every rule main has",
+		},
+		{
+			name: "release branch accepted with no approval",
+			mutate: func(workflows map[string]string) {
+				workflows["release-dispatch.yml"] = strings.Replace(
+					workflows["release-dispatch.yml"],
+					".parameters.required_approving_review_count",
+					".parameters.dismiss_stale_reviews_on_push",
+					1,
+				)
+			},
+			want: "at least one approval",
+		},
+		{
+			name: "release branch commits not traced to pull requests",
+			mutate: func(workflows map[string]string) {
+				workflows["release-dispatch.yml"] = strings.Replace(
+					workflows["release-dispatch.yml"],
+					`commits/$commit/pulls`,
+					`commits/$commit`,
+					1,
+				)
+			},
+			want: "a pull request behind every commit",
+		},
+		{
+			name: "release branch pull requests not checked for approval",
+			mutate: func(workflows map[string]string) {
+				workflows["release-dispatch.yml"] = strings.Replace(
+					workflows["release-dispatch.yml"],
+					`.user.login != \"$author\"`,
+					`.user.login != \"\"`,
+					1,
+				)
+			},
+			want: "someone other than the author",
+		},
+		{
+			name: "release branch cut from anywhere",
+			mutate: func(workflows map[string]string) {
+				workflows["release-dispatch.yml"] = strings.Replace(
+					workflows["release-dispatch.yml"],
+					`git merge-base origin/main "origin/$release_branch"`,
+					`git rev-parse "origin/$release_branch"`,
+					1,
+				)
+			},
+			want: "a branch point on main's own history",
+		},
+		{
+			name: "major gate blind to release branches",
+			mutate: func(workflows map[string]string) {
+				workflows["release-dispatch.yml"] = strings.Replace(
+					workflows["release-dispatch.yml"],
+					`check-major-release.sh "$RELEASE_TAG" origin/main "${release_branches[@]}"`,
+					`check-major-release.sh "$RELEASE_TAG" origin/main`,
+					1,
+				)
+			},
+			want: "doesn't give the major version gate the release branches",
 		},
 		{
 			name: "retired workflow triggered by tags",

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
-# Refuses a tag whose major version is higher than any release on main, until
-# somebody decides to make it.
+# Refuses a tag whose major version is higher than any release on main or on a
+# release branch, until somebody decides to make it.
 #
 # A new major is a compatibility claim to every user, and v1 is also the point
 # at which the repository has to be public for the registry to serve it. Those
@@ -11,11 +11,17 @@
 # The release dispatch's `allow_major` input clears it, and reaches this script
 # as RELEASE_ALLOW_MAJOR=1.
 #
-#   check-major-release.sh <tag> [<main ref>]
+# A release cut from release-v1.0.x is as released as one cut from main, so
+# the dispatch passes every release branch after main. Without them, the first
+# patch after a v1.0.0 cut on a release branch would look like a new major.
+#
+#   check-major-release.sh <tag> [<ref>...]
 set -euo pipefail
 
-tag="${1:?usage: check-major-release.sh <tag> [<main ref>]}"
-main_ref="${2:-origin/main}"
+tag="${1:?usage: check-major-release.sh <tag> [<ref>...]}"
+shift
+refs=("$@")
+[ "${#refs[@]}" -gt 0 ] || refs=(origin/main)
 
 # Strict SemVer with an optional prerelease and no build metadata, as the
 # release dispatch accepts.
@@ -29,10 +35,12 @@ if [[ ! "$tag" =~ $semver ]]; then
 fi
 major="${BASH_REMATCH[1]}"
 
-if ! git rev-parse --verify --quiet "${main_ref}^{commit}" >/dev/null; then
-  printf 'check-major-release: cannot resolve %q to a commit\n' "$main_ref" >&2
-  exit 1
-fi
+for ref in "${refs[@]}"; do
+  if ! git rev-parse --verify --quiet "${ref}^{commit}" >/dev/null; then
+    printf 'check-major-release: cannot resolve %q to a commit\n' "$ref" >&2
+    exit 1
+  fi
+done
 
 latest=0
 while IFS= read -r released; do
@@ -40,7 +48,7 @@ while IFS= read -r released; do
     [ "${BASH_REMATCH[1]}" -gt "$latest" ]; then
     latest="${BASH_REMATCH[1]}"
   fi
-done < <(git tag --list 'v*' --merged "$main_ref")
+done < <(for ref in "${refs[@]}"; do git tag --list 'v*' --merged "$ref"; done | sort -u)
 
 if [ "$major" -le "$latest" ]; then
   exit 0
