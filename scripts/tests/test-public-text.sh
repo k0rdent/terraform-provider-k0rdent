@@ -82,7 +82,9 @@ expect 0 "the machine type in the API's spec"
 person="$(printf 'Jus%s' tin)"
 host="$(printf 'ci.pulse.k0%s.com' labs)"
 repo="$(printf 'k0rdent-inter%s-2' nal)"
-for planted in "Ask $person." "See https://$host/x." "From $repo."; do
+prefixed="$(printf 'reviewed-by-Jus%s' tin)"
+inside="$(printf 'terraform-provider-k0rdent-inter%s' nal)"
+for planted in "Ask $person." "See https://$host/x." "From $repo." "$prefixed." "Cloned $inside."; do
   printf '%s\n' "$planted" > "$work/planted.md"
   track planted.md
   expect 1 "a hashed name: $planted"

@@ -84,17 +84,20 @@ WORD = re.compile(r"#?[A-Za-z0-9][A-Za-z0-9._-]*")
 
 
 def hashed_hits(line):
-    """Each (rule, word) a line breaks in hashed.txt. A word is tried whole,
-    then cut at each "-" or "." (keeping and dropping the mark), then from
-    after each ".", so a host's subdomain and a name's prefix match too."""
+    """Each (rule, word) a line breaks in hashed.txt. A word is cut at each
+    "-" and ".", and every run of whole parts is tried, with and without the
+    mark after it: a name inside a longer word, a host under a subdomain and
+    a prefix such as "#name-" all match."""
     for m in WORD.finditer(line):
         word = m.group(0).rstrip(".-")
-        tries = {word}
-        for i, c in enumerate(word):
-            if c in "-.":
-                tries.update((word[:i], word[:i + 1]))
-                if c == ".":
-                    tries.add(word[i + 1:])
+        cuts = [0] + [i + 1 for i, c in enumerate(word) if c in "-."]
+        ends = [i for i, c in enumerate(word) if c in "-."] + [len(word)]
+        tries = set()
+        for a in cuts:
+            for b in ends:
+                if b > a:
+                    tries.add(word[a:b])
+                    tries.add(word[a:b + 1])
         for t in tries:
             for flags, table in hashed.items():
                 rule = table.get(digest(t, flags))
