@@ -355,14 +355,15 @@ changelog: ## Print .changelog/ as a CHANGELOG.md section. VERSION=x.y.z, and CH
 .PHONY: release-snapshot
 # goreleaser shells out to syft for the SBOMs. scripts/install-syft.sh fetches
 # the pinned release into a new directory and checks its checksum every time,
-# so neither target runs a syft from PATH or from an earlier run.
+# so neither target runs a syft from PATH or from an earlier run. The
+# directory goes once goreleaser is done.
 release-snapshot: $(GORELEASER) ## Build unsigned, endpoint-neutral release artifacts
-	syft_dir="$$(./scripts/install-syft.sh)" && PATH="$$syft_dir:$$PATH" $(GORELEASER) release --snapshot --clean --skip=sign
+	syft_dir="$$(./scripts/install-syft.sh)" && { PATH="$$syft_dir:$$PATH" $(GORELEASER) release --snapshot --clean --skip=sign; rc=$$?; rm -rf "$$syft_dir"; exit $$rc; }
 	./scripts/place-manifest.sh dist
 
 .PHONY: release
 release: $(GORELEASER) ## Build endpoint-neutral artifacts from a release tag
-	syft_dir="$$(./scripts/install-syft.sh)" && PATH="$$syft_dir:$$PATH" $(GORELEASER) release --clean
+	syft_dir="$$(./scripts/install-syft.sh)" && { PATH="$$syft_dir:$$PATH" $(GORELEASER) release --clean; rc=$$?; rm -rf "$$syft_dir"; exit $$rc; }
 	./scripts/place-manifest.sh dist
 
 .PHONY: release-validate

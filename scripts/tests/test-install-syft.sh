@@ -22,10 +22,12 @@ done
 SHIM
 chmod +x "$work/bin/curl"
 
-if PATH="$work/bin:$PATH" "$here/scripts/install-syft.sh" > "$work/out" 2>&1; then
+mkdir -p "$work/tmp"
+if TMPDIR="$work/tmp" PATH="$work/bin:$PATH" "$here/scripts/install-syft.sh" > "$work/out" 2>&1; then
   fail "install-syft.sh accepted a download with the wrong checksum"
 fi
 grep -q 'has checksum .*, want ' "$work/out" || { cat "$work/out" >&2; fail "the refusal doesn't name the checksum"; }
+[ -z "$(ls -A "$work/tmp")" ] || fail "install-syft.sh left its download behind after refusing it"
 
 # The release targets run install-syft.sh first. GORELEASER is a marker that
 # records whether it ran.
