@@ -53,6 +53,16 @@ printf '%s' "$out" | grep -Fq "allow_major" || fail "the v2 refusal does not say
 g checkout -q -b side; commit side; g tag v3.0.0; g checkout -q main
 refused v3.1.0 "v3 exists only off main"
 
+# A major released from a release branch is. The dispatch passes every
+# release branch after main, so its patches and the next minor on main are
+# routine once that major has shipped.
+g checkout -q -b release-v4.0.x; commit "v4 candidate"; g tag v4.0.0; g checkout -q main
+"$gate" v4.0.1 main release-v4.0.x >/dev/null 2>&1 || fail "v4.0.1 was refused after v4.0.0 shipped from release-v4.0.x"
+"$gate" v4.1.0 main release-v4.0.x >/dev/null 2>&1 || fail "v4.1.0 was refused after v4.0.0 shipped from release-v4.0.x"
+"$gate" v5.0.0 main release-v4.0.x >/dev/null 2>&1 && fail "v5.0.0 was allowed past a v4 release"
+"$gate" v4.0.1 main >/dev/null 2>&1 && fail "v4.0.1 was allowed with no release branch passed"
+"$gate" v4.0.1 main no-such-branch >/dev/null 2>&1 && fail "an unresolvable release branch was accepted"
+
 # Malformed tags are refused even with the override.
 for tag in not-a-tag v1.2 v1.2.3+build.1 v1.2.3-rc.1+build v01.2.3 v1.02.3 v1.2.03 v1.2.3-01 "v1.2.3;id"; do
   RELEASE_ALLOW_MAJOR=1 "$gate" "$tag" main >/dev/null 2>&1 && fail "malformed tag $tag was accepted"

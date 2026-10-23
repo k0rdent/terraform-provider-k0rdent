@@ -374,6 +374,10 @@ workflow-actions-test: ## Refuse an unpinned action, a kept token or keyring, or
 major-release-gate-test: ## Verify the major version gate refuses and explains
 	./scripts/tests/test-major-release-gate.sh
 
+.PHONY: release-tag-validation-test
+release-tag-validation-test: ## Run the release dispatch's tag checks against a scratch repository
+	./scripts/tests/test-release-tag-validation.sh
+
 .PHONY: mod
 mod: ## Download module dependencies that can actually be resolved
 	go build ./...
