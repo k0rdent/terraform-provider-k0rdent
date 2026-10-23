@@ -276,9 +276,10 @@ Keep what `make live` made, then refresh and plan a few minutes apart. A plan
 that doesn't exit 0 is a finding.
 
 - `.live/kept.tfvars` holds the variables the run ended on: the cluster id,
-  the worker count after the scale, and the version the upgrade pinned.
-  Without the version, every plan moves the cluster back to the unversioned
-  reference.
+  the worker count after the scale, and the cluster type and version the
+  upgrade pinned. Without the version, every plan moves the cluster back to
+  the unversioned reference. Without the type, it lands on whichever type
+  sorts first in the catalog.
 - Use the `acc-` prefix, so `make sweep` can clean up a killed run.
 
 ```sh
