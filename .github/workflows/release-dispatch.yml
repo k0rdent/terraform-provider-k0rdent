@@ -142,8 +142,11 @@ jobs:
                 exit 1
               fi
               read -r number author head <<< "$pull"
-              approvals="$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$number/reviews" \
-                --jq "[.[] | select(.state == \"APPROVED\" and .user.login != \"$author\" and .commit_id == \"$head\")] | length" | jq -s add)"
+              # Each reviewer's last word on the merged head counts, so an
+              # approval they followed with changes requested doesn't.
+              reviews="$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$number/reviews" \
+                --jq ".[] | select(.user.login != \"$author\" and .commit_id == \"$head\" and (.state == \"APPROVED\" or .state == \"CHANGES_REQUESTED\")) | \"\\(.user.login) \\(.state)\"")"
+              approvals="$(awk '{ last[$1] = $2 } END { n = 0; for (u in last) if (last[u] == "APPROVED") n++; print n }' <<< "$reviews")"
               if (( approvals < 1 )); then
                 echo "::error title=Release branch has an unreviewed commit::$commit on $release_branch merged pull request #$number, whose merged head $head nobody but its author approved."
                 exit 1
