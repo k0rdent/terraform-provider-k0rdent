@@ -97,6 +97,37 @@ func TestAccClusterUpgradesAcrossTwoVersions(t *testing.T) {
 	})
 }
 
+// An upgrade can move the node total with no pool scaled: gpu-poolgrow's
+// second version brings a one-node system pool. node_count has to be unknown
+// at plan, so the apply can land the new total. A plan that kept the old total
+// known fails this at apply with Terraform's "Provider produced inconsistent
+// result after apply". That's the check here, so it has no plan check of its
+// own: TestAccClusterUpgradesAcrossTwoVersions checks the plan.
+func TestAccClusterUpgradeThatBringsAPoolMovesTheNodeTotal(t *testing.T) {
+	const name = "acc-upgrade-pool-grow"
+	from, to := boundsVersion("gpu-poolgrow", "eeeeeeee", 1), boundsVersion("gpu-poolgrow", "eeeeeeee", 2)
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: protoV6,
+		CheckDestroy:             checkGone(clusterType, clusterPath),
+		Steps: []resource.TestStep{
+			{
+				Config: poolConfig(name, from, 2),
+				Check:  resource.TestCheckResourceAttr(clusterAddr, "node_count", "3"),
+			},
+			{
+				Config:           poolConfig(name, to, 2),
+				ConfigPlanChecks: inPlace(),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr(clusterAddr, "cluster_type_resolved", to),
+					resource.TestCheckResourceAttr(clusterAddr, "node_count", "4"),
+					resource.TestCheckResourceAttr(clusterAddr, "node_pool.workers.node_count", "2"),
+				),
+			},
+			{Config: poolConfig(name, to, 2), PlanOnly: true},
+		},
+	})
+}
+
 // v2 to v5 passes v4 and then fails. State records v4, the version the cluster
 // reached, so a configuration pinned to v4 plans clean, and the cluster is
 // still there to destroy.

@@ -566,7 +566,15 @@ type fakePool struct {
 	min         *int32
 	max         *int32
 	displayName string
+	// since is the first version of the ClusterType that has this pool, and
+	// 0 means every version does. A pool a later version brings materializes
+	// when an upgrade into that version lands, which is what moves a
+	// cluster's node total during an upgrade.
+	since int32
 }
+
+// at reports whether the pool exists at ClusterType version v.
+func (p fakePool) at(v int32) bool { return p.since == 0 || v >= p.since }
 
 type fakeClusterType struct {
 	id          string
@@ -719,6 +727,18 @@ var catalog = []fakeClusterType{
 	boundsType("gpu-chain", "dddddddd", "The third version allows one worker; the fourth is BMaaS-only.",
 		fakeVersion{}, fakeVersion{}, fakeVersion{poolMax: map[string]int32{"workers": 1}},
 		fakeVersion{bmaasOnly: true}, fakeVersion{}),
+	poolGrowType(),
+}
+
+// poolGrowType is a ClusterType whose second version brings a pool the first
+// doesn't have, so an upgrade into it changes the cluster's node total though
+// no pool the configuration names was scaled.
+func poolGrowType() fakeClusterType {
+	ct := boundsType("gpu-poolgrow", "eeeeeeee", "The second version brings a one-node system pool.",
+		fakeVersion{}, fakeVersion{})
+	ct.pools = append(ct.pools,
+		fakePool{id: "system", role: "worker", displayName: "System", def: i32(1), min: i32(1), max: i32(1), since: 2})
+	return ct
 }
 
 // boundsType builds a ClusterType whose versions differ only in pool bounds,
@@ -986,10 +1006,17 @@ func looksLikeUUID(s string) bool {
 
 // clusterTypeJSON renders a ClusterType, at its head when version is nil and at
 // the named version otherwise. The k0s version and the selfLink are what differ;
-// the pools do not, because the fake models one pool shape per type.
+// the pools do not, apart from a pool that only a later version has.
 func clusterTypeJSON(region string, ct fakeClusterType, version *fakeVersion) map[string]any {
 	pools := make([]any, 0, len(ct.pools))
+	at := ct.version
+	if version != nil {
+		at = version.version
+	}
 	for _, p := range ct.pools {
+		if !p.at(at) {
+			continue
+		}
 		pool := map[string]any{
 			"id":          p.id,
 			"role":        p.role,
@@ -1150,6 +1177,9 @@ func (s *state) createCluster(w http.ResponseWriter, r *http.Request) {
 	// a naive list-to-list provider pass.
 	pools := map[string]int{}
 	for _, p := range ct.pools {
+		if !p.at(version.version) {
+			continue
+		}
 		if p.def != nil {
 			pools[p.id] = int(*p.def)
 		} else {

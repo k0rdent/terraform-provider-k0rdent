@@ -111,6 +111,16 @@ func settleUpgrade(c *cluster) {
 	}
 	c.version = target
 	c.clusterType = versionRef(regionOf(c.clusterType), c.ct, target)
+	// A pool the new version brings materializes at its default.
+	for _, p := range c.ct.pools {
+		if _, held := c.pools[p.id]; held || !p.at(target.version) {
+			continue
+		}
+		c.pools[p.id] = 0
+		if p.def != nil {
+			c.pools[p.id] = int(*p.def)
+		}
+	}
 }
 
 // regionOf reads the region back out of a resolved reference.
