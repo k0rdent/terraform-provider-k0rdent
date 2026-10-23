@@ -4,7 +4,7 @@
 #   NAME    the rule's id in the report
 #   FLAGS   "i" hashes the word lowercased, "-" as written
 #   SHA256  of the word, which is matched against each word of a line, and
-#           against the parts of one split at a "-" or a "."
+#           against each run of up to 4 of its parts split at a "-" or a "."
 # Print a line to add with: scripts/check-public-text.sh --hash NAME FLAGS WORD
 # A hash of a common word can be guessed, so this keeps the names out of the
 # file, not secret. Exceptions go in allowlist.txt, as for denylist.txt.
