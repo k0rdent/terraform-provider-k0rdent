@@ -162,7 +162,7 @@ branch, `release-vMAJOR.MINOR.x`, so `main` can take new work meanwhile.
      in the same pull request.
 
 3. **Rehearse on the commit you'll tag.** CI must be green. On Linux, or with
-   GNU findutils and bash 4. The target fetches the pinned `syft` itself:
+   GNU findutils and bash 4:
 
    ```sh
    make release-validate release-config-test

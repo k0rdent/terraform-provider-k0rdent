@@ -10,7 +10,8 @@
 # anchore/sbom-action/download-syft did this before. Pinning that action to a
 # commit didn't pin syft: it runs the install.sh on syft's main branch.
 #
-# Usage: PATH="$(scripts/install-syft.sh):$PATH" goreleaser ...
+# Usage: dir="$(scripts/install-syft.sh)" && PATH="$dir:$PATH" goreleaser ...
+# then remove "$dir".
 set -euo pipefail
 
 SYFT_VERSION=1.42.3
@@ -36,8 +37,11 @@ case "$(uname -m)" in x86_64 | amd64) arch=amd64 ;; arm64 | aarch64) arch=arm64 
 platform="${os}_${arch}"
 want="$(syft_sha256 "$platform")" || die "no pinned checksum for $platform"
 
-dir="$(mktemp -d)" || die "could not create a directory for syft"
+dir="$(mktemp -d "${TMPDIR:-/tmp}/syft.XXXXXX")" || die "could not create a directory for syft"
 chmod 700 "$dir"
+# A failed run leaves nothing behind. A good one leaves the directory to its
+# caller, which removes it once goreleaser is done.
+trap 'rm -rf "$dir"' EXIT
 archive="syft_${SYFT_VERSION}_${platform}.tar.gz"
 curl -fsSL --retry 3 -o "$dir/$archive" \
   "https://github.com/anchore/syft/releases/download/v${SYFT_VERSION}/$archive" ||
@@ -46,4 +50,5 @@ got="$(sha256 "$dir/$archive")"
 [ "$got" = "$want" ] || die "$archive has checksum $got, want $want"
 tar -xzf "$dir/$archive" -C "$dir" syft || die "couldn't unpack syft"
 rm -f "$dir/$archive"
+trap - EXIT
 printf '%s\n' "$dir"
