@@ -40,7 +40,7 @@ or through `terraform_remote_state`.
 - Don't use `-target` or `-refresh=false` to speed up routine plans. Both
   hide part of the estate from the plan.
 - A higher `-parallelism` speeds up apply against a slow platform. At 50ms,
-  apply of 1,000 went from 49s at 10 to 17s at 32. Past the platform's rate
+  apply of 1,000 went from 54s at 10 to 20s at 32. Past the platform's rate
   limit it stops helping, and the provider backs off when told to.
 
 ## Figures at `-parallelism=10`
