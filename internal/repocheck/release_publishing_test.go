@@ -13,17 +13,23 @@ var (
 	topLevelReadOnly = regexp.MustCompile(`(?m)^permissions:\n  contents: read\n`)
 	releaseDraft     = regexp.MustCompile(`(?m)^  draft: true$`)
 	writePermission  = regexp.MustCompile(`(?m)^\s*(permissions:\s*write-all|[a-z-]+:\s*write)\s*$`)
+	// The same grant written inline, `permissions: {contents: write}`, which
+	// the line-by-line pattern above can't see.
+	inlineWritePermission = regexp.MustCompile(`permissions:\s*\{[^}]*:\s*write\b`)
 )
 
 // validateReleasePublishing keeps the GitHub Release, which the registries
 // download from, behind the same checks as the signing. goreleaser makes a
 // draft, and the signing job publishes it only after validating the
 // artifacts and checking the draft holds them. That job is the only one in
-// any workflow that can write.
+// any workflow that can write, apart from the nightly's report job, which
+// writes issues only.
 func validateReleasePublishing(workflows map[string]string, goreleaser string) error {
 	const (
-		dispatcher = "release-dispatch.yml"
-		signingJob = "build-signed-artifacts"
+		dispatcher       = "release-dispatch.yml"
+		signingJob       = "build-signed-artifacts"
+		nightly          = "nightly.yml"
+		nightlyReportJob = "report"
 	)
 
 	release, ok := yamlBlock(goreleaser, "release")
@@ -50,8 +56,22 @@ func validateReleasePublishing(workflows map[string]string, goreleaser string) e
 				outside = strings.Replace(workflow, job, "", 1)
 			}
 		}
+		// The nightly's report job keeps one issue open while the nightly
+		// fails. It writes issues and nothing else, so it can't touch a
+		// release.
+		if name == nightly {
+			if job, found := workflowJobBlock(workflow, nightlyReportJob); found {
+				grants := writePermission.FindAllString(job, -1)
+				if len(grants) == 1 && strings.TrimSpace(grants[0]) == "issues: write" {
+					outside = strings.Replace(outside, job, "", 1)
+				}
+			}
+		}
 		if m := writePermission.FindString(outside); m != "" {
 			return fmt.Errorf("%s grants %q outside the %s job", name, strings.TrimSpace(m), signingJob)
+		}
+		if m := inlineWritePermission.FindString(workflow); m != "" {
+			return fmt.Errorf("%s grants write inline as %q, which this check can't scope to a job; write it as a block", name, m)
 		}
 		if strings.Contains(workflow, "pull_request_target") {
 			return fmt.Errorf("%s runs on pull_request_target, which hands a fork's code this repository's token", name)
@@ -135,6 +155,9 @@ func TestReleasePublishingRejectsRegressions(t *testing.T) {
 		{"manifest left off", replace(".goreleaser.yaml", "  extra_files:\n    - glob: terraform-registry-manifest.json", "  extra_files:\n    - glob: other.json"), "leaves the registry manifest off"},
 		{"write token for every job", replace("ci.yml", "permissions:\n  contents: read\n", "permissions:\n  contents: write\n"), "doesn't start from permissions: contents: read"},
 		{"write token on another job", replace("ci.yml", "  build:\n    name: build\n", "  build:\n    name: build\n    permissions:\n      contents: write\n"), `grants "contents: write" outside`},
+		{"issues token on another job", replace("ci.yml", "  build:\n    name: build\n", "  build:\n    name: build\n    permissions:\n      issues: write\n"), `grants "issues: write" outside`},
+		{"inline write token on another job", replace("ci.yml", "  build:\n    name: build\n", "  build:\n    name: build\n    permissions: {contents: write}\n"), "grants write inline"},
+		{"contents token on the nightly report", replace("nightly.yml", "      issues: write\n", "      issues: write\n      contents: write\n"), `grants "issues: write" outside`},
 		{"pull_request_target", replace("changelog.yml", "  pull_request:\n", "  pull_request_target:\n"), "pull_request_target"},
 		{"never published", replace("release-dispatch.yml", "-F draft=false", "-F draft=true"), "never publishes"},
 		{"published before validation", replace("release-dispatch.yml", "- name: Validate release artifact layout", "- name: Validate later"), "before validating"},

@@ -15,6 +15,12 @@ on:
 permissions:
   contents: read
 
+# One nightly at a time. A run started by hand while the scheduled one is
+# going waits for it, so two runs never report on the issue at once.
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
 env:
   GO_VERSION: "1.26.10"
 
@@ -89,3 +95,46 @@ jobs:
       - name: performance budget
         if: ${{ !cancelled() && matrix.cli == 'terraform' && steps.setup-terraform.outcome == 'success' }}
         run: make bench BENCH_SIZES=100,500,1000 BENCH_PARALLELISM=10 BENCH_BUDGET=internal/tools/bench/budget.json
+
+  # A failed scheduled run only emails whoever last touched the schedule, so
+  # nobody else hears of it. One open issue, found by its label, says the
+  # nightly is red. A failure opens it. A later failure edits its body to name
+  # the latest run, and comments only when the set of failing steps changed,
+  # so a red week is one notification, not seven. A pass closes it. A
+  # cancelled or skipped run says nothing either way.
+  report:
+    name: report the result
+    needs: demo
+    if: ${{ always() && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      issues: write
+    steps:
+      - name: open, update or close the nightly-failing issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RESULT: ${{ needs.demo.result }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          label="nightly-failing"
+          number="$(gh issue list --state open --label "$label" --json number --jq '.[0].number // empty')"
+          if [[ "$RESULT" == success ]]; then
+            [[ -z "$number" ]] || gh issue close "$number" --comment "Passing again: $RUN_URL"
+            exit 0
+          fi
+          [[ "$RESULT" == failure ]] || exit 0
+          failing="$(gh api "repos/$GH_REPO/actions/runs/$RUN_ID/jobs" --paginate \
+            --jq '.jobs[] | select(.conclusion == "failure") | .name as $job
+              | (.steps[] | select(.conclusion == "failure") | "\($job): \(.name)")' | sort -u | paste -sd ';' -)"
+          [[ -n "$failing" ]] || failing="a job failed before any step"
+          body="$(printf 'The nightly is failing.\n\nFailing: %s\nLatest failing run: %s\n\n<!-- failing: %s -->\n' "$failing" "$RUN_URL" "$failing")"
+          if [[ -z "$number" ]]; then
+            gh issue create --title "Nightly is failing" --label "$label" --body "$body"
+            exit 0
+          fi
+          before="$(gh issue view "$number" --json body --jq '.body' | sed -n 's/^<!-- failing: \(.*\) -->$/\1/p')"
+          gh issue edit "$number" --body "$body"
+          [[ "$before" == "$failing" ]] || gh issue comment "$number" --body "Now failing: $failing. $RUN_URL"
