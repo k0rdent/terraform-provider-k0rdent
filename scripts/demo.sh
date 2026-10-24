@@ -13,8 +13,8 @@
 # no access to the k0rdent org, and no network except to a fake on 127.0.0.1.
 #
 # PREREQUISITES
-#   * Go 1.26 or newer. go.mod declares `go 1.26.0`, and a lower
-#     directive fails outright rather than degrading.
+#   * Go 1.26.10 or newer. go.mod declares `go 1.26.10`, and a lower
+#     toolchain fails outright rather than degrading.
 #   * `terraform` or `tofu` on PATH. On macOS: `brew install terraform`, or
 #     `brew install opentofu`. The script prefers terraform and falls back.
 #   * A populated Go module cache, or network access on the first run.

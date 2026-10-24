@@ -9,8 +9,8 @@
 #    App key or the signing key. Every action outside this repository is pinned
 #    to a full commit, with the release it came from in a `# vX.Y.Z` comment.
 # 2. An actions/checkout that leaves its token in .git/config, where every later
-#    step can read it. A checkout that has to fetch afterwards is listed in
-#    ALLOWED_PERSISTED_CHECKOUTS with the reason.
+#    step can read it. There are no exceptions: a job that needs more history
+#    asks the checkout for it with fetch-depth.
 # 3. A signing job that leaves the keyring on the runner for the steps after it,
 #    or that restores a Go cache. Another job wrote that cache, and the build
 #    trusts a cache entry without rebuilding it, so whatever wrote it has a say
@@ -29,13 +29,6 @@
 set -euo pipefail
 
 root="${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
-
-# file:job pairs whose checkout keeps its credentials. validate-release-tag
-# runs `git fetch origin` for the tag it validates, and this repository is
-# internal, so that fetch needs the token. The job holds no other secret.
-ALLOWED_PERSISTED_CHECKOUTS=(
-  "release-dispatch.yml:validate-release-tag"
-)
 
 problems=0
 report() { echo "workflow actions: $*" >&2; problems=$((problems + 1)); }
@@ -114,11 +107,7 @@ for f in "${files[@]}"; do
 
   # 2. Every checkout says persist-credentials: false. Comments don't count.
   while IFS=' ' read -r line job; do
-    allowed=false
-    for pair in "${ALLOWED_PERSISTED_CHECKOUTS[@]}"; do
-      [ "$pair" = "$(basename "$f"):$job" ] && allowed=true
-    done
-    "$allowed" || report "$rel:$line actions/checkout in job $job keeps its credentials. Add persist-credentials: false"
+    report "$rel:$line actions/checkout in job $job keeps its credentials. Add persist-credentials: false"
   done < <(steps "$f" '
     step ~ /uses["\047]?[[:space:]]*:[[:space:]]*["\047]?actions\/checkout@/ &&
     step !~ /persist-credentials["\047]?[[:space:]]*:[[:space:]]*["\047]?false/')

@@ -62,6 +62,12 @@ setup
 edit workflows/nightly.yml 's{\n\s+persist-credentials: false\n}{\n}'
 expect_fail "a checkout that keeps its token was accepted" "keeps its credentials"
 
+# The release tag validation was the one job allowed to keep its token. It no
+# longer is: its checkout fetches the history it needs up front.
+setup
+edit workflows/release-dispatch.yml 's{(ref: main\n\s+fetch-depth: 0)\n\s+persist-credentials: false\n}{$1\n}'
+expect_fail "the tag validation's checkout kept its token" "in job validate-release-tag keeps its credentials"
+
 # The setting only in a comment, which YAML ignores.
 setup
 edit workflows/nightly.yml 's{\n(\s+)persist-credentials: false\n}{\n$1fetch-depth: 0  # persist-credentials: false\n}'

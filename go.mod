@@ -1,9 +1,10 @@
 module github.com/k0rdent/terraform-provider-k0rdent
 
-// golang.org/x/net v0.60.0 declares `go 1.26.0`, and Go refuses to build a
-// module against a dependency that requires a newer language version than the
-// main module declares.
-go 1.26.0
+// 1.26.10 is the first 1.26 with the crypto/x509 certificate validation fix,
+// so a build from source can't pick up an older 1.26. golang.org/x/net v0.60.0
+// sets the 1.26 floor itself: it declares `go 1.26.0`, and Go refuses to build
+// a module against a dependency that declares a newer version than it does.
+go 1.26.10
 
 require (
 	github.com/google/uuid v1.6.0
@@ -32,7 +33,7 @@ require (
 	github.com/cloudflare/circl v1.6.3 // indirect
 	github.com/dprotaso/go-yit v0.0.0-20220510233725-9ba8df137936 // indirect
 	github.com/fatih/color v1.18.0 // indirect
-	github.com/getkin/kin-openapi v0.142.0 // indirect
+	github.com/getkin/kin-openapi v0.152.0 // indirect
 	github.com/go-openapi/jsonpointer v0.23.1 // indirect
 	github.com/go-openapi/swag/jsonname v0.26.0 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
@@ -65,7 +66,7 @@ require (
 	github.com/oasdiff/yaml v0.1.1 // indirect
 	github.com/oasdiff/yaml3 v0.0.14 // indirect
 	github.com/oklog/run v1.2.0 // indirect
-	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2 // indirect
+	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3 // indirect
 	github.com/speakeasy-api/jsonpath v0.6.3 // indirect
 	github.com/speakeasy-api/openapi v1.24.0 // indirect
 	github.com/vmihailenco/msgpack v4.0.4+incompatible // indirect

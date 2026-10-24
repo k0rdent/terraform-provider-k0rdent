@@ -11,7 +11,7 @@ the run.
 
 ## What you need
 
-Go 1.26 or newer, `terraform` or `tofu`, `curl` and `lsof`. Check with:
+Go 1.26.10 or newer, `terraform` or `tofu`, `curl` and `lsof`. Check with:
 
 ```sh
 scripts/doctor.sh
