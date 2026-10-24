@@ -130,19 +130,25 @@ jobs:
             fi
             # Each pull request also needs an approval from someone other than
             # its author, since the rule may have been added, or loosened,
-            # after it merged.
+            # after it merged. The approval has to be of the head that merged:
+            # GitHub keeps an approval through later pushes unless stale
+            # reviews are dismissed, so an approval of an earlier head proves
+            # nothing about what merged.
             while IFS= read -r commit; do
               pull="$(gh api "repos/$GITHUB_REPOSITORY/commits/$commit/pulls" \
-                --jq "[.[] | select(.merged_at != null and .base.ref == \"$release_branch\" and .merge_commit_sha == \"$commit\")] | .[0] | if . == null then \"\" else \"\\(.number) \\(.user.login)\" end")"
+                --jq "[.[] | select(.merged_at != null and .base.ref == \"$release_branch\" and .merge_commit_sha == \"$commit\")] | .[0] | if . == null then \"\" else \"\\(.number) \\(.user.login) \\(.head.sha)\" end")"
               if [[ -z "$pull" ]]; then
                 echo "::error title=Release branch has an unreviewed commit::$commit on $release_branch is not the merge of a pull request into it. Release from a branch that only takes pull requests."
                 exit 1
               fi
-              read -r number author <<< "$pull"
-              approvals="$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$number/reviews" \
-                --jq "[.[] | select(.state == \"APPROVED\" and .user.login != \"$author\")] | length" | jq -s add)"
+              read -r number author head <<< "$pull"
+              # Each reviewer's last word on the merged head counts, so an
+              # approval they followed with changes requested doesn't.
+              reviews="$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$number/reviews" \
+                --jq ".[] | select(.user.login != \"$author\" and .commit_id == \"$head\" and (.state == \"APPROVED\" or .state == \"CHANGES_REQUESTED\")) | \"\\(.user.login) \\(.state)\"")"
+              approvals="$(awk '{ last[$1] = $2 } END { n = 0; for (u in last) if (last[u] == "APPROVED") n++; print n }' <<< "$reviews")"
               if (( approvals < 1 )); then
-                echo "::error title=Release branch has an unreviewed commit::$commit on $release_branch merged pull request #$number, which nobody but its author approved."
+                echo "::error title=Release branch has an unreviewed commit::$commit on $release_branch merged pull request #$number, whose merged head $head nobody but its author approved."
                 exit 1
               fi
             done < <(git rev-list --first-parent "$tag_commit" "^$branch_point")
@@ -209,11 +215,10 @@ jobs:
         with:
           go-version-file: .go-release-version
           cache: false
-      # goreleaser shells out to syft for the SBOMs. Pinned to a commit, not a
-      # tag: an SBOM generator that changes underneath a release changes the
-      # release, and `@v0` is a moving tag that said "pinned" without being it.
-      # This step runs in the job that holds the signing key.
-      - uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610  # v0.24.0
+      # goreleaser shells out to syft for the SBOMs. make release fetches the
+      # pinned release with scripts/install-syft.sh, which checks its checksum:
+      # an SBOM generator that changes underneath a release changes the
+      # release, and it runs beside the signing key.
       - name: Import the organization signing key
         env:
           GPG_PRIVATE_KEY: ${{ secrets.TERRAFORM_PROVIDER_GPG_PRIVATE_KEY }}

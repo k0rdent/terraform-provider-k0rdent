@@ -280,7 +280,7 @@ printf 'signing subkey\tABCD\t2027-10-23\t2028-10-22\n' >"$work/due1"
 remind failure "$work/due1"
 [ "$(calls create)" = 1 ] || fail "a due key didn't open an issue"
 grep -Fxq "Rotate the release signing subkey (due 2027-10-23)" "$work/gh/issues/7/title" || { cat "$work/gh/issues/7/title" >&2; fail "wrong issue title"; }
-for needle in ABCD "rotate by 2027-10-23" "expires 2028-10-22" '"k0rdent - Terraform" 1Password vault' "how to use it"; do
+for needle in ABCD "rotate by 2027-10-23" "expires 2028-10-22" "the maintainers' runbook, kept with the key"; do
   grep -Fq "$needle" "$work/gh/issues/7/body" || { cat "$work/gh/issues/7/body" >&2; fail "the issue body doesn't say $needle"; }
 done
 grep -Eq '@[A-Za-z0-9]' "$work/gh/issues/7/body" && fail "the issue body mentions someone"
