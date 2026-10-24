@@ -66,6 +66,10 @@ type projectModel struct {
 	Status         types.String   `tfsdk:"status"`
 	SelfLink       types.String   `tfsdk:"self_link"`
 	Timeouts       timeouts.Value `tfsdk:"timeouts"`
+
+	// uid is the platform's uid for the project read, which own_object.go
+	// keeps in private state. Not an attribute.
+	uid string
 }
 
 func (m projectModel) metadata() tenantMetadata {
@@ -230,8 +234,8 @@ func (r *projectResource) planRegion(ctx context.Context, req resource.ModifyPla
 	case !out.Write && creating:
 		// Local: decided from the configuration and the provider block.
 		resp.Diagnostics.AddAttributeError(at, "A project needs a region",
-			"A project is created in one region and locked to it, and neither this resource's `region` "+
-				"nor the provider's `region` is set. Set one of them. "+whereProjectsGo(ctx, r.meta))
+			redactDiagnosticText("A project is created in one region and locked to it, and neither this "+
+				"resource's `region` nor the provider's `region` is set. Set one of them. "+whereProjectsGo(ctx, r.meta)))
 		return
 	case !out.Write:
 		resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, at, state)...)
@@ -323,6 +327,7 @@ func (r *projectResource) Create(ctx context.Context, req resource.CreateRequest
 
 	out := projectStateFrom(*got, plan)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &out)...)
+	resp.Diagnostics.Append(recordUID(ctx, resp.Private, out.uid)...)
 }
 
 func (r *projectResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
@@ -351,6 +356,9 @@ func (r *projectResource) Read(ctx context.Context, req resource.ReadRequest, re
 	}
 
 	out := projectStateFrom(*got.JSON200, state)
+	if !refreshedOwnObject(ctx, req.Private, resp, "project", state.ID.ValueString(), out.uid) {
+		return
+	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &out)...)
 }
 
@@ -614,6 +622,7 @@ func projectStateFrom(p k0rdent.Project, prior projectModel) projectModel {
 		SelfLink:       stringOrNull(p.SelfLink),
 		Status:         types.StringNull(),
 		Timeouts:       prior.Timeouts,
+		uid:            uidOf(p.Uid),
 	}
 	if p.OrganizationId != nil {
 		out.OrganizationID = types.StringValue(*p.OrganizationId)

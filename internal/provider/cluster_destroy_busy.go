@@ -109,6 +109,10 @@ func planOverPrior(plan, prior clusterModel) clusterModel {
 	out := plan
 	o, p := reflect.ValueOf(&out).Elem(), reflect.ValueOf(prior)
 	for i := range o.NumField() {
+		// An unexported field is bookkeeping, not an attribute.
+		if !o.Type().Field(i).IsExported() {
+			continue
+		}
 		if v, ok := o.Field(i).Interface().(interface{ IsUnknown() bool }); ok && v.IsUnknown() {
 			o.Field(i).Set(p.Field(i))
 		}

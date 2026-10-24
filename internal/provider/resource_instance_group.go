@@ -64,6 +64,10 @@ type instanceGroupModel struct {
 	SelfLink      types.String   `tfsdk:"self_link"`
 	VPC           types.String   `tfsdk:"vpc"`
 	Timeouts      timeouts.Value `tfsdk:"timeouts"`
+
+	// uid is the platform's uid for the instance group read, which own_object.go
+	// keeps in private state. Not an attribute.
+	uid string
 }
 
 func (m instanceGroupModel) metadata() tenantMetadata {
@@ -404,7 +408,7 @@ func (r *instanceGroupResource) Create(ctx context.Context, req resource.CreateR
 	// The last body the wait read, so a failure's advice reads the reason the
 	// platform reported rather than the provider's wording of it.
 	var last *k0rdent.InstanceGroup
-	createFinish[instanceGroupModel]{
+	created, found := createFinish[instanceGroupModel]{
 		operation: "createInstanceGroup", target: target,
 		reportWait: func(diags *diag.Diagnostics, summary string, err error) {
 			addAdvisedError(diags, summary, missingSSHAccessAdvice(plan.SSHAccess, last), err)
@@ -424,6 +428,9 @@ func (r *instanceGroupResource) Create(ctx context.Context, req resource.CreateR
 			return r.read(ctx, target, id, plan)
 		},
 	}.run(ctx, create, req.Plan, &resp.State, &resp.Diagnostics)
+	if found {
+		resp.Diagnostics.Append(recordUID(ctx, resp.Private, created.uid)...)
+	}
 }
 
 func (r *instanceGroupResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
@@ -449,6 +456,9 @@ func (r *instanceGroupResource) Read(ctx context.Context, req resource.ReadReque
 	}
 	if !found {
 		resp.State.RemoveResource(ctx)
+		return
+	}
+	if !refreshedOwnObject(ctx, req.Private, resp, "instance group", prior.ID.ValueString(), state.uid) {
 		return
 	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
@@ -906,6 +916,7 @@ func (r *instanceGroupResource) read(ctx context.Context, target clusterTarget, 
 		out.VPC, d = ownedVPC(ctx, r.meta, target, k0rdent.ListVPCsParams{InstanceGroupId: &uid})
 		diags.Append(d...)
 	}
+	out.uid = uidOf(got.JSON200.Uid)
 	return out, true, diags
 }
 

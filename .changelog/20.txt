@@ -1,0 +1,11 @@
+```release-note:bug
+provider: Fix a refresh taking over an object made under the id of one this state held, after that one was deleted outside Terraform. A destroy then deleted the other object. Each resource with a configured id now keeps the object's `uid`, and a refresh that finds another one drops the row with a warning
+```
+
+```release-note:bug
+resource/k0rdent_project: Fix region ids from the platform reaching the "A project needs a region" error unescaped
+```
+
+```release-note:bug
+provider: Fix `terraform query` result names showing the platform's id unescaped, and keeping newlines and tabs from a display name
+```

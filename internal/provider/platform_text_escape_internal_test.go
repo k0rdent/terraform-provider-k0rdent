@@ -28,3 +28,33 @@ func TestPlatformTextReachesWarningsEscaped(t *testing.T) {
 		}
 	}
 }
+
+// The region list is platform text too, and the no-region error names its
+// ids.
+func TestTheNoRegionErrorEscapesTheRegionList(t *testing.T) {
+	api := &regionsAPI{regions: []map[string]any{region("r1\x1b]0;pwn\x07", true), region("r2\nWarning: x", true)}}
+	resp := planProject(t, regionsMeta(t, api, ""), nil, nil)
+	if !resp.Diagnostics.HasError() {
+		t.Fatal("a project with no region planned")
+	}
+	if d := resp.Diagnostics.Errors()[0].Detail(); !strings.Contains(d, "r1") || strings.ContainsAny(d, "\x1b\x07\n") {
+		t.Errorf("detail = %q", d)
+	}
+}
+
+// A list result's name is one line, and its id half is platform text too.
+func TestAListResultNameStaysOneEscapedLine(t *testing.T) {
+	for _, c := range []struct {
+		display *string
+		id      string
+	}{
+		{ptr("web\nWarning: fake"), "c1"},
+		{ptr("a\tb"), "c1"},
+		{nil, "c\n1"},
+		{ptr("ok"), "c\x1b]0;pwn\x07"},
+	} {
+		if got := displayName(c.display, c.id); strings.ContainsAny(got, "\n\t\x1b\x07") {
+			t.Errorf("displayName(%v, %q) = %q", deref(c.display), c.id, got)
+		}
+	}
+}

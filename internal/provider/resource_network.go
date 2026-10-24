@@ -63,6 +63,10 @@ type networkModel struct {
 	VPC         types.String        `tfsdk:"vpc"`
 	ClusterID   types.String        `tfsdk:"cluster_id"`
 	Timeouts    timeouts.Value      `tfsdk:"timeouts"`
+
+	// uid is the platform's uid for the network read, which own_object.go
+	// keeps in private state. Not an attribute.
+	uid string
 }
 
 func (m networkModel) metadata() tenantMetadata {
@@ -630,7 +634,7 @@ func (r *networkResource) Create(ctx context.Context, req resource.CreateRequest
 			})
 		},
 	}
-	createFinish[networkModel]{
+	created, found := createFinish[networkModel]{
 		operation: "createNetwork", target: target,
 		wait: func(ctx context.Context, id string) error {
 			return r.waitForSettled(ctx, target, id, "the network to finish provisioning")
@@ -639,6 +643,9 @@ func (r *networkResource) Create(ctx context.Context, req resource.CreateRequest
 			return r.read(ctx, target, id, plan)
 		},
 	}.run(ctx, create, req.Plan, &resp.State, &resp.Diagnostics)
+	if found {
+		resp.Diagnostics.Append(recordUID(ctx, resp.Private, created.uid)...)
+	}
 }
 
 func (r *networkResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
@@ -660,6 +667,9 @@ func (r *networkResource) Read(ctx context.Context, req resource.ReadRequest, re
 	}
 	if !found {
 		resp.State.RemoveResource(ctx)
+		return
+	}
+	if !refreshedOwnObject(ctx, req.Private, resp, "network", prior.ID.ValueString(), state.uid) {
 		return
 	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
@@ -884,6 +894,7 @@ type networkView struct {
 	description  *string
 	tags         *map[string]string
 	selfLink     *string
+	uid          string
 	vpc          *string
 	clusterID    *string
 	state        string
@@ -919,7 +930,7 @@ func networkViewOf(n k0rdent.Network) (networkView, error) {
 		}
 		return networkView{
 			kind: kind, id: deref(v.Id), displayName: v.DisplayName, description: v.Description,
-			tags: v.Tags, selfLink: v.SelfLink, vpc: v.Vpc, clusterID: v.ClusterId,
+			tags: v.Tags, selfLink: v.SelfLink, uid: uidOf(v.Uid), vpc: v.Vpc, clusterID: v.ClusterId,
 			state: stateString(v.State), stateMessage: v.StateMessage, stateReason: v.StateReason,
 			evpn: &v,
 		}, nil
@@ -930,7 +941,7 @@ func networkViewOf(n k0rdent.Network) (networkView, error) {
 		}
 		return networkView{
 			kind: kind, id: deref(v.Id), displayName: v.DisplayName, description: v.Description,
-			tags: v.Tags, selfLink: v.SelfLink, vpc: v.Vpc, clusterID: v.ClusterId,
+			tags: v.Tags, selfLink: v.SelfLink, uid: uidOf(v.Uid), vpc: v.Vpc, clusterID: v.ClusterId,
 			state: stateString(v.State), stateMessage: v.StateMessage, stateReason: v.StateReason,
 			ib: &v,
 		}, nil
@@ -941,7 +952,7 @@ func networkViewOf(n k0rdent.Network) (networkView, error) {
 		}
 		return networkView{
 			kind: kind, id: deref(v.Id), displayName: v.DisplayName, description: v.Description,
-			tags: v.Tags, selfLink: v.SelfLink, vpc: v.Vpc, clusterID: v.ClusterId,
+			tags: v.Tags, selfLink: v.SelfLink, uid: uidOf(v.Uid), vpc: v.Vpc, clusterID: v.ClusterId,
 			state: stateString(v.State), stateMessage: v.StateMessage, stateReason: v.StateReason,
 			nv: &v,
 		}, nil
@@ -1073,6 +1084,7 @@ func networkStateFrom(ctx context.Context, n k0rdent.Network, prior networkModel
 		Tags:        md.Tags,
 		TagsAll:     md.TagsAll,
 		SelfLink:    stringOrNull(view.selfLink),
+		uid:         view.uid,
 		VPC:         stringOrNull(view.vpc),
 		ClusterID:   stringOrNull(view.clusterID),
 		Type:        types.StringValue(view.kind),

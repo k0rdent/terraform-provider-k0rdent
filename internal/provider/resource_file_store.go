@@ -70,6 +70,10 @@ type fileStoreModel struct {
 	Etag            types.String   `tfsdk:"etag"`
 	SelfLink        types.String   `tfsdk:"self_link"`
 	Timeouts        timeouts.Value `tfsdk:"timeouts"`
+
+	// uid is the platform's uid for the file store read, which own_object.go
+	// keeps in private state. Not an attribute.
+	uid string
 }
 
 func (m fileStoreModel) metadata() tenantMetadata {
@@ -800,6 +804,9 @@ func (r *fileStoreResource) Create(ctx context.Context, req resource.CreateReque
 			return r.read(ctx, target, id, plan)
 		},
 	}.run(ctx, create, req.Plan, &resp.State, &resp.Diagnostics)
+	if ok {
+		resp.Diagnostics.Append(recordUID(ctx, resp.Private, state.uid)...)
+	}
 	if !ok {
 		return
 	}
@@ -825,6 +832,9 @@ func (r *fileStoreResource) Read(ctx context.Context, req resource.ReadRequest, 
 	}
 	if !found {
 		resp.State.RemoveResource(ctx)
+		return
+	}
+	if !refreshedOwnObject(ctx, req.Private, resp, "file store", prior.ID.ValueString(), state.uid) {
 		return
 	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
@@ -1538,6 +1548,7 @@ func (r *fileStoreResource) read(ctx context.Context, target clusterTarget, id s
 
 	out, d := fileStoreStateFrom(ctx, *got.JSON200, prior)
 	diags.Append(d...)
+	out.uid = uidOf(got.JSON200.Uid)
 	return out, true, diags
 }
 
