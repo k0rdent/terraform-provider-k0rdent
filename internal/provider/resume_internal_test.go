@@ -28,8 +28,10 @@ import (
 
 // slowPlatform serves one object of a kind that waits. It accepts the create
 // and reads `creating` until settle is called, then `active`. A delete puts
-// it `deleting` until reap is called, then it's gone. Every request is
-// recorded, and interrupt, when set, is called on the next read.
+// it `deleting` until reap is called, then it's gone. A create's tags, the
+// create token among them, are kept and read back, as the platform does.
+// Every request is recorded, and interrupt, when set, is called on the next
+// read.
 type slowPlatform struct {
 	t         *testing.T
 	id        string
@@ -65,6 +67,12 @@ func (p *slowPlatform) serve() *httptest.Server {
 		switch {
 		case r.Method == http.MethodPost && !strings.HasSuffix(r.URL.Path, "/cancel"):
 			p.state = "creating"
+			var sent struct {
+				Tags map[string]any `json:"tags"`
+			}
+			if json.NewDecoder(r.Body).Decode(&sent) == nil && sent.Tags != nil {
+				p.body["tags"] = sent.Tags
+			}
 		case r.Method == http.MethodDelete && ours && p.state != "":
 			p.state = "deleting"
 		}
@@ -482,10 +490,17 @@ func TestACreateThatStopsWaitingResumesAfterAnUntaint(t *testing.T) {
 					t.Fatal("nothing went to state, so the next run can't find the object")
 				}
 
-				// The apply that forgot the untaint is refused at plan.
-				_, refused := run.replanTainted()
-				containsAll(t, "the refused plan", strings.Join(refused, "\n"), "is still being created",
-					"terraform untaint <address>\n    terraform apply", "allow_replace = true")
+				// The apply that forgot the untaint plans the replacement, which
+				// is also the plan `terraform destroy` refreshes with, so it
+				// passes, and warns before the approval that it cancels the
+				// create, with the untaint that keeps it.
+				replace, refused := run.replanTainted()
+				if len(refused) > 0 {
+					t.Fatalf("the plan to replace the tainted %s was refused, so a destroy would be too: %v", kind, refused)
+				}
+				containsAll(t, "the replacing plan's warning", strings.Join(replace.warnings, "\n"),
+					"is still being created: applying this plan cancels it if this state holds it",
+					"terraform untaint <address>\n    terraform apply", "`terraform destroy` shows this warning too")
 
 				// After the untaint. Private state isn't relied on: nil here.
 				refreshed, _ := run.read(first.state, nil)
@@ -544,7 +559,16 @@ func TestThePlanToCreateReadsTheIDFirst(t *testing.T) {
 			platform := hardwarePlatform(t, kind)
 			platform.set("active")
 			run := hardwareRun(t, kind, platform, nil, nil)
-			_, errs := run.replanTainted()
+			planned, errs := run.replanTainted()
+			if kind == "instance group" {
+				// No tags to carry a create token, so it passes on its state.
+				if len(errs) > 0 {
+					t.Fatalf("an active instance group was refused: %v", errs)
+				}
+				containsAll(t, "the plan's warning", strings.Join(planned.warnings, "\n"),
+					"exists: applying this plan replaces it if this state holds it")
+				return
+			}
 			containsAll(t, "the refused plan", strings.Join(errs, "\n"), "already exists", "terraform import")
 		})
 		t.Run(kind+" that is being deleted", func(t *testing.T) {
@@ -572,16 +596,19 @@ func TestThePlanToCreateReadsTheIDFirst(t *testing.T) {
 }
 
 // The cluster's create token says whether a Terraform apply made what the
-// plan found. An instance group has no tags to carry one, and says so.
-func TestARefusedPlanSaysWhereTheObjectCameFrom(t *testing.T) {
+// plan found: with it the plan passes and says so, and without it the plan
+// is refused and says so. An instance group has no tags to carry one, and its
+// warning says it passed on its state alone.
+func TestAPlanSaysWhereTheObjectCameFrom(t *testing.T) {
 	for _, tc := range []struct {
-		kind string
-		tags map[string]any
-		want string
+		kind   string
+		tags   map[string]any
+		refuse bool
+		want   string
 	}{
-		{"cluster", map[string]any{createTokenTag(): "abc"}, "carries this provider's create token"},
-		{"cluster", map[string]any{}, "carries no create token"},
-		{"instance group", nil, "can't tell which configuration made it"},
+		{"cluster", map[string]any{createTokenTag(): "abc"}, false, "carries this provider's create token"},
+		{"cluster", map[string]any{}, true, "carries no create token"},
+		{"instance group", nil, false, "passes on its state alone"},
 	} {
 		platform := hardwarePlatform(t, tc.kind)
 		if tc.tags != nil {
@@ -589,8 +616,60 @@ func TestARefusedPlanSaysWhereTheObjectCameFrom(t *testing.T) {
 		}
 		platform.set("creating")
 		run := hardwareRun(t, tc.kind, platform, nil, nil)
-		_, errs := run.replanTainted()
-		containsAll(t, tc.kind+"'s refused plan", strings.Join(errs, "\n"), tc.want)
+		planned, errs := run.replanTainted()
+		said := strings.Join(planned.warnings, "\n")
+		if tc.refuse {
+			said = strings.Join(errs, "\n")
+		} else if len(errs) > 0 {
+			t.Errorf("the %s with tags %v was refused: %v", tc.kind, tc.tags, errs)
+		}
+		containsAll(t, tc.kind+"'s plan", said, tc.want)
+	}
+}
+
+// Every state a tainted object can be in passes the plan that replaces it,
+// since that's the plan `terraform destroy` refreshes with, and the warning
+// says what applying it does in that state. A cluster without this
+// provider's create token is refused in every one of them.
+func TestAPlanPassesATaintedCreateInEveryState(t *testing.T) {
+	for _, state := range []struct{ state, says string }{
+		{"creating", "is still being created: applying this plan cancels it if this state holds it"},
+		{"updating", "is still being updated: applying this plan cancels it if this state holds it"},
+		{"active", "exists: applying this plan replaces it if this state holds it"},
+		{"failed", "failed: applying this plan replaces it if this state holds it"},
+	} {
+		for _, tc := range []struct {
+			kind   string
+			tags   map[string]any
+			refuse bool
+		}{
+			{"cluster", map[string]any{createTokenTag(): "abc"}, false},
+			{"cluster", map[string]any{}, true},
+			{"instance group", nil, false},
+		} {
+			t.Run(fmt.Sprintf("%s %s with tags %v", state.state, tc.kind, tc.tags), func(t *testing.T) {
+				platform := hardwarePlatform(t, tc.kind)
+				if tc.tags != nil {
+					platform.body["tags"] = tc.tags
+				}
+				platform.set(state.state)
+				run := hardwareRun(t, tc.kind, platform, nil, nil)
+				planned, errs := run.replanTainted()
+				if tc.refuse {
+					containsAll(t, "the refused plan", strings.Join(errs, "\n"),
+						"carries no create token", "Nothing was sent: the plan was refused.")
+					return
+				}
+				if len(errs) > 0 {
+					t.Fatalf("the plan was refused, so a destroy would be too: %v", errs)
+				}
+				warned := strings.Join(planned.warnings, "\n")
+				containsAll(t, "the plan's warning", warned, state.says, "`terraform destroy` shows this warning too")
+				if state.state != "failed" {
+					containsAll(t, "the plan's warning", warned, "terraform untaint <address>\n    terraform apply")
+				}
+			})
+		}
 	}
 }
 

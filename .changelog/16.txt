@@ -1,0 +1,31 @@
+```release-note:bug
+resource/k0rdent_kubernetes_cluster: Fix `terraform destroy` refused at plan after a create's wait timed out, while the cluster was still `creating` or after it settled. A tainted cluster that carries this provider's create token now plans its replacement in any state, with a warning that says what applying it does. A cluster without the token is still refused at plan
+```
+
+```release-note:bug
+resource/k0rdent_instance_group: Fix `terraform destroy` refused at plan after a create's wait timed out, while the group was still `creating` or after it settled. A group has no tags to carry a create token, so it passes on its state alone: an apply that forgets the untaint now replaces a tainted group that's still being created, cancelling its create, behind a warning
+```
+
+```release-note:note
+resource/k0rdent_kubernetes_cluster: A plan to create an `id` that another state holds for a cluster with this provider's create token now passes with a warning instead of being refused, since it can't be told from the plan that replaces a tainted cluster. Its apply fails with "already exists", and nothing is replaced or deleted
+```
+
+```release-note:note
+resource/k0rdent_instance_group: A plan to create an `id` that another state holds now passes with a warning instead of being refused, since it can't be told from the plan that replaces a tainted group. Its apply fails with "already exists", and nothing is replaced or deleted
+```
+
+```release-note:bug
+resource/k0rdent_kubernetes_cluster: Fix a tag change dropping the provider's create token from the cluster, after which the plan to destroy it once tainted was refused as if no Terraform apply had made it
+```
+
+```release-note:bug
+resource/k0rdent_kubernetes_cluster: Fix a destroy saying it cancelled the cluster's operation when the operation finished or failed before the cancel took effect
+```
+
+```release-note:bug
+action/k0rdent_cluster_cancel_operation: Fix the action saying it cancelled the operation when the operation finished or failed before the cancel took effect, or when the cluster was deleted or gone before it could be read. It now says what happened, with a warning when nothing was cancelled or the outcome can't be read
+```
+
+```release-note:bug
+provider: Fix an update to a resource with `display_name = ""` or `description = ""` failing with "Provider produced inconsistent result after apply" when the platform's answer leaves the empty field out
+```

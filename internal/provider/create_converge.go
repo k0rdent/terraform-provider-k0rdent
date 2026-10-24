@@ -175,6 +175,18 @@ func createTokenOf(tags *map[string]string) string {
 	return (*tags)[createTokenTag()]
 }
 
+// keepCreateToken is tags with the create token the platform holds put back.
+// A PATCH's tags replace the platform's, and the user's tags never carry the
+// token, so a tag change sent as it is drops it. A cluster without its token
+// reads as made outside Terraform, which refuses the plan that destroys it
+// once it's tainted. With no token held, tags come back unchanged.
+func keepCreateToken(tags *map[string]string, token string) *map[string]string {
+	if tags == nil || token == "" {
+		return tags
+	}
+	return createKey{token: token}.tagged(tags)
+}
+
 // createTokenOfFreeform is createTokenOf for freeform tags.
 func createTokenOfFreeform(tags *map[string]any) string {
 	if tags == nil {
@@ -458,7 +470,7 @@ func (c convergingCreate) addNotOurs(diags *diag.Diagnostics, id, why string, a 
 	if a.resp != nil && errors.As(k0rdent.CheckResponse(a.resp, a.body), &apiErr) {
 		detail += "\n\n" + apiErrorDetail(apiErr)
 	}
-	diags.AddError(fmt.Sprintf("A %s named %q already exists", c.kind, id), redactDiagnosticText(detail))
+	diags.AddError(fmt.Sprintf("%s named %q already exists", aKind(c.kind), id), redactDiagnosticText(detail))
 }
 
 // recordUnconfirmed writes the plan to state under id, with every value the

@@ -185,3 +185,29 @@ func fieldsString(f metadataFields) string {
 	}
 	return "{" + show(f.DisplayName) + " " + show(f.Description) + " " + show(f.Tags) + "}"
 }
+
+// A configuration that wrote "" has not been contradicted by an answer that
+// leaves the field out, which a PATCH sending "" can come back with, or by one
+// that answers "". Only a real value replaces it.
+func TestAnEmptyStringSurvivesAnAnswerThatLeavesItOut(t *testing.T) {
+	empty, named := "", "n"
+	for _, tc := range []struct {
+		name   string
+		answer *string
+		prior  types.String
+		want   types.String
+	}{
+		{"left out, prior empty", nil, types.StringValue(""), types.StringValue("")},
+		{"empty, prior empty", &empty, types.StringValue(""), types.StringValue("")},
+		{"left out, prior null", nil, types.StringNull(), types.StringNull()},
+		{"empty, prior null", &empty, types.StringNull(), types.StringNull()},
+		{"a value, prior empty", &named, types.StringValue(""), types.StringValue("n")},
+		{"left out, prior a value", nil, types.StringValue("n"), types.StringNull()},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := answeredString(tc.answer, tc.prior); !got.Equal(tc.want) {
+				t.Errorf("got %v, want %v", got, tc.want)
+			}
+		})
+	}
+}

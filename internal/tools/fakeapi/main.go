@@ -1577,22 +1577,29 @@ func (o *objects) advance(c *cluster) bool {
 	}
 	switch c.state {
 	case "creating", "updating":
-		for id, target := range c.targets {
-			c.pools[id] = target
-		}
-		c.targets = nil
-		c.state = "active"
-		if c.upgradeTo != nil {
-			settleUpgrade(c)
-		}
-		c.op.done = len(c.op.stages)
-		if c.state == "failed" {
-			c.finish("failed")
-		} else {
-			c.finish("succeeded")
-		}
+		c.complete()
 	}
 	return false
+}
+
+// complete lands the operation in flight: the pools reach their targets, an
+// upgrade moves the binding, and the cluster settles `active`, or `failed`
+// when the upgrade does.
+func (c *cluster) complete() {
+	for id, target := range c.targets {
+		c.pools[id] = target
+	}
+	c.targets = nil
+	c.state = "active"
+	if c.upgradeTo != nil {
+		settleUpgrade(c)
+	}
+	c.op.done = len(c.op.stages)
+	if c.state == "failed" {
+		c.finish("failed")
+	} else {
+		c.finish("succeeded")
+	}
 }
 
 // clusterBody renders a Cluster. read selects the read shape; a mutation

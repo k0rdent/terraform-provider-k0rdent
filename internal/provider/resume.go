@@ -31,10 +31,11 @@ import (
 // second create is sent.
 //
 // A cluster and an instance group take an `id` from configuration, so a plan
-// to create one can read it first. One that exists, isn't going away and
-// isn't failed refuses the plan with the same advice (createGuard), which is
-// what keeps a forgotten untaint from destroying a cluster mid-create.
-// `allow_replace` lets a deliberate replacement through.
+// to create one can read it first (createGuard). The plan to replace a
+// tainted one can't be refused, since `terraform destroy` runs it first to
+// refresh state, so it warns instead, before the approval, that applying it
+// cancels what the platform is building, with the same advice. A cluster
+// without this provider's create token is refused.
 //
 // # A delete
 //

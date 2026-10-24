@@ -187,17 +187,17 @@ func (g *guardedResource) ModifyPlan(ctx context.Context, req resource.ModifyPla
 // createGuard is a kind whose plan to create reads the configured id first.
 //
 // Terraform plans the replacement of a tainted object as a create, with no
-// prior state, so a plan can't tell that replacement from a new object. A
-// cluster or instance group tainted by a create that stopped waiting is still
-// being built, and the replacement's destroy would cancel it. So a plan to
-// create one whose id the platform already holds is refused, with the untaint
-// that waits for it instead. The whole plan fails, so nothing is destroyed.
-// One that's deleting passes, and so does one the platform failed: nothing is
-// being built, and Terraform plans a destroy's refresh this way too, so a
-// refusal would block the destroy. A failed one passes with a warning that
-// applying the plan deletes it first. A cluster passes `failed` only with
-// this provider's create token. `allow_replace` opts out, which is how a
-// deliberate `terraform apply -replace` gets through. See resume.go.
+// prior state, and `terraform destroy` runs that same plan first to refresh
+// state, so a plan can't tell a replacement, a destroy's refresh or a new
+// object apart. A refusal here blocks the destroy of a tainted object, so
+// one a Terraform apply made passes, in every state, with a warning that says
+// what applying the plan does to it and the untaint that keeps it instead. A
+// cluster shows that by this provider's create token. An instance group has
+// no tags, so it passes on its state alone. A cluster without the token was
+// made some other way and is refused: the whole plan fails, so nothing is
+// destroyed. One that's deleting passes. `allow_replace` opts out, which is
+// how a deliberate replacement of a cluster made elsewhere gets through. See
+// resume.go.
 type createGuard interface {
 	refuseExisting(ctx context.Context, plan tfsdk.Plan, diags *diag.Diagnostics)
 }

@@ -111,7 +111,7 @@ func TestEveryStateAfterARefusedDelete(t *testing.T) {
 		{name: "a cancel waits through updating and stops at deleting", deletes: []int{409},
 			reads: []string{"creating", "updating", "deleting"}, calls: "delete cancel delete", warns: true},
 		{name: "a cancel that meets an unrecognised state stops", deletes: []int{409},
-			reads: []string{"creating", "quiescing"}, calls: "delete cancel", err: "did not settle after its operation was cancelled", warns: true},
+			reads: []string{"creating", "quiescing"}, calls: "delete cancel", err: "accepted the cancel of `e1`, and that isn't undone"},
 		{name: "a refused cancel on a cluster that settled asks again", deletes: []int{409}, cancelStatus: 409,
 			reads: []string{"creating", "active"}, calls: "delete cancel delete"},
 		{name: "a refused cancel on a cluster that is gone asks again", deletes: []int{409}, cancelStatus: 409,

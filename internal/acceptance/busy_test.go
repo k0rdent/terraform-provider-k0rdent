@@ -85,12 +85,12 @@ resource %q "test" {
 				ExpectError: regexp.MustCompile(`(?s)is still being created.*terraform untaint <address>`),
 			},
 			{
-				// Its replacement is refused, so the cluster is still the one
+				// Its replacement only plans, so the cluster is still the one
 				// the test's destroy meets mid-create.
-				PreConfig:   func() { checkFakeStateNow(t, name, "creating") },
-				Config:      config,
-				PlanOnly:    true,
-				ExpectError: regexp.MustCompile(`is still being created`),
+				PreConfig:          func() { checkFakeStateNow(t, name, "creating") },
+				Config:             config,
+				PlanOnly:           true,
+				ExpectNonEmptyPlan: true,
 			},
 		},
 	})
