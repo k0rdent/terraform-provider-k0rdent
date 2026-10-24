@@ -353,17 +353,16 @@ changelog: ## Print .changelog/ as a CHANGELOG.md section. VERSION=x.y.z, and CH
 	@go run ./internal/tools/changelog -prefix $(PROVIDER_NAME)_ -version "$(VERSION)" -date "$(CHANGELOG_DATE)" -repo "$(CHANGELOG_REPO)"
 
 .PHONY: release-snapshot
-# goreleaser shells out to syft for the SBOMs. scripts/install-syft.sh fetches
-# the pinned release into a new directory and checks its checksum every time,
-# so neither target runs a syft from PATH or from an earlier run. The
-# directory goes once goreleaser is done.
-release-snapshot: $(GORELEASER) ## Build unsigned, endpoint-neutral release artifacts
-	syft_dir="$$(./scripts/install-syft.sh)" && { PATH="$$syft_dir:$$PATH" $(GORELEASER) release --snapshot --clean --skip=sign; rc=$$?; rm -rf "$$syft_dir"; exit $$rc; }
+# scripts/run-goreleaser.sh fetches goreleaser and syft into a new directory
+# for each run, so neither target runs a binary from .tools/bin, from PATH or
+# from an earlier run.
+release-snapshot: ## Build unsigned, endpoint-neutral release artifacts
+	GORELEASER_VERSION=$(GORELEASER_VERSION) ./scripts/run-goreleaser.sh release --snapshot --clean --skip=sign
 	./scripts/place-manifest.sh dist
 
 .PHONY: release
-release: $(GORELEASER) ## Build endpoint-neutral artifacts from a release tag
-	syft_dir="$$(./scripts/install-syft.sh)" && { PATH="$$syft_dir:$$PATH" $(GORELEASER) release --clean; rc=$$?; rm -rf "$$syft_dir"; exit $$rc; }
+release: ## Build endpoint-neutral artifacts from a release tag
+	GORELEASER_VERSION=$(GORELEASER_VERSION) ./scripts/run-goreleaser.sh release --clean
 	./scripts/place-manifest.sh dist
 
 .PHONY: release-validate
