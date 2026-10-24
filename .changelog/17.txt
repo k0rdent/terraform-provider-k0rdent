@@ -1,0 +1,3 @@
+```release-note:bug
+resource/k0rdent_kubernetes_cluster: Fix `node_count` planned as known after apply when `cluster_type` changes only its spelling of the bound version, as after importing a cluster whose configuration pins the version it's on. The plan now moves `cluster_type` alone
+```

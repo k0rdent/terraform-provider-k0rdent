@@ -66,6 +66,8 @@ jobs:
         run: make script-credentials-test
       - name: the storage run cleans up and ignores KUBE_* settings
         run: make live-storage-script-test
+      - name: a kept live run records the type and version it ended on
+        run: make live-kept-vars-test
       - name: the helpers the scripts share
         run: make script-lib-test
       # shellcheck comes with the ubuntu-latest image.

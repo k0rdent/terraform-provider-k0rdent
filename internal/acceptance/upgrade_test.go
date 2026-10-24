@@ -67,11 +67,14 @@ func TestAccClusterUpgradesAcrossTwoVersions(t *testing.T) {
 			{
 				Config: inferenceConfig(name, 4, 2),
 				// The plan shows the Kubernetes version the upgrade reaches,
-				// v4's, rather than "known after apply".
+				// v4's, rather than "known after apply". The node total is
+				// left to the apply, since a new version can bring or drop
+				// pools.
 				ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{
 					plancheck.ExpectResourceAction(clusterAddr, plancheck.ResourceActionUpdate),
 					plancheck.ExpectKnownValue(clusterAddr, tfjsonpath.New("kubernetes_version"),
 						knownvalue.StringExact("v1.35.1+k0s.0")),
+					unknownAfterApply(clusterAddr, "node_count"),
 				}},
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr(clusterAddr, "kubernetes_version", "v1.35.1+k0s.0"),
@@ -90,6 +93,37 @@ func TestAccClusterUpgradesAcrossTwoVersions(t *testing.T) {
 				PlanOnly:    true,
 				ExpectError: regexp.MustCompile(`(?s)different\s+version\s+of\s+its\s+ClusterType.*forward-only`),
 			},
+		},
+	})
+}
+
+// An upgrade can move the node total with no pool scaled: gpu-poolgrow's
+// second version brings a one-node system pool. node_count has to be unknown
+// at plan, so the apply can land the new total. A plan that kept the old total
+// known fails this at apply with Terraform's "Provider produced inconsistent
+// result after apply". That's the check here, so it has no plan check of its
+// own: TestAccClusterUpgradesAcrossTwoVersions checks the plan.
+func TestAccClusterUpgradeThatBringsAPoolMovesTheNodeTotal(t *testing.T) {
+	const name = "acc-upgrade-pool-grow"
+	from, to := boundsVersion("gpu-poolgrow", "eeeeeeee", 1), boundsVersion("gpu-poolgrow", "eeeeeeee", 2)
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: protoV6,
+		CheckDestroy:             checkGone(clusterType, clusterPath),
+		Steps: []resource.TestStep{
+			{
+				Config: poolConfig(name, from, 2),
+				Check:  resource.TestCheckResourceAttr(clusterAddr, "node_count", "3"),
+			},
+			{
+				Config:           poolConfig(name, to, 2),
+				ConfigPlanChecks: inPlace(),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr(clusterAddr, "cluster_type_resolved", to),
+					resource.TestCheckResourceAttr(clusterAddr, "node_count", "4"),
+					resource.TestCheckResourceAttr(clusterAddr, "node_pool.workers.node_count", "2"),
+				),
+			},
+			{Config: poolConfig(name, to, 2), PlanOnly: true},
 		},
 	})
 }

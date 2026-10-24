@@ -303,6 +303,10 @@ script-credentials-test: ## Prove the live scripts keep credentials on https and
 live-storage-script-test: ## Prove make live-storage keeps KUBE_* away from Terraform and destroys a cluster whose kubeconfig won't open
 	./scripts/tests/test-live-storage.sh
 
+.PHONY: live-kept-vars-test
+live-kept-vars-test: ## Prove LIVE_KEEP=1 keeps the cluster type and version, and a failed write doesn't cut the cleanup short
+	./scripts/tests/test-live-kept-vars.sh
+
 .PHONY: script-lib-test
 script-lib-test: ## Test the helpers every script sources from scripts/lib
 	./scripts/tests/test-script-lib.sh

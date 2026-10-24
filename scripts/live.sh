@@ -31,7 +31,9 @@
 #
 #   LIVE_CONFIRM             `run` only. Must equal the endpoint's host
 #   LIVE_CLUSTER             cluster id. Default: tf-live-<epoch>, unique per run
-#   LIVE_KEEP=1              skip the destroy, to inspect what was made
+#   LIVE_KEEP=1              skip the destroy, to inspect what was made. The
+#                            variables the cluster ended on go to
+#                            .live/kept.tfvars, for `-var-file`
 #   LIVE_UPGRADE=1           run the upgrade step on a landscape that is not local.
 #                            Default: on for localhost (a kind stack), off
 #                            elsewhere. It needs two or more `available` versions
@@ -56,6 +58,7 @@ REPO="$PWD"
 LIVE_DIR="$REPO/examples/live"
 RUN_DIR="$REPO/.live"
 RESULTS="$RUN_DIR/results.txt"
+KEPT_VARS="$RUN_DIR/kept.tfvars"
 
 # shellcheck source=lib/common.sh
 . "$REPO/scripts/lib/common.sh"
@@ -82,6 +85,31 @@ build_live_provider() {
 }
 
 tf() { ( cd "$LIVE_DIR" && "$TF_BIN" "$@" ); }
+
+# write_kept_vars records the variables a kept cluster ended on: its id, the
+# worker count after the scale, and the cluster type and version the upgrade
+# pinned. A command run later without them plans the cluster back to where the
+# run started, or onto whichever type sorts first in the catalog by then.
+#
+# It runs from the EXIT trap too, so a failure here warns and returns non-zero
+# rather than exiting: the trap still has the destroy to record and the
+# results to print. private_dir runs in a subshell for that reason, since it
+# dies on a bad directory.
+write_kept_vars() {
+  ( private_dir "$RUN_DIR" ) || return 1
+  {
+    printf 'cluster_name = "%s"\n' "$CLUSTER"
+    [ -z "${WORKERS:-}" ] || printf 'worker_nodes = %s\n' "$WORKERS"
+    [ -z "${TF_VAR_cluster_type_id:-}" ] \
+      || printf 'cluster_type_id = "%s"\n' "$TF_VAR_cluster_type_id"
+    [ -z "${TF_VAR_cluster_type_version:-}" ] \
+      || printf 'cluster_type_version = "%s"\n' "$TF_VAR_cluster_type_version"
+    [ -z "${TF_VAR_organization_id:-}" ] \
+      || printf 'organization_id = "%s"\n' "$TF_VAR_organization_id"
+    [ -z "${TF_VAR_project_id:-}" ] \
+      || printf 'project_id = "%s"\n' "$TF_VAR_project_id"
+  } > "$KEPT_VARS" 2>/dev/null
+}
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -341,8 +369,13 @@ cmd_run() {
     if [ "$destroyed" = "1" ]; then
       :
     elif [ "${LIVE_KEEP:-0}" = "1" ]; then
-      warn "LIVE_KEEP=1 — leaving $CLUSTER in place. Destroy it with:"
-      warn "  cd $LIVE_DIR && $TF_BIN destroy -var cluster_name=$CLUSTER"
+      if write_kept_vars; then
+        warn "LIVE_KEEP=1 — leaving $CLUSTER in place. Destroy it with:"
+        warn "  cd $LIVE_DIR && $TF_BIN destroy -var-file=$KEPT_VARS"
+      else
+        warn "LIVE_KEEP=1 — leaving $CLUSTER in place, but $KEPT_VARS could not be written."
+        warn "destroy it with: cd $LIVE_DIR && $TF_BIN destroy -var cluster_name=$CLUSTER"
+      fi
       record SKIP destroy "LIVE_KEEP=1"
     else
       printf '\n%s━━ Cleaning up %s\n' "$B" "$R"
@@ -391,7 +424,7 @@ cmd_run() {
   step "1/8  Build the provider"
   # -------------------------------------------------------------------------
   rm -rf "$LIVE_DIR/.terraform" "$LIVE_DIR/.terraform.lock.hcl" \
-         "$LIVE_DIR/terraform.tfstate" "$LIVE_DIR/terraform.tfstate.backup"
+         "$LIVE_DIR/terraform.tfstate" "$LIVE_DIR/terraform.tfstate.backup" "$KEPT_VARS"
   build_live_provider
   warn "no \`$TF_BIN init\`: under dev_overrides there is nothing to initialise, and"
   warn "every command prints a yellow overrides warning. That is not a failure."
@@ -747,7 +780,11 @@ else:
   step "8/8  terraform destroy"
   # -------------------------------------------------------------------------
   if [ "${LIVE_KEEP:-0}" = "1" ]; then
-    warn "LIVE_KEEP=1 — not destroying $CLUSTER"
+    if write_kept_vars; then
+      warn "LIVE_KEEP=1 — not destroying $CLUSTER. Its variables are in $KEPT_VARS"
+    else
+      warn "LIVE_KEEP=1 — not destroying $CLUSTER, but $KEPT_VARS could not be written"
+    fi
     record SKIP destroy "LIVE_KEEP=1"
     destroyed=1
   else
