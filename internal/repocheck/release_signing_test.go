@@ -5,8 +5,11 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
+
+	"go.yaml.in/yaml/v3"
 )
 
 // releaseSigningSecretNames must never appear outside the signing job. Signing
@@ -136,21 +139,160 @@ func validateProtectedReleaseSigning(workflows map[string]string) error {
 		}
 	}
 
+	checkJob, err := validateSigningCheck(workflows)
+	if err != nil {
+		return err
+	}
+
 	for name, workflow := range workflows {
 		outsideSigningJob := workflow
-		if name == dispatcher {
+		switch name {
+		case dispatcher:
 			outsideSigningJob = strings.Replace(workflow, job, "", 1)
+		case signingCheck:
+			outsideSigningJob = strings.Replace(workflow, checkJob, "", 1)
 		}
 		for _, ref := range workflowSecretReferences(outsideSigningJob) {
 			if ref.Dynamic {
-				return fmt.Errorf("non-static secrets expression appears outside the %s job in %s", signingJob, name)
+				return fmt.Errorf("non-static secrets expression appears outside the %s and %s jobs in %s", signingJob, signingCheckJob, name)
 			}
 			if isReleaseSigningSecret(ref.Name) {
-				return fmt.Errorf("%s appears outside the %s job in %s", ref.Name, signingJob, name)
+				return fmt.Errorf("%s appears outside the %s and %s jobs in %s", ref.Name, signingJob, signingCheckJob, name)
 			}
 		}
 	}
 	return nil
+}
+
+const (
+	signingCheck    = "release-signing-check.yml"
+	signingCheckJob = "check-signing-key"
+)
+
+var (
+	actionUse      = regexp.MustCompile(`(?m)^[[:space:]]*-?[[:space:]]*uses:[[:space:]]*(\S+)(.*)$`)
+	commitPin      = regexp.MustCompile(`^[^@\s]+@[0-9a-f]{40}$`)
+	versionComment = regexp.MustCompile(`^\s+#\s*v[0-9]+\.[0-9]+\.[0-9]+`)
+)
+
+// validateSigningCheck holds release-signing-check.yml, the one other
+// workflow that gets the signing key, to the release's own rules: dispatched
+// by hand from main, gated by the release-signing environment, its actions
+// pinned, and the key gone from the runner however the check ends. It returns
+// the job that holds the key.
+func validateSigningCheck(workflows map[string]string) (string, error) {
+	check, ok := workflows[signingCheck]
+	if !ok {
+		return "", fmt.Errorf("missing signing check %s", signingCheck)
+	}
+	triggers, err := workflowTriggers(check)
+	if err != nil {
+		return "", fmt.Errorf("%s: %w", signingCheck, err)
+	}
+	if !slices.Contains(triggers, "workflow_dispatch") {
+		return "", fmt.Errorf("%s is not manually dispatched", signingCheck)
+	}
+	for _, trigger := range triggers {
+		if trigger != "workflow_dispatch" {
+			return "", fmt.Errorf("%s runs on %s, and must only be dispatched", signingCheck, trigger)
+		}
+	}
+
+	guard, ok := workflowJobBlock(check, "require-main")
+	if !ok || !strings.Contains(guard, `"$GITHUB_REF" != "refs/heads/main"`) {
+		return "", fmt.Errorf("%s does not require execution from main", signingCheck)
+	}
+	if len(workflowSecretReferences(guard)) > 0 {
+		return "", fmt.Errorf("%s gives its require-main job a secret", signingCheck)
+	}
+
+	job, ok := workflowJobBlock(check, signingCheckJob)
+	if !ok {
+		return "", fmt.Errorf("%s has no %s job", signingCheck, signingCheckJob)
+	}
+	if !strings.Contains(job, "needs: require-main") {
+		return "", fmt.Errorf("%s must wait for the main check", signingCheckJob)
+	}
+	if !strings.Contains(job, "environment: release-signing") {
+		return "", fmt.Errorf("%s is not gated by the release-signing environment", signingCheckJob)
+	}
+	if !strings.Contains(job, "./scripts/check-signing-key.sh secret docs/signing-key.asc") {
+		return "", fmt.Errorf("%s doesn't check the key against docs/signing-key.asc", signingCheckJob)
+	}
+	for _, use := range actionUse.FindAllStringSubmatch(check, -1) {
+		if strings.HasPrefix(use[1], "./") {
+			continue
+		}
+		if !commitPin.MatchString(use[1]) || !versionComment.MatchString(use[2]) {
+			return "", fmt.Errorf("%s uses %s, which is not a commit pin with a '# vX.Y.Z' comment", signingCheck, use[1])
+		}
+	}
+	cleanups := []struct{ text, what string }{
+		{`gpgconf --homedir "$RUNNER_TEMP/gnupg" --kill all`, "stop gpg-agent"},
+		{`rm -rf "$RUNNER_TEMP/gnupg"`, "remove the keyring"},
+		{`rm -f "$RUNNER_TEMP/gpg-passphrase"`, "remove the passphrase file"},
+	}
+	for _, cleanup := range cleanups {
+		if !alwaysStepRuns(job, cleanup.text) {
+			return "", fmt.Errorf("%s doesn't %s in an if: always() step", signingCheckJob, cleanup.what)
+		}
+	}
+	return job, nil
+}
+
+// workflowTriggers returns the events a workflow's on: names, in any of the
+// forms GitHub takes: one event, a list, or a mapping, in block or flow
+// style. A trigger other than a dispatch would run the signing check, with
+// the key, for an event someone else controls, so a line-based match that
+// misses `on: {workflow_dispatch: {}, workflow_call: {}}` isn't enough.
+func workflowTriggers(workflow string) ([]string, error) {
+	var doc yaml.Node
+	if err := yaml.Unmarshal([]byte(workflow), &doc); err != nil {
+		return nil, fmt.Errorf("parse workflow: %w", err)
+	}
+	if len(doc.Content) == 0 || doc.Content[0].Kind != yaml.MappingNode {
+		return nil, fmt.Errorf("workflow is not a mapping")
+	}
+	top := doc.Content[0]
+	var on *yaml.Node
+	for i := 0; i+1 < len(top.Content); i += 2 {
+		if top.Content[i].Value == "on" {
+			if on != nil {
+				return nil, fmt.Errorf("workflow has on: twice")
+			}
+			on = top.Content[i+1]
+		}
+	}
+	if on == nil {
+		return nil, fmt.Errorf("workflow has no on:")
+	}
+	var triggers []string
+	switch on.Kind {
+	case yaml.ScalarNode:
+		triggers = append(triggers, on.Value)
+	case yaml.SequenceNode:
+		for _, event := range on.Content {
+			triggers = append(triggers, event.Value)
+		}
+	case yaml.MappingNode:
+		for i := 0; i < len(on.Content); i += 2 {
+			triggers = append(triggers, on.Content[i].Value)
+		}
+	default:
+		return nil, fmt.Errorf("workflow on: is not an event, a list or a mapping")
+	}
+	return triggers, nil
+}
+
+// alwaysStepRuns reports whether job has a step marked if: always() that
+// runs text.
+func alwaysStepRuns(job, text string) bool {
+	for _, step := range strings.Split(job, "\n      - ")[1:] {
+		if strings.Contains(step, "if: always()") && strings.Contains(step, text) {
+			return true
+		}
+	}
+	return false
 }
 
 func workflowSecretReferences(workflow string) []workflowSecretReference {
@@ -377,6 +519,132 @@ func TestProtectedReleaseSigningRejectsSecurityRegressions(t *testing.T) {
 			want: "counts a draft or a hand-made release as published",
 		},
 		{
+			name: "signing check without protected environment",
+			mutate: func(workflows map[string]string) {
+				workflows["release-signing-check.yml"] = strings.Replace(
+					workflows["release-signing-check.yml"], "environment: release-signing", "environment: release-build", 1)
+			},
+			want: "check-signing-key is not gated by the release-signing environment",
+		},
+		{
+			name: "signing check runs from any branch",
+			mutate: func(workflows map[string]string) {
+				workflows["release-signing-check.yml"] = strings.Replace(
+					workflows["release-signing-check.yml"], `"$GITHUB_REF" != "refs/heads/main"`, `-z "$GITHUB_REF"`, 1)
+			},
+			want: "release-signing-check.yml does not require execution from main",
+		},
+		{
+			name: "signing check doesn't wait for the main check",
+			mutate: func(workflows map[string]string) {
+				workflows["release-signing-check.yml"] = strings.Replace(
+					workflows["release-signing-check.yml"], "    needs: require-main\n", "", 1)
+			},
+			want: "must wait for the main check",
+		},
+		{
+			name: "signing check on a schedule",
+			mutate: func(workflows map[string]string) {
+				workflows["release-signing-check.yml"] = strings.Replace(
+					workflows["release-signing-check.yml"], "  workflow_dispatch:\n", "  workflow_dispatch:\n  schedule:\n    - cron: \"0 0 * * *\"\n", 1)
+			},
+			want: "must only be dispatched",
+		},
+		{
+			name: "signing check on workflow_call in a flow mapping",
+			mutate: func(workflows map[string]string) {
+				workflows["release-signing-check.yml"] = strings.Replace(
+					workflows["release-signing-check.yml"], "on:\n  workflow_dispatch:\n", "on: {workflow_dispatch: {}, workflow_call: {}}\n", 1)
+			},
+			want: "runs on workflow_call, and must only be dispatched",
+		},
+		{
+			name: "signing check on push in a list",
+			mutate: func(workflows map[string]string) {
+				workflows["release-signing-check.yml"] = strings.Replace(
+					workflows["release-signing-check.yml"], "on:\n  workflow_dispatch:\n", "on: [workflow_dispatch, push]\n", 1)
+			},
+			want: "runs on push, and must only be dispatched",
+		},
+		{
+			name: "signing check on one event that isn't a dispatch",
+			mutate: func(workflows map[string]string) {
+				workflows["release-signing-check.yml"] = strings.Replace(
+					workflows["release-signing-check.yml"], "on:\n  workflow_dispatch:\n", "on: push\n", 1)
+			},
+			want: "is not manually dispatched",
+		},
+		{
+			name: "signing check on pull requests",
+			mutate: func(workflows map[string]string) {
+				workflows["release-signing-check.yml"] = strings.Replace(
+					workflows["release-signing-check.yml"], "  workflow_dispatch:\n", "  workflow_dispatch:\n  pull_request:\n", 1)
+			},
+			want: "must only be dispatched",
+		},
+		{
+			name: "signing check action on a tag",
+			mutate: func(workflows map[string]string) {
+				workflows["release-signing-check.yml"] = regexp.MustCompile(`actions/checkout@[0-9a-f]{40}\s+# v[0-9.]+`).
+					ReplaceAllString(workflows["release-signing-check.yml"], "actions/checkout@v7")
+			},
+			want: "uses actions/checkout@v7, which is not a commit pin",
+		},
+		{
+			name: "signing check keeps its keyring",
+			mutate: func(workflows map[string]string) {
+				workflows["release-signing-check.yml"] = strings.Replace(
+					workflows["release-signing-check.yml"], `rm -rf "$RUNNER_TEMP/gnupg"`, "true", 1)
+			},
+			want: "doesn't remove the keyring in an if: always() step",
+		},
+		{
+			name: "signing check cleans up only on success",
+			mutate: func(workflows map[string]string) {
+				workflows["release-signing-check.yml"] = strings.Replace(
+					workflows["release-signing-check.yml"], "- name: Remove the signing keyring\n        if: always()", "- name: Remove the signing keyring\n        if: success()", 1)
+			},
+			want: "doesn't stop gpg-agent in an if: always() step",
+		},
+		{
+			name: "signing check keeps the passphrase file",
+			mutate: func(workflows map[string]string) {
+				workflows["release-signing-check.yml"] = strings.Replace(
+					workflows["release-signing-check.yml"], `rm -f "$RUNNER_TEMP/gpg-passphrase"`, "true", 1)
+			},
+			want: "doesn't remove the passphrase file in an if: always() step",
+		},
+		{
+			name: "signing check against no committed key",
+			mutate: func(workflows map[string]string) {
+				workflows["release-signing-check.yml"] = strings.Replace(
+					workflows["release-signing-check.yml"], "check-signing-key.sh secret docs/signing-key.asc", "check-signing-key.sh secret /dev/null", 1)
+			},
+			want: "doesn't check the key against docs/signing-key.asc",
+		},
+		{
+			name: "signing check gives the main check a secret",
+			mutate: func(workflows map[string]string) {
+				workflows["release-signing-check.yml"] = strings.Replace(
+					workflows["release-signing-check.yml"], "      - name: Refuse a run from another branch\n", "      - name: Refuse a run from another branch\n        env:\n          K: ${{ secrets.TERRAFORM_PROVIDER_GPG_PRIVATE_KEY }}\n", 1)
+			},
+			want: "gives its require-main job a secret",
+		},
+		{
+			name: "signing key in another job of the signing check",
+			mutate: func(workflows map[string]string) {
+				workflows["release-signing-check.yml"] += "\n  report:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo ${{ secrets.TERRAFORM_PROVIDER_GPG_PASSPHRASE }}\n"
+			},
+			want: "TERRAFORM_PROVIDER_GPG_PASSPHRASE appears outside the build-signed-artifacts and check-signing-key jobs in release-signing-check.yml",
+		},
+		{
+			name: "signing check missing",
+			mutate: func(workflows map[string]string) {
+				delete(workflows, "release-signing-check.yml")
+			},
+			want: "missing signing check",
+		},
+		{
 			name: "retired workflow triggered by tags",
 			mutate: func(workflows map[string]string) {
 				workflows["release.yml"] = strings.Replace(
@@ -412,27 +680,27 @@ func TestProtectedReleaseSigningRejectsSecretExpressionsOutsideSigningJob(t *tes
 		{
 			name:       "direct property",
 			expression: "${{ secrets.TERRAFORM_PROVIDER_GPG_PRIVATE_KEY }}",
-			want:       "TERRAFORM_PROVIDER_GPG_PRIVATE_KEY appears outside the build-signed-artifacts job",
+			want:       "TERRAFORM_PROVIDER_GPG_PRIVATE_KEY appears outside the build-signed-artifacts and check-signing-key jobs",
 		},
 		{
 			name:       "single quoted index",
 			expression: "${{ secrets['TERRAFORM_PROVIDER_GPG_PRIVATE_KEY'] }}",
-			want:       "TERRAFORM_PROVIDER_GPG_PRIVATE_KEY appears outside the build-signed-artifacts job",
+			want:       "TERRAFORM_PROVIDER_GPG_PRIVATE_KEY appears outside the build-signed-artifacts and check-signing-key jobs",
 		},
 		{
 			name:       "double quoted index",
 			expression: `${{ secrets["TERRAFORM_PROVIDER_GPG_PRIVATE_KEY"] }}`,
-			want:       "TERRAFORM_PROVIDER_GPG_PRIVATE_KEY appears outside the build-signed-artifacts job",
+			want:       "TERRAFORM_PROVIDER_GPG_PRIVATE_KEY appears outside the build-signed-artifacts and check-signing-key jobs",
 		},
 		{
 			name:       "dynamic index",
 			expression: "${{ secrets[env.NAME] }}",
-			want:       "non-static secrets expression appears outside the build-signed-artifacts job",
+			want:       "non-static secrets expression appears outside the build-signed-artifacts and check-signing-key jobs",
 		},
 		{
 			name:       "whole secret context",
 			expression: "${{ toJSON(secrets) }}",
-			want:       "non-static secrets expression appears outside the build-signed-artifacts job",
+			want:       "non-static secrets expression appears outside the build-signed-artifacts and check-signing-key jobs",
 		},
 	}
 
@@ -492,4 +760,73 @@ func releaseSigningTestWorkflows(t *testing.T) map[string]string {
 		t.Fatal(err)
 	}
 	return workflows
+}
+
+// validateRotationReminder keeps the nightly's rotation reminder wired: the
+// signing-key job hands what's due to signing-key-reminder even when it
+// fails, and the reminder runs on main, after it, with the job's result.
+func validateRotationReminder(workflows map[string]string) error {
+	const nightly = "nightly.yml"
+	dates, ok := workflowJobBlock(workflows[nightly], "signing-key")
+	if !ok {
+		return fmt.Errorf("%s has no signing-key job", nightly)
+	}
+	for _, text := range []string{
+		`SIGNING_KEY_DUE_FILE="$RUNNER_TEMP/due" make signing-key-check || status=$?`,
+		`due: ${{ steps.dates.outputs.due }}`,
+		`exit "$status"`,
+	} {
+		if !strings.Contains(dates, text) {
+			return fmt.Errorf("signing-key doesn't hand what's due to the reminder: missing %s", text)
+		}
+	}
+	reminder, ok := workflowJobBlock(workflows[nightly], "signing-key-reminder")
+	if !ok {
+		return fmt.Errorf("%s has no signing-key-reminder job", nightly)
+	}
+	for _, check := range []struct{ text, what string }{
+		{"needs: signing-key", "wait for the signing key check"},
+		{"if: ${{ always() && github.ref == 'refs/heads/main' }}", "run after a failed check, on main only"},
+		{"DUE: ${{ needs.signing-key.outputs.due }}", "read what's due"},
+		{"RESULT: ${{ needs.signing-key.result }}", "read the check's result"},
+		{"./scripts/signing-key-reminder.sh", "run scripts/signing-key-reminder.sh"},
+	} {
+		if !strings.Contains(reminder, check.text) {
+			return fmt.Errorf("signing-key-reminder doesn't %s", check.what)
+		}
+	}
+	return nil
+}
+
+func TestRotationReminderAcceptsCurrentNightly(t *testing.T) {
+	if err := validateRotationReminder(releaseSigningTestWorkflows(t)); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRotationReminderRejectsRegressions(t *testing.T) {
+	tests := []struct{ name, old, new, want string }{
+		{"due not written", `SIGNING_KEY_DUE_FILE="$RUNNER_TEMP/due" make signing-key-check`, "make signing-key-check", "missing SIGNING_KEY_DUE_FILE"},
+		{"due not an output", "due: ${{ steps.dates.outputs.due }}", "due: ''", "missing due:"},
+		{"near expiry passes", `exit "$status"`, "exit 0", `missing exit "$status"`},
+		{"reminder skipped after a failed check", "if: ${{ always() && github.ref == 'refs/heads/main' }}\n    runs-on: ubuntu-latest\n    permissions:\n      issues: write", "if: ${{ github.ref == 'refs/heads/main' }}\n    runs-on: ubuntu-latest\n    permissions:\n      issues: write", "run after a failed check"},
+		{"reminder doesn't read the due keys", "DUE: ${{ needs.signing-key.outputs.due }}", "DUE: ''", "read what's due"},
+		{"reminder doesn't read the result", "RESULT: ${{ needs.signing-key.result }}", "RESULT: success", "read the check's result"},
+		{"reminder runs nothing", "./scripts/signing-key-reminder.sh", "true", "run scripts/signing-key-reminder.sh"},
+		{"reminder gone", "  signing-key-reminder:\n", "  other:\n", "no signing-key-reminder job"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			workflows := releaseSigningTestWorkflows(t)
+			mutated := strings.Replace(workflows["nightly.yml"], tt.old, tt.new, 1)
+			if mutated == workflows["nightly.yml"] {
+				t.Fatal("the mutation matched nothing, so it tests nothing")
+			}
+			workflows["nightly.yml"] = mutated
+			err := validateRotationReminder(workflows)
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("validateRotationReminder() error = %v, want %q", err, tt.want)
+			}
+		})
+	}
 }

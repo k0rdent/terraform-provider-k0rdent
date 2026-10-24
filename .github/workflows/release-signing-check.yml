@@ -1,0 +1,69 @@
+name: Check release signing
+
+# Signs a test file with the release key, the way a release would, and checks
+# it against the committed docs/signing-key.asc. Run it after any change to
+# the key or its secrets, and before the first release on a new subkey. A
+# release finds out the same things, but only once its tag exists, and a tag
+# can't be deleted. scripts/check-signing-key.sh lists what it checks.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # No secrets here. A run from another branch stops before a reviewer is
+  # asked to approve it, as release-dispatch.yml's tag check does.
+  require-main:
+    name: Require main
+    runs-on: ubuntu-latest
+    steps:
+      - name: Refuse a run from another branch
+        run: |
+          if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
+            echo "::error title=Dispatcher must run from main::Start this workflow from the default branch."
+            exit 1
+          fi
+
+  check-signing-key:
+    name: Check the release signing key
+    needs: require-main
+    runs-on: ubuntu-latest
+    # The secrets are release-signing environment secrets, so a required
+    # reviewer approves every run, as for a release.
+    environment: release-signing
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Sign and verify with the release key
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.TERRAFORM_PROVIDER_GPG_PRIVATE_KEY }}
+          GPG_KEY_FINGERPRINT: ${{ secrets.TERRAFORM_PROVIDER_GPG_KEY_FINGERPRINT }}
+          GPG_PASSPHRASE: ${{ secrets.TERRAFORM_PROVIDER_GPG_PASSPHRASE }}
+        run: |
+          for secret in GPG_PRIVATE_KEY GPG_KEY_FINGERPRINT GPG_PASSPHRASE; do
+            if [ -z "${!secret}" ]; then
+              echo "::error title=Required release secret is not set::$secret must be configured in the release-signing environment."
+              exit 1
+            fi
+          done
+          install -d -m 700 "$RUNNER_TEMP/gnupg"
+          # umask before the redirect. `> file` then `chmod` creates the file
+          # world-readable for the moment in between.
+          ( umask 077; printf '%s' "$GPG_PASSPHRASE" > "$RUNNER_TEMP/gpg-passphrase" )
+          GNUPGHOME="$RUNNER_TEMP/gnupg" GPG_PASSPHRASE_FILE="$RUNNER_TEMP/gpg-passphrase" \
+            ./scripts/check-signing-key.sh secret docs/signing-key.asc
+      - name: Remove the passphrase file
+        if: always()
+        run: rm -f "$RUNNER_TEMP/gpg-passphrase"
+      # gpg-agent keeps the unlocked key in memory, so the directory going
+      # isn't enough. Always, so a failed check doesn't leave the key behind
+      # for the post-job steps.
+      - name: Remove the signing keyring
+        if: always()
+        run: |
+          if [ -d "$RUNNER_TEMP/gnupg" ]; then
+            gpgconf --homedir "$RUNNER_TEMP/gnupg" --kill all || true
+          fi
+          rm -rf "$RUNNER_TEMP/gnupg"

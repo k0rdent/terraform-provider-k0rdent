@@ -1,0 +1,3 @@
+```release-note:note
+provider: Releases are signed with key `B21783BFD3FD4F365F33DE67F36CA5FCE570B234`. Its public key is `docs/signing-key.asc`, and `SECURITY.md` says how to check a release against it
+```
