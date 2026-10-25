@@ -148,7 +148,7 @@ func (r *webhookSubscriptionResource) Schema(_ context.Context, _ resource.Schem
 			"event_types": schema.SetAttribute{
 				Optional:    true,
 				ElementType: types.StringType,
-				MarkdownDescription: "The event types to deliver, such as `io.k0rdent.cluster.ready.v1`: " +
+				MarkdownDescription: "The event types to deliver, such as `io.k0rdent.workflow.cluster.create.v1`: " +
 					"dotted lower case, at least three segments, as the event catalog names them. A name " +
 					"outside that form is warned about at plan time, not refused. Leave it out to " +
 					"receive every event. There's no update for it, so a change replaces the " +
@@ -766,7 +766,7 @@ func (eventTypesInCatalogForm) ValidateSet(ctx context.Context, req validator.Se
 	}
 	resp.Diagnostics.AddAttributeWarning(req.Path, "An event type the catalog wouldn't name",
 		fmt.Sprintf("%s isn't in the form the event catalog names event types in: dotted lower case, at "+
-			"least three segments and at most %d characters, such as io.k0rdent.cluster.ready.v1. The "+
+			"least three segments and at most %d characters, such as io.k0rdent.workflow.cluster.create.v1. The "+
 			"platform may accept it, and no delivered event is named that way, so it would match nothing.",
 			strings.Join(odd, ", "), eventTypeMaxLength))
 }

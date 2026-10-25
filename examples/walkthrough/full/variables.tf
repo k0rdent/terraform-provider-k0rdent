@@ -283,8 +283,8 @@ variable "webhook_events" {
   type        = set(string)
   description = "The event types the webhook gets."
   default = [
-    "io.k0rdent.cluster.ready.v1",
-    "io.k0rdent.cluster.failed.v1",
+    "io.k0rdent.workflow.cluster.create.v1",
+    "io.k0rdent.workflow.cluster.create.failed.v1",
   ]
 
   validation {
@@ -294,7 +294,7 @@ variable "webhook_events" {
 
   validation {
     condition     = alltrue([for e in var.webhook_events : can(regex("^[a-z0-9]+(\\.[a-z0-9_]+){2,}$", e))])
-    error_message = "Each webhook_events entry is dotted lower case with three segments or more, such as io.k0rdent.cluster.ready.v1."
+    error_message = "Each webhook_events entry is dotted lower case with three segments or more, such as io.k0rdent.workflow.cluster.create.v1."
   }
 }
 

@@ -67,9 +67,21 @@ project in an organization needs the id as a literal. Use
 ## Event types
 
 `k0rdent_webhook_subscription` takes `event_types`, such as
-`io.k0rdent.cluster.ready.v1`. You can't read the event catalog, so get names
-from the platform documentation or your operator. The plan warns about a name
-that doesn't look like one. Leave `event_types` out to get every event.
+`io.k0rdent.workflow.cluster.create.v1`. You can't read the event catalog, so
+get names from the platform documentation or your operator. The plan warns
+about a name that doesn't look like one. Leave `event_types` out to get every
+event.
+
+A name in the right form can still match nothing:
+
+- `io.k0rdent.cluster.ready.v1` is sent when a degraded cluster is ready
+  again, not when a create finishes. A finished create is
+  `io.k0rdent.workflow.cluster.create.v1`, and a failed one is
+  `io.k0rdent.workflow.cluster.create.failed.v1`.
+- `io.k0rdent.cluster.failed.v1` is retired, so nothing is delivered for it.
+
+To see the names your platform sends, subscribe once with `event_types` left
+out and read the `type` of each delivery.
 
 ## Now read through a data source
 

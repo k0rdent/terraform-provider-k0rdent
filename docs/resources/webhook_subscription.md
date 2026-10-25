@@ -44,8 +44,8 @@ resource "k0rdent_webhook_subscription" "cluster_events" {
 
   # Leave it out to receive every event.
   event_types = [
-    "io.k0rdent.cluster.ready.v1",
-    "io.k0rdent.cluster.failed.v1",
+    "io.k0rdent.workflow.cluster.create.v1",
+    "io.k0rdent.workflow.cluster.create.failed.v1",
   ]
 
   secret_wo = var.webhook_signing_secret
@@ -76,7 +76,7 @@ output "signing_secret_version" {
 
 > **NOTE**: [Write-only arguments](https://developer.hashicorp.com/terraform/language/resources/ephemeral#write-only-arguments) are supported in Terraform 1.11 and later.
 
-- `event_types` (Set of String) The event types to deliver, such as `io.k0rdent.cluster.ready.v1`: dotted lower case, at least three segments, as the event catalog names them. A name outside that form is warned about at plan time, not refused. Leave it out to receive every event. There's no update for it, so a change replaces the subscription. **Known gap.** The event catalog that lists them is provider personnel only, so a tenant can't read the names and a configuration writes them as literals. The [hardcoded values](../guides/hardcoded-values.md) guide names the side that has to change. **Forces replacement**. **Constraints:** Must name at least one event type, or be left out to receive every event. Warns about an event type outside the catalog's form.
+- `event_types` (Set of String) The event types to deliver, such as `io.k0rdent.workflow.cluster.create.v1`: dotted lower case, at least three segments, as the event catalog names them. A name outside that form is warned about at plan time, not refused. Leave it out to receive every event. There's no update for it, so a change replaces the subscription. **Known gap.** The event catalog that lists them is provider personnel only, so a tenant can't read the names and a configuration writes them as literals. The [hardcoded values](../guides/hardcoded-values.md) guide names the side that has to change. **Forces replacement**. **Constraints:** Must name at least one event type, or be left out to receive every event. Warns about an event type outside the catalog's form.
 - `rotation_overlap` (Boolean) Whether a rotation keeps the previous secret valid for the 24 hours that follow. Defaults to `true`. Set `false` to cut over at once, for a leaked secret: any receiver not yet on the new secret starts refusing deliveries, and the platform reads that refusal as permanent. It applies to the next rotation and changing it on its own sends nothing. Defaults to `true`.
 - `secret_wo` (String, [Write-only](https://developer.hashicorp.com/terraform/language/resources/ephemeral#write-only-arguments)) The signing secret, at least 32 characters. Write-only: Terraform passes it to the provider and never stores it, so it's never in state or a plan. Terraform can't see it change, so set `secret_wo_version` beside it and change that whenever this changes. Required to create or replace a subscription. Needs Terraform 1.11 or later. **Constraints:** String length must be at least 32. **Write-only:** Terraform sends it to the provider and never writes it to plan or state.
 - `secret_wo_version` (Number) Any number that changes when `secret_wo` does. A change rotates the secret in place: the id, the endpoint and everything queued for it stay. It can be a literal, a variable or a local, but has to be known at plan time, so not a value only the apply works out, such as another resource's id. Removing it, with `secret_wo`, sends nothing and leaves the platform's secret as it is. After an import the provider can't know which secret the platform holds, so the first apply that sets this rotates to `secret_wo`. A rotation made outside Terraform clears it on the next refresh, so the plan after it rotates back.
