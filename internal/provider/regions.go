@@ -97,6 +97,9 @@ func whereProjectsGo(ctx context.Context, meta *Meta) string {
 	if len(ids) == 0 {
 		return "None of the regions this credential can list holds projects. " + lister
 	}
+	for i, id := range ids {
+		ids[i] = oneLine(id)
+	}
 	return fmt.Sprintf("Regions that can hold a project: %s. %s", strings.Join(ids, ", "), lister)
 }
 

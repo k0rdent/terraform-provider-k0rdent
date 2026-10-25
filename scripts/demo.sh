@@ -173,9 +173,20 @@ cmd_setup() {
   printf '\nStop it with: %sDEMO_RUN_DIR=%q scripts/demo.sh cleanup%s\n\n' "$B" "$RUN_DIR" "$R"
 }
 
-cmd_cleanup() { stop_fake; }
+# Both source the run directory's secrets file, so they check the directory
+# the way setup does before trusting what's in it. A run directory that isn't
+# there has no fake to stop, and cleanup doesn't make one.
+cmd_cleanup() {
+  if [ ! -e "$RUN_DIR" ] && [ ! -L "$RUN_DIR" ]; then
+    note "no owned fake was running"
+    return
+  fi
+  private_dir "$RUN_DIR"
+  stop_fake
+}
 
 cmd_env() {
+  private_dir "$RUN_DIR"
   read_names; find_terraform
   fake_running || die "no fake is ready for this run directory; start it with scripts/demo.sh setup"
   ENDPOINT="$(cat "$PORT_FILE")"

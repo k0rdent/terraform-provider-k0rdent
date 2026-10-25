@@ -58,6 +58,10 @@ type vpcSecurityGroupsModel struct {
 	Attached       types.List     `tfsdk:"attached"`
 	State          types.String   `tfsdk:"state"`
 	Timeouts       timeouts.Value `tfsdk:"timeouts"`
+
+	// uid is the platform's uid for the VPC read, which own_object.go keeps
+	// in private state. Not an attribute.
+	uid string
 }
 
 func (r *vpcSecurityGroupsResource) Metadata(_ context.Context, _ resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -260,6 +264,7 @@ func (r *vpcSecurityGroupsResource) Create(ctx context.Context, req resource.Cre
 		return
 	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
+	resp.Diagnostics.Append(recordUID(ctx, resp.Private, state.uid)...)
 }
 
 func (r *vpcSecurityGroupsResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
@@ -433,6 +438,9 @@ func (r *vpcSecurityGroupsResource) Read(ctx context.Context, req resource.ReadR
 		// The VPC is gone, which means its owner was destroyed. The binding
 		// went with it and there is nothing to reconcile.
 		resp.State.RemoveResource(ctx)
+		return
+	}
+	if !refreshedOwnObject(ctx, req.Private, resp, "VPC", prior.VPC.ValueString(), state.uid) {
 		return
 	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
@@ -844,6 +852,7 @@ func (r *vpcSecurityGroupsResource) read(ctx context.Context, target clusterTarg
 		out.SecurityGroups = attached
 	}
 
+	out.uid = uidOf(got.JSON200.Uid)
 	return out, true, diags
 }
 

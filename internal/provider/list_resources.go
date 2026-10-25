@@ -231,9 +231,9 @@ func (l *listResource) result(ctx context.Context, req list.ListRequest, obj lis
 // identity: the resource's ImportState, then its Read on what that wrote.
 //
 // Private state is left nil on both. The framework hands an import an empty
-// store, no ImportState here writes to it, and the one Read that touches it,
-// the instance group's, checks for nil first. A result carries no private
-// state anyway: Terraform's own import and read after it build that.
+// store, no ImportState here writes to it, and every Read that touches it
+// checks for nil first. A result carries no private state anyway: Terraform's
+// own import and read after it build that.
 func (l *listResource) importAndRead(ctx context.Context, req list.ListRequest, identity *tfsdk.ResourceIdentity) (tfsdk.State, *tfsdk.ResourceIdentity, diag.Diagnostics) {
 	var diags diag.Diagnostics
 	r := l.spec.newResource()
@@ -307,9 +307,9 @@ func sortListed(found []listedObject) {
 // displayName is how a result is shown: the object's display name with its id
 // beside it, or the id alone when there's no display name or it's the id.
 func displayName(display *string, id string) string {
-	// Platform free text reaches the terminal, so control characters are
-	// escaped.
-	d := escapeControl(strings.TrimSpace(deref(display)))
+	// Both halves are platform text on their way to the terminal, and the
+	// result is one line, so newline and tab are escaped too.
+	d, id := oneLine(strings.TrimSpace(deref(display))), oneLine(id)
 	if d == "" || d == id {
 		return id
 	}
