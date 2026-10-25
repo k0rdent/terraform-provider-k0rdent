@@ -300,6 +300,8 @@ jobs:
       # repositories, so this keeps each of them pinned to a commit.
       - name: verify action pins and checkout credentials
         run: make workflow-actions-test
+      - name: verify the release's syft is checked before it runs
+        run: make install-syft-test
       # Nothing else runs these.
       - name: verify the major version gate
         run: make major-release-gate-test
@@ -323,7 +325,7 @@ jobs:
           if [ -n "$BASE" ]; then
             changed="$(git diff --name-only "$BASE" HEAD)"
             if ! echo "$changed" |
-              grep -E '^(\.goreleaser\.yaml|\.go-release-version|terraform-registry-manifest\.json|main\.go|go\.(mod|sum|work)|\.syft\.ya?ml|Makefile|scripts/.*(release|manifest).*|\.github/)' >/dev/null; then
+              grep -E '^(\.goreleaser\.yaml|\.go-release-version|terraform-registry-manifest\.json|main\.go|go\.(mod|sum|work)|\.syft\.ya?ml|Makefile|scripts/.*(release|manifest|syft).*|\.github/)' >/dev/null; then
               rehearse=false
             fi
           fi
@@ -338,14 +340,9 @@ jobs:
         with:
           go-version-file: .go-release-version
           cache: true
-      # goreleaser shells out to syft for the SBOMs, so this job needs it as
-      # much as the signing job does. Without it `make release-validate` fails
-      # at the catalog step, which is the one thing about a release this job
-      # exists to rehearse. Same commit pin as release-dispatch.yml, for the
-      # same reason: an SBOM generator that changes underneath a release
-      # changes the release.
-      - uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610  # v0.24.0
-        if: steps.inputs.outputs.rehearse == 'true'
+      # goreleaser shells out to syft for the SBOMs. make release-validate
+      # fetches the same pinned, checksummed syft that make release does in
+      # the signing job, with scripts/install-syft.sh.
       - name: build and verify unsigned release artifacts
         if: steps.inputs.outputs.rehearse == 'true'
         run: make release-validate

@@ -27,7 +27,8 @@ expect() {
 git -C "$work" init -q
 mkdir -p "$work/.github/public-text"
 cp "$here/.gitleaks.toml" "$work/"
-cp "$here/.github/public-text/denylist.txt" "$here/.github/public-text/allowlist.txt" "$work/.github/public-text/"
+cp "$here/.github/public-text/denylist.txt" "$here/.github/public-text/allowlist.txt" \
+  "$here/.github/public-text/hashed.txt" "$work/.github/public-text/"
 
 hex="$(od -An -tx1 -N32 /dev/urandom | tr -d ' \n')"
 token="$(od -An -tx1 -N18 /dev/urandom | tr -d ' \n')"
