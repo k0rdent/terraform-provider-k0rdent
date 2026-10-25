@@ -105,6 +105,9 @@ release:
   # A rerun after a failed one replaces that run's draft, rather than leaving
   # two drafts for the same tag.
   replace_existing_draft: true
+  # A tag with a SemVer pre-release part, such as v0.1.0-rc.1, is published as
+  # a GitHub pre-release.
+  prerelease: auto
   # The manifest is in SHA256SUMS through checksum.extra_files above, and this
   # puts the file itself on the release.
   extra_files:
