@@ -619,8 +619,10 @@ func (r *clusterResource) Read(ctx context.Context, req resource.ReadRequest, re
 				"The platform reports no SSH users on this failed cluster",
 				fmt.Sprintf("%q is `failed` and the platform answers no SSH users for it, which is what a "+
 					"delete whose teardown failed leaves. State keeps the configured `ssh_access` so a "+
-					"destroy can run again. If the cluster is meant to stay, its nodes no longer list "+
-					"those users: destroy it, or replace it with `terraform apply -replace`.", state.ID.ValueString()),
+					"destroy can run again. If the cluster is meant to stay, only the platform's record "+
+					"of those users is gone: SSH access is set when a node is provisioned and isn't "+
+					"removed from a running one, so its nodes may still take their keys. To revoke them, "+
+					"destroy the cluster or replace it with `terraform apply -replace`.", state.ID.ValueString()),
 			)
 		}
 		resp.Diagnostics.Append(recordReleased(ctx, resp.Private, held)...)
