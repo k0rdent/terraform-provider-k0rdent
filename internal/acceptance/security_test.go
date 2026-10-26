@@ -269,6 +269,28 @@ data %[3]q "team" {
 	}
 }
 
+// Terraform shows the old name's deprecation on every plan that reads it,
+// through the real CLI, and nothing for the new name.
+func TestAccTenantQuotaWarnsOnPlan(t *testing.T) {
+	c := newCLIRun(t)
+	c.write(fmt.Sprintf("data %q \"org\" {\n  organization_id = \"org-demo\"\n}\n", legacyQuotaType))
+	out, ok := c.run("plan")
+	if !ok {
+		t.Fatalf("the plan failed:\n%s", out)
+	}
+	mustSay(t, "the plan", out, "Warning: Deprecated", "Use `"+quotaType+"` instead",
+		"`"+legacyQuotaType+"` is removed in v1.0.0.")
+
+	c.write(fmt.Sprintf("data %q \"org\" {\n  organization_id = \"org-demo\"\n}\n", quotaType))
+	out, ok = c.run("plan")
+	if !ok {
+		t.Fatalf("the plan failed:\n%s", out)
+	}
+	if strings.Contains(out, "Deprecated") {
+		t.Errorf("the plan of %s warns:\n%s", quotaType, out)
+	}
+}
+
 func TestAccSecurityGroupClearsMetadata(t *testing.T) {
 	const name = "acc-sg-clear"
 	full := strings.Replace(securityGroupConfig(name, false), `display_name = "acceptance"`,

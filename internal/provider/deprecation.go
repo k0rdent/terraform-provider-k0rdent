@@ -26,8 +26,8 @@ import (
 // So a message has to name that major, exactly. "Will be removed in a future
 // version" warns without saying how long a reader has. A later major promises
 // more than the policy keeps, and the current one or an earlier one promises
-// a removal the policy doesn't allow. Nothing is deprecated today, so this
-// holds the first deprecation to it rather than any existing one.
+// a removal the policy doesn't allow. Every deprecation in the registered
+// schemas is held to it.
 
 // removalVersion is the part of a message that names the release the
 // deprecated thing goes in: "removed in v1.0.0". The major is captured.

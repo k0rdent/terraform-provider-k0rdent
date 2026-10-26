@@ -247,11 +247,15 @@ func TestInstanceGroupQuotaRefusalNamesTheNumbers(t *testing.T) {
 }
 
 // The platform names the organization's scope `tenant` before its quota API
-// renamed it and `organization` after. The refusal reads the same from either.
+// renamed it and `organization` after, in its message and its metadata. The
+// lines the provider writes from the metadata name it `organization` from
+// either. The platform's message is shown as sent.
 func TestInstanceGroupQuotaRefusalNamesTheOrganizationOneWay(t *testing.T) {
 	for _, sent := range []string{tenantScope, organizationScope} {
 		t.Run(sent, func(t *testing.T) {
-			body := `{"error":{"code":409,"reason":"QUOTA_EXCEEDED","requestId":"req-1","message":"over quota",
+			message := "conflict: instance group scale would exceed the quota: " +
+				"node_count: requested 3, 1 admissible (" + sent + " limit binding)"
+			body := `{"error":{"code":409,"reason":"QUOTA_EXCEEDED","requestId":"req-1","message":"` + message + `",
 				"details":[{"reason":"QUOTA_EXCEEDED","metadata":{"dimension":"node_count","requested":3,
 				"admissible":1,"bindingScope":"` + sent + `","scopes":[
 				{"scope":"` + sent + `","targetId":"acme","limit":5,"used":4,"headroom":1},
@@ -266,8 +270,11 @@ func TestInstanceGroupQuotaRefusalNamesTheOrganizationOneWay(t *testing.T) {
 					t.Errorf("diagnostic lacks %q:\n%s", want, text)
 				}
 			}
-			if strings.Contains(text, "tenant") {
-				t.Errorf("diagnostic names the old scope:\n%s", text)
+			if !strings.Contains(text, "\n\n"+message+"\n\n") {
+				t.Errorf("diagnostic lacks the platform's message as sent:\n%s", text)
+			}
+			if own := strings.Replace(text, message, "", 1); strings.Contains(own, "tenant") {
+				t.Errorf("the provider's own lines name the old scope:\n%s", text)
 			}
 		})
 	}

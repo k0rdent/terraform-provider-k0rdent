@@ -3,8 +3,10 @@ package provider
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
+	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 
 	"github.com/k0rdent/terraform-provider-k0rdent/internal/k0rdent"
@@ -65,5 +67,36 @@ func TestQuotaScopeAsLeavesOtherScopes(t *testing.T) {
 		if got := quotaScopeAs(s, organizationScope); got != s {
 			t.Errorf("quotaScopeAs(%q) = %q", s, got)
 		}
+	}
+}
+
+// Terraform warns about a deprecated data source only when its schema carries
+// DeprecationMessage, so the description's notice alone warns nobody. The old
+// name has to carry it, naming its replacement and the removal, and the new
+// name must not.
+func TestOnlyTheTenantQuotaIsDeprecated(t *testing.T) {
+	for name, c := range map[string]struct {
+		ds   datasource.DataSource
+		want []string
+	}{
+		"tenant_quota":       {newTenantQuotaDataSource(), []string{ResourceName(organizationQuotaDataSourceSuffix), "removed in v1.0.0"}},
+		"organization_quota": {newOrganizationQuotaDataSource(), nil},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var resp datasource.SchemaResponse
+			c.ds.Schema(context.Background(), datasource.SchemaRequest{}, &resp)
+			got := resp.Schema.DeprecationMessage
+			if c.want == nil && got != "" {
+				t.Errorf("DeprecationMessage = %q, want none", got)
+			}
+			if c.want != nil && got == "" {
+				t.Fatal("DeprecationMessage is empty, so Terraform warns nobody")
+			}
+			for _, want := range c.want {
+				if !strings.Contains(got, want) {
+					t.Errorf("DeprecationMessage %q lacks %q", got, want)
+				}
+			}
+		})
 	}
 }

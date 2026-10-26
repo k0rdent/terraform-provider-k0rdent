@@ -11,5 +11,5 @@ data-source/k0rdent_project_quota: `binding_scope` and `scopes[*].scope` name th
 ```
 
 ```release-note:enhancement
-provider: A `QUOTA_EXCEEDED` refusal names the organization's scope `organization` whichever the platform sends
+provider: The quota lines the provider adds to a `QUOTA_EXCEEDED` refusal name the organization's scope `organization` whichever the platform sends. The platform's own message is shown as sent, so a platform from before the rename still says `tenant` there
 ```
