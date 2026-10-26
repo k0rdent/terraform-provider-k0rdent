@@ -115,7 +115,9 @@ func (r *webhookSubscriptionResource) Schema(_ context.Context, _ resource.Schem
 			"belongs to the organization the provider's credential is in, so it receives the " +
 			"events of every project in that organization. Only `event_types` narrows them: " +
 			"there's no filter by project or cluster, so a receiver that serves one project " +
-			"should check each event's `project` and drop the rest.\n\n" +
+			"should check each event's `project` and drop those for other projects. An event with " +
+			"no `project` may still concern yours: it concerns no single project, or was recorded " +
+			"before events carried one.\n\n" +
 			"**The signing secret never reaches state.** The platform shows a secret once and never " +
 			"again, and this provider keeps no secret in state or in a plan, so the secret is the " +
 			"configuration's to hold: set `secret_wo`, ideally from an ephemeral source such as a " +

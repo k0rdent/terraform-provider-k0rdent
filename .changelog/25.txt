@@ -1,5 +1,5 @@
 ```release-note:bug
-resource/k0rdent_webhook_subscription: Fix the example and the walkthrough subscribing to event names that a create never sends. `io.k0rdent.cluster.ready.v1` is sent only when a degraded cluster is ready again, and `io.k0rdent.cluster.failed.v1` is retired. They now use `io.k0rdent.workflow.cluster.create.v1` and `io.k0rdent.workflow.cluster.create.failed.v1`
+resource/k0rdent_webhook_subscription: Fix the example and the walkthrough subscribing to event names that a create never sends. `io.k0rdent.cluster.ready.v1` is sent only when a degraded cluster is ready again, and `io.k0rdent.cluster.failed.v1` is retired. They now use `io.k0rdent.workflow.cluster.create.v1` and `io.k0rdent.workflow.cluster.create.failed.v1`. A walkthrough applied before this replaces its subscription on the next apply, since `event_types` can't change in place
 ```
 
 ```release-note:note

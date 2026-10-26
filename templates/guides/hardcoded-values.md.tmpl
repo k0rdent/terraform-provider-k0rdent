@@ -81,7 +81,7 @@ A name in the right form can still match nothing:
 - `io.k0rdent.cluster.failed.v1` is retired, so nothing is delivered for it.
 
 To see the names your platform sends, subscribe once with `event_types` left
-out and read the `type` of each delivery.
+out and read the `type` of each event your endpoint receives.
 
 ## Now read through a data source
 
