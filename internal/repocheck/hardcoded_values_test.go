@@ -291,6 +291,13 @@ var inputClasses = map[attrRef]inputClass{
 	{"action", "cluster_cancel_operation", "region"}:       read("regions"),
 	{"action", "cluster_cancel_operation", "project"}:      read("projects"),
 	{"action", "cluster_cancel_operation", "execution_id"}: readAt("kubernetes_cluster", "operation.execution_id"),
+
+	// The power action names a host the tenant's group holds, where it is,
+	// and what to do to it.
+	{"action", "instance_power", "instance_id"}: readAt("instances", "ids"),
+	{"action", "instance_power", "region"}:      read("regions"),
+	{"action", "instance_power", "project"}:     read("projects"),
+	{"action", "instance_power", "action"}:      free,
 }
 
 // classify returns how an input was judged, and whether it was.

@@ -5,7 +5,9 @@ import (
 	"net/http"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // Instances are the hosts an instance group holds. The contract has no create
@@ -39,6 +41,8 @@ type fakeInstance struct {
 	mac, guid     string
 	ethernet, ibA string
 	deleted       bool // the record of an instance whose group was deleted
+	// powerError is the host's lastPowerActionError, "" for none.
+	powerError string
 }
 
 // instancesOf derives the hosts a group holds now. The caller holds s.mu.
@@ -70,6 +74,10 @@ func (o *objects) instancesOf(g *instanceGroup) []fakeInstance {
 				ethernet: fmt.Sprintf("10.80.%d.%d", octet, member),
 				ibA:      fmt.Sprintf("10.81.%d.%d", octet, member),
 			})
+			last := &out[len(out)-1]
+			if _, sent := o.power[last.id]; sent && g.displayName != nil && strings.Contains(*g.displayName, powerFails) {
+				last.powerError = powerFailure
+			}
 		}
 	}
 	return out
@@ -81,6 +89,8 @@ func (o *objects) instancesOf(g *instanceGroup) []fakeInstance {
 // new UUIDs each generation. The caller holds s.mu.
 func (o *objects) release(g *instanceGroup) {
 	for _, in := range o.instancesOf(g) {
+		delete(o.power, in.id)
+		in.powerError = ""
 		in.uid = uidFor(o.scope, "instance", fmt.Sprintf("%s/record-%d", in.uid, len(o.released)))
 		in.id = "inst-" + strings.ReplaceAll(in.uid, "-", "")
 		in.deleted = true
@@ -135,6 +145,9 @@ func (in fakeInstance) body(region, project string) map[string]any {
 	}
 	if in.deleted {
 		out["deletedAt"] = fixedTime
+	}
+	if in.powerError != "" {
+		out["lastPowerActionError"] = in.powerError
 	}
 	return out
 }
@@ -202,4 +215,84 @@ func (o *objects) narrowedAddresses(g *instanceGroup, n fakeConsumerNetwork) ([]
 		}
 	}
 	return out, len(out) > 0
+}
+
+// What the fake follows from executeInstancePowerAction's contract, because
+// the provider branches on each:
+//
+//   - A 202 is "submitted, not settled", and answers the instance as it was
+//     when the action was submitted. Nothing in the fake changes the host's
+//     state afterwards, as nothing on the platform models machine power yet.
+//   - A second action on the same machine inside the guard interval is a 409
+//     with `POWER_ACTION_IN_FLIGHT`, the remaining wait in `Retry-After` and
+//     in details[0].metadata.retryAfterSeconds.
+//   - A failure the platform learns of later is the instance's
+//     `lastPowerActionError`. A host whose group's display name carries
+//     powerFails reports one once an action has been accepted for it.
+//   - A machine with no power control is a permanent 409 with
+//     `POWER_ACTION_UNSUPPORTED`. A group whose display name carries
+//     powerUnsupported holds only such machines.
+//   - An instance that isn't there is the service's 404.
+//
+// ASSUMPTION: the guard interval. The contract makes it configurable and
+// gives no default, so the fake picks one long enough that a test's second
+// action always lands inside it.
+const (
+	powerGuard       = 10 * time.Minute
+	powerFails       = "fake-power-fails"
+	powerUnsupported = "fake-power-unsupported"
+)
+
+// powerFailure is the lastPowerActionError a powerFails host reports.
+// ASSUMPTION: the wording. The contract says only that it explains why.
+const powerFailure = "the machine's power controller refused the action"
+
+// powerActions is the contract's single-machine power vocabulary.
+var powerActions = []string{"powerOn", "powerOff", "powerCycle", "gracefulShutdown", "gracefulRestart", "forceRestart"}
+
+// powered is the last power action accepted for one host.
+type powered struct {
+	action string
+	at     time.Time
+}
+
+// executeInstancePowerAction accepts a power action for one instance.
+// ASSUMPTION: an action outside the vocabulary is a 400, as the contract's
+// only 4xx for a request it can't read.
+func (s *state) executeInstancePowerAction(w http.ResponseWriter, r *http.Request) {
+	region, project, id, verb := r.PathValue("region"), r.PathValue("project"), r.PathValue("id"), r.PathValue("action")
+	if !slices.Contains(powerActions, verb) {
+		apiError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "action must be one of "+strings.Join(powerActions, ", "))
+		return
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	o := s.in(r)
+	var found *fakeInstance
+	for _, in := range o.allInstances() {
+		if in.id == id {
+			found = &in
+			break
+		}
+	}
+	if found == nil {
+		apiError(w, http.StatusNotFound, "NOT_FOUND", "not found: instance \""+id+"\"")
+		return
+	}
+	if found.group.displayName != nil && strings.Contains(*found.group.displayName, powerUnsupported) {
+		errorEnvelope(w, http.StatusConflict, "", "this instance's server has no power control",
+			[]any{map[string]any{"reason": "POWER_ACTION_UNSUPPORTED"}})
+		return
+	}
+	now := time.Now()
+	if last, ok := o.power[id]; ok && now.Sub(last.at) < powerGuard {
+		wait := int((powerGuard - now.Sub(last.at)).Seconds()) + 1
+		w.Header().Set("Retry-After", strconv.Itoa(wait))
+		errorEnvelope(w, http.StatusConflict, "", "a power action was already accepted for this instance's server",
+			[]any{map[string]any{"reason": "POWER_ACTION_IN_FLIGHT", "metadata": map[string]any{"retryAfterSeconds": wait}}})
+		return
+	}
+	o.power[id] = powered{action: verb, at: now}
+	writeJSON(w, http.StatusAccepted, found.body(region, project))
 }

@@ -1989,6 +1989,65 @@ type ClientInterface interface {
 	// Corresponds with GET /v1/regions/{region}/projects/{project}/compute/instances/{id} (the `GetInstance` operationId).
 	GetInstance(ctx context.Context, region RegionPathParam, project ProjectPathParam, id string, params *GetInstanceParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// ExecuteInstancePowerAction Execute an instance power action
+	//
+	// **Visibility:** `internal` · `public` (x-visibility)
+	//
+	// The tenant-facing sibling of infrastructure's operator-only
+	// `POST .../infrastructure/servers/{id}/{action}`: resolve this instance to
+	// the server it currently occupies and forward the same single-machine power
+	// dispatch — including its existing request-deduplication window — that
+	// endpoint already uses.
+	//
+	// Restricted to the six single-machine power verbs. `resetBmc` and
+	// `identify` remain operator-only and are not in this vocabulary, and
+	// neither is any rack/tray/NVLink-domain/site-scoped action — none exists as
+	// a tenant-reachable capability anywhere in this API.
+	//
+	// The occupied-server acknowledgement infrastructure's own action endpoint
+	// takes is not a field here: a tenant's instance is by construction its own
+	// occupied server, so this always forwards it satisfied.
+	//
+	// The dispatch is asynchronous — `202` means submitted, not settled — and a
+	// verification failure (the instance's recorded server cannot currently be
+	// confirmed as its own) rejects the request outright rather than acting on
+	// an unverified target.
+	//
+	// KNOWN GAP: `202` is the terminal, caller-visible outcome this endpoint
+	// ever reports for a SUCCEEDED action — there is no follow-up confirming the
+	// physical machine actually reached the requested state, since the underlying
+	// hardware controller exposes no power-state or task-status signal to poll.
+	// This is an accepted, deliberate interim deviation, not a silent omission,
+	// and will be revisited if a real settlement signal becomes available.
+	//
+	// A FAILED action is different: infrastructure does learn when the
+	// hardware controller refuses the request, is unreachable after retries,
+	// or the dispatch workflow itself fails, and relays it — see
+	// `lastPowerActionError` on the instance.
+	//
+	// A second power action against the same instance's server is rejected
+	// `409` if one was already accepted within a guard interval — see the `409`
+	// response below. The pre-existing
+	// short (60-second) request-deduplication window still runs underneath the
+	// guard interval, but only matters as the operative mechanism when the
+	// guard interval is configured off. With the guard interval enabled (the
+	// default), the guard interval — not the deduplication window — decides
+	// whether a second request is accepted or rejected.
+	//
+	// Every rejection this endpoint
+	// itself raises (`400`, `404`, `409`) carries a stable, machine-readable
+	// `details[0].reason` alongside its human-readable message; `401` and `403`
+	// come from the platform's authentication and authorization layer and use
+	// its generic envelope with no `details` entry. Where this endpoint
+	// forwards to infrastructure's own action endpoint, the reason is relayed
+	// as-is, so a tenant sees the same classification an operator calling that
+	// endpoint directly would; the message is this endpoint's own, never
+	// infrastructure's operator-facing text. See the `404` and `409` responses
+	// for the specific reasons.
+	//
+	// Corresponds with POST /v1/regions/{region}/projects/{project}/compute/instances/{id}/{action} (the `ExecuteInstancePowerAction` operationId).
+	ExecuteInstancePowerAction(ctx context.Context, region RegionPathParam, project ProjectPathParam, id string, action string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// ListNetworks List networks
 	//
 	// **Visibility:** `internal` · `public` (x-visibility)
@@ -5046,6 +5105,76 @@ func (c *Client) GetInstance(ctx context.Context, region RegionPathParam, projec
 		return nil, err
 	}
 	ctx = withOperation(ctx, "getInstance")
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ExecuteInstancePowerAction Execute an instance power action
+//
+// **Visibility:** `internal` · `public` (x-visibility)
+//
+// The tenant-facing sibling of infrastructure's operator-only
+// `POST .../infrastructure/servers/{id}/{action}`: resolve this instance to
+// the server it currently occupies and forward the same single-machine power
+// dispatch — including its existing request-deduplication window — that
+// endpoint already uses.
+//
+// Restricted to the six single-machine power verbs. `resetBmc` and
+// `identify` remain operator-only and are not in this vocabulary, and
+// neither is any rack/tray/NVLink-domain/site-scoped action — none exists as
+// a tenant-reachable capability anywhere in this API.
+//
+// The occupied-server acknowledgement infrastructure's own action endpoint
+// takes is not a field here: a tenant's instance is by construction its own
+// occupied server, so this always forwards it satisfied.
+//
+// The dispatch is asynchronous — `202` means submitted, not settled — and a
+// verification failure (the instance's recorded server cannot currently be
+// confirmed as its own) rejects the request outright rather than acting on
+// an unverified target.
+//
+// KNOWN GAP: `202` is the terminal, caller-visible outcome this endpoint
+// ever reports for a SUCCEEDED action — there is no follow-up confirming the
+// physical machine actually reached the requested state, since the underlying
+// hardware controller exposes no power-state or task-status signal to poll.
+// This is an accepted, deliberate interim deviation, not a silent omission,
+// and will be revisited if a real settlement signal becomes available.
+//
+// A FAILED action is different: infrastructure does learn when the
+// hardware controller refuses the request, is unreachable after retries,
+// or the dispatch workflow itself fails, and relays it — see
+// `lastPowerActionError` on the instance.
+//
+// A second power action against the same instance's server is rejected
+// `409` if one was already accepted within a guard interval — see the `409`
+// response below. The pre-existing
+// short (60-second) request-deduplication window still runs underneath the
+// guard interval, but only matters as the operative mechanism when the
+// guard interval is configured off. With the guard interval enabled (the
+// default), the guard interval — not the deduplication window — decides
+// whether a second request is accepted or rejected.
+//
+// Every rejection this endpoint
+// itself raises (`400`, `404`, `409`) carries a stable, machine-readable
+// `details[0].reason` alongside its human-readable message; `401` and `403`
+// come from the platform's authentication and authorization layer and use
+// its generic envelope with no `details` entry. Where this endpoint
+// forwards to infrastructure's own action endpoint, the reason is relayed
+// as-is, so a tenant sees the same classification an operator calling that
+// endpoint directly would; the message is this endpoint's own, never
+// infrastructure's operator-facing text. See the `404` and `409` responses
+// for the specific reasons.
+//
+// Corresponds with POST /v1/regions/{region}/projects/{project}/compute/instances/{id}/{action} (the `ExecuteInstancePowerAction` operationId).
+func (c *Client) ExecuteInstancePowerAction(ctx context.Context, region RegionPathParam, project ProjectPathParam, id string, action string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewExecuteInstancePowerActionRequest(c.Server, region, project, id, action)
+	if err != nil {
+		return nil, err
+	}
+	ctx = withOperation(ctx, "executeInstancePowerAction")
 	req = req.WithContext(ctx)
 	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
 		return nil, err
@@ -9885,6 +10014,77 @@ func NewGetInstanceRequest(server string, region RegionPathParam, project Projec
 	return req, nil
 }
 
+// NewExecuteInstancePowerActionRequest constructs an http.Request for the ExecuteInstancePowerAction method
+func NewExecuteInstancePowerActionRequest(server string, region RegionPathParam, project ProjectPathParam, id string, action string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "region", region, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	if err := checkPathParam("executeInstancePowerAction", "region", string(region), pathParam0, pathParamRule{}); err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "project", project, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	if err := checkPathParam("executeInstancePowerAction", "project", string(project), pathParam1, pathParamRule{}); err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	if err := checkPathParam("executeInstancePowerAction", "id", id, pathParam2, pathParamRule{pattern: pathPatternGetInstanceId}); err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "action", action, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	if err := checkPathParam("executeInstancePowerAction", "action", action, pathParam3, pathParamRule{enum: []string{"powerOn", "powerOff", "powerCycle", "gracefulShutdown", "gracefulRestart", "forceRestart"}}); err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/regions/%s/projects/%s/compute/instances/%s/%s", pathParam0, pathParam1, pathParam2, pathParam3)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewListNetworksRequest constructs an http.Request for the ListNetworks method
 func NewListNetworksRequest(server string, region RegionPathParam, project ProjectPathParam, params *ListNetworksParams) (*http.Request, error) {
 	var err error
@@ -13121,6 +13321,21 @@ var Operations = map[string]OperationInfo{
 			503: {Description: "Service unavailable. The server is temporarily unable to handle the\nrequest because a required dependency is not configured (e.g., an upstream\ndependency is not wired up) or cannot be reached. Distinct from 504\nGateway Timeout, which signals a transient upstream stall.\n", Ref: "#/components/responses/ServiceUnavailable"},
 		},
 	},
+	"executeInstancePowerAction": {
+		Method:     "POST",
+		Path:       "/v1/regions/{region}/projects/{project}/compute/instances/{id}/{action}",
+		Deprecated: false,
+		Responses: map[int]ResponseInfo{
+			202: {Ref: ""},
+			400: {Description: "Bad request", Ref: "#/components/responses/BadRequest"},
+			401: {Description: "Unauthorized", Ref: "#/components/responses/Unauthorized"},
+			403: {Description: "Forbidden", Ref: "#/components/responses/Forbidden"},
+			404: {Description: "Either the instance itself does not exist, or infrastructure no longer knows the host this instance's recorded server names — `details[0].reason` = `POWER_TARGET_UNREACHABLE` (the \"unreachable machine\" class) for the latter.", Ref: ""},
+			409: {Description: "Either the instance's recorded server cannot currently be verified as its own (no valid target to act on — `reason` = `RESERVATION_DRIFTED`), or a power action was already accepted against that server within the guard interval — `reason` = `POWER_ACTION_IN_FLIGHT`, or (rarely) `POWER_TARGET_UNIDENTIFIED` if infrastructure does not yet know this server's hardware identity, or `POWER_ACTION_UNSUPPORTED` if the server has no power-control path at all (its infrastructure provider offers none) — permanent for that server, so retrying does not help. An in-flight conflict carries the estimated remaining wait in both `details[0].metadata.retryAfterSeconds` and the `Retry-After` header; retry after the interval elapses.\nAlso returned, with top-level `reason` = `PROJECT_REGION_MISMATCH`, when the project is locked to a different region than the one in the URL. A project's region is immutable once set, so address the project's own region instead of retrying.", Ref: ""},
+			500: {Description: "Internal server error", Ref: "#/components/responses/InternalServerError"},
+			503: {Description: "Service unavailable. The server is temporarily unable to handle the\nrequest because a required dependency is not configured (e.g., an upstream\ndependency is not wired up) or cannot be reached. Distinct from 504\nGateway Timeout, which signals a transient upstream stall.\n", Ref: "#/components/responses/ServiceUnavailable"},
+		},
+	},
 	"listNetworks": {
 		Method:     "GET",
 		Path:       "/v1/regions/{region}/projects/{project}/networking/networks",
@@ -15532,6 +15747,67 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with GET /v1/regions/{region}/projects/{project}/compute/instances/{id} (the `GetInstance` operationId).
 	GetInstanceWithResponse(ctx context.Context, region RegionPathParam, project ProjectPathParam, id string, params *GetInstanceParams, reqEditors ...RequestEditorFn) (*GetInstanceResponse, error)
+
+	// ExecuteInstancePowerActionWithResponse Execute an instance power action
+	//
+	// **Visibility:** `internal` · `public` (x-visibility)
+	//
+	// The tenant-facing sibling of infrastructure's operator-only
+	// `POST .../infrastructure/servers/{id}/{action}`: resolve this instance to
+	// the server it currently occupies and forward the same single-machine power
+	// dispatch — including its existing request-deduplication window — that
+	// endpoint already uses.
+	//
+	// Restricted to the six single-machine power verbs. `resetBmc` and
+	// `identify` remain operator-only and are not in this vocabulary, and
+	// neither is any rack/tray/NVLink-domain/site-scoped action — none exists as
+	// a tenant-reachable capability anywhere in this API.
+	//
+	// The occupied-server acknowledgement infrastructure's own action endpoint
+	// takes is not a field here: a tenant's instance is by construction its own
+	// occupied server, so this always forwards it satisfied.
+	//
+	// The dispatch is asynchronous — `202` means submitted, not settled — and a
+	// verification failure (the instance's recorded server cannot currently be
+	// confirmed as its own) rejects the request outright rather than acting on
+	// an unverified target.
+	//
+	// KNOWN GAP: `202` is the terminal, caller-visible outcome this endpoint
+	// ever reports for a SUCCEEDED action — there is no follow-up confirming the
+	// physical machine actually reached the requested state, since the underlying
+	// hardware controller exposes no power-state or task-status signal to poll.
+	// This is an accepted, deliberate interim deviation, not a silent omission,
+	// and will be revisited if a real settlement signal becomes available.
+	//
+	// A FAILED action is different: infrastructure does learn when the
+	// hardware controller refuses the request, is unreachable after retries,
+	// or the dispatch workflow itself fails, and relays it — see
+	// `lastPowerActionError` on the instance.
+	//
+	// A second power action against the same instance's server is rejected
+	// `409` if one was already accepted within a guard interval — see the `409`
+	// response below. The pre-existing
+	// short (60-second) request-deduplication window still runs underneath the
+	// guard interval, but only matters as the operative mechanism when the
+	// guard interval is configured off. With the guard interval enabled (the
+	// default), the guard interval — not the deduplication window — decides
+	// whether a second request is accepted or rejected.
+	//
+	// Every rejection this endpoint
+	// itself raises (`400`, `404`, `409`) carries a stable, machine-readable
+	// `details[0].reason` alongside its human-readable message; `401` and `403`
+	// come from the platform's authentication and authorization layer and use
+	// its generic envelope with no `details` entry. Where this endpoint
+	// forwards to infrastructure's own action endpoint, the reason is relayed
+	// as-is, so a tenant sees the same classification an operator calling that
+	// endpoint directly would; the message is this endpoint's own, never
+	// infrastructure's operator-facing text. See the `404` and `409` responses
+	// for the specific reasons.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /v1/regions/{region}/projects/{project}/compute/instances/{id}/{action} (the `ExecuteInstancePowerAction` operationId).
+	ExecuteInstancePowerActionWithResponse(ctx context.Context, region RegionPathParam, project ProjectPathParam, id string, action string, reqEditors ...RequestEditorFn) (*ExecuteInstancePowerActionResponse, error)
 
 	// ListNetworksWithResponse List networks
 	//
@@ -20337,6 +20613,112 @@ func (r GetInstanceResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r GetInstanceResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// ExecuteInstancePowerActionResponse409Headers the declared response headers of an HTTP 409 response for ExecuteInstancePowerAction
+type ExecuteInstancePowerActionResponse409Headers struct {
+	RetryAfter *int
+}
+
+type ExecuteInstancePowerActionResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON202 the response for an HTTP 202 `application/json` response
+	JSON202 *Instance
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *Error
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Error
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalServerError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *ServiceUnavailable
+	// Headers409 the parsed response headers for an HTTP 409 response
+	Headers409 *ExecuteInstancePowerActionResponse409Headers
+}
+
+// GetJSON202 returns the response for an HTTP 202 `application/json` response
+func (r ExecuteInstancePowerActionResponse) GetJSON202() *Instance {
+	return r.JSON202
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r ExecuteInstancePowerActionResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r ExecuteInstancePowerActionResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r ExecuteInstancePowerActionResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r ExecuteInstancePowerActionResponse) GetJSON404() *Error {
+	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r ExecuteInstancePowerActionResponse) GetJSON409() *Error {
+	return r.JSON409
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r ExecuteInstancePowerActionResponse) GetJSON500() *InternalServerError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r ExecuteInstancePowerActionResponse) GetJSON503() *ServiceUnavailable {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r ExecuteInstancePowerActionResponse) GetBody() []byte {
+	return r.Body
+}
+
+// HTTPResult returns HTTPResponse and Body together. Unlike the getters above
+// it is safe to call on a nil receiver. See [HTTPResulter].
+func (r *ExecuteInstancePowerActionResponse) HTTPResult() (*http.Response, []byte) {
+	if r == nil {
+		return nil, nil
+	}
+	return r.HTTPResponse, r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ExecuteInstancePowerActionResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ExecuteInstancePowerActionResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ExecuteInstancePowerActionResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -25382,6 +25764,73 @@ func (c *ClientWithResponses) GetInstanceWithResponse(ctx context.Context, regio
 	return ParseGetInstanceResponse(rsp)
 }
 
+// ExecuteInstancePowerActionWithResponse Execute an instance power action
+//
+// **Visibility:** `internal` · `public` (x-visibility)
+//
+// The tenant-facing sibling of infrastructure's operator-only
+// `POST .../infrastructure/servers/{id}/{action}`: resolve this instance to
+// the server it currently occupies and forward the same single-machine power
+// dispatch — including its existing request-deduplication window — that
+// endpoint already uses.
+//
+// Restricted to the six single-machine power verbs. `resetBmc` and
+// `identify` remain operator-only and are not in this vocabulary, and
+// neither is any rack/tray/NVLink-domain/site-scoped action — none exists as
+// a tenant-reachable capability anywhere in this API.
+//
+// The occupied-server acknowledgement infrastructure's own action endpoint
+// takes is not a field here: a tenant's instance is by construction its own
+// occupied server, so this always forwards it satisfied.
+//
+// The dispatch is asynchronous — `202` means submitted, not settled — and a
+// verification failure (the instance's recorded server cannot currently be
+// confirmed as its own) rejects the request outright rather than acting on
+// an unverified target.
+//
+// KNOWN GAP: `202` is the terminal, caller-visible outcome this endpoint
+// ever reports for a SUCCEEDED action — there is no follow-up confirming the
+// physical machine actually reached the requested state, since the underlying
+// hardware controller exposes no power-state or task-status signal to poll.
+// This is an accepted, deliberate interim deviation, not a silent omission,
+// and will be revisited if a real settlement signal becomes available.
+//
+// A FAILED action is different: infrastructure does learn when the
+// hardware controller refuses the request, is unreachable after retries,
+// or the dispatch workflow itself fails, and relays it — see
+// `lastPowerActionError` on the instance.
+//
+// A second power action against the same instance's server is rejected
+// `409` if one was already accepted within a guard interval — see the `409`
+// response below. The pre-existing
+// short (60-second) request-deduplication window still runs underneath the
+// guard interval, but only matters as the operative mechanism when the
+// guard interval is configured off. With the guard interval enabled (the
+// default), the guard interval — not the deduplication window — decides
+// whether a second request is accepted or rejected.
+//
+// Every rejection this endpoint
+// itself raises (`400`, `404`, `409`) carries a stable, machine-readable
+// `details[0].reason` alongside its human-readable message; `401` and `403`
+// come from the platform's authentication and authorization layer and use
+// its generic envelope with no `details` entry. Where this endpoint
+// forwards to infrastructure's own action endpoint, the reason is relayed
+// as-is, so a tenant sees the same classification an operator calling that
+// endpoint directly would; the message is this endpoint's own, never
+// infrastructure's operator-facing text. See the `404` and `409` responses
+// for the specific reasons.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /v1/regions/{region}/projects/{project}/compute/instances/{id}/{action} (the `ExecuteInstancePowerAction` operationId).
+func (c *ClientWithResponses) ExecuteInstancePowerActionWithResponse(ctx context.Context, region RegionPathParam, project ProjectPathParam, id string, action string, reqEditors ...RequestEditorFn) (*ExecuteInstancePowerActionResponse, error) {
+	rsp, err := c.ExecuteInstancePowerAction(ctx, region, project, id, action, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseExecuteInstancePowerActionResponse(rsp)
+}
+
 // ListNetworksWithResponse List networks
 //
 // **Visibility:** `internal` · `public` (x-visibility)
@@ -29677,6 +30126,101 @@ func decodeGetInstanceResponse(response *GetInstanceResponse, rsp *http.Response
 			return nil, err
 		}
 		response.JSON422 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalServerError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ServiceUnavailable
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return nil, nil
+}
+
+// ParseExecuteInstancePowerActionResponse parses an HTTP response from a ExecuteInstancePowerActionWithResponse call
+func ParseExecuteInstancePowerActionResponse(rsp *http.Response) (*ExecuteInstancePowerActionResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ExecuteInstancePowerActionResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+	if _, err := decodeExecuteInstancePowerActionResponse(response, rsp, bodyBytes); err != nil {
+		return response, err
+	}
+	switch {
+	case rsp.StatusCode == 409:
+		var headers ExecuteInstancePowerActionResponse409Headers
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value int
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "integer", Format: ""}); err != nil {
+				return response, err
+			}
+			headers.RetryAfter = &value
+		}
+		response.Headers409 = &headers
+	}
+
+	return response, nil
+}
+
+// decodeExecuteInstancePowerActionResponse fills response from the body. A decode error leaves Body set.
+func decodeExecuteInstancePowerActionResponse(response *ExecuteInstancePowerActionResponse, rsp *http.Response, bodyBytes []byte) (*ExecuteInstancePowerActionResponse, error) {
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 202:
+		var dest Instance
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON202 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
 		var dest InternalServerError

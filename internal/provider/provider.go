@@ -347,6 +347,7 @@ func (p *aiProvider) ListResources(_ context.Context) []func() list.ListResource
 func (p *aiProvider) Actions(_ context.Context) []func() action.Action {
 	return []func() action.Action{
 		newClusterCancelOperationAction,
+		newInstancePowerAction,
 	}
 }
 

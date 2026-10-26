@@ -213,6 +213,10 @@ var specBindings = func() map[string]specBinding {
 	each([]string{"deleteWebhookSubscription", "rotateWebhookSubscriptionSecret"}, "path:id",
 		notConfigurable("the platform assigns a subscription's id, and an import checks it's a UUID before state holds it"))
 	b["listWebhookDeliveries path:id"] = onDataSource(webhookDeliveriesDataSourceSuffix, "subscription_id", asValue)
+	// The power action: the instance and the verb, both in the path.
+	power := instancePowerActionSuffix
+	b["executeInstancePowerAction path:id"] = specBinding{kind: "action", suffix: power, attr: "instance_id", mode: asValue}
+	b["executeInstancePowerAction path:action"] = specBinding{kind: "action", suffix: power, attr: "action", mode: asValue}
 	// Service accounts and their credentials, read inside an organization.
 	// The provider makes neither: the platform refuses that to a
 	// client_credentials login.

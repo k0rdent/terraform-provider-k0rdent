@@ -49,6 +49,12 @@ func TestBuildersRefuseAPathParameterBeforeBuildingTheURL(t *testing.T) {
 		}, "getOrganization", "id", "a" + strings.Repeat("b", 63), "maxLength"},
 		{"instance id off the contract's pattern", func() (*http.Request, error) { return NewGetInstanceRequest(testServer, "r1", "proj", "inst-abc", nil) },
 			"getInstance", "id", "inst-abc", "pattern"},
+		{"power action the enum doesn't name", func() (*http.Request, error) {
+			return NewExecuteInstancePowerActionRequest(testServer, "r1", "proj", testInstance, "reboot")
+		}, "executeInstancePowerAction", "action", "reboot", "enum"},
+		{"power action in the wrong case", func() (*http.Request, error) {
+			return NewExecuteInstancePowerActionRequest(testServer, "r1", "proj", testInstance, "PowerOn")
+		}, "executeInstancePowerAction", "action", "PowerOn", "enum"},
 		{"dot-dot where the contract has a pattern too", func() (*http.Request, error) { return NewGetInstanceRequest(testServer, "r1", "proj", "..", nil) },
 			"getInstance", "id", "..", "segment"},
 	} {
@@ -101,6 +107,9 @@ func TestBuildersSendEveryOtherValueInsideItsOwnSegment(t *testing.T) {
 		{"an instance id on the contract's pattern", func() (*http.Request, error) {
 			return NewGetInstanceRequest(testServer, "r1", "proj", testInstance, nil)
 		}, "/v1/regions/r1/projects/proj/compute/instances/" + testInstance},
+		{"a power action the enum names", func() (*http.Request, error) {
+			return NewExecuteInstancePowerActionRequest(testServer, "r1", "proj", testInstance, "gracefulRestart")
+		}, "/v1/regions/r1/projects/proj/compute/instances/" + testInstance + "/gracefulRestart"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			req, err := tc.build()

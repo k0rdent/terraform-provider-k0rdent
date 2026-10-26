@@ -272,6 +272,7 @@ func (s *state) routesWith(mux *http.ServeMux, authorized func(http.HandlerFunc)
 	mux.HandleFunc("POST /v1/regions/{region}/projects/{project}/compute/instance-groups/{id}/scale", authorized(s.scaleInstanceGroup))
 	mux.HandleFunc("GET /v1/regions/{region}/projects/{project}/compute/instances", authorized(s.listInstances))
 	mux.HandleFunc("GET /v1/regions/{region}/projects/{project}/compute/instances/{id}", authorized(s.getInstance))
+	mux.HandleFunc("POST /v1/regions/{region}/projects/{project}/compute/instances/{id}/{action}", authorized(s.executeInstancePowerAction))
 
 	mux.HandleFunc("GET /v1/regions/{region}/projects/{project}/networking/networks", authorized(s.listNetworks))
 	mux.HandleFunc("POST /v1/regions/{region}/projects/{project}/networking/networks", authorized(s.createNetwork))
@@ -484,6 +485,8 @@ type objects struct {
 	// released are the records of instances whose group was deleted, which
 	// the contract keeps and never reaps. See instances.go.
 	released []fakeInstance
+	// power is the last power action accepted for each host, by instance id.
+	power map[string]powered
 
 	// Only the global tier's objects, the scope with no region and no
 	// project, hold these. See projects.go, webhooks.go and
@@ -523,6 +526,7 @@ func newObjects(sc scope) *objects {
 		groupsSec:  table[*fakeSecurityGroup]{},
 		peerings:   table[*fakePeering]{},
 		fileStores: table[*fakeFileStore]{},
+		power:      map[string]powered{},
 
 		projects:        table[*fakeProject]{},
 		webhooks:        table[*fakeWebhook]{},
