@@ -2411,7 +2411,10 @@ func (s *state) gateway(next http.HandlerFunc) http.HandlerFunc {
 		known, locked := true, ""
 		switch org, project := r.PathValue("orgId"), r.PathValue("project"); {
 		case org != "":
-			known = s.organizations[org]
+			// The renamed-scope marker stands for an organization on a platform
+			// whose quota API renamed the organization's scope. Only the quota
+			// reads answer for it.
+			known = s.organizations[org] || strings.Contains(org, quotaRenamedScope)
 		case project != "":
 			var p *fakeProject
 			p, known = projectKind.rows(s.global())[at{id: project}]

@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
@@ -15,24 +16,60 @@ import (
 )
 
 var (
-	_ datasource.DataSource              = (*tenantQuotaDataSource)(nil)
-	_ datasource.DataSourceWithConfigure = (*tenantQuotaDataSource)(nil)
+	_ datasource.DataSource              = (*organizationQuotaDataSource)(nil)
+	_ datasource.DataSourceWithConfigure = (*organizationQuotaDataSource)(nil)
 	_ datasource.DataSource              = (*projectQuotaDataSource)(nil)
 	_ datasource.DataSourceWithConfigure = (*projectQuotaDataSource)(nil)
 )
 
 const (
-	tenantQuotaDataSourceSuffix  = "tenant_quota"
-	projectQuotaDataSourceSuffix = "project_quota"
+	organizationQuotaDataSourceSuffix = "organization_quota"
+	tenantQuotaDataSourceSuffix       = "tenant_quota"
+	projectQuotaDataSourceSuffix      = "project_quota"
 )
 
-func newTenantQuotaDataSource() datasource.DataSource  { return &tenantQuotaDataSource{} }
+// The names of the organization's quota scope. The platform called it
+// `tenant` until its quota API renamed it `organization`, and a landscape can
+// run either, so the provider reports one name whichever the platform sends.
+const (
+	organizationScope = "organization"
+	tenantScope       = "tenant"
+)
+
+// quotaScopeAs spells a quota scope the platform sent: orgScope when it names
+// the organization in either spelling, and otherwise as sent.
+func quotaScopeAs(scope, orgScope string) string {
+	if scope == organizationScope || scope == tenantScope {
+		return orgScope
+	}
+	return scope
+}
+
+func newOrganizationQuotaDataSource() datasource.DataSource {
+	return &organizationQuotaDataSource{suffix: organizationQuotaDataSourceSuffix, orgScope: organizationScope}
+}
+
+// newTenantQuotaDataSource is the organization quota under its name from
+// before the rename. It keeps reporting the organization's scope as `tenant`,
+// so a configuration written for it reads the same on either platform.
+func newTenantQuotaDataSource() datasource.DataSource {
+	return &organizationQuotaDataSource{suffix: tenantQuotaDataSourceSuffix, orgScope: tenantScope,
+		deprecation: fmt.Sprintf("Use `%s` instead, which names the organization's scope `organization`. "+
+			"`%s` is removed in v1.0.0.", ResourceName(organizationQuotaDataSourceSuffix),
+			ResourceName(tenantQuotaDataSourceSuffix))}
+}
+
 func newProjectQuotaDataSource() datasource.DataSource { return &projectQuotaDataSource{} }
 
-type tenantQuotaDataSource struct{ meta *Meta }
+type organizationQuotaDataSource struct {
+	meta        *Meta
+	suffix      string
+	orgScope    string
+	deprecation string
+}
 type projectQuotaDataSource struct{ meta *Meta }
 
-type tenantQuotaModel struct {
+type organizationQuotaModel struct {
 	OrganizationID types.String `tfsdk:"organization_id"`
 	Profile        types.String `tfsdk:"profile"`
 	Dimensions     types.Map    `tfsdk:"dimensions"`
@@ -85,17 +122,18 @@ func quotaDimensionType() attr.Type {
 	}}
 }
 
-func (d *tenantQuotaDataSource) Metadata(_ context.Context, _ datasource.MetadataRequest, resp *datasource.MetadataResponse) {
-	resp.TypeName = ResourceName(tenantQuotaDataSourceSuffix)
+func (d *organizationQuotaDataSource) Metadata(_ context.Context, _ datasource.MetadataRequest, resp *datasource.MetadataResponse) {
+	resp.TypeName = ResourceName(d.suffix)
 }
 
 func (d *projectQuotaDataSource) Metadata(_ context.Context, _ datasource.MetadataRequest, resp *datasource.MetadataResponse) {
 	resp.TypeName = ResourceName(projectQuotaDataSourceSuffix)
 }
 
-// quotaAttributes are the attributes both quota views share. Read-only because
-// quota profiles and assignments are operator-facing.
-func quotaAttributes() map[string]schema.Attribute {
+// quotaAttributes are the attributes both quota views share, with the
+// organization's scope named orgScope. Read-only because quota profiles and
+// assignments are operator-facing.
+func quotaAttributes(orgScope string) map[string]schema.Attribute {
 	return map[string]schema.Attribute{
 		"organization_id": schema.StringAttribute{
 			Required: true,
@@ -137,19 +175,19 @@ func quotaAttributes() map[string]schema.Attribute {
 					},
 					"binding_scope": schema.StringAttribute{
 						Computed: true,
-						MarkdownDescription: "The scope `headroom` came from, `tenant` or `project`. Null " +
-							"exactly when `headroom` is.",
+						MarkdownDescription: "The scope `headroom` came from, `" + orgScope + "` or `project`. " +
+							"Null exactly when `headroom` is.",
 					},
 					"scopes": schema.ListNestedAttribute{
 						Computed: true,
 						MarkdownDescription: "The scopes that apply, broadest first, in the platform's " +
-							"order: the organization (`tenant`) always, then the project when it has an " +
+							"order: `" + orgScope + "` always, then `project` when the project has an " +
 							"assignment of its own.",
 						NestedObject: schema.NestedAttributeObject{
 							Attributes: map[string]schema.Attribute{
 								"scope": schema.StringAttribute{
 									Computed:            true,
-									MarkdownDescription: "`tenant` for the organization, `project` for a project.",
+									MarkdownDescription: "`" + orgScope + "` for the organization, `project` for a project.",
 								},
 								"target_id": schema.StringAttribute{
 									Computed:            true,
@@ -180,18 +218,22 @@ func quotaAttributes() map[string]schema.Attribute {
 	}
 }
 
-func (d *tenantQuotaDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
+func (d *organizationQuotaDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
+	description := "What an organization is allowed and what it has used, per quota dimension. " +
+		"There is no capacity read on the public API, so this is a limit, not availability."
+	if d.deprecation != "" {
+		description = "~> **Deprecated:** " + d.deprecation + "\n\n" + description
+	}
 	resp.Schema = schema.Schema{
-		MarkdownDescription: "What an organization is allowed and what it has used, per quota " +
-			"dimension. There is no capacity read on the public API, so this is a limit, not " +
-			"availability.",
-		Attributes: quotaAttributes(),
+		MarkdownDescription: description,
+		DeprecationMessage:  d.deprecation,
+		Attributes:          quotaAttributes(d.orgScope),
 	}
 	documentDataSourceSchema(&resp.Schema)
 }
 
 func (d *projectQuotaDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
-	attrs := quotaAttributes()
+	attrs := quotaAttributes(organizationScope)
 	attrs["project_id"] = schema.StringAttribute{
 		Required:            true,
 		MarkdownDescription: "Project to read, within `organization_id`.",
@@ -206,7 +248,7 @@ func (d *projectQuotaDataSource) Schema(_ context.Context, _ datasource.SchemaRe
 	documentDataSourceSchema(&resp.Schema)
 }
 
-func (d *tenantQuotaDataSource) Configure(_ context.Context, req datasource.ConfigureRequest, resp *datasource.ConfigureResponse) {
+func (d *organizationQuotaDataSource) Configure(_ context.Context, req datasource.ConfigureRequest, resp *datasource.ConfigureResponse) {
 	d.meta = configureMeta(req.ProviderData, &resp.Diagnostics)
 }
 
@@ -214,8 +256,8 @@ func (d *projectQuotaDataSource) Configure(_ context.Context, req datasource.Con
 	d.meta = configureMeta(req.ProviderData, &resp.Diagnostics)
 }
 
-func (d *tenantQuotaDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {
-	var data tenantQuotaModel
+func (d *organizationQuotaDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {
+	var data organizationQuotaModel
 	resp.Diagnostics.Append(req.Config.Get(ctx, &data)...)
 	if resp.Diagnostics.HasError() || !providerConfigured(d.meta, &resp.Diagnostics) {
 		return
@@ -227,10 +269,10 @@ func (d *tenantQuotaDataSource) Read(ctx context.Context, req datasource.ReadReq
 		if got != nil {
 			body, httpResp = got.Body, got.HTTPResponse
 		}
-		addAPIError(&resp.Diagnostics, "read the tenant quota", httpResp, body, err)
+		addAPIError(&resp.Diagnostics, "read the organization quota", httpResp, body, err)
 		return
 	}
-	data.Profile, data.Dimensions = quotaViewFrom(ctx, *got.JSON200, &resp.Diagnostics)
+	data.Profile, data.Dimensions = quotaViewFrom(ctx, *got.JSON200, d.orgScope, &resp.Diagnostics)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
@@ -251,14 +293,15 @@ func (d *projectQuotaDataSource) Read(ctx context.Context, req datasource.ReadRe
 		addAPIError(&resp.Diagnostics, "read the project quota", httpResp, body, err)
 		return
 	}
-	data.Profile, data.Dimensions = quotaViewFrom(ctx, *got.JSON200, &resp.Diagnostics)
+	data.Profile, data.Dimensions = quotaViewFrom(ctx, *got.JSON200, organizationScope, &resp.Diagnostics)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
-// quotaViewFrom maps a quota view. It reads `scopes`, `headroom` and
-// `enforced`, never the deprecated top-level `limit`, `used` and `remaining`,
-// which describe the organization alone and read 0 for an unmeasured dimension.
-func quotaViewFrom(ctx context.Context, view k0rdent.TenantQuotaView, diags *diag.Diagnostics) (types.String, types.Map) {
+// quotaViewFrom maps a quota view, naming the organization's scope orgScope.
+// It reads `scopes`, `headroom` and `enforced`, never the deprecated top-level
+// `limit`, `used` and `remaining`, which describe the organization alone and
+// read 0 for an unmeasured dimension.
+func quotaViewFrom(ctx context.Context, view k0rdent.TenantQuotaView, orgScope string, diags *diag.Diagnostics) (types.String, types.Map) {
 	profile := types.StringNull()
 	if view.Profile != nil {
 		profile = types.StringValue(view.Profile.DisplayName)
@@ -269,7 +312,7 @@ func quotaViewFrom(ctx context.Context, view k0rdent.TenantQuotaView, diags *dia
 		scopes := make([]quotaScopeModel, 0, len(row.Scopes))
 		for _, s := range row.Scopes {
 			scopes = append(scopes, quotaScopeModel{
-				Scope:     types.StringValue(string(s.Scope)),
+				Scope:     types.StringValue(quotaScopeAs(string(s.Scope), orgScope)),
 				TargetID:  types.StringValue(s.TargetId),
 				Limit:     int64OrNull(s.Limit),
 				Used:      int64OrNull(s.Used),
@@ -282,7 +325,7 @@ func quotaViewFrom(ctx context.Context, view k0rdent.TenantQuotaView, diags *dia
 
 		binding := types.StringNull()
 		if row.BindingScope != nil {
-			binding = types.StringValue(string(*row.BindingScope))
+			binding = types.StringValue(quotaScopeAs(string(*row.BindingScope), orgScope))
 		}
 		dimensions[row.Dimension] = quotaDimensionModel{
 			Unit:         types.StringValue(row.Unit),

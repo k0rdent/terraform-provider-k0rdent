@@ -46,11 +46,11 @@ output "node_headroom" {
 
 Read-Only:
 
-- `binding_scope` (String) The scope `headroom` came from, `tenant` or `project`. Null exactly when `headroom` is.
+- `binding_scope` (String) The scope `headroom` came from, `organization` or `project`. Null exactly when `headroom` is.
 - `enforced` (Boolean) Whether admission refuses past this dimension's limits. When false the limits are recorded but nothing refuses past them, and `used` and `headroom` are null at every scope: unmeasured is not zero.
 - `headroom` (Number) How much more fits: the smallest headroom across the scopes that cap this dimension. Null when no scope caps it or it is not enforced. This is a limit, not availability: headroom does not mean the hardware is free.
 - `over_limit` (Boolean) Whether usage exceeds at least one scope's limit.
-- `scopes` (Attributes List) The scopes that apply, broadest first, in the platform's order: the organization (`tenant`) always, then the project when it has an assignment of its own. (see [below for nested schema](#nestedatt--dimensions--scopes))
+- `scopes` (Attributes List) The scopes that apply, broadest first, in the platform's order: `organization` always, then `project` when the project has an assignment of its own. (see [below for nested schema](#nestedatt--dimensions--scopes))
 - `unit` (String) Unit of every limit, usage and headroom figure in this entry.
 
 <a id="nestedatt--dimensions--scopes"></a>
@@ -61,11 +61,11 @@ Read-Only:
 - `headroom` (Number) Remaining under this scope's limit. Null when there is no limit or the dimension is not enforced.
 - `limit` (Number) The scope's cap. Null when the scope does not cap this dimension.
 - `over_limit` (Boolean) Whether usage exceeds this scope's limit, which happens when a limit is lowered below current usage.
-- `scope` (String) `tenant` for the organization, `project` for a project.
+- `scope` (String) `organization` for the organization, `project` for a project.
 - `target_id` (String) The organization or project the scope belongs to.
 - `used` (Number) Usage recorded at this scope, summed across regions. Null when the dimension is not enforced.
 
 ## Related
 
 - [`k0rdent_project`](../resources/project.md) resource: manages the project the quota applies to.
-- [`k0rdent_tenant_quota`](../data-sources/tenant_quota.md) data source: reports the organization's own limits.
+- [`k0rdent_organization_quota`](../data-sources/organization_quota.md) data source: reports the organization's own limits.

@@ -246,6 +246,33 @@ func TestInstanceGroupQuotaRefusalNamesTheNumbers(t *testing.T) {
 	}
 }
 
+// The platform names the organization's scope `tenant` before its quota API
+// renamed it and `organization` after. The refusal reads the same from either.
+func TestInstanceGroupQuotaRefusalNamesTheOrganizationOneWay(t *testing.T) {
+	for _, sent := range []string{tenantScope, organizationScope} {
+		t.Run(sent, func(t *testing.T) {
+			body := `{"error":{"code":409,"reason":"QUOTA_EXCEEDED","requestId":"req-1","message":"over quota",
+				"details":[{"reason":"QUOTA_EXCEEDED","metadata":{"dimension":"node_count","requested":3,
+				"admissible":1,"bindingScope":"` + sent + `","scopes":[
+				{"scope":"` + sent + `","targetId":"acme","limit":5,"used":4,"headroom":1},
+				{"scope":"project","targetId":"demo","limit":9,"used":0,"headroom":9}]}}]}}`
+			server, _ := groupServer(t, "active", 100, http.StatusConflict, body)
+			text := diagText(scaleGroup(t, server, time.Minute))
+			for _, want := range []string{
+				"binding scope organization", "organization acme: limit 5, used 4, headroom 1",
+				"project demo: limit 9", "under the organization limit",
+			} {
+				if !strings.Contains(text, want) {
+					t.Errorf("diagnostic lacks %q:\n%s", want, text)
+				}
+			}
+			if strings.Contains(text, "tenant") {
+				t.Errorf("diagnostic names the old scope:\n%s", text)
+			}
+		})
+	}
+}
+
 // Each pool refusal needs a different action, and none of them clears by
 // retrying the same request.
 func TestInstanceGroupPoolRefusalsSayWhatToDo(t *testing.T) {

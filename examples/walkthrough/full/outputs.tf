@@ -148,7 +148,7 @@ output "vpc_peering" {
 locals {
   over_quota = var.quota_checks ? concat(
     [for k, d in data.k0rdent_project_quota.this[0].dimensions : "${k} in the project" if d.over_limit],
-    [for k, d in data.k0rdent_tenant_quota.this[0].dimensions : "${k} in the organization" if d.over_limit],
+    [for k, d in data.k0rdent_organization_quota.this[0].dimensions : "${k} in the organization" if d.over_limit],
   ) : []
 
   tags_landed = concat(

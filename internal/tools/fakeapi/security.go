@@ -370,16 +370,24 @@ func securityGroupJSON(g *fakeSecurityGroup) map[string]any {
 // that as 0 would report headroom nobody vouches for. `node_count` is capped at
 // the organization and, on a project with its own assignment, at the project,
 // where the project's smaller headroom binds.
-func quotaView(project string) map[string]any {
+//
+// The organization's scope is `tenant`, as the pinned contract names it. An
+// organization id carrying quotaRenamedScope gets `organization`, the name the
+// platform's quota API renames it to, so a test can read both.
+func quotaView(org, project string) map[string]any {
+	orgScope := "tenant"
+	if strings.Contains(org, quotaRenamedScope) {
+		orgScope = "organization"
+	}
 	tenant := func(extra map[string]any) map[string]any {
-		out := map[string]any{"scope": "tenant", "targetId": "org-demo", "overLimit": false}
+		out := map[string]any{"scope": orgScope, "targetId": "org-demo", "overLimit": false}
 		for k, v := range extra {
 			out[k] = v
 		}
 		return out
 	}
 	node := []any{tenant(map[string]any{"limit": 32, "used": 6, "headroom": 26})}
-	nodeHeadroom, binding := 26, "tenant"
+	nodeHeadroom, binding := 26, orgScope
 	if project != "" {
 		node = append(node, map[string]any{
 			"scope": "project", "targetId": project, "limit": 8, "used": 6, "headroom": 2, "overLimit": false,
@@ -406,12 +414,16 @@ func quotaView(project string) map[string]any {
 	}
 }
 
-func (s *state) getTenantQuota(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, quotaView(""))
+// quotaRenamedScope in an organization id makes its quota reads name the
+// organization's scope `organization` rather than `tenant`.
+const quotaRenamedScope = "fake-quota-renamed-scope"
+
+func (s *state) getTenantQuota(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, quotaView(r.PathValue("orgId"), ""))
 }
 
 func (s *state) getProjectQuota(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, quotaView(r.PathValue("id")))
+	writeJSON(w, http.StatusOK, quotaView(r.PathValue("orgId"), r.PathValue("id")))
 }
 
 // normalizePorts stores "80-80" as "80": the contract says the two are

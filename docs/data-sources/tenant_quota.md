@@ -3,10 +3,13 @@
 page_title: "k0rdent_tenant_quota Data Source - k0rdent"
 subcategory: ""
 description: |-
+  ~> Deprecated: Use k0rdent_organization_quota instead, which names the organization's scope organization. k0rdent_tenant_quota is removed in v1.0.0.
   What an organization is allowed and what it has used, per quota dimension. There is no capacity read on the public API, so this is a limit, not availability.
 ---
 
 # k0rdent_tenant_quota (Data Source)
+
+~> **Deprecated:** Use `k0rdent_organization_quota` instead, which names the organization's scope `organization`. `k0rdent_tenant_quota` is removed in v1.0.0.
 
 What an organization is allowed and what it has used, per quota dimension. There is no capacity read on the public API, so this is a limit, not availability.
 
@@ -54,7 +57,7 @@ Read-Only:
 - `enforced` (Boolean) Whether admission refuses past this dimension's limits. When false the limits are recorded but nothing refuses past them, and `used` and `headroom` are null at every scope: unmeasured is not zero.
 - `headroom` (Number) How much more fits: the smallest headroom across the scopes that cap this dimension. Null when no scope caps it or it is not enforced. This is a limit, not availability: headroom does not mean the hardware is free.
 - `over_limit` (Boolean) Whether usage exceeds at least one scope's limit.
-- `scopes` (Attributes List) The scopes that apply, broadest first, in the platform's order: the organization (`tenant`) always, then the project when it has an assignment of its own. (see [below for nested schema](#nestedatt--dimensions--scopes))
+- `scopes` (Attributes List) The scopes that apply, broadest first, in the platform's order: `tenant` always, then `project` when the project has an assignment of its own. (see [below for nested schema](#nestedatt--dimensions--scopes))
 - `unit` (String) Unit of every limit, usage and headroom figure in this entry.
 
 <a id="nestedatt--dimensions--scopes"></a>
@@ -71,6 +74,7 @@ Read-Only:
 
 ## Related
 
+- [`k0rdent_organization_quota`](../data-sources/organization_quota.md) data source: replaces it, naming the organization's scope `organization`.
 - [`k0rdent_project_quota`](../data-sources/project_quota.md) data source: reports one project's share of it.
 - [`k0rdent_kubernetes_cluster`](../resources/kubernetes_cluster.md) resource: sizes a node pool, which the quota caps.
 - [`k0rdent_cluster_type`](../data-sources/cluster_type.md) data source: reads the ClusterType a cluster is built from.

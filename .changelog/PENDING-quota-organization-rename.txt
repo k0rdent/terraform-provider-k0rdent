@@ -1,0 +1,15 @@
+```release-note:new-data-source
+k0rdent_organization_quota
+```
+
+```release-note:note
+data-source/k0rdent_tenant_quota: Deprecated. Use `k0rdent_organization_quota` instead, which names the organization's scope `organization`. `k0rdent_tenant_quota` is removed in v1.0.0, and reports `tenant` until then on a platform either side of the rename
+```
+
+```release-note:breaking-change
+data-source/k0rdent_project_quota: `binding_scope` and `scopes[*].scope` name the organization's scope `organization` rather than `tenant`, whichever the platform sends. Compare with `organization`
+```
+
+```release-note:enhancement
+provider: A `QUOTA_EXCEEDED` refusal names the organization's scope `organization` whichever the platform sends
+```

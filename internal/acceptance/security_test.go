@@ -13,9 +13,11 @@ import (
 
 var (
 	securityGroupType = provider.ResourceName("security_group")
-	quotaType         = provider.ResourceName("tenant_quota")
+	quotaType         = provider.ResourceName("organization_quota")
+	legacyQuotaType   = provider.ResourceName("tenant_quota")
 	securityGroupAddr = securityGroupType + ".test"
 	quotaAddr         = "data." + quotaType + ".org"
+	legacyQuotaAddr   = "data." + legacyQuotaType + ".org"
 	projectQuotaType  = provider.ResourceName("project_quota")
 	projectQuotaAddr  = "data." + projectQuotaType + ".team"
 )
@@ -210,41 +212,61 @@ resource %q "test" {
 	}
 }
 
-func TestAccTenantQuota(t *testing.T) {
-	config := fmt.Sprintf(`
-data %q "org" {
-  organization_id = "org-demo"
+// The fake names the organization's scope `tenant`, as the pinned contract
+// does, unless the organization id asks for `organization`, the name the
+// platform's quota API renames it to. Each data source reports its documented
+// name from either.
+func TestAccOrganizationQuota(t *testing.T) {
+	for platform, org := range map[string]string{
+		"tenant":       "org-demo",
+		"organization": "org-fake-quota-renamed-scope",
+	} {
+		t.Run(platform, func(t *testing.T) {
+			config := fmt.Sprintf(`
+data %[1]q "org" {
+  organization_id = %[4]q
 }
 
-data %q "team" {
-  organization_id = "org-demo"
+data %[2]q "org" {
+  organization_id = %[4]q
+}
+
+data %[3]q "team" {
+  organization_id = %[4]q
   project_id      = "team-a"
 }
-`, quotaType, projectQuotaType)
+`, quotaType, legacyQuotaType, projectQuotaType, org)
 
-	resource.Test(t, resource.TestCase{
-		ProtoV6ProviderFactories: protoV6,
-		Steps: []resource.TestStep{{
-			Config: config,
-			Check: resource.ComposeAggregateTestCheckFunc(
-				resource.TestCheckResourceAttr(quotaAddr, "profile", "Standard"),
-				resource.TestCheckResourceAttr(quotaAddr, "dimensions.node_count.headroom", "26"),
-				resource.TestCheckResourceAttr(quotaAddr, "dimensions.node_count.binding_scope", "tenant"),
-				// Limited nowhere: usage, and no headroom rather than a zero one.
-				resource.TestCheckResourceAttr(quotaAddr, "dimensions.gpu_count.scopes.0.used", "8"),
-				resource.TestCheckNoResourceAttr(quotaAddr, "dimensions.gpu_count.headroom"),
-				// Not enforced: unmeasured usage is null, never 0.
-				resource.TestCheckResourceAttr(quotaAddr, "dimensions.cpu_cores.enforced", "false"),
-				resource.TestCheckNoResourceAttr(quotaAddr, "dimensions.cpu_cores.scopes.0.used"),
-				resource.TestCheckResourceAttr(quotaAddr, "dimensions.cpu_cores.scopes.0.limit", "512"),
-				// A project's own smaller headroom binds.
-				resource.TestCheckResourceAttr(projectQuotaAddr, "dimensions.node_count.headroom", "2"),
-				resource.TestCheckResourceAttr(projectQuotaAddr, "dimensions.node_count.binding_scope", "project"),
-				resource.TestCheckResourceAttr(projectQuotaAddr, "dimensions.node_count.scopes.#", "2"),
-				resource.TestCheckResourceAttr(projectQuotaAddr, "dimensions.node_count.scopes.0.scope", "tenant"),
-			),
-		}},
-	})
+			resource.Test(t, resource.TestCase{
+				ProtoV6ProviderFactories: protoV6,
+				Steps: []resource.TestStep{{
+					Config: config,
+					Check: resource.ComposeAggregateTestCheckFunc(
+						resource.TestCheckResourceAttr(quotaAddr, "profile", "Standard"),
+						resource.TestCheckResourceAttr(quotaAddr, "dimensions.node_count.headroom", "26"),
+						resource.TestCheckResourceAttr(quotaAddr, "dimensions.node_count.binding_scope", "organization"),
+						resource.TestCheckResourceAttr(quotaAddr, "dimensions.node_count.scopes.0.scope", "organization"),
+						// Limited nowhere: usage, and no headroom rather than a zero one.
+						resource.TestCheckResourceAttr(quotaAddr, "dimensions.gpu_count.scopes.0.used", "8"),
+						resource.TestCheckNoResourceAttr(quotaAddr, "dimensions.gpu_count.headroom"),
+						// Not enforced: unmeasured usage is null, never 0.
+						resource.TestCheckResourceAttr(quotaAddr, "dimensions.cpu_cores.enforced", "false"),
+						resource.TestCheckNoResourceAttr(quotaAddr, "dimensions.cpu_cores.scopes.0.used"),
+						resource.TestCheckResourceAttr(quotaAddr, "dimensions.cpu_cores.scopes.0.limit", "512"),
+						// The deprecated name reads what it always did.
+						resource.TestCheckResourceAttr(legacyQuotaAddr, "dimensions.node_count.headroom", "26"),
+						resource.TestCheckResourceAttr(legacyQuotaAddr, "dimensions.node_count.binding_scope", "tenant"),
+						resource.TestCheckResourceAttr(legacyQuotaAddr, "dimensions.node_count.scopes.0.scope", "tenant"),
+						// A project's own smaller headroom binds.
+						resource.TestCheckResourceAttr(projectQuotaAddr, "dimensions.node_count.headroom", "2"),
+						resource.TestCheckResourceAttr(projectQuotaAddr, "dimensions.node_count.binding_scope", "project"),
+						resource.TestCheckResourceAttr(projectQuotaAddr, "dimensions.node_count.scopes.#", "2"),
+						resource.TestCheckResourceAttr(projectQuotaAddr, "dimensions.node_count.scopes.0.scope", "organization"),
+					),
+				}},
+			})
+		})
+	}
 }
 
 func TestAccSecurityGroupClearsMetadata(t *testing.T) {

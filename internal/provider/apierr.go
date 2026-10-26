@@ -230,9 +230,10 @@ type quotaRefusal struct {
 	} `json:"scopes"`
 }
 
-// quotaRefusals decodes the metadata of every QUOTA_EXCEEDED detail. An entry
-// whose metadata does not decode is skipped: the message above it still says
-// what was refused.
+// quotaRefusals decodes the metadata of every QUOTA_EXCEEDED detail, naming
+// the organization's scope `organization` in either platform's spelling. An
+// entry whose metadata does not decode is skipped: the message above it still
+// says what was refused.
 func quotaRefusals(apiErr *k0rdent.APIError) []quotaRefusal {
 	var out []quotaRefusal
 	for _, d := range apiErr.Details {
@@ -246,6 +247,10 @@ func quotaRefusals(apiErr *k0rdent.APIError) []quotaRefusal {
 		var q quotaRefusal
 		if json.Unmarshal(raw, &q) != nil || q.Dimension == "" {
 			continue
+		}
+		q.BindingScope = quotaScopeAs(q.BindingScope, organizationScope)
+		for i := range q.Scopes {
+			q.Scopes[i].Scope = quotaScopeAs(q.Scopes[i].Scope, organizationScope)
 		}
 		out = append(out, q)
 	}

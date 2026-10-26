@@ -141,7 +141,7 @@ var relatedPages = map[string][]relatedLink{
 	},
 	"data-sources/project_quota": {
 		{"resources/project", "manages the project the quota applies to."},
-		{"data-sources/tenant_quota", "reports the organization's own limits."},
+		{"data-sources/organization_quota", "reports the organization's own limits."},
 	},
 	"data-sources/projects": {
 		{"data-sources/organizations", "lists the organizations projects live in."},
@@ -173,7 +173,14 @@ var relatedPages = map[string][]relatedLink{
 		{"data-sources/networks", "lists the networks whose subnets this reads."},
 		{"data-sources/address_pools", "lists the pools subnets are allocated from."},
 	},
+	"data-sources/organization_quota": {
+		{"data-sources/project_quota", "reports one project's share of it."},
+		{"resources/kubernetes_cluster", "sizes a node pool, which the quota caps."},
+		{"data-sources/cluster_type", "reads the ClusterType a cluster is built from."},
+		{"resources/project", "creates projects inside an organization."},
+	},
 	"data-sources/tenant_quota": {
+		{"data-sources/organization_quota", "replaces it, naming the organization's scope `organization`."},
 		{"data-sources/project_quota", "reports one project's share of it."},
 		{"resources/kubernetes_cluster", "sizes a node pool, which the quota caps."},
 		{"data-sources/cluster_type", "reads the ClusterType a cluster is built from."},

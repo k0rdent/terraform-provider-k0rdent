@@ -76,6 +76,34 @@ interface.
 
 ## Migrations
 
+### Tenant quota renamed to organization quota
+
+The platform's quota API now calls the organization's scope `organization`
+rather than `tenant`. `k0rdent_organization_quota` replaces
+`k0rdent_tenant_quota`, and reads the same on a platform either side of the
+rename:
+
+```hcl
+# Before
+data "k0rdent_tenant_quota" "org" {
+  organization_id = "org-example"
+}
+
+# After
+data "k0rdent_organization_quota" "org" {
+  organization_id = "org-example"
+}
+```
+
+- **Rename each reference** from `data.k0rdent_tenant_quota` to
+  `data.k0rdent_organization_quota`. A data source keeps nothing in state
+  that needs moving.
+- **Compare scopes with `organization`**, not `tenant`, in `binding_scope`
+  and `scopes[*].scope` of `k0rdent_organization_quota` and
+  `k0rdent_project_quota`.
+- **`k0rdent_tenant_quota` keeps working until v1.0.0**, with a warning, and
+  still reports `tenant`.
+
 ### Projects locked to a region
 
 Every project now belongs to one region, set when it's created.
