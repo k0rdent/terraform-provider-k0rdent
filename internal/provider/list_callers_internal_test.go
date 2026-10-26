@@ -99,8 +99,6 @@ func TestEveryCursorListSendsTheCursorOn(t *testing.T) {
 			set: map[string]tftypes.Value{"vpc": str("v")}},
 		{name: "share_types", key: "shareTypes",
 			ds: func(m *Meta) datasource.DataSource { return &shareTypesDataSource{meta: m} }},
-		{name: "cluster_types", key: "clusterTypes",
-			ds: func(m *Meta) datasource.DataSource { return &clusterTypesDataSource{meta: m} }},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -202,9 +200,9 @@ func (l *offsetList) serve(t *testing.T) *httptest.Server {
 	return server
 }
 
-// The five networking lists whose operations document `offset` and `limit`
-// send those and nothing else: `offset` advances by the rows received, `limit`
-// is the contract's largest page, and no `pageToken` or `pageSize` goes out.
+// The lists whose operations document `offset` and `limit` send those and
+// nothing else: `offset` advances by the rows received, `limit` is the
+// contract's largest page, and no `pageToken` or `pageSize` goes out.
 var offsetCallers = []struct {
 	name, key, kind string
 	ds              func(*Meta) datasource.DataSource
@@ -223,6 +221,8 @@ var offsetCallers = []struct {
 		ds: func(m *Meta) datasource.DataSource { return &addressPoolsDataSource{meta: m} }},
 	{name: "organizations", key: "organizations",
 		ds: func(m *Meta) datasource.DataSource { return &organizationsDataSource{meta: m} }},
+	{name: "cluster_types", key: "clusterTypes",
+		ds: func(m *Meta) datasource.DataSource { return &clusterTypesDataSource{meta: m} }},
 }
 
 func TestEveryOffsetListSendsOffsetAndLimit(t *testing.T) {

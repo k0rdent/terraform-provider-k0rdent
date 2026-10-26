@@ -158,19 +158,23 @@ func (d *clusterTypesDataSource) Read(ctx context.Context, req datasource.ReadRe
 		params.IncludeDeprecated = &v
 	}
 
-	// The contract allows a missing collection, `null` and `[]`, and all three
-	// mean no cluster types, which is not an error.
-	listed, ok := listByToken(&resp.Diagnostics, "cluster types", func(token *string, size *int) (page[k0rdent.ClusterTypeSummary], error) {
-		params.PageToken, params.PageSize = token, size
-		got, err := d.meta.Client.ListClusterTypesWithResponse(ctx, region, &params)
-		if err != nil {
-			return page[k0rdent.ClusterTypeSummary]{}, err
-		}
-		if got.JSON200 == nil {
-			return page[k0rdent.ClusterTypeSummary]{}, unreadPage(got.HTTPResponse, got.Body)
-		}
-		return page[k0rdent.ClusterTypeSummary]{items: got.JSON200.ClusterTypes, next: got.JSON200.NextPageToken}, nil
-	})
+	// Offset paging is the only way past the first page: a request without it
+	// answers the first page and no `nextPageToken`, and the cursor was never
+	// implemented here. The contract allows a missing collection, `null` and
+	// `[]`, and all three mean no cluster types, which is not an error.
+	listed, ok := listByOffset(&resp.Diagnostics, "cluster types",
+		func(ct k0rdent.ClusterTypeSummary) string { return deref(ct.Id) },
+		func(offset, limit int32) (page[k0rdent.ClusterTypeSummary], error) {
+			params.Offset, params.Limit = &offset, &limit
+			got, err := d.meta.Client.ListClusterTypesWithResponse(ctx, region, &params)
+			if err != nil {
+				return page[k0rdent.ClusterTypeSummary]{}, err
+			}
+			if got.JSON200 == nil {
+				return page[k0rdent.ClusterTypeSummary]{}, unreadPage(got.HTTPResponse, got.Body)
+			}
+			return page[k0rdent.ClusterTypeSummary]{items: got.JSON200.ClusterTypes, total: got.JSON200.TotalCount}, nil
+		})
 	if !ok {
 		return
 	}

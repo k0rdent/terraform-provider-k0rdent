@@ -41,10 +41,13 @@ var (
 	addressPoolList = pager{key: "addressPools", offset: offsetRule{offsetContract, refuseWithReason},
 		cursor: &cursorRule{page: 2, cap: 2, badToken: tokenRefused400}}
 
-	// One per page. ASSUMPTION, same as the address pool catalog: nothing in
-	// the contract says a small catalog arrives whole. Two cluster types and a
-	// page of one means the second is reachable only by following the token.
-	clusterTypeList = pager{key: "clusterTypes", cursor: &cursorRule{page: 1, cap: 1, badToken: tokenRefused400}}
+	// Offset paging is the only way past the first page. A bare request gets
+	// the first page and no token, and any `pageToken` is refused: the cursor
+	// was never implemented on this operation. The real first page is up to
+	// 500 rows. Two here, whatever `pageSize` asks for, so a provider that
+	// read the bare page and stopped fails with the catalog the fake holds.
+	clusterTypeList = pager{key: "clusterTypes", offset: offsetRule{offsetContract, refuseBare},
+		cursor: &cursorRule{page: 2, cap: 2, size: sizeLenient, firstPageOnly: true, badToken: tokenNeverIssued}}
 
 	// Cursor, not offset: the shared parameters are marked deprecated in favour
 	// of `offset`/`limit`, but neither of these operations documents those
@@ -58,9 +61,8 @@ var (
 	// would never issue a cursor.
 	fileStoreList = pager{key: "fileStores", cursor: &storageCursor}
 
-	// One per page, as the other cursor catalogs are. `pageSize` is capped at
-	// 200 and a larger one is a 422, not a clamp, and the operation documents
-	// no offset.
+	// One per page. `pageSize` is capped at 200 and a larger one is a 422, not
+	// a clamp, and the operation documents no offset.
 	instanceList = pager{key: "instances",
 		offset: offsetRule{offsetRefused, func(w http.ResponseWriter) {
 			apiError(w, http.StatusUnprocessableEntity, "INVALID_ARGUMENT",
@@ -165,9 +167,8 @@ type offsetStyle int
 const (
 	// offsetIgnored is a route that documents no offset and reads none.
 	offsetIgnored offsetStyle = iota
-	// offsetContract is the offset contract on the five lists that document
-	// `offset` and `limit`: networks, subnets, VPCs, security groups and
-	// address pools. See offsetPage.
+	// offsetContract is the offset contract on the lists that document
+	// `offset` and `limit` beside the deprecated cursor. See offsetPage.
 	offsetContract
 	// offsetRefused answers `offset` or `limit` with refuse.
 	offsetRefused
@@ -215,6 +216,9 @@ type cursorRule struct {
 	// badToken answers a `pageToken` this server didn't issue. nil reads one
 	// as the start of the list.
 	badToken func(w http.ResponseWriter)
+	// firstPageOnly issues no `nextPageToken` and answers every `pageToken`
+	// with badToken.
+	firstPageOnly bool
 }
 
 // serve answers one page of rows, or the route's refusal of the request.
@@ -324,7 +328,7 @@ func (p pager) cursorPage(w http.ResponseWriter, q url.Values, rows []any) {
 		}
 	case token != "":
 		n, err := strconv.Atoi(token)
-		if err != nil || n < 0 || n > len(rows) {
+		if c.firstPageOnly || err != nil || n < 0 || n > len(rows) {
 			c.badToken(w)
 			return
 		}
@@ -337,7 +341,7 @@ func (p pager) cursorPage(w http.ResponseWriter, q url.Values, rows []any) {
 	}
 	end := min(start+size, len(rows))
 	body := map[string]any{p.key: rows[start:end]}
-	if end < len(rows) {
+	if end < len(rows) && !c.firstPageOnly {
 		body["nextPageToken"] = strconv.Itoa(end)
 	}
 	if p.count != "" {
@@ -428,6 +432,12 @@ func refuseWithReason(w http.ResponseWriter) {
 // lists that document a 400 for it.
 func tokenRefused400(w http.ResponseWriter) {
 	apiError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "pageToken is not one this server issued")
+}
+
+// tokenNeverIssued is listClusterTypes' 400 for any `pageToken`, in the bare
+// envelope its handler writes.
+func tokenNeverIssued(w http.ResponseWriter) {
+	errorEnvelope(w, http.StatusBadRequest, "", "pagination not yet implemented", nil)
 }
 
 // tokenRefused422 is the 422 for a cursor this server didn't issue, with the

@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+
+	"github.com/k0rdent/terraform-provider-k0rdent/internal/provider"
 )
 
 const (
@@ -219,6 +221,26 @@ resource "terraform_data" "scope" {
 }
 `, clusterType, name, clusterTypeRef, clusterType, clusterType, clusterType),
 			Check: resource.TestCheckResourceAttr("terraform_data.scope", "output", "us-texas-1"),
+		}},
+	})
+}
+
+// The suite asks for two rows a page, so the fake's seven cluster types are
+// four pages. The fake answers a request without `offset` with its first two
+// and no token, as the real list answers with its first page, so a provider
+// that read that page would report two.
+func TestAccClusterTypesDataSourceReadsEveryPage(t *testing.T) {
+	clusterTypesType := provider.ResourceName("cluster_types")
+	clusterTypesAddr := "data." + clusterTypesType + ".all"
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: protoV6,
+		Steps: []resource.TestStep{{
+			Config: fmt.Sprintf("data %q \"all\" {}\n", clusterTypesType),
+			Check: resource.ComposeAggregateTestCheckFunc(
+				resource.TestCheckResourceAttr(clusterTypesAddr, "cluster_types.#", "7"),
+				resource.TestCheckResourceAttr(clusterTypesAddr, "cluster_types.0.id", "cpu-general"),
+				resource.TestCheckResourceAttr(clusterTypesAddr, "cluster_types.6.id", "gpu-training"),
+			),
 		}},
 	})
 }
