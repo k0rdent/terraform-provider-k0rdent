@@ -28,9 +28,9 @@ _test\.go$:^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$
 .:^/Users/you$
 
 # ai-tool: the API's pagination field, not the editor
-^internal/provider/cluster_events\.go$:^Cursor$
+^internal/provider/(cluster_events|datasource_webhook_deliveries)\.go$:^Cursor$
 ^internal/tools/fakeapi/pager\.go$:^Cursor$
-^internal/k0rdent/(spec/openapi\.yaml|types\.gen\.go)$:^Cursor$
+^internal/k0rdent/(spec/openapi\.yaml|types\.gen\.go|client\.gen\.go)$:^Cursor$
 # ai-trailer: "generated with the request builders", copied client prose
 ^internal/k0rdent/error\.go$:^generated with$
 

@@ -3178,6 +3178,39 @@ func VPCPeeringStateValues() []VPCPeeringState {
 	}
 }
 
+// Defines values for WebhookDeliveryStatus.
+const (
+	WebhookDeliveryStatusDelivered WebhookDeliveryStatus = "delivered"
+	WebhookDeliveryStatusFailed    WebhookDeliveryStatus = "failed"
+	WebhookDeliveryStatusQueued    WebhookDeliveryStatus = "queued"
+)
+
+// Valid indicates whether the value is a known member of the WebhookDeliveryStatus enum.
+func (e WebhookDeliveryStatus) Valid() bool {
+	switch e {
+	case WebhookDeliveryStatusDelivered:
+		return true
+	case WebhookDeliveryStatusFailed:
+		return true
+	case WebhookDeliveryStatusQueued:
+		return true
+	default:
+		return false
+	}
+}
+
+// WebhookDeliveryStatusValues returns every member of the enum, in the contract's
+// order. A null member is left out: the generator turns it into a "<nil>"
+// constant that Valid accepts, and no client ever sends that string. The slice
+// is new on each call, so a caller may keep or change it.
+func WebhookDeliveryStatusValues() []WebhookDeliveryStatus {
+	return []WebhookDeliveryStatus{
+		WebhookDeliveryStatusQueued,
+		WebhookDeliveryStatusDelivered,
+		WebhookDeliveryStatusFailed,
+	}
+}
+
 // Defines values for ClusterRuntimeEventStageFilter.
 const (
 	ClusterRuntimeEventStageFilterBootstrappingCluster    ClusterRuntimeEventStageFilter = "bootstrapping-cluster"
@@ -11935,6 +11968,43 @@ type VPCSecurityGroupsRequest struct {
 	SecurityGroups []string `json:"securityGroups"`
 }
 
+// WebhookDelivery defines model for WebhookDelivery.
+type WebhookDelivery struct {
+	// Attempts How many POST attempts have been made.
+	Attempts  int                `json:"attempts"`
+	CreatedAt time.Time          `json:"created_at"`
+	Id        openapi_types.UUID `json:"id"`
+
+	// LastError Error from the last failed attempt, when any.
+	LastError *string `json:"last_error,omitempty"`
+
+	// NextAttemptAt When the next retry is scheduled, when one is.
+	NextAttemptAt *time.Time `json:"next_attempt_at,omitempty"`
+
+	// ResponseCode HTTP status from the subscriber on the last attempt, when one was received.
+	ResponseCode *int `json:"response_code,omitempty"`
+
+	// RetryScheduled True when this is a failed delivery with a retry still pending (not yet settled). A failed delivery with `retry_scheduled: false` has been dead-lettered and needs the endpoint owner to act.
+	RetryScheduled bool `json:"retry_scheduled"`
+
+	// SettledAt When the delivery reached a terminal state (delivered or dead-lettered).
+	SettledAt *time.Time `json:"settled_at,omitempty"`
+
+	// Status Delivery status of this webhook row. The underlying column is the shared `notifications.delivery_status` type, but the webhook delivery worker only ever writes these three: `queued` (awaiting an attempt), `delivered` (a 2xx), or `failed` (retrying or dead-lettered — use `retry_scheduled` to tell them apart). The other values of the shared type (sent, bounced, complained, suppressed, read) are email-only and never appear here.
+	Status WebhookDeliveryStatus `json:"status"`
+}
+
+// WebhookDeliveryStatus Delivery status of this webhook row. The underlying column is the shared `notifications.delivery_status` type, but the webhook delivery worker only ever writes these three: `queued` (awaiting an attempt), `delivered` (a 2xx), or `failed` (retrying or dead-lettered — use `retry_scheduled` to tell them apart). The other values of the shared type (sent, bounced, complained, suppressed, read) are email-only and never appear here.
+type WebhookDeliveryStatus string
+
+// WebhookDeliveryPage defines model for WebhookDeliveryPage.
+type WebhookDeliveryPage struct {
+	Deliveries []WebhookDelivery `json:"deliveries"`
+
+	// NextCursor Present when more results exist; pass it back as `cursor`.
+	NextCursor *string `json:"next_cursor,omitempty"`
+}
+
 // WebhookSubscription defines model for WebhookSubscription.
 type WebhookSubscription struct {
 	// ConsecutiveFailures Number of terminal (dead-lettered) delivery failures since `last_success_at` — a delivery still being retried is not counted. Zero for a healthy endpoint; a later success resets it.
@@ -12188,6 +12258,16 @@ type CreateWebhookSubscriptionJSONBody struct {
 
 	// Url Absolute http(s) endpoint to POST events to.
 	Url string `json:"url"`
+}
+
+// ListWebhookDeliveriesParams defines parameters for ListWebhookDeliveries.
+type ListWebhookDeliveriesParams struct {
+	// Limit Page size. Omitted or empty uses the default of 50; a value outside 1-200 (or a non-integer) is rejected with 400.
+	Limit *int `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor Opaque keyset cursor from a previous response's `next_cursor`, keyed on `(created_at, id)`. Treat it as a best-effort forward scan.
+	// A cursor this server cannot decode is rejected with **400**. A present-but-empty `cursor=` is read as ABSENT and returns the newest page — it does not error, and it does not resume. That differs from `GET /events`, where an empty `cursor=` is a 400; the split is deliberate there because an ignored position silently restarts a consumer that believed it was resuming.
+	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
 }
 
 // RotateWebhookSubscriptionSecretJSONBody defines parameters for RotateWebhookSubscriptionSecret.

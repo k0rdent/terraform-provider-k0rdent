@@ -309,6 +309,7 @@ func (s *state) routesWith(mux *http.ServeMux, authorized func(http.HandlerFunc)
 	mux.HandleFunc("POST /v1/regions/global/notifications/webhooks", authorized(s.createWebhook))
 	mux.HandleFunc("DELETE /v1/regions/global/notifications/webhooks/{id}", authorized(s.deleteWebhook))
 	mux.HandleFunc("POST /v1/regions/global/notifications/webhooks/{id}/rotate", authorized(s.rotateWebhook))
+	mux.HandleFunc("GET /v1/regions/global/notifications/webhooks/{id}/deliveries", authorized(s.listWebhookDeliveries))
 
 	mux.HandleFunc("GET /v1/regions/global/organizations/{orgId}/quota", authorized(s.getTenantQuota))
 	mux.HandleFunc("GET /v1/regions/global/organizations/{orgId}/projects/{id}/quota", authorized(s.getProjectQuota))

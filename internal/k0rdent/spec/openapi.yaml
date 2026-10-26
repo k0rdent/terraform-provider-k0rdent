@@ -4828,6 +4828,61 @@ paths:
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalServerError'
+  /v1/regions/global/notifications/webhooks/{id}/deliveries:
+    get:
+      summary: Webhook delivery history for one subscription
+      description: |-
+        **Visibility:** `public` (x-visibility)
+
+        **Who may call this:** Any authenticated caller, for their own partition's subscriptions: a customer's organization, or the provider partition for provider personnel. A customer with no resolvable organization is refused with 401.
+
+        Recent delivery attempts for a webhook subscription the caller owns, so the owner can see per-endpoint outcomes and whether a retry is scheduled without database access. Newest first, keyset-paginated. Scoped to the caller's tenant and the subscription id — an id belonging to another tenant returns an empty page, not an error. The rolled-up health summary (last success, consecutive failures) is on each item of GET `/webhooks`.
+        A query string the server cannot parse is rejected with **400** before any parameter is read, so this status is not always about a parameter's VALUE. Two things cause it: a bad percent-escape, and an unescaped `;` used as a separator. Neither is ignored, because the parser discards malformed pairs silently and the request would otherwise come back unfiltered.
+        Repeating any parameter is also a **400**, checked at the same point. Only the first occurrence was ever read, so a repeated parameter silently discarded the rest and the answer depended on the order the values were written in. Two valid values are refused for the same reason: one of them was being dropped in silence. Send each parameter once.
+      operationId: listWebhookDeliveries
+      tags:
+        - notifications
+      x-visibility:
+        - public
+      x-status: mvp
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Webhook subscription id.
+          schema:
+            type: string
+            format: uuid
+        - name: limit
+          in: query
+          description: >-
+            Page size. Omitted or empty uses the default of 50; a value outside 1-200 (or a non-integer) is rejected with 400.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+        - name: cursor
+          in: query
+          description: |-
+            Opaque keyset cursor from a previous response's `next_cursor`, keyed on `(created_at, id)`. Treat it as a best-effort forward scan.
+            A cursor this server cannot decode is rejected with **400**. A present-but-empty `cursor=` is read as ABSENT and returns the newest page — it does not error, and it does not resume. That differs from `GET /events`, where an empty `cursor=` is a 400; the split is deliberate there because an ignored position silently restarts a consumer that believed it was resuming.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: >-
+            Delivery attempts for the subscription. An empty list also covers an id that does not belong to the caller's tenant.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookDeliveryPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
   /v1/regions/global/notifications/webhooks/{id}/rotate:
     parameters:
       - name: id
@@ -16536,6 +16591,66 @@ components:
           example:
             - sg-a1b2c3
             - sg-d4e5f6
+    WebhookDelivery:
+      type: object
+      required:
+        - id
+        - status
+        - attempts
+        - created_at
+        - retry_scheduled
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum:
+            - queued
+            - delivered
+            - failed
+          description: >-
+            Delivery status of this webhook row. The underlying column is the shared `notifications.delivery_status` type, but the webhook delivery worker only ever writes these three: `queued` (awaiting an attempt), `delivered` (a 2xx), or `failed` (retrying or dead-lettered — use `retry_scheduled` to tell them apart). The other values of the shared type (sent, bounced, complained, suppressed, read) are email-only and never appear here.
+        attempts:
+          type: integer
+          description: How many POST attempts have been made.
+        response_code:
+          type: integer
+          description: HTTP status from the subscriber on the last attempt, when one was received.
+        last_error:
+          type: string
+          description: Error from the last failed attempt, when any.
+        created_at:
+          type: string
+          format: date-time
+        settled_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+          description: When the delivery reached a terminal state (delivered or dead-lettered).
+        next_attempt_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+          description: When the next retry is scheduled, when one is.
+        retry_scheduled:
+          type: boolean
+          description: >-
+            True when this is a failed delivery with a retry still pending (not yet settled). A failed delivery with `retry_scheduled: false` has been dead-lettered and needs the endpoint owner to act.
+    WebhookDeliveryPage:
+      type: object
+      required:
+        - deliveries
+      properties:
+        deliveries:
+          type: array
+          items:
+            $ref: '#/components/schemas/WebhookDelivery'
+        next_cursor:
+          type: string
+          description: Present when more results exist; pass it back as `cursor`.
     WebhookSubscription:
       type: object
       properties:

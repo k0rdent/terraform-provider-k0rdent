@@ -17,10 +17,11 @@ import (
 )
 
 var (
-	webhookType      = provider.ResourceName("webhook_subscription")
-	webhookAddr      = webhookType + ".test"
-	webhookDataType  = provider.ResourceName("webhook_subscription")
-	webhooksDataType = provider.ResourceName("webhook_subscriptions")
+	webhookType               = provider.ResourceName("webhook_subscription")
+	webhookAddr               = webhookType + ".test"
+	webhookDataType           = provider.ResourceName("webhook_subscription")
+	webhooksDataType          = provider.ResourceName("webhook_subscriptions")
+	webhookDeliveriesDataType = provider.ResourceName("webhook_deliveries")
 )
 
 // webhookSecretPrefix starts every signing secret this suite configures. Gate
@@ -578,6 +579,73 @@ data %[2]q "all" {
 				resource.TestMatchResourceAttr(all, "subscriptions.#", regexp.MustCompile(`^[1-9][0-9]*$`)),
 			),
 		}},
+	})
+}
+
+// webhookDeliveryHistory, in a subscription's URL, makes the fake give it a
+// delivery history of five, newest first: queued, failed with a retry due,
+// failed and dead-lettered, then delivered twice. The fake sends no events,
+// so nothing else has one.
+const webhookDeliveryHistory = "fake-delivery-history"
+
+// A subscription's delivery history: the newest `limit`, read across the
+// fake's pages of two, and the failed ones among them, under a secret that
+// reaches no delivery.
+func TestAccWebhookDeliveriesDataSource(t *testing.T) {
+	secret := webhookSecret("deliveries")
+	config := webhookConfig(webhookURL("deliveries-"+webhookDeliveryHistory), nil, 1, "") + fmt.Sprintf(`
+data %[1]q "newest" {
+  subscription_id = %[2]s.test.id
+  limit           = 3
+}
+
+data %[1]q "failed" {
+  subscription_id = %[2]s.test.id
+  status          = "failed"
+}
+`, webhookDeliveriesDataType, webhookType)
+	newest, failed := "data."+webhookDeliveriesDataType+".newest", "data."+webhookDeliveriesDataType+".failed"
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: protoV6,
+		CheckDestroy:             checkWebhookGone,
+		Steps: []resource.TestStep{
+			{
+				Config:          config,
+				ConfigVariables: webhookVars(secret),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr(newest, "deliveries.#", "3"),
+					resource.TestCheckResourceAttr(newest, "deliveries.0.status", "queued"),
+					resource.TestCheckResourceAttr(newest, "deliveries.0.attempts", "0"),
+					resource.TestCheckNoResourceAttr(newest, "deliveries.0.response_code"),
+					resource.TestCheckNoResourceAttr(newest, "deliveries.0.settled_at"),
+					resource.TestCheckResourceAttr(newest, "deliveries.1.status", "failed"),
+					resource.TestCheckResourceAttr(newest, "deliveries.1.response_code", "503"),
+					resource.TestCheckResourceAttr(newest, "deliveries.1.retry_scheduled", "true"),
+					resource.TestCheckResourceAttrSet(newest, "deliveries.1.next_attempt_at"),
+					resource.TestCheckResourceAttr(newest, "deliveries.2.status", "failed"),
+					resource.TestCheckResourceAttr(newest, "deliveries.2.retry_scheduled", "false"),
+					resource.TestCheckResourceAttr(newest, "deliveries.2.last_error", "dial tcp: connection refused"),
+					resource.TestCheckResourceAttrSet(newest, "deliveries.2.settled_at"),
+					// Of the default 50, which the fake's five fall inside.
+					resource.TestCheckResourceAttr(failed, "deliveries.#", "2"),
+					resource.TestCheckResourceAttrPair(failed, "deliveries.0.id", newest, "deliveries.1.id"),
+					resource.TestCheckResourceAttrPair(failed, "deliveries.1.id", newest, "deliveries.2.id"),
+					checkNoSecretInState(secret),
+				),
+			},
+			{
+				// The id has to be one the organization has: the operation
+				// would answer an empty page for any other.
+				Config: config + fmt.Sprintf(`
+data %q "missing" {
+  subscription_id = "0f8fad5b-d9cb-469f-a165-70867728950e"
+}
+`, webhookDeliveriesDataType),
+				ConfigVariables: webhookVars(secret),
+				ExpectError:     regexp.MustCompile(`No such webhook subscription`),
+			},
+		},
 	})
 }
 

@@ -683,6 +683,19 @@ type ClientInterface interface {
 	// Corresponds with DELETE /v1/regions/global/notifications/webhooks/{id} (the `DeleteWebhookSubscription` operationId).
 	DeleteWebhookSubscription(ctx context.Context, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// ListWebhookDeliveries Webhook delivery history for one subscription
+	//
+	// **Visibility:** `public` (x-visibility)
+	//
+	// **Who may call this:** Any authenticated caller, for their own partition's subscriptions: a customer's organization, or the provider partition for provider personnel. A customer with no resolvable organization is refused with 401.
+	//
+	// Recent delivery attempts for a webhook subscription the caller owns, so the owner can see per-endpoint outcomes and whether a retry is scheduled without database access. Newest first, keyset-paginated. Scoped to the caller's tenant and the subscription id — an id belonging to another tenant returns an empty page, not an error. The rolled-up health summary (last success, consecutive failures) is on each item of GET `/webhooks`.
+	// A query string the server cannot parse is rejected with **400** before any parameter is read, so this status is not always about a parameter's VALUE. Two things cause it: a bad percent-escape, and an unescaped `;` used as a separator. Neither is ignored, because the parser discards malformed pairs silently and the request would otherwise come back unfiltered.
+	// Repeating any parameter is also a **400**, checked at the same point. Only the first occurrence was ever read, so a repeated parameter silently discarded the rest and the answer depended on the order the values were written in. Two valid values are refused for the same reason: one of them was being dropped in silence. Send each parameter once.
+	//
+	// Corresponds with GET /v1/regions/global/notifications/webhooks/{id}/deliveries (the `ListWebhookDeliveries` operationId).
+	ListWebhookDeliveries(ctx context.Context, id openapi_types.UUID, params *ListWebhookDeliveriesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// RotateWebhookSubscriptionSecretWithBody Rotate a webhook subscription's signing secret
 	//
 	// **Visibility:** `public` (x-visibility)
@@ -3173,6 +3186,30 @@ func (c *Client) DeleteWebhookSubscription(ctx context.Context, id openapi_types
 		return nil, err
 	}
 	ctx = withOperation(ctx, "deleteWebhookSubscription")
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListWebhookDeliveries Webhook delivery history for one subscription
+//
+// **Visibility:** `public` (x-visibility)
+//
+// **Who may call this:** Any authenticated caller, for their own partition's subscriptions: a customer's organization, or the provider partition for provider personnel. A customer with no resolvable organization is refused with 401.
+//
+// Recent delivery attempts for a webhook subscription the caller owns, so the owner can see per-endpoint outcomes and whether a retry is scheduled without database access. Newest first, keyset-paginated. Scoped to the caller's tenant and the subscription id — an id belonging to another tenant returns an empty page, not an error. The rolled-up health summary (last success, consecutive failures) is on each item of GET `/webhooks`.
+// A query string the server cannot parse is rejected with **400** before any parameter is read, so this status is not always about a parameter's VALUE. Two things cause it: a bad percent-escape, and an unescaped `;` used as a separator. Neither is ignored, because the parser discards malformed pairs silently and the request would otherwise come back unfiltered.
+// Repeating any parameter is also a **400**, checked at the same point. Only the first occurrence was ever read, so a repeated parameter silently discarded the rest and the answer depended on the order the values were written in. Two valid values are refused for the same reason: one of them was being dropped in silence. Send each parameter once.
+//
+// Corresponds with GET /v1/regions/global/notifications/webhooks/{id}/deliveries (the `ListWebhookDeliveries` operationId).
+func (c *Client) ListWebhookDeliveries(ctx context.Context, id openapi_types.UUID, params *ListWebhookDeliveriesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListWebhookDeliveriesRequest(c.Server, id, params)
+	if err != nil {
+		return nil, err
+	}
+	ctx = withOperation(ctx, "listWebhookDeliveries")
 	req = req.WithContext(ctx)
 	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
 		return nil, err
@@ -6185,6 +6222,83 @@ func NewDeleteWebhookSubscriptionRequest(server string, id openapi_types.UUID) (
 	}
 
 	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewListWebhookDeliveriesRequest constructs an http.Request for the ListWebhookDeliveries method
+func NewListWebhookDeliveriesRequest(server string, id openapi_types.UUID, params *ListWebhookDeliveriesParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	if err := checkPathParam("listWebhookDeliveries", "id", pathParam0, pathParam0, pathParamRule{}); err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/regions/global/notifications/webhooks/%s/deliveries", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Cursor != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "cursor", *params.Cursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -12425,6 +12539,17 @@ var Operations = map[string]OperationInfo{
 			500: {Description: "Internal server error", Ref: "#/components/responses/InternalServerError"},
 		},
 	},
+	"listWebhookDeliveries": {
+		Method:     "GET",
+		Path:       "/v1/regions/global/notifications/webhooks/{id}/deliveries",
+		Deprecated: false,
+		Responses: map[int]ResponseInfo{
+			200: {Ref: ""},
+			400: {Description: "Bad request", Ref: "#/components/responses/BadRequest"},
+			401: {Description: "Unauthorized", Ref: "#/components/responses/Unauthorized"},
+			500: {Description: "Internal server error", Ref: "#/components/responses/InternalServerError"},
+		},
+	},
 	"rotateWebhookSubscriptionSecret": {
 		Method:     "POST",
 		Path:       "/v1/regions/global/notifications/webhooks/{id}/rotate",
@@ -14041,6 +14166,21 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with DELETE /v1/regions/global/notifications/webhooks/{id} (the `DeleteWebhookSubscription` operationId).
 	DeleteWebhookSubscriptionWithResponse(ctx context.Context, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*DeleteWebhookSubscriptionResponse, error)
+
+	// ListWebhookDeliveriesWithResponse Webhook delivery history for one subscription
+	//
+	// **Visibility:** `public` (x-visibility)
+	//
+	// **Who may call this:** Any authenticated caller, for their own partition's subscriptions: a customer's organization, or the provider partition for provider personnel. A customer with no resolvable organization is refused with 401.
+	//
+	// Recent delivery attempts for a webhook subscription the caller owns, so the owner can see per-endpoint outcomes and whether a retry is scheduled without database access. Newest first, keyset-paginated. Scoped to the caller's tenant and the subscription id — an id belonging to another tenant returns an empty page, not an error. The rolled-up health summary (last success, consecutive failures) is on each item of GET `/webhooks`.
+	// A query string the server cannot parse is rejected with **400** before any parameter is read, so this status is not always about a parameter's VALUE. Two things cause it: a bad percent-escape, and an unescaped `;` used as a separator. Neither is ignored, because the parser discards malformed pairs silently and the request would otherwise come back unfiltered.
+	// Repeating any parameter is also a **400**, checked at the same point. Only the first occurrence was ever read, so a repeated parameter silently discarded the rest and the answer depended on the order the values were written in. Two valid values are refused for the same reason: one of them was being dropped in silence. Send each parameter once.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /v1/regions/global/notifications/webhooks/{id}/deliveries (the `ListWebhookDeliveries` operationId).
+	ListWebhookDeliveriesWithResponse(ctx context.Context, id openapi_types.UUID, params *ListWebhookDeliveriesParams, reqEditors ...RequestEditorFn) (*ListWebhookDeliveriesResponse, error)
 
 	// RotateWebhookSubscriptionSecretWithBodyWithResponse Rotate a webhook subscription's signing secret
 	//
@@ -16355,6 +16495,77 @@ func (r DeleteWebhookSubscriptionResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r DeleteWebhookSubscriptionResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListWebhookDeliveriesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *WebhookDeliveryPage
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalServerError
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListWebhookDeliveriesResponse) GetJSON200() *WebhookDeliveryPage {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r ListWebhookDeliveriesResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r ListWebhookDeliveriesResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r ListWebhookDeliveriesResponse) GetJSON500() *InternalServerError {
+	return r.JSON500
+}
+
+// GetBody returns the raw response body bytes
+func (r ListWebhookDeliveriesResponse) GetBody() []byte {
+	return r.Body
+}
+
+// HTTPResult returns HTTPResponse and Body together. Unlike the getters above
+// it is safe to call on a nil receiver. See [HTTPResulter].
+func (r *ListWebhookDeliveriesResponse) HTTPResult() (*http.Response, []byte) {
+	if r == nil {
+		return nil, nil
+	}
+	return r.HTTPResponse, r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListWebhookDeliveriesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListWebhookDeliveriesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListWebhookDeliveriesResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -23510,6 +23721,27 @@ func (c *ClientWithResponses) DeleteWebhookSubscriptionWithResponse(ctx context.
 	return ParseDeleteWebhookSubscriptionResponse(rsp)
 }
 
+// ListWebhookDeliveriesWithResponse Webhook delivery history for one subscription
+//
+// **Visibility:** `public` (x-visibility)
+//
+// **Who may call this:** Any authenticated caller, for their own partition's subscriptions: a customer's organization, or the provider partition for provider personnel. A customer with no resolvable organization is refused with 401.
+//
+// Recent delivery attempts for a webhook subscription the caller owns, so the owner can see per-endpoint outcomes and whether a retry is scheduled without database access. Newest first, keyset-paginated. Scoped to the caller's tenant and the subscription id — an id belonging to another tenant returns an empty page, not an error. The rolled-up health summary (last success, consecutive failures) is on each item of GET `/webhooks`.
+// A query string the server cannot parse is rejected with **400** before any parameter is read, so this status is not always about a parameter's VALUE. Two things cause it: a bad percent-escape, and an unescaped `;` used as a separator. Neither is ignored, because the parser discards malformed pairs silently and the request would otherwise come back unfiltered.
+// Repeating any parameter is also a **400**, checked at the same point. Only the first occurrence was ever read, so a repeated parameter silently discarded the rest and the answer depended on the order the values were written in. Two valid values are refused for the same reason: one of them was being dropped in silence. Send each parameter once.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /v1/regions/global/notifications/webhooks/{id}/deliveries (the `ListWebhookDeliveries` operationId).
+func (c *ClientWithResponses) ListWebhookDeliveriesWithResponse(ctx context.Context, id openapi_types.UUID, params *ListWebhookDeliveriesParams, reqEditors ...RequestEditorFn) (*ListWebhookDeliveriesResponse, error) {
+	rsp, err := c.ListWebhookDeliveries(ctx, id, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListWebhookDeliveriesResponse(rsp)
+}
+
 // RotateWebhookSubscriptionSecretWithBodyWithResponse Rotate a webhook subscription's signing secret
 //
 // **Visibility:** `public` (x-visibility)
@@ -26236,6 +26468,61 @@ func decodeDeleteWebhookSubscriptionResponse(response *DeleteWebhookSubscription
 			return nil, err
 		}
 		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalServerError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return nil, nil
+}
+
+// ParseListWebhookDeliveriesResponse parses an HTTP response from a ListWebhookDeliveriesWithResponse call
+func ParseListWebhookDeliveriesResponse(rsp *http.Response) (*ListWebhookDeliveriesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListWebhookDeliveriesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+	if _, err := decodeListWebhookDeliveriesResponse(response, rsp, bodyBytes); err != nil {
+		return response, err
+	}
+
+	return response, nil
+}
+
+// decodeListWebhookDeliveriesResponse fills response from the body. A decode error leaves Body set.
+func decodeListWebhookDeliveriesResponse(response *ListWebhookDeliveriesResponse, rsp *http.Response, bodyBytes []byte) (*ListWebhookDeliveriesResponse, error) {
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WebhookDeliveryPage
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
 		var dest InternalServerError
