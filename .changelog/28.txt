@@ -1,0 +1,11 @@
+```release-note:bug
+data-source/k0rdent_cluster_types: Read every page of the catalog. Before, only the first page was read, at most 500 types
+```
+
+```release-note:bug
+data-source/k0rdent_cluster_types: `status = "draft"` finds a type whose only versions are drafts
+```
+
+```release-note:note
+data-source/k0rdent_cluster_types: A `status` other than `available` beside `include_deprecated = false` fails the plan
+```
