@@ -2414,7 +2414,8 @@ func (s *state) gateway(next http.HandlerFunc) http.HandlerFunc {
 			// The renamed-scope marker stands for an organization on a platform
 			// whose quota API renamed the organization's scope. Only the quota
 			// reads answer for it.
-			known = s.organizations[org] || strings.Contains(org, quotaRenamedScope)
+			known = s.organizations[org] ||
+				strings.Contains(org, quotaRenamedScope) && strings.HasSuffix(r.Pattern, "/quota")
 		case project != "":
 			var p *fakeProject
 			p, known = projectKind.rows(s.global())[at{id: project}]

@@ -3,6 +3,8 @@ package main
 import (
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -42,6 +44,36 @@ func TestQuotaReadsNameTheOrganizationScopeEitherWay(t *testing.T) {
 					}
 				}
 			})
+		}
+	}
+}
+
+// The gateway admits the renamed-scope marker's organization on the two quota
+// reads and on nothing else, as it would any organization that doesn't exist.
+func TestOnlyTheQuotaReadsAnswerForTheRenamedScopeMarker(t *testing.T) {
+	s := newState()
+	secrets, err := newRunSecrets()
+	if err != nil {
+		t.Fatalf("newRunSecrets: %v", err)
+	}
+	mux := http.NewServeMux()
+	s.routes(mux, secrets.auth)
+	send := func(method, path string) (int, string) {
+		req := httptest.NewRequest(method, path, nil)
+		req.Header.Set("Authorization", "Bearer "+secrets.AccessToken)
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		return rec.Code, strings.TrimSpace(rec.Body.String())
+	}
+	org := "/v1/regions/global/organizations/org-" + quotaRenamedScope
+	for _, path := range []string{org + "/quota", org + "/projects/team-a/quota"} {
+		if code, body := send(http.MethodGet, path); code != http.StatusOK {
+			t.Errorf("GET %s: %d %s, want it served", path, code, body)
+		}
+	}
+	for _, path := range []string{org, org + "/projects", org + "/projects/team-a", org + "/iam/roles"} {
+		if code, body := send(http.MethodGet, path); code != http.StatusForbidden || body != live403 {
+			t.Errorf("GET %s: %d %s, want the gateway's 403", path, code, body)
 		}
 	}
 }
