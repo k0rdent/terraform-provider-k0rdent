@@ -36,9 +36,9 @@ output "gpu_cluster_types" {
 ### Optional
 
 - `display_name_regex` (String) Return only the ClusterTypes whose `display_name` matches this regular expression, in the RE2 syntax Terraform's own `regex` function takes. The match isn't anchored, so `prod` finds `preprod-a`: write `^prod-` for a prefix. One with no `display_name` never matches. Filtered in the provider, after the whole list is read: the list operation takes no such filter. **Constraints:** Must be a regular expression in RE2 syntax.
-- `include_deprecated` (Boolean) Include ClusterType versions whose status is `deprecated`, which the platform hides by default.
+- `include_deprecated` (Boolean) Include the ClusterTypes the platform hides by default: the `deprecated` ones, and on a platform that lists each type at its latest `available` version, every one with no `available` version.
 - `region` (String) Region to read. Defaults to the provider's `region`. Region ids come from `GET /v1/regions`. **Constraints:** Must be lower-case letters, digits and hyphens, starting with a letter and not ending with a hyphen (`[a-z]([-a-z0-9]*[a-z0-9])?`), because it becomes a segment of a request URL.
-- `status` (String) Return only the ClusterTypes whose `status` is this value. Filtered in the provider, after the whole list is read: the list operation takes no such filter. `deprecated` asks the platform for deprecated types too, so it doesn't need `include_deprecated` beside it, and `include_deprecated = false` beside it is refused at plan, since the pair can only answer an empty list. **Constraints:** Value must be one of: ["draft" "available" "deprecated"].
+- `status` (String) Return only the ClusterTypes whose `status` is this value. Filtered in the provider, after the whole list is read: the list operation takes no such filter. `draft` and `deprecated` ask the platform for the types it hides by default too, so neither needs `include_deprecated` beside it, and `include_deprecated = false` beside either is refused at plan, since the pair can answer an empty list. **Constraints:** Value must be one of: ["draft" "available" "deprecated"].
 
 ### Read-Only
 

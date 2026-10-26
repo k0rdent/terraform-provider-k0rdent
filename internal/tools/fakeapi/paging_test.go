@@ -139,8 +139,20 @@ func offsetLists(s *state) map[string]struct {
 		"VPCs":            {s.listVPCs, "vpcs", 5, false},
 		"security groups": {s.listSecurityGroups, "securityGroups", 5, true},
 		"address pools":   {s.listAddressPools, "addressPools", len(addressPools), true},
-		"cluster types":   {s.listClusterTypes, "clusterTypes", len(catalog), false},
+		"cluster types":   {s.listClusterTypes, "clusterTypes", listedByDefault(), false},
 	}
+}
+
+// listedByDefault counts the cluster types a list that doesn't ask for the
+// hidden ones answers with.
+func listedByDefault() int {
+	n := 0
+	for _, ct := range catalog {
+		if ct.status == "available" {
+			n++
+		}
+	}
+	return n
 }
 
 func seededForOffset(t *testing.T) *state {
@@ -269,6 +281,24 @@ func TestTheOffsetListsKeepTheCursorForABareRequest(t *testing.T) {
 			case name != "cluster types" && query != "" && !got.next:
 				t.Errorf("%s ?%s: one page of two rows ended the list", name, query)
 			}
+		}
+	}
+}
+
+// A cluster type with no `available` version is listed only beside
+// `includeDeprecated=true`, and counted only there.
+func TestTheClusterTypeListHidesATypeWithNoAvailableVersion(t *testing.T) {
+	if listedByDefault() == len(catalog) {
+		t.Fatal("every cluster type in the catalog is available, so nothing is hidden")
+	}
+	s := newState()
+	for query, want := range map[string]int{
+		"offset=0": listedByDefault(), "offset=0&includeDeprecated=false": listedByDefault(),
+		"offset=0&includeDeprecated=true": len(catalog),
+	} {
+		code, got, body := getOffsetPage(t, s.listClusterTypes, "clusterTypes", query)
+		if code != http.StatusOK || got.rows != want || got.totalCount == nil || *got.totalCount != want {
+			t.Errorf("?%s: %d %s, want %d types", query, code, body, want)
 		}
 	}
 }

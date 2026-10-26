@@ -2,8 +2,10 @@ package provider
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"sort"
+	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
@@ -73,15 +75,17 @@ func (d *clusterTypesDataSource) Schema(_ context.Context, _ datasource.SchemaRe
 			},
 			"include_deprecated": schema.BoolAttribute{
 				Optional: true,
-				MarkdownDescription: "Include ClusterType versions whose status is `deprecated`, which the " +
-					"platform hides by default.",
+				MarkdownDescription: "Include the ClusterTypes the platform hides by default: the `deprecated` " +
+					"ones, and on a platform that lists each type at its latest `available` version, " +
+					"every one with no `available` version.",
 			},
 			"display_name_regex": displayNameRegexAttribute("ClusterTypes"),
 			"status": func() schema.StringAttribute {
 				a := stateFilterAttribute("ClusterTypes", "status", clusterTypeStatusesFilter, false)
-				a.MarkdownDescription += " `deprecated` asks the platform for deprecated types too, " +
-					"so it doesn't need `include_deprecated` beside it, and `include_deprecated = false` " +
-					"beside it is refused at plan, since the pair can only answer an empty list."
+				a.MarkdownDescription += " `draft` and `deprecated` ask the platform for the types it hides " +
+					"by default too, so neither needs `include_deprecated` beside it, and " +
+					"`include_deprecated = false` beside either is refused at plan, since the pair can " +
+					"answer an empty list."
 				return a
 			}(),
 			// A List because a catalog has to be indexable and a Set is not:
@@ -151,9 +155,11 @@ func (d *clusterTypesDataSource) Read(ctx context.Context, req datasource.ReadRe
 		v := data.IncludeDeprecated.ValueBool()
 		params.IncludeDeprecated = &v
 	}
-	// The platform hides deprecated types unless asked, so a filter for them
-	// alone would always come back empty.
-	if filter.state == string(k0rdent.ClusterTypeVersionStatusDeprecated) {
+	// The platform hides deprecated types unless asked, and one that lists
+	// each type at its latest `available` version hides every type without
+	// one, so a filter for any other status could come back empty. Those
+	// platforms take `includeDeprecated` as an alias of `includeUnavailable`.
+	if filter.state != "" && filter.state != string(k0rdent.ClusterTypeVersionStatusAvailable) {
 		v := true
 		params.IncludeDeprecated = &v
 	}
@@ -392,23 +398,27 @@ func (d *clusterTypeDataSource) Read(ctx context.Context, req datasource.ReadReq
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
-// ValidateConfig refuses `status = "deprecated"` beside
+// ValidateConfig refuses a `status` other than `available` beside
 // `include_deprecated = false`. The platform hides deprecated types unless
-// asked, so the pair can only ever answer an empty list, and a configuration
-// that wrote it meant one of the two.
+// asked, and one that lists each type at its latest `available` version hides
+// every draft one too, so the pair can answer an empty list, and a
+// configuration that wrote it meant one of the two.
 func (d *clusterTypesDataSource) ValidateConfig(ctx context.Context, req datasource.ValidateConfigRequest, resp *datasource.ValidateConfigResponse) {
 	var data clusterTypesModel
 	resp.Diagnostics.Append(req.Config.Get(ctx, &data)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	if data.Status.IsUnknown() || data.Status.ValueString() != string(k0rdent.ClusterTypeVersionStatusDeprecated) ||
+	status := data.Status.ValueString()
+	if data.Status.IsUnknown() || status == "" || status == string(k0rdent.ClusterTypeVersionStatusAvailable) ||
 		data.IncludeDeprecated.IsNull() || data.IncludeDeprecated.IsUnknown() || data.IncludeDeprecated.ValueBool() {
 		return
 	}
 	// Local: configuration validation, no request made.
-	resp.Diagnostics.AddAttributeError(path.Root("include_deprecated"), "Deprecated types excluded and asked for",
-		"`status = \"deprecated\"` asks for deprecated types only, and `include_deprecated = false` "+
-			"leaves them out, so the list would always be empty. Remove `include_deprecated`: "+
-			"`status = \"deprecated\"` already asks the platform for them.")
+	resp.Diagnostics.AddAttributeError(path.Root("include_deprecated"),
+		strings.ToUpper(status[:1])+status[1:]+" types excluded and asked for",
+		fmt.Sprintf("`status = %q` asks for %s types only, and `include_deprecated = false` "+
+			"leaves out the types the platform hides by default, which every %s type can be, so the "+
+			"list could be empty. Remove `include_deprecated`: `status = %q` already asks the "+
+			"platform for them.", status, status, status, status))
 }
