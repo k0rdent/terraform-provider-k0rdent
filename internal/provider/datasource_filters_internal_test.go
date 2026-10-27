@@ -577,6 +577,11 @@ func TestDeprecatedStatusRefusesIncludeDeprecatedFalse(t *testing.T) {
 		{"deprecated", ptr(true), false},
 		{"deprecated", nil, false},
 		{"available", ptr(false), false},
+		// Read asks for the hidden types under `draft` anyway, so the pair
+		// answers the drafts and the plan goes on.
+		{"draft", ptr(false), false},
+		// The one-of validator refuses it, and this check adds nothing.
+		{"bogus", ptr(false), false},
 	} {
 		vals := map[string]tftypes.Value{}
 		for name, at := range typ.AttributeTypes {

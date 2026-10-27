@@ -142,7 +142,8 @@ func (d *projectsDataSource) Read(ctx context.Context, req datasource.ReadReques
 	}
 
 	// This operation documents `offset` and `limit`, as the five networking
-	// lists do. The other catalogs are still on `pageToken`.
+	// lists and the cluster type catalog do. The other catalogs are still on
+	// `pageToken`.
 	// Keyed on the organization too: one project id can be in two of them.
 	projects, ok := listProjects(ctx, d.meta, params, &resp.Diagnostics)
 	if !ok {

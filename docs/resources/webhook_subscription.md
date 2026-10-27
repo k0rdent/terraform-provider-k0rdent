@@ -4,7 +4,7 @@ page_title: "k0rdent_webhook_subscription Resource - k0rdent"
 subcategory: ""
 description: |-
   An endpoint the platform POSTs notification events to, each one signed with HMAC-SHA256 under a secret the endpoint verifies it with.
-  It takes no region and no project. A subscription lives on the global tier and belongs to the organization the provider's credential is in, so it receives that organization's events.
+  It takes no region and no project. A subscription lives on the global tier and belongs to the organization the provider's credential is in, so it receives the events of every project in that organization. Only event_types narrows them: there's no filter by project or cluster, so a receiver that serves one project should check each event's project and drop those for other projects. An event with no project may still concern yours: it concerns no single project, or was recorded before events carried one.
   The signing secret never reaches state. The platform shows a secret once and never again, and this provider keeps no secret in state or in a plan, so the secret is the configuration's to hold: set secret_wo, ideally from an ephemeral source such as a secrets manager's ephemeral resource, and bump secret_wo_version whenever it changes. Creating or replacing a subscription needs secret_wo, and so Terraform 1.11 or later: without it the platform would generate a secret nobody can read back, every receiver that verifies would refuse every delivery, and the platform dead-letters a refused delivery at once. A subscription already made can be imported and managed without it.
   A new secret rotates the same subscription. Bumping secret_wo_version calls the platform's rotation, which keeps the id and everything queued for the endpoint. By default the previous secret is still accepted for 24 hours, and every delivery carries a signature under each, so receivers can move to the new one at their own pace.
   Delivery health (last success, consecutive failures) is on the k0rdent_webhook_subscription data source rather than here, because it moves with every delivery and isn't anything a configuration sets.
@@ -15,7 +15,7 @@ description: |-
 
 An endpoint the platform POSTs notification events to, each one signed with HMAC-SHA256 under a secret the endpoint verifies it with.
 
-It takes no `region` and no `project`. A subscription lives on the global tier and belongs to the organization the provider's credential is in, so it receives that organization's events.
+It takes no `region` and no `project`. A subscription lives on the global tier and belongs to the organization the provider's credential is in, so it receives the events of every project in that organization. Only `event_types` narrows them: there's no filter by project or cluster, so a receiver that serves one project should check each event's `project` and drop those for other projects. An event with no `project` may still concern yours: it concerns no single project, or was recorded before events carried one.
 
 **The signing secret never reaches state.** The platform shows a secret once and never again, and this provider keeps no secret in state or in a plan, so the secret is the configuration's to hold: set `secret_wo`, ideally from an ephemeral source such as a secrets manager's ephemeral resource, and bump `secret_wo_version` whenever it changes. Creating or replacing a subscription needs `secret_wo`, and so Terraform 1.11 or later: without it the platform would generate a secret nobody can read back, every receiver that verifies would refuse every delivery, and the platform dead-letters a refused delivery at once. A subscription already made can be imported and managed without it.
 
@@ -44,8 +44,8 @@ resource "k0rdent_webhook_subscription" "cluster_events" {
 
   # Leave it out to receive every event.
   event_types = [
-    "io.k0rdent.cluster.ready.v1",
-    "io.k0rdent.cluster.failed.v1",
+    "io.k0rdent.workflow.cluster.create.v1",
+    "io.k0rdent.workflow.cluster.create.failed.v1",
   ]
 
   secret_wo = var.webhook_signing_secret
@@ -76,7 +76,7 @@ output "signing_secret_version" {
 
 > **NOTE**: [Write-only arguments](https://developer.hashicorp.com/terraform/language/resources/ephemeral#write-only-arguments) are supported in Terraform 1.11 and later.
 
-- `event_types` (Set of String) The event types to deliver, such as `io.k0rdent.cluster.ready.v1`: dotted lower case, at least three segments, as the event catalog names them. A name outside that form is warned about at plan time, not refused. Leave it out to receive every event. There's no update for it, so a change replaces the subscription. **Known gap.** The event catalog that lists them is provider personnel only, so a tenant can't read the names and a configuration writes them as literals. The [hardcoded values](../guides/hardcoded-values.md) guide names the side that has to change. **Forces replacement**. **Constraints:** Must name at least one event type, or be left out to receive every event. Warns about an event type outside the catalog's form.
+- `event_types` (Set of String) The event types to deliver, such as `io.k0rdent.workflow.cluster.create.v1`: dotted lower case, at least three segments, as the event catalog names them. A name outside that form is warned about at plan time, not refused. Leave it out to receive every event. There's no update for it, so a change replaces the subscription. **Known gap.** The event catalog that lists them is provider personnel only, so a tenant can't read the names and a configuration writes them as literals. The [hardcoded values](../guides/hardcoded-values.md) guide names the side that has to change. **Forces replacement**. **Constraints:** Must name at least one event type, or be left out to receive every event. Warns about an event type outside the catalog's form.
 - `rotation_overlap` (Boolean) Whether a rotation keeps the previous secret valid for the 24 hours that follow. Defaults to `true`. Set `false` to cut over at once, for a leaked secret: any receiver not yet on the new secret starts refusing deliveries, and the platform reads that refusal as permanent. It applies to the next rotation and changing it on its own sends nothing. Defaults to `true`.
 - `secret_wo` (String, [Write-only](https://developer.hashicorp.com/terraform/language/resources/ephemeral#write-only-arguments)) The signing secret, at least 32 characters. Write-only: Terraform passes it to the provider and never stores it, so it's never in state or a plan. Terraform can't see it change, so set `secret_wo_version` beside it and change that whenever this changes. Required to create or replace a subscription. Needs Terraform 1.11 or later. **Constraints:** String length must be at least 32. **Write-only:** Terraform sends it to the provider and never writes it to plan or state.
 - `secret_wo_version` (Number) Any number that changes when `secret_wo` does. A change rotates the secret in place: the id, the endpoint and everything queued for it stay. It can be a literal, a variable or a local, but has to be known at plan time, so not a value only the apply works out, such as another resource's id. Removing it, with `secret_wo`, sends nothing and leaves the platform's secret as it is. After an import the provider can't know which secret the platform holds, so the first apply that sets this rotates to `secret_wo`. A rotation made outside Terraform clears it on the next refresh, so the plan after it rotates back.
