@@ -651,7 +651,7 @@ data "k0rdent_project_quota" "this" {
   project_id      = local.project
 }
 
-data "k0rdent_tenant_quota" "this" {
+data "k0rdent_organization_quota" "this" {
   count = var.quota_checks ? 1 : 0
 
   organization_id = local.organization

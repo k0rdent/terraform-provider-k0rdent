@@ -1,0 +1,110 @@
+package provider
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"strings"
+	"testing"
+
+	"github.com/hashicorp/terraform-plugin-framework/datasource"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
+
+	"github.com/k0rdent/terraform-provider-k0rdent/internal/k0rdent"
+)
+
+// quotaViewSpelled is a project's quota view as a platform sends it, naming
+// the organization's scope sent.
+func quotaViewSpelled(t *testing.T, sent string) k0rdent.TenantQuotaView {
+	t.Helper()
+	var view k0rdent.TenantQuotaView
+	body := `{"dimensions":[{"dimension":"node_count","unit":"count","enforced":true,"overLimit":false,
+		"headroom":2,"bindingScope":"` + sent + `","scopes":[
+		{"scope":"` + sent + `","targetId":"org-demo","limit":32,"used":6,"headroom":26,"overLimit":false},
+		{"scope":"project","targetId":"team-a","limit":8,"used":6,"headroom":2,"overLimit":false}]}]}`
+	if err := json.Unmarshal([]byte(body), &view); err != nil {
+		t.Fatal(err)
+	}
+	return view
+}
+
+// A landscape runs a platform from before the quota API renamed the
+// organization's scope or after it. The organization quota and its deprecated
+// name each report the one name they document whichever arrives, the project
+// quota (asSent) reports the one that arrived, and all leave `project` alone.
+func TestQuotaViewNamesTheOrganizationScope(t *testing.T) {
+	for _, orgScope := range []string{organizationScope, tenantScope, asSent} {
+		for _, sent := range []string{tenantScope, organizationScope} {
+			reported := orgScope
+			if orgScope == asSent {
+				reported = sent
+			}
+			t.Run(fmt.Sprintf("%q from %s", orgScope, sent), func(t *testing.T) {
+				var diags diag.Diagnostics
+				_, dims := quotaViewFrom(context.Background(), quotaViewSpelled(t, sent), orgScope, &diags)
+				if diags.HasError() {
+					t.Fatalf("diags: %v", diags)
+				}
+				rows := map[string]quotaDimensionModel{}
+				diags.Append(dims.ElementsAs(context.Background(), &rows, false)...)
+				var scopes []quotaScopeModel
+				diags.Append(rows["node_count"].Scopes.ElementsAs(context.Background(), &scopes, false)...)
+				if diags.HasError() || len(scopes) != 2 {
+					t.Fatalf("scopes=%v diags=%v", scopes, diags)
+				}
+				if got := rows["node_count"].BindingScope.ValueString(); got != reported {
+					t.Errorf("binding_scope = %q, want %q", got, reported)
+				}
+				if got := scopes[0].Scope.ValueString(); got != reported {
+					t.Errorf("scopes[0].scope = %q, want %q", got, reported)
+				}
+				if got := scopes[1].Scope.ValueString(); got != "project" {
+					t.Errorf("scopes[1].scope = %q, want project", got)
+				}
+			})
+		}
+	}
+}
+
+// A scope neither name covers is the platform's to define, so it reads as
+// sent rather than being taken for the organization.
+func TestQuotaScopeAsLeavesOtherScopes(t *testing.T) {
+	for _, orgScope := range []string{organizationScope, tenantScope, asSent} {
+		for _, s := range []string{"project", "region", ""} {
+			if got := quotaScopeAs(s, orgScope); got != s {
+				t.Errorf("quotaScopeAs(%q, %q) = %q", s, orgScope, got)
+			}
+		}
+	}
+}
+
+// Terraform warns about a deprecated data source only when its schema carries
+// DeprecationMessage, so the description's notice alone warns nobody. The old
+// name has to carry it, naming its replacement and the removal, and the new
+// name must not.
+func TestOnlyTheTenantQuotaIsDeprecated(t *testing.T) {
+	for name, c := range map[string]struct {
+		ds   datasource.DataSource
+		want []string
+	}{
+		"tenant_quota":       {newTenantQuotaDataSource(), []string{ResourceName(organizationQuotaDataSourceSuffix), "removed in v1.0.0"}},
+		"organization_quota": {newOrganizationQuotaDataSource(), nil},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var resp datasource.SchemaResponse
+			c.ds.Schema(context.Background(), datasource.SchemaRequest{}, &resp)
+			got := resp.Schema.DeprecationMessage
+			if c.want == nil && got != "" {
+				t.Errorf("DeprecationMessage = %q, want none", got)
+			}
+			if c.want != nil && got == "" {
+				t.Fatal("DeprecationMessage is empty, so Terraform warns nobody")
+			}
+			for _, want := range c.want {
+				if !strings.Contains(got, want) {
+					t.Errorf("DeprecationMessage %q lacks %q", got, want)
+				}
+			}
+		})
+	}
+}
