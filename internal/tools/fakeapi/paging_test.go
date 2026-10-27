@@ -119,10 +119,9 @@ func TestTheNetworkingListsRefuseAForeignCursor(t *testing.T) {
 	}
 }
 
-// offsetLists are the five operations that document `offset` and `limit`, with
-// the 422 envelope each one's real handler writes. Security groups and address
-// pools answer with the reason under `details`, the other three with the bare
-// envelope.
+// offsetLists are operations that document `offset` and `limit`, with the 422
+// envelope each one's real handler writes. Security groups and address pools
+// answer with the reason under `details`, the others with the bare envelope.
 func offsetLists(s *state) map[string]struct {
 	h         http.HandlerFunc
 	key       string
@@ -140,7 +139,20 @@ func offsetLists(s *state) map[string]struct {
 		"VPCs":            {s.listVPCs, "vpcs", 5, false},
 		"security groups": {s.listSecurityGroups, "securityGroups", 5, true},
 		"address pools":   {s.listAddressPools, "addressPools", len(addressPools), true},
+		"cluster types":   {s.listClusterTypes, "clusterTypes", listedByDefault(), false},
 	}
+}
+
+// listedByDefault counts the cluster types a list that doesn't ask for the
+// hidden ones answers with.
+func listedByDefault() int {
+	n := 0
+	for _, ct := range catalog {
+		if ct.status == "available" {
+			n++
+		}
+	}
+	return n
 }
 
 func seededForOffset(t *testing.T) *state {
@@ -249,7 +261,8 @@ func TestTheOffsetListsServeThePageAsked(t *testing.T) {
 
 // A request with no offset-style parameter is an existing cursor client. It
 // gets the cursor page and none of the offset path's fields: a `totalCount`
-// there would be a claim the real cursor path never makes.
+// there would be a claim the real cursor path never makes. The cluster type
+// list never had a cursor, so its first page is the last.
 func TestTheOffsetListsKeepTheCursorForABareRequest(t *testing.T) {
 	s := seededForOffset(t)
 	for name, list := range offsetLists(s) {
@@ -262,9 +275,55 @@ func TestTheOffsetListsKeepTheCursorForABareRequest(t *testing.T) {
 			if got.totalCount != nil || got.offset != nil || got.limit != nil {
 				t.Errorf("%s ?%s: got %+v, want no offset fields", name, query, got)
 			}
-			if query != "" && !got.next {
+			switch {
+			case name == "cluster types" && (got.next || got.rows >= list.total):
+				t.Errorf("%s ?%s: got %+v, want a first page short of all %d and no token", name, query, got, list.total)
+			case name != "cluster types" && query != "" && !got.next:
 				t.Errorf("%s ?%s: one page of two rows ended the list", name, query)
 			}
+		}
+	}
+}
+
+// A cluster type with no `available` version is listed only beside
+// `includeDeprecated=true`, and counted only there.
+func TestTheClusterTypeListHidesATypeWithNoAvailableVersion(t *testing.T) {
+	if listedByDefault() == len(catalog) {
+		t.Fatal("every cluster type in the catalog is available, so nothing is hidden")
+	}
+	s := newState()
+	for query, want := range map[string]int{
+		"offset=0": listedByDefault(), "offset=0&includeDeprecated=false": listedByDefault(),
+		"offset=0&includeDeprecated=true": len(catalog),
+	} {
+		code, got, body := getOffsetPage(t, s.listClusterTypes, "clusterTypes", query)
+		if code != http.StatusOK || got.rows != want || got.totalCount == nil || *got.totalCount != want {
+			t.Errorf("?%s: %d %s, want %d types", query, code, body, want)
+		}
+	}
+}
+
+// listClusterTypes refuses every `pageToken`: on its own with a 400, as the
+// cursor was never implemented there, and beside an offset parameter with the
+// 422 for mixed styles. Both envelopes are bare.
+func TestTheClusterTypeListRefusesEveryCursor(t *testing.T) {
+	s := newState()
+	for query, want := range map[string]int{
+		"pageToken=2": 400, "pageToken=nope": 400, "pageSize=500&pageToken=2": 400,
+		"offset=0&pageToken=2": 422,
+	} {
+		code, _, body := getOffsetPage(t, s.listClusterTypes, "clusterTypes", query)
+		var out struct {
+			Error struct {
+				Reason  *string `json:"reason"`
+				Details []any   `json:"details"`
+			} `json:"error"`
+		}
+		if err := json.Unmarshal(body, &out); err != nil {
+			t.Fatalf("?%s: %v: %s", query, err, body)
+		}
+		if code != want || out.Error.Reason != nil || out.Error.Details != nil {
+			t.Errorf("?%s: %d %s, want a bare %d", query, code, body, want)
 		}
 	}
 }

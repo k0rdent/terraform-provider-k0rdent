@@ -29,3 +29,16 @@ func TestClusterTypeHeadIsTheNewestRowNotTheVersionACreateBinds(t *testing.T) {
 		t.Fatalf("an unversioned create bound %s, and the newest available version is v3", bound)
 	}
 }
+
+// A ClusterType with no `available` version has nothing for a create to bind,
+// in either form.
+func TestATypeWithNoAvailableVersionBindsNothing(t *testing.T) {
+	for _, ref := range []string{
+		clusterTypePath("r", "gpu-preview"),
+		clusterTypePath("r", "gpu-preview") + "/versions/ffffffff-0000-4000-8000-000000000001",
+	} {
+		if resolved, _, _, ok := resolveClusterTypeRef("r", ref); ok {
+			t.Errorf("%s bound %s", ref, resolved)
+		}
+	}
+}
