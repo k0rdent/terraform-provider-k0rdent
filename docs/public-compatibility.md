@@ -99,8 +99,11 @@ data "k0rdent_organization_quota" "org" {
   `data.k0rdent_organization_quota`. A data source keeps nothing in state
   that needs moving.
 - **Compare scopes with `organization`**, not `tenant`, in `binding_scope`
-  and `scopes[*].scope` of `k0rdent_organization_quota` and
-  `k0rdent_project_quota`.
+  and `scopes[*].scope` of `k0rdent_organization_quota`.
+- **`k0rdent_project_quota` follows the platform.** Its `binding_scope` and
+  `scopes[*].scope` say `tenant` before the platform's rename and
+  `organization` after. For one fixed word, read the organization's scope
+  from `k0rdent_organization_quota`.
 - **`k0rdent_tenant_quota` keeps working until v1.0.0**, with a warning, and
   still reports `tenant`.
 

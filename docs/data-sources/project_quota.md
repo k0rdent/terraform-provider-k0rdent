@@ -4,11 +4,14 @@ page_title: "k0rdent_project_quota Data Source - k0rdent"
 subcategory: ""
 description: |-
   A project's quota: the organization's scope and, when the project has an assignment of its own, the project's. The two are independent gates, so headroom is the smaller of them and binding_scope names which.
+  The organization's scope reads as the platform sends it: tenant before its quota API renamed it, organization after. k0rdent_organization_quota always reports organization.
 ---
 
 # k0rdent_project_quota (Data Source)
 
 A project's quota: the organization's scope and, when the project has an assignment of its own, the project's. The two are independent gates, so `headroom` is the smaller of them and `binding_scope` names which.
+
+The organization's scope reads as the platform sends it: `tenant` before its quota API renamed it, `organization` after. `k0rdent_organization_quota` always reports `organization`.
 
 ## Example Usage
 
@@ -46,11 +49,11 @@ output "node_headroom" {
 
 Read-Only:
 
-- `binding_scope` (String) The scope `headroom` came from, `organization` or `project`. Null exactly when `headroom` is.
+- `binding_scope` (String) The scope `headroom` came from, `tenant`, `organization` or `project`. Null exactly when `headroom` is.
 - `enforced` (Boolean) Whether admission refuses past this dimension's limits. When false the limits are recorded but nothing refuses past them, and `used` and `headroom` are null at every scope: unmeasured is not zero.
 - `headroom` (Number) How much more fits: the smallest headroom across the scopes that cap this dimension. Null when no scope caps it or it is not enforced. This is a limit, not availability: headroom does not mean the hardware is free.
 - `over_limit` (Boolean) Whether usage exceeds at least one scope's limit.
-- `scopes` (Attributes List) The scopes that apply, broadest first, in the platform's order: `organization` always, then `project` when the project has an assignment of its own. (see [below for nested schema](#nestedatt--dimensions--scopes))
+- `scopes` (Attributes List) The scopes that apply, broadest first, in the platform's order: the organization always, then `project` when the project has an assignment of its own. (see [below for nested schema](#nestedatt--dimensions--scopes))
 - `unit` (String) Unit of every limit, usage and headroom figure in this entry.
 
 <a id="nestedatt--dimensions--scopes"></a>
@@ -61,7 +64,7 @@ Read-Only:
 - `headroom` (Number) Remaining under this scope's limit. Null when there is no limit or the dimension is not enforced.
 - `limit` (Number) The scope's cap. Null when the scope does not cap this dimension.
 - `over_limit` (Boolean) Whether usage exceeds this scope's limit, which happens when a limit is lowered below current usage.
-- `scope` (String) `organization` for the organization, `project` for a project.
+- `scope` (String) `tenant` or `organization` for the organization, as the platform sends it, and `project` for a project.
 - `target_id` (String) The organization or project the scope belongs to.
 - `used` (Number) Usage recorded at this scope, summed across regions. Null when the dimension is not enforced.
 

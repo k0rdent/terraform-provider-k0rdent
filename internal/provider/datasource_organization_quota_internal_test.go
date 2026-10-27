@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -28,14 +29,19 @@ func quotaViewSpelled(t *testing.T, sent string) k0rdent.TenantQuotaView {
 }
 
 // A landscape runs a platform from before the quota API renamed the
-// organization's scope or after it. Each data source reports the one name it
-// documents whichever arrives, and leaves `project` alone.
-func TestQuotaViewNamesTheOrganizationScopeOneWay(t *testing.T) {
-	for _, reported := range []string{organizationScope, tenantScope} {
+// organization's scope or after it. The organization quota and its deprecated
+// name each report the one name they document whichever arrives, the project
+// quota (asSent) reports the one that arrived, and all leave `project` alone.
+func TestQuotaViewNamesTheOrganizationScope(t *testing.T) {
+	for _, orgScope := range []string{organizationScope, tenantScope, asSent} {
 		for _, sent := range []string{tenantScope, organizationScope} {
-			t.Run(reported+" from "+sent, func(t *testing.T) {
+			reported := orgScope
+			if orgScope == asSent {
+				reported = sent
+			}
+			t.Run(fmt.Sprintf("%q from %s", orgScope, sent), func(t *testing.T) {
 				var diags diag.Diagnostics
-				_, dims := quotaViewFrom(context.Background(), quotaViewSpelled(t, sent), reported, &diags)
+				_, dims := quotaViewFrom(context.Background(), quotaViewSpelled(t, sent), orgScope, &diags)
 				if diags.HasError() {
 					t.Fatalf("diags: %v", diags)
 				}
@@ -63,9 +69,11 @@ func TestQuotaViewNamesTheOrganizationScopeOneWay(t *testing.T) {
 // A scope neither name covers is the platform's to define, so it reads as
 // sent rather than being taken for the organization.
 func TestQuotaScopeAsLeavesOtherScopes(t *testing.T) {
-	for _, s := range []string{"project", "region", ""} {
-		if got := quotaScopeAs(s, organizationScope); got != s {
-			t.Errorf("quotaScopeAs(%q) = %q", s, got)
+	for _, orgScope := range []string{organizationScope, tenantScope, asSent} {
+		for _, s := range []string{"project", "region", ""} {
+			if got := quotaScopeAs(s, orgScope); got != s {
+				t.Errorf("quotaScopeAs(%q, %q) = %q", s, orgScope, got)
+			}
 		}
 	}
 }

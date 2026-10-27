@@ -214,8 +214,9 @@ resource %q "test" {
 
 // The fake names the organization's scope `tenant`, as the pinned contract
 // does, unless the organization id asks for `organization`, the name the
-// platform's quota API renames it to. Each data source reports its documented
-// name from either.
+// platform's quota API renames it to. The organization quota and its
+// deprecated name report their documented name from either, and the project
+// quota reports the one the platform sent.
 func TestAccOrganizationQuota(t *testing.T) {
 	for platform, org := range map[string]string{
 		"tenant":       "org-demo",
@@ -261,7 +262,9 @@ data %[3]q "team" {
 						resource.TestCheckResourceAttr(projectQuotaAddr, "dimensions.node_count.headroom", "2"),
 						resource.TestCheckResourceAttr(projectQuotaAddr, "dimensions.node_count.binding_scope", "project"),
 						resource.TestCheckResourceAttr(projectQuotaAddr, "dimensions.node_count.scopes.#", "2"),
-						resource.TestCheckResourceAttr(projectQuotaAddr, "dimensions.node_count.scopes.0.scope", "organization"),
+						// The organization's scope as the platform sent it.
+						resource.TestCheckResourceAttr(projectQuotaAddr, "dimensions.node_count.scopes.0.scope", platform),
+						resource.TestCheckResourceAttr(projectQuotaAddr, "dimensions.node_count.scopes.1.scope", "project"),
 					),
 				}},
 			})

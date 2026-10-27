@@ -30,16 +30,20 @@ const (
 
 // The names of the organization's quota scope. The platform called it
 // `tenant` until its quota API renamed it `organization`, and a landscape can
-// run either, so the provider reports one name whichever the platform sends.
+// run either. The organization quota reports one name whichever the platform
+// sends, and the project quota reports it as sent (asSent), so the rename
+// reaches a project quota's users from the platform, not the provider.
 const (
 	organizationScope = "organization"
 	tenantScope       = "tenant"
+	asSent            = ""
 )
 
 // quotaScopeAs spells a quota scope the platform sent: orgScope when it names
-// the organization in either spelling, and otherwise as sent.
+// the organization in either spelling, and otherwise, or when orgScope is
+// asSent, as sent.
 func quotaScopeAs(scope, orgScope string) string {
-	if scope == organizationScope || scope == tenantScope {
+	if orgScope != asSent && (scope == organizationScope || scope == tenantScope) {
 		return orgScope
 	}
 	return scope
@@ -131,9 +135,19 @@ func (d *projectQuotaDataSource) Metadata(_ context.Context, _ datasource.Metada
 }
 
 // quotaAttributes are the attributes both quota views share, with the
-// organization's scope named orgScope. Read-only because quota profiles and
-// assignments are operator-facing.
+// organization's scope named orgScope, or as the platform sends it when
+// orgScope is asSent. Read-only because quota profiles and assignments are
+// operator-facing.
 func quotaAttributes(orgScope string) map[string]schema.Attribute {
+	binding := "`" + orgScope + "` or `project`"
+	first := "`" + orgScope + "`"
+	scope := "`" + orgScope + "` for the organization, `project` for a project."
+	if orgScope == asSent {
+		binding = "`tenant`, `organization` or `project`"
+		first = "the organization"
+		scope = "`tenant` or `organization` for the organization, as the platform sends it, and " +
+			"`project` for a project."
+	}
 	return map[string]schema.Attribute{
 		"organization_id": schema.StringAttribute{
 			Required: true,
@@ -175,19 +189,19 @@ func quotaAttributes(orgScope string) map[string]schema.Attribute {
 					},
 					"binding_scope": schema.StringAttribute{
 						Computed: true,
-						MarkdownDescription: "The scope `headroom` came from, `" + orgScope + "` or `project`. " +
+						MarkdownDescription: "The scope `headroom` came from, " + binding + ". " +
 							"Null exactly when `headroom` is.",
 					},
 					"scopes": schema.ListNestedAttribute{
 						Computed: true,
 						MarkdownDescription: "The scopes that apply, broadest first, in the platform's " +
-							"order: `" + orgScope + "` always, then `project` when the project has an " +
+							"order: " + first + " always, then `project` when the project has an " +
 							"assignment of its own.",
 						NestedObject: schema.NestedAttributeObject{
 							Attributes: map[string]schema.Attribute{
 								"scope": schema.StringAttribute{
 									Computed:            true,
-									MarkdownDescription: "`" + orgScope + "` for the organization, `project` for a project.",
+									MarkdownDescription: scope,
 								},
 								"target_id": schema.StringAttribute{
 									Computed:            true,
@@ -233,7 +247,7 @@ func (d *organizationQuotaDataSource) Schema(_ context.Context, _ datasource.Sch
 }
 
 func (d *projectQuotaDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
-	attrs := quotaAttributes(organizationScope)
+	attrs := quotaAttributes(asSent)
 	attrs["project_id"] = schema.StringAttribute{
 		Required:            true,
 		MarkdownDescription: "Project to read, within `organization_id`.",
@@ -242,7 +256,10 @@ func (d *projectQuotaDataSource) Schema(_ context.Context, _ datasource.SchemaRe
 	resp.Schema = schema.Schema{
 		MarkdownDescription: "A project's quota: the organization's scope and, when the project has " +
 			"an assignment of its own, the project's. The two are independent gates, so " +
-			"`headroom` is the smaller of them and `binding_scope` names which.",
+			"`headroom` is the smaller of them and `binding_scope` names which.\n\n" +
+			"The organization's scope reads as the platform sends it: `tenant` before its quota " +
+			"API renamed it, `organization` after. `" +
+			ResourceName(organizationQuotaDataSourceSuffix) + "` always reports `organization`.",
 		Attributes: attrs,
 	}
 	documentDataSourceSchema(&resp.Schema)
@@ -293,11 +310,12 @@ func (d *projectQuotaDataSource) Read(ctx context.Context, req datasource.ReadRe
 		addAPIError(&resp.Diagnostics, "read the project quota", httpResp, body, err)
 		return
 	}
-	data.Profile, data.Dimensions = quotaViewFrom(ctx, *got.JSON200, organizationScope, &resp.Diagnostics)
+	data.Profile, data.Dimensions = quotaViewFrom(ctx, *got.JSON200, asSent, &resp.Diagnostics)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
-// quotaViewFrom maps a quota view, naming the organization's scope orgScope.
+// quotaViewFrom maps a quota view, naming the organization's scope orgScope,
+// or as sent when orgScope is asSent.
 // It reads `scopes`, `headroom` and `enforced`, never the deprecated top-level
 // `limit`, `used` and `remaining`, which describe the organization alone and
 // read 0 for an unmeasured dimension.
