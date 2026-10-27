@@ -733,10 +733,18 @@ func (r *networkResource) Update(ctx context.Context, req resource.UpdateRequest
 
 		// A metadata change settles without a fabric operation, but `updating`
 		// is a declared state on all three branches, so the wait is not skipped
-		// on the assumption that it cannot happen.
-		if err := r.waitForSettled(ctx, target, id, "the network to settle"); err != nil {
-			addWaitError(&resp.Diagnostics, "The network did not settle after the change", err)
-			return
+		// on the assumption that it cannot happen. The exception is a `failed`
+		// network, which the platform leaves `failed` through this PATCH, so
+		// there's nothing to wait for. One that failed since the plan read it
+		// is still waited on, which reports why.
+		answer, err := networkViewOf(*updated.JSON200)
+		leftFailed := err == nil && answer.state == string(k0rdent.NetworkEVPNStateFailed) &&
+			state.State.ValueString() == string(k0rdent.NetworkEVPNStateFailed)
+		if !leftFailed {
+			if err := r.waitForSettled(ctx, target, id, "the network to settle"); err != nil {
+				addWaitError(&resp.Diagnostics, "The network did not settle after the change", err)
+				return
+			}
 		}
 	}
 
