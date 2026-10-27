@@ -631,7 +631,11 @@ data "k0rdent_regions" "all" {
   }
 }
 
+# Reading the organization needs the same organizations role as its quota, so
+# quota_checks turns both off, for a credential scoped to a project.
 data "k0rdent_organization" "this" {
+  count = var.quota_checks ? 1 : 0
+
   id = local.organization
 
   lifecycle {
@@ -642,8 +646,7 @@ data "k0rdent_organization" "this" {
   }
 }
 
-# Quota is the likeliest reason a create is refused. Set quota_checks = false
-# for a credential that can't read it.
+# Quota is the likeliest reason a create is refused.
 data "k0rdent_project_quota" "this" {
   count = var.quota_checks ? 1 : 0
 

@@ -552,12 +552,26 @@ func splitProjectImportID(raw string) (org, id string, ok bool) {
 }
 
 // findProjectOrganization looks up the organization that holds a live project.
+func findProjectOrganization(ctx context.Context, meta *Meta, id string, diags *diag.Diagnostics) (string, bool) {
+	p, ok := findProject(ctx, meta, id, diags)
+	if !ok {
+		return "", false
+	}
+	return stateString(p.OrganizationId), true
+}
+
+// findProject finds a live project by its id alone, from the project list.
 // `search` is a substring match, so only an exact id counts. The contract
 // promises an id is unique inside an organization, not across them, so every
 // page is read and a second organization holding the id is an error. Taking
 // the first match would adopt the wrong project, and a later destroy would
 // delete it.
-func findProjectOrganization(ctx context.Context, meta *Meta, id string, diags *diag.Diagnostics) (string, bool) {
+//
+// A list row is the same Project a read by id answers, so the row is the
+// project. The list is also the one project read a credential scoped to a
+// project can make: it shows that credential its own projects, and the read by
+// id is checked against the organization.
+func findProject(ctx context.Context, meta *Meta, id string, diags *diag.Diagnostics) (k0rdent.Project, bool) {
 	search := id
 	params := k0rdent.ListProjectsParams{Search: &search}
 	rows, err := readProjects(ctx, meta, params)
@@ -570,21 +584,23 @@ func findProjectOrganization(ctx context.Context, meta *Meta, id string, diags *
 			fmt.Sprintf("%s So there's no telling whether another organization also holds %q. Name "+
 				"the organization: `organization/project` when importing, or `organization_id` when "+
 				"reading it with the data source.", unended.Error(), id))
-		return "", false
+		return k0rdent.Project{}, false
 	case err != nil:
 		addListError(diags, "projects", err)
-		return "", false
+		return k0rdent.Project{}, false
 	}
 	var orgs []string
+	var found k0rdent.Project
 	for _, p := range rows {
 		if o := stateString(p.OrganizationId); stateString(p.Id) == id && o != "" && !slices.Contains(orgs, o) {
 			orgs = append(orgs, o)
+			found = p
 		}
 	}
 	sort.Strings(orgs)
 	switch len(orgs) {
 	case 1:
-		return orgs[0], true
+		return found, true
 	case 0:
 	default:
 		// Local: the list answered with the id in more than one organization.
@@ -593,14 +609,14 @@ func findProjectOrganization(ctx context.Context, meta *Meta, id string, diags *
 			redactDiagnosticText(fmt.Sprintf("Project %q exists in %s. Name the organization: `organization/project` "+
 				"when importing, or `organization_id` when reading it with the data source.",
 				id, strings.Join(orgs, ", "))))
-		return "", false
+		return k0rdent.Project{}, false
 	}
 	// Local: the list answered, and nothing in it is this project.
 	diags.AddError(
 		"No such project",
 		fmt.Sprintf("No project with id %q is visible to this credential. Check the id, or name "+
 			"the organization as well if the credential cannot list projects.", id))
-	return "", false
+	return k0rdent.Project{}, false
 }
 
 // projectStateFrom maps a Project onto the model.

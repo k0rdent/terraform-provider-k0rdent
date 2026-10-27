@@ -41,6 +41,11 @@ var fakeLogPath string
 // own store, which the provider's credentials can't.
 var fakeOwnerToken string
 
+// fakeProjectCredential is the fake's second service account, bound to the
+// project `demo` alone, for a test that has to show what such a credential
+// can read. See useProjectCredential.
+var fakeProjectCredential struct{ clientID, clientSecret string }
+
 var protoV6 = map[string]func() (tfprotov6.ProviderServer, error){
 	provider.ProviderTypeName: providerserver.NewProtocol6WithError(provider.New("acc")()),
 }
@@ -144,6 +149,8 @@ func run(m *testing.M) (int, error) {
 		return 0, err
 	}
 	fakeOwnerToken = secrets["FAKE_OWNER_TOKEN"]
+	fakeProjectCredential.clientID = secrets["FAKE_PROJECT_CLIENT_ID"]
+	fakeProjectCredential.clientSecret = secrets["FAKE_PROJECT_CLIENT_SECRET"]
 
 	for k, v := range map[string]string{
 		provider.EnvVar("ENDPOINT"):      endpoint,
@@ -272,7 +279,8 @@ func readFakeSecrets(path string) (map[string]string, error) {
 		}
 		secrets[name] = strings.Trim(value, "'")
 	}
-	for _, name := range []string{"FAKE_CLIENT_ID", "FAKE_CLIENT_SECRET", "FAKE_OWNER_TOKEN"} {
+	for _, name := range []string{"FAKE_CLIENT_ID", "FAKE_CLIENT_SECRET", "FAKE_OWNER_TOKEN",
+		"FAKE_PROJECT_CLIENT_ID", "FAKE_PROJECT_CLIENT_SECRET"} {
 		if secrets[name] == "" {
 			return nil, fmt.Errorf("the fake's secrets file has no %s", name)
 		}

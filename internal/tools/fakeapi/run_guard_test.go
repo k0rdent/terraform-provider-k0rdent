@@ -184,6 +184,7 @@ func TestRunSecretsAreFreshEachRun(t *testing.T) {
 	for _, pair := range [][2]string{
 		{a.ClientSecret, b.ClientSecret}, {a.ClientSecretNext, b.ClientSecretNext},
 		{a.APIKey, b.APIKey}, {a.AccessToken, b.AccessToken}, {a.OwnerToken, b.OwnerToken},
+		{a.ProjectClientSecret, b.ProjectClientSecret}, {a.ProjectAccessToken, b.ProjectAccessToken},
 	} {
 		if pair[0] == pair[1] {
 			t.Errorf("two runs made the same secret %q", pair[0])
@@ -193,6 +194,7 @@ func TestRunSecretsAreFreshEachRun(t *testing.T) {
 	for value, prefix := range map[string]string{
 		a.ClientSecret: "k0r_fake_secret_", a.ClientSecretNext: "k0r_fake_secret_after_rotation_",
 		a.APIKey: "k0r_fake_api_key_", a.AccessToken: "fake-access-token-",
+		a.ProjectClientSecret: "k0r_fake_secret_project_", a.ProjectAccessToken: "fake-access-token-project-",
 	} {
 		if !strings.HasPrefix(value, prefix) || len(value) < len(prefix)+32 {
 			t.Errorf("%q does not start %q followed by at least 32 random characters", value, prefix)
