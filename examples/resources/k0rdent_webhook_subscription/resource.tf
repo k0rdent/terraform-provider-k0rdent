@@ -14,8 +14,8 @@ resource "k0rdent_webhook_subscription" "cluster_events" {
 
   # Leave it out to receive every event.
   event_types = [
-    "io.k0rdent.cluster.ready.v1",
-    "io.k0rdent.cluster.failed.v1",
+    "io.k0rdent.workflow.cluster.create.v1",
+    "io.k0rdent.workflow.cluster.create.failed.v1",
   ]
 
   secret_wo = var.webhook_signing_secret
