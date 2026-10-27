@@ -13,11 +13,12 @@ const cancelLoses = "fake-cancel-loses"
 
 // cancelOutcomes are the two ways an accepted cancel ends on the fake, and
 // what the destroy and the cancel action each have to say about it, and
-// must not.
+// must not, and what the plan after the action says.
 var cancelOutcomes = []struct {
 	name, markers, settles, operation string
 	destroySays, destroyNever         []string
 	actionSays, actionNever           []string
+	planSays                          []string
 }{
 	{
 		name: "cancelled", markers: neverSettles, settles: "failed", operation: "cancelled",
@@ -25,6 +26,7 @@ var cancelOutcomes = []struct {
 		destroyNever: []string{"finished before the cancel"},
 		actionSays:   []string{"Cancelled operation", "is failed, with nothing in flight"},
 		actionNever:  []string{"finished before the cancel"},
+		planSays:     []string{"is tainted, so must be replaced", "failed: applying this plan replaces it"},
 	},
 	{
 		name: "lost the race", markers: neverSettles + " " + cancelLoses, settles: "active", operation: "succeeded",
@@ -34,6 +36,7 @@ var cancelOutcomes = []struct {
 		actionSays: []string{"finished before the cancel took effect", "reads `succeeded`",
 			"Nothing was cancelled"},
 		actionNever: []string{"Cancelled operation"},
+		planSays:    []string{"is tainted, so must be replaced", "exists: applying this plan replaces it"},
 	},
 }
 
@@ -92,6 +95,11 @@ func TestAccCancelActionSaysHowTheCancelEnded(t *testing.T) {
 					t.Error(err)
 				}
 			}
+			out, ok := c.run("plan")
+			if !ok {
+				t.Fatalf("the plan after the action was refused:\n%s", out)
+			}
+			mustSay(t, "the plan after the action", out, tc.planSays...)
 		})
 	}
 }

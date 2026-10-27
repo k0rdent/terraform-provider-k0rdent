@@ -120,7 +120,7 @@ func classifyRefChange(configured, bound string, state k0rdent.ClusterState) (re
 func upgradeRefusal(state k0rdent.ClusterState) string {
 	if state == k0rdent.ClusterStateFailed {
 		return "The cluster is `failed`, and the platform does not retry an upgrade from `failed`: it admits " +
-			"one only from `active`. Recover the cluster on the platform, refresh, then plan again."
+			"one only from `active`, and has no call to resume one."
 	}
 	return ""
 }
