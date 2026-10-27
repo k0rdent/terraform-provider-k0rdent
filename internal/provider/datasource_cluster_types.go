@@ -73,15 +73,17 @@ func (d *clusterTypesDataSource) Schema(_ context.Context, _ datasource.SchemaRe
 			},
 			"include_deprecated": schema.BoolAttribute{
 				Optional: true,
-				MarkdownDescription: "Include ClusterType versions whose status is `deprecated`, which the " +
-					"platform hides by default.",
+				MarkdownDescription: "Include the ClusterTypes the platform hides by default: the `deprecated` " +
+					"ones, and on a platform that lists each type at its latest `available` version, " +
+					"every one with no `available` version.",
 			},
 			"display_name_regex": displayNameRegexAttribute("ClusterTypes"),
 			"status": func() schema.StringAttribute {
 				a := stateFilterAttribute("ClusterTypes", "status", clusterTypeStatusesFilter, false)
-				a.MarkdownDescription += " `deprecated` asks the platform for deprecated types too, " +
-					"so it doesn't need `include_deprecated` beside it, and `include_deprecated = false` " +
-					"beside it is refused at plan, since the pair can only answer an empty list."
+				a.MarkdownDescription += " `draft` and `deprecated` ask the platform for the types it hides " +
+					"by default too, so neither needs `include_deprecated` beside it. " +
+					"`include_deprecated = false` beside `deprecated` is refused at plan, since the pair can " +
+					"only answer an empty list."
 				return a
 			}(),
 			// A List because a catalog has to be indexable and a Set is not:
@@ -151,26 +153,32 @@ func (d *clusterTypesDataSource) Read(ctx context.Context, req datasource.ReadRe
 		v := data.IncludeDeprecated.ValueBool()
 		params.IncludeDeprecated = &v
 	}
-	// The platform hides deprecated types unless asked, so a filter for them
-	// alone would always come back empty.
-	if filter.state == string(k0rdent.ClusterTypeVersionStatusDeprecated) {
+	// The platform hides deprecated types unless asked, and one that lists
+	// each type at its latest `available` version hides every type without
+	// one, so a filter for any other status could come back empty. Those
+	// platforms take `includeDeprecated` as an alias of `includeUnavailable`.
+	if filter.state != "" && filter.state != string(k0rdent.ClusterTypeVersionStatusAvailable) {
 		v := true
 		params.IncludeDeprecated = &v
 	}
 
-	// The contract allows a missing collection, `null` and `[]`, and all three
-	// mean no cluster types, which is not an error.
-	listed, ok := listByToken(&resp.Diagnostics, "cluster types", func(token *string, size *int) (page[k0rdent.ClusterTypeSummary], error) {
-		params.PageToken, params.PageSize = token, size
-		got, err := d.meta.Client.ListClusterTypesWithResponse(ctx, region, &params)
-		if err != nil {
-			return page[k0rdent.ClusterTypeSummary]{}, err
-		}
-		if got.JSON200 == nil {
-			return page[k0rdent.ClusterTypeSummary]{}, unreadPage(got.HTTPResponse, got.Body)
-		}
-		return page[k0rdent.ClusterTypeSummary]{items: got.JSON200.ClusterTypes, next: got.JSON200.NextPageToken}, nil
-	})
+	// Offset paging is the only way past the first page: a request without it
+	// answers the first page and no `nextPageToken`, and the cursor was never
+	// implemented here. The contract allows a missing collection, `null` and
+	// `[]`, and all three mean no cluster types, which is not an error.
+	listed, ok := listByOffset(&resp.Diagnostics, "cluster types",
+		func(ct k0rdent.ClusterTypeSummary) string { return deref(ct.Id) },
+		func(offset, limit int32) (page[k0rdent.ClusterTypeSummary], error) {
+			params.Offset, params.Limit = &offset, &limit
+			got, err := d.meta.Client.ListClusterTypesWithResponse(ctx, region, &params)
+			if err != nil {
+				return page[k0rdent.ClusterTypeSummary]{}, err
+			}
+			if got.JSON200 == nil {
+				return page[k0rdent.ClusterTypeSummary]{}, unreadPage(got.HTTPResponse, got.Body)
+			}
+			return page[k0rdent.ClusterTypeSummary]{items: got.JSON200.ClusterTypes, total: got.JSON200.TotalCount}, nil
+		})
 	if !ok {
 		return
 	}
@@ -391,7 +399,9 @@ func (d *clusterTypeDataSource) Read(ctx context.Context, req datasource.ReadReq
 // ValidateConfig refuses `status = "deprecated"` beside
 // `include_deprecated = false`. The platform hides deprecated types unless
 // asked, so the pair can only ever answer an empty list, and a configuration
-// that wrote it meant one of the two.
+// that wrote it meant one of the two. `draft` beside it is not refused: Read
+// asks for the hidden types anyway, and the status filter drops the
+// deprecated ones, so the pair answers the draft types.
 func (d *clusterTypesDataSource) ValidateConfig(ctx context.Context, req datasource.ValidateConfigRequest, resp *datasource.ValidateConfigResponse) {
 	var data clusterTypesModel
 	resp.Diagnostics.Append(req.Config.Get(ctx, &data)...)

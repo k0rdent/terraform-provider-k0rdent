@@ -159,7 +159,8 @@ func listProjects(ctx context.Context, meta *Meta, params k0rdent.ListProjectsPa
 // of them.
 func readProjects(ctx context.Context, meta *Meta, params k0rdent.ListProjectsParams) ([]k0rdent.Project, error) {
 	// This operation documents `offset` and `limit`, as the five networking
-	// lists do. The other catalogs are still on `pageToken`.
+	// lists and the cluster type catalog do. The other catalogs are still on
+	// `pageToken`.
 	return readByOffset("projects",
 		func(p k0rdent.Project) string { return deref(p.OrganizationId) + "/" + deref(p.Id) },
 		func(offset, limit int32) (page[k0rdent.Project], error) {

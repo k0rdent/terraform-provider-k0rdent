@@ -72,7 +72,8 @@ func TestEveryListGivesEveryRowOnceToAClientThatFollowsIt(t *testing.T) {
 				case next != "":
 					query = "pageToken=" + next
 					continue
-				case p.offset.style == offsetOneRow && len(got) < len(rows) && len(page) > 0:
+				case (p.offset.style == offsetOneRow || p.cursor != nil && p.cursor.firstPageOnly) &&
+					len(got) < len(rows) && len(page) > 0:
 					query = "offset=" + strconv.Itoa(len(got))
 					continue
 				}
