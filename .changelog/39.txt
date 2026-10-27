@@ -1,0 +1,7 @@
+```release-note:bug
+resource/k0rdent_network: Fix an apply that changes only `tags`, `display_name` or `description` of a `failed` network failing with "did not settle after the change". The platform keeps the network `failed` through that change, so the apply no longer waits for it to settle
+```
+
+```release-note:bug
+resource/k0rdent_instance_group: Fix an apply that changes only `display_name` or `description` of a `failed` instance group failing with "did not settle after the change". The platform keeps the group `failed` through that change, so the apply no longer waits for it to settle
+```
