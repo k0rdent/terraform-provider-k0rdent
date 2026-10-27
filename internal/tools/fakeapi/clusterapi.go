@@ -28,7 +28,7 @@ const (
 	kubeconfigExpires = "fake-kubeconfig-expires"
 	// Opaque, so only a 401 says it expired.
 	kubeconfigExpiresOpaque = "fake-kubeconfig-expires-opaque"
-	// Only the second read answers 403, like revoked access. Destroy still reads it.
+	// The second read answers 403, like revoked access. Later reads succeed, so destroy works.
 	kubeconfigReissueDenied = "fake-kubeconfig-reissue-denied"
 
 	expiringTokenTTL = 5 * time.Second
@@ -81,7 +81,7 @@ func (a *clusterAPI) mint(opaque bool) string {
 	return token
 }
 
-// Log lines omit the token, and `ua=` so the request audit skips them.
+// Log lines leave out the token, and leave out `ua=` so the request audit skips them.
 func (a *clusterAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 	a.mu.Lock()

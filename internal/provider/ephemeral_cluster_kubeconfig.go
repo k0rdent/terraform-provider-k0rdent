@@ -69,37 +69,37 @@ func (e *clusterKubeconfigEphemeral) Schema(ctx context.Context, _ ephemeral.Sch
 			"which in the apply that creates the cluster is as soon as the cluster is active, not when the " +
 			"in-cluster work starts. So without `relay`, in-cluster work that runs past it fails with " +
 			"`401 Unauthorized`, and the next run opens a new one.\n\n" +
-			"**`relay`.** With `relay = true`, this provider runs a small proxy on `127.0.0.1` for the " +
-			"length of the run, and `host`, `cluster_ca_certificate`, `token` and `raw` point at it. It " +
-			"sends each request to the cluster with the platform's current token, so the kubernetes and " +
-			"helm providers keep working after the first token expires. Set it when in-cluster work can " +
-			"run past the token: a long Helm install, a rollout wait, or a slow start. It needs nothing " +
-			"installed.\n\n" +
-			"**How it renews.** From a minute before the token's `exp` (a quarter of its lifetime for a " +
-			"token under 4 minutes), the next request makes it fetch a new kubeconfig. Requests keep the " +
-			"current token until the new one arrives. Only a request after the token has expired waits.\n\n" +
-			"If the API server still refuses the token with `401`, the relay fetches once and resends the " +
-			"request. It never resends a `401` that could come after the request ran: from a pod, service " +
-			"or node behind a `proxy` path, or from an admission webhook. Nor a body over 4 MiB, or a " +
-			"token it fetched after a `401` under a minute ago.\n\n" +
-			"If the platform won't issue a new kubeconfig, say because the credential was revoked, the " +
-			"request fails with `502` and the platform's reason. A fetch has the open's time limit " +
-			"(`timeouts.open` or `operation_timeout`), and fetches are at least 10 seconds apart, or a " +
-			"quarter of the token's lifetime when that's shorter.\n\n" +
-			"**What works.** The kubernetes and helm providers, and `kubectl` and `helm` from " +
-			"`local-exec`, including watches, `exec`, `attach` and `port-forward`. The relay connects " +
-			"with the kubeconfig's CA, client certificate, `tls-server-name` and `proxy-url` (else " +
-			"`HTTPS_PROXY` and `NO_PROXY`), and always checks the cluster's certificate, even with " +
+			"With `relay = true`, this provider runs a proxy on `127.0.0.1` for the length of the run, " +
+			"and `host`, `cluster_ca_certificate`, `token` and `raw` point at it. It sends each request " +
+			"to the cluster with the platform's current token, so the kubernetes and helm providers keep " +
+			"working after the first token expires. Set it when in-cluster work can run past the token, " +
+			"such as a long Helm install or a rollout wait. It needs nothing installed on the cluster or " +
+			"this machine.\n\n" +
+			"A minute before the token expires (a quarter of its lifetime for a token under 4 minutes), " +
+			"the next request starts a fetch of a new kubeconfig. Requests keep the current token until " +
+			"the new one arrives. Only a request after the token has expired waits.\n\n" +
+			"If the API server still refuses the token with `401`, the relay fetches once and resends " +
+			"the request. It doesn't resend when the `401` could come after the request ran (from a pod, " +
+			"service or node behind a `proxy` path, or from an admission webhook), when the body is over " +
+			"4 MiB, or when the token was fetched after a `401` less than a minute ago.\n\n" +
+			"If the platform won't issue a new kubeconfig, for example because the credential was " +
+			"revoked, the request fails with `502` and the platform's reason. A fetch has the open's time " +
+			"limit (`timeouts.open` or `operation_timeout`), and fetches are at least 10 seconds apart, " +
+			"or a quarter of the token's lifetime when that's shorter.\n\n" +
+			"The kubernetes and helm providers work through the relay, and so do `kubectl` and `helm` " +
+			"run from `local-exec`, including watches, `exec`, `attach` and `port-forward`. The relay " +
+			"connects with the kubeconfig's CA, client certificate, `tls-server-name` and `proxy-url` " +
+			"(else `HTTPS_PROXY` and `NO_PROXY`), and always checks the cluster's certificate, even with " +
 			"`insecure-skip-tls-verify`.\n\n" +
-			"**Limits.** It works only on the machine running Terraform. A container started from " +
-			"`local-exec` and `remote-exec` can't reach it. It stops when Terraform closes this resource, " +
-			"and each plan and apply starts a new one, so a kubeconfig saved from `raw` stops working " +
-			"after the run. A kubeconfig with only a client certificate isn't relayed: the result points " +
-			"at the cluster, with a warning.\n\n" +
-			"**Security.** It listens only on `127.0.0.1`, over TLS with a CA made for the run, and " +
-			"accepts only requests carrying `token`, a random secret made for the run. The platform's " +
-			"token never leaves this provider, and neither is logged. During the run, any process on " +
-			"this machine holding `token` can reach the cluster with your roles.\n\n" +
+			"The relay works only on the machine running Terraform. A container started from " +
+			"`local-exec`, or anything run by `remote-exec`, can't reach it. It stops when Terraform " +
+			"closes this resource, and each plan and apply starts a new one, so a kubeconfig saved from " +
+			"`raw` stops working after the run. A kubeconfig with only a client certificate isn't " +
+			"relayed: the result connects to the cluster directly, with a warning.\n\n" +
+			"The relay listens only on `127.0.0.1`, over TLS with a CA made for the run, and accepts " +
+			"only requests carrying `token`, a random secret made for the run. The platform's token " +
+			"never leaves this provider, and neither it nor the secret is logged. During the run, any " +
+			"process on this machine holding `token` can reach the cluster with your roles.\n\n" +
 			"`host`, `cluster_ca_certificate` and `token` are the kubeconfig's current context, parsed " +
 			"and named as the kubernetes and helm providers name their own arguments, so each goes " +
 			"into those providers' configuration as it is. With no `current-context`, a kubeconfig " +
@@ -126,8 +126,7 @@ func (e *clusterKubeconfigEphemeral) Schema(ctx context.Context, _ ephemeral.Sch
 			"request didn't reach the service.\n\n" +
 			"When the cluster's API answers `401 Unauthorized` to this kubeconfig, the kubernetes or " +
 			"helm provider reports it. Without `relay`, this provider never sees it: a run that outlives " +
-			"the token gets that answer, and running again opens a new one. With `relay`, the relay " +
-			"handles it as described above. A `401` on a fresh token: report it to your platform " +
+			"the token gets that answer, and running again opens a new one. A `401` on a fresh token: report it to your platform " +
 			"operator with the cluster's id and the time.\n\n" +
 			"It can't be imported, because there's nothing to import into: an ephemeral resource " +
 			"keeps no state. Open it again in each run instead.",
@@ -155,16 +154,15 @@ func (e *clusterKubeconfigEphemeral) Schema(ctx context.Context, _ ephemeral.Sch
 			"relay": schema.BoolAttribute{
 				Optional: true,
 				MarkdownDescription: "Reach the cluster through a relay on `127.0.0.1` that keeps the token " +
-					"current for the whole run. Off when unset. When on, `host`, `cluster_ca_certificate`, " +
-					"`token` and `raw` point at the relay, and `client_certificate` and `client_key` are null.",
+					"current for the whole run. Off when unset. When on and the kubeconfig carries a token, " +
+					"`host`, `cluster_ca_certificate`, `token` and `raw` point at the relay, and " +
+					"`client_certificate` and `client_key` are null.",
 			},
 			"raw": schema.StringAttribute{
 				Computed:  true,
 				Sensitive: true,
-				MarkdownDescription: "The kubeconfig YAML. With `relay`, a kubeconfig for the relay " +
-					"instead: one cluster, context and user, under the names the platform's kubeconfig " +
-					"gives them, so `kubectl` and `helm` run from `local-exec` on this machine reach the " +
-					"cluster through it during the run.",
+				MarkdownDescription: "The kubeconfig YAML. With `relay`, a kubeconfig for the relay. It keeps the " +
+					"platform's cluster, context and user names, for `kubectl` and `helm` in `local-exec`.",
 			},
 			// The connection, parsed once here and named as the kubernetes and
 			// helm providers name their own configuration, so a configuration
@@ -198,7 +196,7 @@ func (e *clusterKubeconfigEphemeral) Schema(ctx context.Context, _ ephemeral.Sch
 				MarkdownDescription: "The current context's client certificate, PEM-encoded, for the " +
 					"`client_certificate` of the kubernetes and helm providers. Null unless the kubeconfig " +
 					"authenticates with a client certificate. The platform's kubeconfig carries a token instead. " +
-					"Null when `relay` relays this kubeconfig, because the relay presents the certificate itself.",
+					"Null with `relay`, which presents the certificate itself.",
 			},
 			"client_key": schema.StringAttribute{
 				Computed:  true,
@@ -278,9 +276,8 @@ func (e *clusterKubeconfigEphemeral) openRelay(ctx context.Context, data *cluste
 		return ""
 	case conn.Token == "":
 		resp.Diagnostics.AddWarning("The kubeconfig is not relayed",
-			fmt.Sprintf("`relay` is on, but the kubeconfig of cluster %q authenticates with a client "+
-				"certificate and no token, so there's no token for the relay to keep current. The result "+
-				"points at the cluster, without the relay.", clusterID))
+			fmt.Sprintf("The kubeconfig of cluster %q uses a client certificate and no token, so the "+
+				"relay has nothing to renew. The result connects to the cluster directly.", clusterID))
 		return ""
 	}
 
@@ -313,8 +310,8 @@ func (e *clusterKubeconfigEphemeral) openRelay(ctx context.Context, data *cluste
 	relay, err := startKubeconfigRelay(ctx, conn, fetch, fetchTimeout)
 	if err != nil {
 		resp.Diagnostics.AddError("Could not start the kubeconfig relay",
-			fmt.Sprintf("`relay` is on for the kubeconfig of cluster %q, and %s. Turn `relay` off to "+
-				"connect to the cluster directly.", clusterID, redactDiagnosticText(err.Error())))
+			fmt.Sprintf("The relay for cluster %q didn't start: %s. Set `relay = false` to connect "+
+				"directly.", clusterID, redactDiagnosticText(err.Error())))
 		return ""
 	}
 	raw, err := relayKubeconfig(currentKubeconfigNames(data.Raw.ValueString()), relay.host, relay.caPEM, relay.secret)

@@ -1487,3 +1487,53 @@ users: [{name: u, user: {token: platform-token}}]
 		}
 	}
 }
+
+// A fetch slower than the fetch gap that then fails: the waiting request gets
+// a 502 after one fetch, not another fetch.
+func TestASlowFailingFetchFailsTheRequestOnce(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name    string
+		first   func(*relayClock) string
+		advance time.Duration
+	}{
+		{"expired token", func(c *relayClock) string { return testJWT("first", c.now().Add(15*time.Minute)) }, 16 * time.Minute},
+		{"refused token", func(*relayClock) string { return "opaque-1" }, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			clock := newTestClock()
+			cl := newRelayCluster(t)
+			first := tc.first(clock)
+			if tc.advance > 0 {
+				cl.allow(first)
+			}
+			var calls atomic.Int32
+			fetch := func(context.Context) (kubeconfigConnection, error) {
+				calls.Add(1)
+				clock.advance(11 * time.Second)
+				return kubeconfigConnection{}, errors.New("platform timed out")
+			}
+			r, err := startKubeconfigRelayAt(context.Background(), cl.conn(first), fetch, time.Minute, clock.now)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(r.close)
+			clock.advance(tc.advance)
+			client := relayClient(t, r)
+			client.Timeout = 2 * time.Second
+			req, err := http.NewRequest(http.MethodGet, r.host+"/api", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			req.Header.Set("Authorization", "Bearer "+r.secret)
+			resp, err := client.Do(req)
+			if err != nil {
+				t.Fatalf("no answer (%v) after %d fetches", err, calls.Load())
+			}
+			_ = resp.Body.Close()
+			if resp.StatusCode != http.StatusBadGateway || calls.Load() != 1 {
+				t.Fatalf("got %d after %d fetches, want 502 after 1", resp.StatusCode, calls.Load())
+			}
+		})
+	}
+}

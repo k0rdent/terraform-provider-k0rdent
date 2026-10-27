@@ -48,8 +48,8 @@ func currentKubeconfigNames(raw string) kubeconfigNames {
 	return kubeconfigNames{}
 }
 
-// relayKubeconfig is `raw` with `relay` on. It keeps the platform's names, so
-// a check on `current-context` reads the same, and none of its credentials.
+// relayKubeconfig builds `raw` for the relay. It keeps the platform's names, so
+// `current-context` checks still match, and drops its credentials.
 func relayKubeconfig(names kubeconfigNames, host, caPEM, secret string) (string, error) {
 	type namedCluster struct {
 		Name    string `yaml:"name"`
@@ -164,8 +164,8 @@ func parseKubeconfigConnection(raw string) (kubeconfigConnection, []string) {
 	return parseKubeconfigConnectionFor(raw, false)
 }
 
-// parseKubeconfigConnectionFor warns as the relay will connect when relay is
-// set and there's a token.
+// parseKubeconfigConnectionFor: with relay set and a token present, the
+// warnings describe the relay's connection.
 func parseKubeconfigConnectionFor(raw string, relay bool) (kubeconfigConnection, []string) {
 	var file kubeconfigFile
 	// The parser's own error isn't quoted: it can carry a fragment of the

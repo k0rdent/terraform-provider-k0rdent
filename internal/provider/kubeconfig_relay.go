@@ -5,9 +5,9 @@ package provider
 // hands out a fixed loopback address and secret, and forwards each request
 // with the platform's current token.
 //
-// It fetches a new kubeconfig before the JWT's `exp`. A 401 is only a
-// fallback, replayed once, and only the authenticator's 401, the one that
-// means the request never ran.
+// It fetches a new kubeconfig before the JWT's `exp`. A 401 is the fallback.
+// It replays once, and only on the authenticator's 401, which means the
+// request never ran.
 
 import (
 	"bytes"
@@ -50,7 +50,7 @@ const (
 	// token gets a quarter of its lifetime.
 	relayMaxMargin = time.Minute
 
-	// relayMaxFetchGap is the gap between fetches, since the platform
+	// relayMaxFetchGap is the least time between fetches, because the platform
 	// rate-limits kubeconfig mints. A short token gets a quarter of its
 	// lifetime.
 	relayMaxFetchGap = 10 * time.Second
@@ -421,7 +421,7 @@ func (r *kubeconfigRelay) upstream(ctx context.Context, rejected *relayUpstream)
 			return up, nil
 		}
 		done := make(chan struct{})
-		r.flight, r.lastFetch = done, now
+		r.flight = done
 		r.mu.Unlock()
 		go r.refresh(up, refused, done)
 		r.mu.Lock()
@@ -445,13 +445,15 @@ func (r *kubeconfigRelay) refresh(prev *relayUpstream, afterRejection bool, done
 
 	r.mu.Lock()
 	defer func() {
-		r.flight = nil
+		// Timed from the end, so a waiter on a slow failed fetch gets its error
+		// instead of starting another.
+		r.flight, r.lastFetch = nil, r.now()
 		close(done)
 		r.mu.Unlock()
 	}()
 	if err != nil {
-		r.fetchErr = fmt.Errorf("the kubeconfig relay could not fetch a new kubeconfig for this cluster, "+
-			"because %s: %w", why, err)
+		r.fetchErr = fmt.Errorf("the kubeconfig relay could not fetch a new kubeconfig, which it "+
+			"needed because %s: %w", why, err)
 		tflog.Warn(r.ctx, "kubeconfig relay could not fetch a new kubeconfig", map[string]any{
 			"reason": why,
 			"error":  redactDiagnosticText(err.Error()),
