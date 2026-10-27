@@ -21,8 +21,9 @@ Changed from the copy:
 - The generator paths point at this directory.
 - `httpresult.go` asserts `HTTPResulter` on `MintTokenResponse`, because the
   operation it named isn't here.
-- The tests use operations that are here. Path parameter cases for enums, and
-  the null enum member test, are left out because no operation here has one.
+- The tests use operations that are here. The typed enum path parameter case,
+  and the null enum member test, are left out because no operation here has
+  one.
 
 ## Make targets
 

@@ -67,6 +67,7 @@ type instanceEntryModel struct {
 	State             types.String             `tfsdk:"state"`
 	StateMessage      types.String             `tfsdk:"state_message"`
 	Health            types.String             `tfsdk:"health"`
+	PowerActionError  types.String             `tfsdk:"last_power_action_error"`
 	CreatedAt         types.String             `tfsdk:"created_at"`
 	SelfLink          types.String             `tfsdk:"self_link"`
 	NetworkInterfaces []instanceInterfaceModel `tfsdk:"network_interfaces"`
@@ -119,6 +120,15 @@ func instanceAttributes() map[string]schema.Attribute {
 			MarkdownDescription: "Host health as the infrastructure service observes it: " +
 				"`healthy`, `degraded`, `unhealthy` or `unknown`. Separate from `state`: a " +
 				"`running` host can be `unhealthy`.",
+		},
+		"last_power_action_error": schema.StringAttribute{
+			Computed: true,
+			MarkdownDescription: "Why the most recent power operation on the host's machine is known to have " +
+				"failed: a power action sent by `" + ResourceName(instancePowerActionSuffix) + "` or by an " +
+				"operator on the machine directly, or a reset of the machine's BMC that an operator ran. So a " +
+				"failure here can be one this configuration never asked for. Null when no failure is known, " +
+				"which is also how an operation that succeeded reads: the platform doesn't report success. " +
+				"Separate from `state`.",
 		},
 		"created_at": schema.StringAttribute{
 			Computed:            true,
@@ -177,6 +187,7 @@ func instanceEntryOf(in k0rdent.Instance) instanceEntryModel {
 		State:             enumOrNull(in.State),
 		StateMessage:      stringOrNull(in.StateMessage),
 		Health:            types.StringNull(),
+		PowerActionError:  stringOrNull(in.LastPowerActionError),
 		CreatedAt:         timeOrNull(in.CreatedAt),
 		SelfLink:          stringOrNull(in.SelfLink),
 		NetworkInterfaces: []instanceInterfaceModel{},

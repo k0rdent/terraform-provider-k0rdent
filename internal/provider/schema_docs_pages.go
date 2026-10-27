@@ -207,6 +207,12 @@ var relatedPages = map[string][]relatedLink{
 		{"data-sources/kubernetes_cluster", "reads the operation the cluster is running, whose `execution_id` `execution_id` takes."},
 	},
 
+	"actions/instance_power": {
+		{"data-sources/instances", "lists the hosts whose `id` `instance_id` takes, and reports `last_power_action_error`."},
+		{"data-sources/instance", "reads one host's `last_power_action_error`, which is where a failure shows."},
+		{"resources/instance_group", "manages the group whose hosts this acts on."},
+	},
+
 	"ephemeral-resources/cluster_kubeconfig": {
 		{"resources/kubernetes_cluster", "manages the cluster the kubeconfig reaches."},
 		{"data-sources/cluster_kubeconfig", "reads the kubeconfig's metadata, which is safe to keep in state."},

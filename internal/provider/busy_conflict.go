@@ -156,6 +156,12 @@ var busyConflictDecisions = map[string]busyConflictDecision{
 			"sends only `displayName` and `description`. The causes it can meet, an immutable field or " +
 			"a concurrent writer, don't clear by waiting",
 	},
+	"executeInstancePowerAction": {
+		says: "a power action was already accepted against that server within the guard interval",
+		refused: "the guard interval passing is the wait, and what clears it is another power action " +
+			"being accepted, which a second send would be. A power action twice isn't the same as once, " +
+			"so the power action reports the wait and leaves the resend to whoever invoked it",
+	},
 }
 
 // busyConflictDecision is one operation's entry in busyConflictDecisions.

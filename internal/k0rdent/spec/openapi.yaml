@@ -1774,6 +1774,137 @@ paths:
           $ref: '#/components/responses/InternalServerError'
         '503':
           $ref: '#/components/responses/ServiceUnavailable'
+  /v1/regions/{region}/projects/{project}/compute/instances/{id}/{action}:
+    parameters:
+      - $ref: '#/components/parameters/RegionPathParam'
+      - $ref: '#/components/parameters/ProjectPathParam'
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          pattern: ^inst-[0-9a-f]{32}$
+        description: >-
+          The instance's server-generated id, as `GET .../instances/{id}` takes it. An id that cannot name a row answers `404` rather than `422`, since to a caller that is indistinguishable from an instance already deprovisioned.
+      - name: action
+        in: path
+        required: true
+        description: Power action to perform on the server this instance currently occupies.
+        schema:
+          type: string
+          enum:
+            - powerOn
+            - powerOff
+            - powerCycle
+            - gracefulShutdown
+            - gracefulRestart
+            - forceRestart
+    post:
+      operationId: executeInstancePowerAction
+      summary: Execute an instance power action
+      description: |-
+        **Visibility:** `internal` · `public` (x-visibility)
+
+        The tenant-facing sibling of infrastructure's operator-only
+        `POST .../infrastructure/servers/{id}/{action}`: resolve this instance to
+        the server it currently occupies and forward the same single-machine power
+        dispatch — including its existing request-deduplication window — that
+        endpoint already uses.
+
+        Restricted to the six single-machine power verbs. `resetBmc` and
+        `identify` remain operator-only and are not in this vocabulary, and
+        neither is any rack/tray/NVLink-domain/site-scoped action — none exists as
+        a tenant-reachable capability anywhere in this API.
+
+        The occupied-server acknowledgement infrastructure's own action endpoint
+        takes is not a field here: a tenant's instance is by construction its own
+        occupied server, so this always forwards it satisfied.
+
+        The dispatch is asynchronous — `202` means submitted, not settled — and a
+        verification failure (the instance's recorded server cannot currently be
+        confirmed as its own) rejects the request outright rather than acting on
+        an unverified target.
+
+        KNOWN GAP: `202` is the terminal, caller-visible outcome this endpoint
+        ever reports for a SUCCEEDED action — there is no follow-up confirming the
+        physical machine actually reached the requested state, since the underlying
+        hardware controller exposes no power-state or task-status signal to poll.
+        This is an accepted, deliberate interim deviation, not a silent omission,
+        and will be revisited if a real settlement signal becomes available.
+
+        A FAILED action is different: infrastructure does learn when the
+        hardware controller refuses the request, is unreachable after retries,
+        or the dispatch workflow itself fails, and relays it — see
+        `lastPowerActionError` on the instance.
+
+        A second power action against the same instance's server is rejected
+        `409` if one was already accepted within a guard interval — see the `409`
+        response below. The pre-existing
+        short (60-second) request-deduplication window still runs underneath the
+        guard interval, but only matters as the operative mechanism when the
+        guard interval is configured off. With the guard interval enabled (the
+        default), the guard interval — not the deduplication window — decides
+        whether a second request is accepted or rejected.
+
+        Every rejection this endpoint
+        itself raises (`400`, `404`, `409`) carries a stable, machine-readable
+        `details[0].reason` alongside its human-readable message; `401` and `403`
+        come from the platform's authentication and authorization layer and use
+        its generic envelope with no `details` entry. Where this endpoint
+        forwards to infrastructure's own action endpoint, the reason is relayed
+        as-is, so a tenant sees the same classification an operator calling that
+        endpoint directly would; the message is this endpoint's own, never
+        infrastructure's operator-facing text. See the `404` and `409` responses
+        for the specific reasons.
+      tags:
+        - instances
+      x-visibility:
+        - internal
+        - public
+      x-status: mvp
+      responses:
+        '202':
+          description: Action accepted. The dispatch is asynchronous; the response reflects the instance's state at submission, not settlement.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Instance'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: Either the instance itself does not exist, or infrastructure no longer knows the host this instance's recorded server names — `details[0].reason` = `POWER_TARGET_UNREACHABLE` (the "unreachable machine" class) for the latter.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: |-
+            Either the instance's recorded server cannot currently be verified as its own (no valid target to act on — `reason` = `RESERVATION_DRIFTED`), or a power action was already accepted against that server within the guard interval — `reason` = `POWER_ACTION_IN_FLIGHT`, or (rarely) `POWER_TARGET_UNIDENTIFIED` if infrastructure does not yet know this server's hardware identity, or `POWER_ACTION_UNSUPPORTED` if the server has no power-control path at all (its infrastructure provider offers none) — permanent for that server, so retrying does not help. An in-flight conflict carries the estimated remaining wait in both `details[0].metadata.retryAfterSeconds` and the `Retry-After` header; retry after the interval elapses.
+            Also returned, with top-level `reason` = `PROJECT_REGION_MISMATCH`, when the project is locked to a different region than the one in the URL. A project's region is immutable once set, so address the project's own region instead of retrying.
+          headers:
+            Retry-After:
+              description: |
+                Estimated whole seconds remaining in the guard interval. Present
+                only on a `POWER_ACTION_IN_FLIGHT` conflict, relayed from
+                infrastructure's own response; the same value as
+                `details[0].metadata.retryAfterSeconds`. Absent for the other
+                `409` causes (`RESERVATION_DRIFTED`, `POWER_TARGET_UNIDENTIFIED`,
+                `POWER_ACTION_UNSUPPORTED`), which carry no deadline to publish.
+              schema:
+                type: integer
+                minimum: 0
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /v1/regions/{region}/projects/{project}/compute/instance-groups:
     parameters:
       - $ref: '#/components/parameters/RegionPathParam'

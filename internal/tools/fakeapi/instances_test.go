@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -167,6 +168,110 @@ func TestADeletedGroupLeavesDeletedRecords(t *testing.T) {
 	} {
 		if got := fmt.Sprint(instanceStates(t, s, query+"&instanceGroupId=trainers")); got != want {
 			t.Errorf("%q answered %s, want %s", query, got, want)
+		}
+	}
+}
+
+// power sends one power action to an instance in the scope groupHolding uses.
+func power(s *state, id, verb string) *httptest.ResponseRecorder {
+	r := httptest.NewRequest(http.MethodPost, "/", nil)
+	r.SetPathValue("id", id)
+	r.SetPathValue("action", verb)
+	rec := httptest.NewRecorder()
+	s.executeInstancePowerAction(rec, r)
+	return rec
+}
+
+// A power action is accepted once and answers the instance as it was, a
+// second inside the guard interval is refused with the wait, and a host that
+// can't be powered, or isn't there, is refused for that.
+func TestAPowerActionIsAcceptedOnceAndGuarded(t *testing.T) {
+	s := newState()
+	g := groupHolding(s, "trainers", map[string]int32{"gpu": 1})
+	o := s.in(httptest.NewRequest(http.MethodGet, "/", nil))
+	id := o.instancesOf(g)[0].id
+
+	if rec := power(s, id, "explode"); rec.Code != http.StatusBadRequest {
+		t.Errorf("an action outside the vocabulary answered %d, want 400", rec.Code)
+	}
+	rec := power(s, id, "powerCycle")
+	var accepted struct {
+		ID    string  `json:"id"`
+		State string  `json:"state"`
+		Error *string `json:"lastPowerActionError"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &accepted); err != nil || rec.Code != http.StatusAccepted ||
+		accepted.ID != id || accepted.State != "running" || accepted.Error != nil {
+		t.Fatalf("first action: %d %s", rec.Code, rec.Body)
+	}
+
+	rec = power(s, id, "powerOff")
+	var refused struct {
+		Error struct {
+			Details []struct {
+				Reason   string         `json:"reason"`
+				Metadata map[string]any `json:"metadata"`
+			} `json:"details"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &refused); err != nil || rec.Code != http.StatusConflict ||
+		len(refused.Error.Details) != 1 || refused.Error.Details[0].Reason != "POWER_ACTION_IN_FLIGHT" ||
+		refused.Error.Details[0].Metadata["retryAfterSeconds"] == nil || rec.Header().Get("Retry-After") == "" {
+		t.Fatalf("second action: %d %s, Retry-After %q", rec.Code, rec.Body, rec.Header().Get("Retry-After"))
+	}
+
+	if rec := power(s, "inst-00000000000000000000000000000000", "powerOn"); rec.Code != http.StatusNotFound {
+		t.Errorf("an instance that isn't there answered %d, want 404", rec.Code)
+	}
+	name := "x " + powerUnsupported
+	g.displayName = &name
+	if rec := power(s, id, "powerOn"); rec.Code != http.StatusConflict ||
+		!bytes.Contains(rec.Body.Bytes(), []byte("POWER_ACTION_UNSUPPORTED")) {
+		t.Errorf("a host with no power control: %d %s", rec.Code, rec.Body)
+	}
+}
+
+// A host whose group carries powerFails reports lastPowerActionError once an
+// action has been accepted for it, and not before, not even in the 202.
+func TestAFailedPowerActionShowsOnTheInstance(t *testing.T) {
+	s := newState()
+	g := groupHolding(s, "trainers", map[string]int32{"gpu": 1})
+	name := "x " + powerFails
+	g.displayName = &name
+	o := s.in(httptest.NewRequest(http.MethodGet, "/", nil))
+	id := o.instancesOf(g)[0].id
+	if got := o.instancesOf(g)[0].powerError; got != "" {
+		t.Fatalf("a failure before any action: %q", got)
+	}
+	if rec := power(s, id, "powerOff"); rec.Code != http.StatusAccepted ||
+		bytes.Contains(rec.Body.Bytes(), []byte("lastPowerActionError")) {
+		t.Fatalf("the 202 is the instance at submission, with no failure yet: %d %s", rec.Code, rec.Body)
+	}
+	if got := o.instancesOf(g)[0].body("r", "p")["lastPowerActionError"]; got != powerFailure {
+		t.Errorf("after the action the instance reports %v, want %q", got, powerFailure)
+	}
+}
+
+// A deleted instance's record answers 410, not 404, to a power action and to
+// a read, as the service does, and a read with showDeleted returns it.
+func TestADeletedInstanceIsGone(t *testing.T) {
+	s := newState()
+	o := s.in(httptest.NewRequest(http.MethodGet, "/", nil))
+	old := groupHolding(s, "trainers", map[string]int32{"gpu": 1})
+	instanceGroupKind.drop(o, at{id: old.id}, old)
+	id := o.released[0].id
+
+	if rec := power(s, id, "powerOn"); rec.Code != http.StatusGone ||
+		!bytes.Contains(rec.Body.Bytes(), []byte(`"GONE"`)) {
+		t.Errorf("a power action on a deleted instance: %d %s", rec.Code, rec.Body)
+	}
+	for query, want := range map[string]int{"": http.StatusGone, "?showDeleted=true": http.StatusOK} {
+		r := httptest.NewRequest(http.MethodGet, "/"+query, nil)
+		r.SetPathValue("id", id)
+		rec := httptest.NewRecorder()
+		s.getInstance(rec, r)
+		if rec.Code != want {
+			t.Errorf("reading a deleted instance with %q answered %d, want %d: %s", query, rec.Code, want, rec.Body)
 		}
 	}
 }

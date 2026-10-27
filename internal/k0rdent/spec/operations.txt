@@ -21,6 +21,7 @@ deleteSecurityGroup
 deleteSubnet
 deleteVPCPeering
 deleteWebhookSubscription
+executeInstancePowerAction
 getAddressPool
 getCluster
 getClusterKubeconfig

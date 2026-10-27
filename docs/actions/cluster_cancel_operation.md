@@ -90,13 +90,13 @@ action "k0rdent_cluster_cancel_operation" "elsewhere" {
 
 Optional:
 
-- `invoke` (String) Bounds the whole invocation, including the wait until the platform settles. Left out, it defaults to the provider's `operation_timeout`, which is `2h` unless the provider block or `K0RDENT_OPERATION_TIMEOUT` sets it. **Constraints:** Must be a positive duration of hours, minutes or seconds, such as `45m`, `2h` or `1h30m`.
+- `invoke` (String) Bounds the whole invocation, including any wait until the platform settles. Left out, it defaults to the provider's `operation_timeout`, which is `2h` unless the provider block or `K0RDENT_OPERATION_TIMEOUT` sets it. **Constraints:** Must be a positive duration of hours, minutes or seconds, such as `45m`, `2h` or `1h30m`.
 
 ## Timeouts
 
 The `timeouts` block sets how long each operation may take before it fails:
 
-- `invoke` (default `2h`). Bounds the whole invocation, including the wait until the platform settles.
+- `invoke` (default `2h`). Bounds the whole invocation, including any wait until the platform settles.
 
 Each default is the provider's `operation_timeout`, which is `2h` unless the provider block or `K0RDENT_OPERATION_TIMEOUT` sets it. An operation the block leaves out takes that value, so raising `operation_timeout` raises all of them at once. A value of zero or less is refused at plan time rather than read as no limit.
 

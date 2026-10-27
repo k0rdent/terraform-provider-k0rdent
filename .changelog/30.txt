@@ -1,0 +1,11 @@
+```release-note:new-action
+k0rdent_instance_power
+```
+
+```release-note:enhancement
+data-source/k0rdent_instance: Add `last_power_action_error`, why the most recent power action, or BMC reset an operator ran, on the host's machine is known to have failed
+```
+
+```release-note:enhancement
+data-source/k0rdent_instances: Add `last_power_action_error` to each instance
+```

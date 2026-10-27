@@ -336,6 +336,11 @@ const (
 	EffectiveSecurityGroupsVPCIdMaxLength = 63
 )
 
+// executeInstancePowerAction path id
+const (
+	ExecuteInstancePowerActionPathIdPattern = `^inst-[0-9a-f]{32}$`
+)
+
 // FileStore.capacityGiB
 const (
 	FileStoreCapacityGiBMinimum = 1

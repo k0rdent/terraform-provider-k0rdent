@@ -45,6 +45,7 @@ output "infiniband_guids" {
 - `health` (String) Host health as the infrastructure service observes it: `healthy`, `degraded`, `unhealthy` or `unknown`. Separate from `state`: a `running` host can be `unhealthy`.
 - `hostname` (String) The host's effective hostname right now. Usually `server_slug`.
 - `instance_group` (String) Id of the instance group that holds this host, the value a file store grant's `ref` takes.
+- `last_power_action_error` (String) Why the most recent power operation on the host's machine is known to have failed: a power action sent by `k0rdent_instance_power` or by an operator on the machine directly, or a reset of the machine's BMC that an operator ran. So a failure here can be one this configuration never asked for. Null when no failure is known, which is also how an operation that succeeded reads: the platform doesn't report success. Separate from `state`.
 - `network_interfaces` (Attributes List) The host's runtime network interfaces, as the infrastructure service reports them now. Empty until the host is provisioned. An Ethernet interface carries `mac_address` and an InfiniBand one carries `guid`, the two values a `k0rdent_file_store` grant's `consumers.network` takes to narrow it to one interface. (see [below for nested schema](#nestedatt--network_interfaces))
 - `node_pool` (String) The group's node pool this host was provisioned into.
 - `self_link` (String) Platform-defined reference to this instance.

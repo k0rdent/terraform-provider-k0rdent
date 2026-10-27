@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/hashicorp/terraform-plugin-framework/action"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/ephemeral"
 	"github.com/hashicorp/terraform-plugin-framework/list"
@@ -67,6 +68,8 @@ var notAnIdentifier = map[string]string{
 	"delete":                 "a duration in a timeouts block",
 	"scope":                  "a level from a fixed list, sent in a request body",
 	"open":                   "a duration in a timeouts block",
+	"invoke":                 "a duration in a timeouts block",
+	"execution_id":           "an operation's execution id, sent in a request body and compared with the cluster's",
 	"url":                    "an endpoint URL, sent in a request body or compared with a listed one, never part of a path",
 	"event_types":            "event type names, held to the catalog's pattern, sent in a request body",
 	"secret_wo":              "a signing secret, write-only, sent in a request body",
@@ -124,6 +127,18 @@ func identifierSurfaces(t *testing.T) []identifierSurface {
 		var s list.ListResourceSchemaResponse
 		l.ListResourceConfigSchema(ctx, list.ListResourceSchemaRequest{}, &s)
 		out = append(out, identifierSurface{"list resource", md.TypeName, s.Schema})
+	}
+	ap, ok := p.(fwprovider.ProviderWithActions)
+	if !ok {
+		t.Fatal("the provider registers no actions")
+	}
+	for _, f := range ap.Actions(ctx) {
+		a := f()
+		var md action.MetadataResponse
+		a.Metadata(ctx, action.MetadataRequest{ProviderTypeName: ProviderTypeName}, &md)
+		var s action.SchemaResponse
+		a.Schema(ctx, action.SchemaRequest{}, &s)
+		out = append(out, identifierSurface{"action", md.TypeName, s.Schema})
 	}
 	return out
 }
