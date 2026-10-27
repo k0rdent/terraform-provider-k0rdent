@@ -110,6 +110,11 @@ has to change to remove it. In short:
   or source ranges.
 - **VPCs.** The platform creates them from the cluster type. The provider
   reads them.
+- **Service accounts, their keys, and the roles they hold.** The platform
+  lets only a signed-in person create, change or delete them, and the
+  provider signs in as a service account or with an API key. The
+  `k0rdent_service_accounts` and `k0rdent_service_account_credentials` data
+  sources can read them.
 - **Node pools on their own.** A cluster's pools come from its cluster type.
   You can change a pool's size and metadata only.
 - **Node labels and taints.** They're set in the cluster type by its
