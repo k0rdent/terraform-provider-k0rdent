@@ -264,24 +264,28 @@ const webhookDeliveryPage = 2
 // newest first: queued and never tried, failing with a retry due, failed with
 // no answer and dead-lettered, and delivered twice. `response_code` and
 // `last_error` are left out where there's none, as the contract's optional
-// fields, and the nullable times are sent as null.
+// fields, and `settled_at` is null until the delivery settles.
+//
+// `next_attempt_at` is on every row, as the platform stores it: the time a
+// delivery was queued, then when a worker's claim on it lapses or its next
+// retry is due, never cleared once it settles.
 func seededDeliveries(created time.Time) []map[string]any {
 	after := func(minutes int) string {
 		return created.Add(time.Duration(minutes) * time.Minute).Format(time.RFC3339)
 	}
 	return []map[string]any{
 		{"id": newUUID(), "status": "queued", "attempts": 0, "created_at": after(5),
-			"settled_at": nil, "next_attempt_at": nil, "retry_scheduled": false},
+			"settled_at": nil, "next_attempt_at": after(5), "retry_scheduled": false},
 		{"id": newUUID(), "status": "failed", "attempts": 2, "response_code": 503,
 			"last_error": "endpoint answered 503 Service Unavailable", "created_at": after(4),
 			"settled_at": nil, "next_attempt_at": after(10), "retry_scheduled": true},
 		{"id": newUUID(), "status": "failed", "attempts": 8,
 			"last_error": "dial tcp: connection refused", "created_at": after(3),
-			"settled_at": after(9), "next_attempt_at": nil, "retry_scheduled": false},
+			"settled_at": after(9), "next_attempt_at": after(11), "retry_scheduled": false},
 		{"id": newUUID(), "status": "delivered", "attempts": 1, "response_code": 200, "created_at": after(2),
-			"settled_at": after(2), "next_attempt_at": nil, "retry_scheduled": false},
+			"settled_at": after(2), "next_attempt_at": after(4), "retry_scheduled": false},
 		{"id": newUUID(), "status": "delivered", "attempts": 1, "response_code": 204, "created_at": after(1),
-			"settled_at": after(1), "next_attempt_at": nil, "retry_scheduled": false},
+			"settled_at": after(1), "next_attempt_at": after(3), "retry_scheduled": false},
 	}
 }
 

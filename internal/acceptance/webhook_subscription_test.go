@@ -584,13 +584,15 @@ data %[2]q "all" {
 
 // webhookDeliveryHistory, in a subscription's URL, makes the fake give it a
 // delivery history of five, newest first: queued, failed with a retry due,
-// failed and dead-lettered, then delivered twice. The fake sends no events,
-// so nothing else has one.
+// failed and dead-lettered, then delivered twice. Every one has a
+// `next_attempt_at`, as the platform stores it. The fake sends no events, so
+// nothing else has one.
 const webhookDeliveryHistory = "fake-delivery-history"
 
 // A subscription's delivery history: the newest `limit`, read across the
 // fake's pages of two, and the failed ones among them, under a secret that
-// reaches no delivery.
+// reaches no delivery. `next_attempt_at` is reported only on the delivery
+// with a retry scheduled.
 func TestAccWebhookDeliveriesDataSource(t *testing.T) {
 	secret := webhookSecret("deliveries")
 	config := webhookConfig(webhookURL("deliveries-"+webhookDeliveryHistory), nil, 1, "") + fmt.Sprintf(`
@@ -603,8 +605,14 @@ data %[1]q "failed" {
   subscription_id = %[2]s.test.id
   status          = "failed"
 }
+
+data %[1]q "delivered" {
+  subscription_id = %[2]s.test.id
+  status          = "delivered"
+}
 `, webhookDeliveriesDataType, webhookType)
 	newest, failed := "data."+webhookDeliveriesDataType+".newest", "data."+webhookDeliveriesDataType+".failed"
+	delivered := "data." + webhookDeliveriesDataType + ".delivered"
 
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: protoV6,
@@ -619,6 +627,7 @@ data %[1]q "failed" {
 					resource.TestCheckResourceAttr(newest, "deliveries.0.attempts", "0"),
 					resource.TestCheckNoResourceAttr(newest, "deliveries.0.response_code"),
 					resource.TestCheckNoResourceAttr(newest, "deliveries.0.settled_at"),
+					resource.TestCheckNoResourceAttr(newest, "deliveries.0.next_attempt_at"),
 					resource.TestCheckResourceAttr(newest, "deliveries.1.status", "failed"),
 					resource.TestCheckResourceAttr(newest, "deliveries.1.response_code", "503"),
 					resource.TestCheckResourceAttr(newest, "deliveries.1.retry_scheduled", "true"),
@@ -627,10 +636,14 @@ data %[1]q "failed" {
 					resource.TestCheckResourceAttr(newest, "deliveries.2.retry_scheduled", "false"),
 					resource.TestCheckResourceAttr(newest, "deliveries.2.last_error", "dial tcp: connection refused"),
 					resource.TestCheckResourceAttrSet(newest, "deliveries.2.settled_at"),
+					resource.TestCheckNoResourceAttr(newest, "deliveries.2.next_attempt_at"),
 					// Of the default 50, which the fake's five fall inside.
 					resource.TestCheckResourceAttr(failed, "deliveries.#", "2"),
 					resource.TestCheckResourceAttrPair(failed, "deliveries.0.id", newest, "deliveries.1.id"),
 					resource.TestCheckResourceAttrPair(failed, "deliveries.1.id", newest, "deliveries.2.id"),
+					resource.TestCheckResourceAttr(delivered, "deliveries.#", "2"),
+					resource.TestCheckNoResourceAttr(delivered, "deliveries.0.next_attempt_at"),
+					resource.TestCheckNoResourceAttr(delivered, "deliveries.1.next_attempt_at"),
 					checkNoSecretInState(secret),
 				),
 			},

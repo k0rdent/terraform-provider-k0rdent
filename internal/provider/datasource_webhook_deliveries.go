@@ -87,7 +87,16 @@ type webhookDeliveryModel struct {
 	RetryScheduled types.Bool   `tfsdk:"retry_scheduled"`
 }
 
+// webhookDeliveryModelFrom reports `next_attempt_at` only while a retry is
+// scheduled. The platform keeps a time on every delivery and doesn't clear it
+// when the delivery settles: when it was queued, when a worker's claim on it
+// lapses, or when its last retry was due. `retry_scheduled` is the platform's
+// own rule for when the time is a retry's.
 func webhookDeliveryModelFrom(row k0rdent.WebhookDelivery) webhookDeliveryModel {
+	next := types.StringNull()
+	if row.RetryScheduled {
+		next = timeOrNull(row.NextAttemptAt)
+	}
 	return webhookDeliveryModel{
 		ID:             types.StringValue(row.Id.String()),
 		Status:         types.StringValue(string(row.Status)),
@@ -96,7 +105,7 @@ func webhookDeliveryModelFrom(row k0rdent.WebhookDelivery) webhookDeliveryModel 
 		LastError:      stringOrNull(row.LastError),
 		CreatedAt:      timeOrNull(&row.CreatedAt),
 		SettledAt:      timeOrNull(row.SettledAt),
-		NextAttemptAt:  timeOrNull(row.NextAttemptAt),
+		NextAttemptAt:  next,
 		RetryScheduled: types.BoolValue(row.RetryScheduled),
 	}
 }
@@ -112,6 +121,8 @@ func (d *webhookDeliveriesDataSource) Schema(_ context.Context, _ datasource.Sch
 			"endpoint is failing. This says which deliveries failed, what the endpoint answered, " +
 			"and whether the platform will try again: a `failed` delivery with `retry_scheduled` " +
 			"false has been dead-lettered and won't be retried.\n\n" +
+			"`status` applies to the newest `limit` deliveries only: an older delivery with that " +
+			"status isn't returned.\n\n" +
 			"A delivery carries no request or response body, no headers, no signature and never " +
 			"the signing secret.",
 		Attributes: map[string]schema.Attribute{
@@ -147,16 +158,21 @@ func (d *webhookDeliveriesDataSource) Schema(_ context.Context, _ datasource.Sch
 							"`retry_scheduled` tells them apart.",
 					},
 					"attempts": schema.Int64Attribute{
-						Computed:            true,
-						MarkdownDescription: "How many times the platform has POSTed this delivery.",
+						Computed: true,
+						MarkdownDescription: "How many times the platform has tried this delivery, counting a try " +
+							"that failed on the platform's side before anything was sent.",
 					},
 					"response_code": schema.Int64Attribute{
 						Computed:            true,
 						MarkdownDescription: "The HTTP status the endpoint answered the last attempt with. Null when none was received.",
 					},
 					"last_error": schema.StringAttribute{
-						Computed:            true,
-						MarkdownDescription: "The platform's account of the last failed attempt. Null when no attempt has failed. The platform never reads the endpoint's answer, so no response body is here. A connection failure is reported in the network's own words, which can include the endpoint's URL, as `url` on the subscription does.",
+						Computed: true,
+						MarkdownDescription: "The platform's account of the last failed attempt. Null when no " +
+							"attempt has failed, and once the delivery succeeds, even after failed attempts. " +
+							"The platform never reads the endpoint's answer, so no response body is here. A " +
+							"connection failure is reported in the network's own words, which can name the " +
+							"endpoint's URL, as `url` on the subscription does, or a URL the endpoint redirected to.",
 					},
 					"created_at": schema.StringAttribute{
 						Computed:            true,
@@ -168,13 +184,14 @@ func (d *webhookDeliveriesDataSource) Schema(_ context.Context, _ datasource.Sch
 							"while it's queued or being retried.",
 					},
 					"next_attempt_at": schema.StringAttribute{
-						Computed:            true,
-						MarkdownDescription: "When the next retry is due, as RFC 3339. Null when none is scheduled.",
+						Computed: true,
+						MarkdownDescription: "When the next retry is due, as RFC 3339. Null unless " +
+							"`retry_scheduled` is true.",
 					},
 					"retry_scheduled": schema.BoolAttribute{
 						Computed: true,
 						MarkdownDescription: "Whether a failed delivery will be retried. False on a `failed` " +
-							"delivery means it was dead-lettered, and only a change at the endpoint helps.",
+							"delivery means it was dead-lettered and won't be tried again.",
 					},
 				}},
 			},

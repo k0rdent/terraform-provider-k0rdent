@@ -107,7 +107,8 @@ func TestWebhookSubscriptionLifecycle(t *testing.T) {
 
 // A marked subscription's delivery history, through the API: newest first,
 // two to a page behind a cursor only that subscription takes, with the
-// contract's refusals. An id the caller's organization doesn't have is an
+// contract's refusals. Every delivery has a `next_attempt_at`, as the
+// platform stores one. An id the caller's organization doesn't have is an
 // empty page, and an unmarked subscription has no history.
 func TestWebhookDeliveryHistory(t *testing.T) {
 	h, secrets := guardedFake(t)
@@ -155,6 +156,9 @@ func TestWebhookDeliveryHistory(t *testing.T) {
 			row, ok := r.(map[string]any)
 			if !ok {
 				t.Fatalf("a delivery that isn't an object: %v", r)
+			}
+			if row["next_attempt_at"] == nil {
+				t.Errorf("a delivery with no next_attempt_at, which the platform always has: %v", row)
 			}
 			statuses = append(statuses, fmt.Sprint(row["status"]))
 			created = append(created, fmt.Sprint(row["created_at"]))

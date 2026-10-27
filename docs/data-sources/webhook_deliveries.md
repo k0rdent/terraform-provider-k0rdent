@@ -5,6 +5,7 @@ subcategory: ""
 description: |-
   One webhook subscription's recent delivery attempts, newest first.
   The subscription's own consecutive_failures and failing_since say whether the endpoint is failing. This says which deliveries failed, what the endpoint answered, and whether the platform will try again: a failed delivery with retry_scheduled false has been dead-lettered and won't be retried.
+  status applies to the newest limit deliveries only: an older delivery with that status isn't returned.
   A delivery carries no request or response body, no headers, no signature and never the signing secret.
 ---
 
@@ -13,6 +14,8 @@ description: |-
 One webhook subscription's recent delivery attempts, newest first.
 
 The subscription's own `consecutive_failures` and `failing_since` say whether the endpoint is failing. This says which deliveries failed, what the endpoint answered, and whether the platform will try again: a `failed` delivery with `retry_scheduled` false has been dead-lettered and won't be retried.
+
+`status` applies to the newest `limit` deliveries only: an older delivery with that status isn't returned.
 
 A delivery carries no request or response body, no headers, no signature and never the signing secret.
 
@@ -60,13 +63,13 @@ output "dead_lettered" {
 
 Read-Only:
 
-- `attempts` (Number) How many times the platform has POSTed this delivery.
+- `attempts` (Number) How many times the platform has tried this delivery, counting a try that failed on the platform's side before anything was sent.
 - `created_at` (String) When the delivery was queued, as RFC 3339.
 - `id` (String) The delivery's id, a UUID.
-- `last_error` (String) The platform's account of the last failed attempt. Null when no attempt has failed. The platform never reads the endpoint's answer, so no response body is here. A connection failure is reported in the network's own words, which can include the endpoint's URL, as `url` on the subscription does.
-- `next_attempt_at` (String) When the next retry is due, as RFC 3339. Null when none is scheduled.
+- `last_error` (String) The platform's account of the last failed attempt. Null when no attempt has failed, and once the delivery succeeds, even after failed attempts. The platform never reads the endpoint's answer, so no response body is here. A connection failure is reported in the network's own words, which can name the endpoint's URL, as `url` on the subscription does, or a URL the endpoint redirected to.
+- `next_attempt_at` (String) When the next retry is due, as RFC 3339. Null unless `retry_scheduled` is true.
 - `response_code` (Number) The HTTP status the endpoint answered the last attempt with. Null when none was received.
-- `retry_scheduled` (Boolean) Whether a failed delivery will be retried. False on a `failed` delivery means it was dead-lettered, and only a change at the endpoint helps.
+- `retry_scheduled` (Boolean) Whether a failed delivery will be retried. False on a `failed` delivery means it was dead-lettered and won't be tried again.
 - `settled_at` (String) When the delivery was delivered or dead-lettered, as RFC 3339. Null while it's queued or being retried.
 - `status` (String) One of `queued`, `delivered` or `failed`. `failed` covers a delivery still being retried and one dead-lettered: `retry_scheduled` tells them apart.
 
