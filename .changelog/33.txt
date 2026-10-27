@@ -1,5 +1,5 @@
 ```release-note:bug
-action/k0rdent_cluster_cancel_operation: Fix the docs saying a cancelled cluster waits for the platform to recover it, which the platform has no call for. They now say when to use the action, and what a cancelled create, scale or upgrade leaves behind
+action/k0rdent_cluster_cancel_operation: Fix the docs saying a cancelled cluster waits for the platform to recover it, which the platform has no call for. They now say when to use the action, and what to do after cancelling a create, scale or upgrade
 ```
 
 ```release-note:bug
