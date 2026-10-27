@@ -97,6 +97,7 @@ jobs:
   # hosts, people, home paths, deal names and AI trailers. GitHub's secret
   # scanning can't hold custom patterns on a public repository, so this is
   # the only gate for them.
+  # pr-text.yml runs the same rules on commit messages and pull request text.
   public-text:
     name: public text
     runs-on: ubuntu-latest
