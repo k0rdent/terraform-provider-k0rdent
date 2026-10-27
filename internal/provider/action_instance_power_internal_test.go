@@ -64,6 +64,15 @@ func (a *powerAPI) serve(t *testing.T) *httptest.Server {
 	return server
 }
 
+// seen returns what the fake has been sent and how often it was read, under
+// the lock its handler holds: a dropped connection can leave the handler
+// running after the client has given up.
+func (a *powerAPI) seen() (sent []string, reads int) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return append([]string(nil), a.sent...), a.reads
+}
+
 func (a *powerAPI) action(t *testing.T) *instancePowerAction {
 	t.Helper()
 	return a.actionWaiting(t, time.Minute)
@@ -133,11 +142,12 @@ func TestThePowerActionIsSentOnceAndNotWaitedOn(t *testing.T) {
 	if got.diags.HasError() {
 		t.Fatalf("invoke: %v", got.diags.Errors())
 	}
-	if len(api.sent) != 1 || api.sent[0] != "powerCycle" {
-		t.Errorf("sent %q, want one powerCycle", api.sent)
+	sent, reads := api.seen()
+	if len(sent) != 1 || sent[0] != "powerCycle" {
+		t.Errorf("sent %q, want one powerCycle", sent)
 	}
-	if api.reads != 0 {
-		t.Errorf("read the instance %d times after the 202, want none", api.reads)
+	if reads != 0 {
+		t.Errorf("read the instance %d times after the 202, want none", reads)
 	}
 	said := got.said()
 	for _, want := range []string{"accepted powerCycle", "`running`", "doesn't report when the machine gets there"} {
@@ -205,8 +215,8 @@ func TestAPowerActionRefusalSaysWhatToDo(t *testing.T) {
 			if c.says == landedAdvice && strings.Contains(said, "safe") {
 				t.Errorf("calls invoking again safe:\n%s", said)
 			}
-			if len(api.sent) != 1 {
-				t.Errorf("sent the action %d times, want once", len(api.sent))
+			if sent, _ := api.seen(); len(sent) != 1 {
+				t.Errorf("sent the action %d times, want once", len(sent))
 			}
 		})
 	}
@@ -229,8 +239,8 @@ func TestAPowerActionPlanWarnsAndSendsNothing(t *testing.T) {
 			t.Errorf("the warning doesn't say %q: %s: %s", want, w.Summary(), w.Detail())
 		}
 	}
-	if len(api.sent) != 0 {
-		t.Errorf("the plan sent %q", api.sent)
+	if sent, _ := api.seen(); len(sent) != 0 {
+		t.Errorf("the plan sent %q", sent)
 	}
 }
 
