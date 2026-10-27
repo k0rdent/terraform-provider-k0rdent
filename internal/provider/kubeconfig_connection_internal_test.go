@@ -276,6 +276,47 @@ func TestAClusterSettingThatIsNotHandedOverIsNamed(t *testing.T) {
 	}
 }
 
+// `raw` is the relay's own kubeconfig, so no warning points there. Without a
+// token nothing is relayed, so the warnings are a direct connection's.
+func TestARelayedConnectionsWarningsAreTheRelays(t *testing.T) {
+	t.Parallel()
+	ca := "certificate-authority-data: " + b64(testCAPEM)
+	for setting, c := range map[string]struct{ old, new, want string }{
+		"tls-server-name":          {ca, ca + "\n    tls-server-name: api.training.invalid", ""},
+		"proxy-url":                {ca, ca + "\n    proxy-url: http://ops:hunter2@proxy.invalid:3128", ""},
+		"insecure-skip-tls-verify": {ca, ca + "\n    insecure-skip-tls-verify: true", "the relay doesn't honor"},
+		"a CA file":                {ca, "certificate-authority: /etc/ca.pem", "the relay checks the cluster's certificate against the system roots"},
+		"a CA that isn't base64":   {ca, "certificate-authority-data: not!base64", "the relay checks the cluster's certificate against the system roots"},
+	} {
+		t.Run(setting, func(t *testing.T) {
+			t.Parallel()
+			body := strings.Replace(twoContexts, c.old, c.new, 1)
+			got, warnings := parseKubeconfigConnectionFor(body, true)
+			if got.Host == "" || got.Token == "" {
+				t.Errorf("got %+v, want the connection handed over", got)
+			}
+			if c.want == "" && len(warnings) != 0 || c.want != "" && (len(warnings) != 1 || !strings.Contains(warnings[0], c.want)) {
+				t.Fatalf("warnings %q, want %q", warnings, c.want)
+			}
+			for _, w := range warnings {
+				if strings.Contains(w, "`raw`") || strings.Contains(w, "is null") || strings.Contains(w, "hunter2") {
+					t.Errorf("warning %q points at `raw` or a null attribute, or quotes the proxy", w)
+				}
+			}
+		})
+	}
+	body := strings.Replace(twoContexts, ca, ca+"\n    tls-server-name: api.training.invalid", 1)
+	got, _ := parseKubeconfigConnectionFor(body, true)
+	if got.TLSServerName != "api.training.invalid" {
+		t.Errorf("tls-server-name is %q, want it for the relay", got.TLSServerName)
+	}
+	noToken := strings.Replace(body, "{token: training-token}",
+		"{client-certificate-data: "+b64(testCertPEM)+", client-key-data: "+b64(testKeyPEM)+"}", 1)
+	if _, warnings := parseKubeconfigConnectionFor(noToken, true); len(warnings) != 1 || !strings.Contains(warnings[0], "`raw`") {
+		t.Errorf("without a token: warnings %q, want a direct connection's", warnings)
+	}
+}
+
 // An exec plugin's command line can carry a secret of its own, so the warning
 // names the mechanism and quotes none of it.
 func TestAnExecPluginWarningQuotesNoCommand(t *testing.T) {

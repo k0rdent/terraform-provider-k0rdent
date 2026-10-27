@@ -22,6 +22,75 @@ type kubeconfigConnection struct {
 	Token                string
 	ClientCertificate    string
 	ClientKey            string
+
+	// No attribute carries these. The relay connects with them.
+	TLSServerName string
+	ProxyURL      string
+}
+
+type kubeconfigNames struct{ context, cluster, user, namespace string }
+
+// currentKubeconfigNames picks the context as parseKubeconfigConnection does.
+func currentKubeconfigNames(raw string) kubeconfigNames {
+	var file kubeconfigFile
+	if yaml.Unmarshal([]byte(raw), &file) != nil {
+		return kubeconfigNames{}
+	}
+	name := file.CurrentContext
+	if name == "" && len(file.Contexts) == 1 {
+		name = file.Contexts[0].Name
+	}
+	for _, c := range file.Contexts {
+		if c.Name == name {
+			return kubeconfigNames{context: name, cluster: c.Context.Cluster, user: c.Context.User, namespace: c.Context.Namespace}
+		}
+	}
+	return kubeconfigNames{}
+}
+
+// relayKubeconfig is `raw` with `relay` on. It keeps the platform's names, so
+// a check on `current-context` reads the same, and none of its credentials.
+func relayKubeconfig(names kubeconfigNames, host, caPEM, secret string) (string, error) {
+	type namedCluster struct {
+		Name    string `yaml:"name"`
+		Cluster struct {
+			Server string `yaml:"server"`
+			CAData string `yaml:"certificate-authority-data"`
+		} `yaml:"cluster"`
+	}
+	type namedContext struct {
+		Name    string `yaml:"name"`
+		Context struct {
+			Cluster   string `yaml:"cluster"`
+			User      string `yaml:"user"`
+			Namespace string `yaml:"namespace,omitempty"`
+		} `yaml:"context"`
+	}
+	type namedUser struct {
+		Name string `yaml:"name"`
+		User struct {
+			Token string `yaml:"token"`
+		} `yaml:"user"`
+	}
+	var file struct {
+		APIVersion     string         `yaml:"apiVersion"`
+		Kind           string         `yaml:"kind"`
+		Clusters       []namedCluster `yaml:"clusters"`
+		Contexts       []namedContext `yaml:"contexts"`
+		Users          []namedUser    `yaml:"users"`
+		CurrentContext string         `yaml:"current-context"`
+	}
+	file.APIVersion, file.Kind, file.CurrentContext = "v1", "Config", names.context
+	var c namedCluster
+	c.Name, c.Cluster.Server = names.cluster, host
+	c.Cluster.CAData = base64.StdEncoding.EncodeToString([]byte(caPEM))
+	var x namedContext
+	x.Name, x.Context.Cluster, x.Context.User, x.Context.Namespace = names.context, names.cluster, names.user, names.namespace
+	var u namedUser
+	u.Name, u.User.Token = names.user, secret
+	file.Clusters, file.Contexts, file.Users = []namedCluster{c}, []namedContext{x}, []namedUser{u}
+	out, err := yaml.Marshal(file)
+	return string(out), err
 }
 
 // The fields of a kubeconfig this reads. Everything else is left in `raw`.
@@ -42,8 +111,9 @@ type kubeconfigFile struct {
 	Contexts []struct {
 		Name    string `yaml:"name"`
 		Context struct {
-			Cluster string `yaml:"cluster"`
-			User    string `yaml:"user"`
+			Cluster   string `yaml:"cluster"`
+			User      string `yaml:"user"`
+			Namespace string `yaml:"namespace"`
 		} `yaml:"context"`
 	} `yaml:"contexts"`
 	Users []struct {
@@ -91,6 +161,12 @@ type kubeconfigUser struct {
 // included. A warning is printed to the console and the trace log, where
 // `Sensitive` doesn't reach.
 func parseKubeconfigConnection(raw string) (kubeconfigConnection, []string) {
+	return parseKubeconfigConnectionFor(raw, false)
+}
+
+// parseKubeconfigConnectionFor warns as the relay will connect when relay is
+// set and there's a token.
+func parseKubeconfigConnectionFor(raw string, relay bool) (kubeconfigConnection, []string) {
 	var file kubeconfigFile
 	// The parser's own error isn't quoted: it can carry a fragment of the
 	// value it choked on, and here that can be the token.
@@ -166,24 +242,39 @@ func parseKubeconfigConnection(raw string) (kubeconfigConnection, []string) {
 	if conn.Token == "" && conn.ClientCertificate == "" {
 		return unusableKubeconfig(describeUnusableUser(ctx.User, user))
 	}
+	conn.TLSServerName, conn.ProxyURL = cluster.TLSServerName, cluster.ProxyURL
+	relayed := relay && conn.Token != ""
 
 	// A CA the provider can't hand over leaves `cluster_ca_certificate` null,
 	// and then the kubernetes provider checks the server against the system
 	// roots. That fails closed too, on the TLS handshake, so the rest stays.
 	var warnings []string
+	noCA := "`cluster_ca_certificate` is null"
+	if relayed {
+		noCA = "the relay checks the cluster's certificate against the system roots"
+	}
 	switch {
 	case cluster.CAData != "":
 		ca, err := base64.StdEncoding.DecodeString(cluster.CAData)
 		if err != nil {
 			warnings = append(warnings, fmt.Sprintf("In the kubeconfig's cluster %q, "+
-				"certificate-authority-data is not base64, so `cluster_ca_certificate` is null.", ctx.Cluster))
+				"certificate-authority-data is not base64, so %s.", ctx.Cluster, noCA))
 		} else {
 			conn.ClusterCACertificate = string(ca)
 		}
 	case cluster.CAFile != "":
 		// A path names a file on whatever machine wrote the kubeconfig.
 		warnings = append(warnings, fmt.Sprintf("The kubeconfig's cluster %q names a CA file (%q) "+
-			"rather than carrying the certificate, so `cluster_ca_certificate` is null.", ctx.Cluster, cluster.CAFile))
+			"rather than carrying the certificate, so %s.", ctx.Cluster, cluster.CAFile, noCA))
+	}
+	if relayed {
+		// The relay uses tls-server-name and proxy-url, and always verifies.
+		if cluster.InsecureSkipTLSVerify {
+			warnings = append(warnings, fmt.Sprintf("The kubeconfig's cluster %q sets insecure-skip-tls-verify, "+
+				"which the relay doesn't honor: it checks the cluster's certificate against the kubeconfig's "+
+				"CA, or the system roots without one.", ctx.Cluster))
+		}
+		return conn, warnings
 	}
 	for _, d := range []struct {
 		set               bool
