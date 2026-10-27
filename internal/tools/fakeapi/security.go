@@ -98,18 +98,9 @@ func (s *state) createSecurityGroup(w http.ResponseWriter, r *http.Request) {
 func (s *state) getSecurityGroup(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	o := s.in(r)
-
-	if _, held := o.groupsSec[at{id: "default"}]; !held && r.PathValue("id") == "default" {
-		// Every VPC starts with its own default group, marked `ownerKind: vpc`.
-		writeJSON(w, http.StatusOK, map[string]any{
-			"id": "default", "ownerKind": "vpc", "state": "active", "ruleCount": 0,
-			"selfLink": "/v1/networking/security-groups/default",
-			"rules":    map[string]any{"ingress": []any{}, "egress": []any{}},
-		})
-		return
-	}
-	if g, ok := securityGroupKind.read(w, r, o); ok {
+	// A VPC's default group is an ordinary row, made with the VPC. See
+	// vpcForOwner.
+	if g, ok := securityGroupKind.read(w, r, s.in(r)); ok {
 		writeJSON(w, http.StatusOK, securityGroupJSON(g))
 	}
 }

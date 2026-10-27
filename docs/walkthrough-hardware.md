@@ -314,7 +314,7 @@ By default it makes:
 - a security group with a rule for each service and each range in
   `allowed_cidrs`
 - a cluster behind that group, with your users on every node
-- the group on the cluster's VPC
+- the group on the cluster's VPC, before the VPC's default group
 - a webhook
 
 It takes what `cluster/` takes, plus:
@@ -339,7 +339,7 @@ The `build` block in `terraform.tfvars` turns each part on or off:
 | --- | --- | --- | --- |
 | `network` | on | A network and a subnet per purpose | An address pool that isn't routable |
 | `security_group` | on | A group on the cluster | A cluster type whose nodes sit on a `nico` VPC |
-| `vpc_security_groups` | on | The same group on every VPC this makes | `security_group` |
+| `vpc_security_groups` | on | The same group on every VPC this makes, before the VPC's default group | `security_group` |
 | `webhook` | on | A subscription to cluster events | `webhook_url` and the secret |
 | `instance_group` | off | One bare host, with your users on it | A free host |
 | `file_store` | off | 100 GiB of shared storage the host can mount | A share type in the region |
@@ -366,9 +366,12 @@ The `build` block in `terraform.tfvars` turns each part on or off:
   reach, to `egress_out` in `main.tf`.
 - Ingress rules are stateless, so each service you let in also gets an
   egress rule for its replies, from its own port.
-- With `vpc_security_groups` on, this group replaces the VPC's default
-  group, and with it the rules for traffic between the VPC's subnets. Nodes
-  then reach each other only on the ports in `egress_out`.
+- With `vpc_security_groups` on, each VPC gets this group and then the
+  VPC's default group, which permits traffic between the VPC's subnets.
+  This group comes first, so its denies also apply between nodes. A list
+  without the default would replace it. The default's id is random, so
+  `full/` finds it by the name the platform gives it, `Default (<VPC id>)`,
+  and stops with an error if it can't.
 - A security group change can take a few minutes to reach the nodes.
 
 ## When something goes wrong

@@ -199,7 +199,7 @@ func TestAccVPCSecurityGroupsEmptyMeansDefault(t *testing.T) {
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr(vpcBindingAddr, "security_groups.#", "0"),
 					// Not empty. The default came back, explicitly.
-					resource.TestCheckResourceAttr(vpcBindingAddr, "attached.0", "default"),
+					resource.TestCheckResourceAttr(vpcBindingAddr, "attached.0", "vpc-"+cluster+"-default"),
 				),
 			},
 			{
@@ -377,7 +377,7 @@ func TestAccVPCSecurityGroupsEmptyStillReportsDrift(t *testing.T) {
 			{Config: vpcBindingConfig(cluster, group, false), PlanOnly: true, ExpectNonEmptyPlan: true},
 			{
 				Config: vpcBindingConfig(cluster, group, false),
-				Check:  resource.TestCheckResourceAttr(vpcBindingAddr, "attached.0", "default"),
+				Check:  resource.TestCheckResourceAttr(vpcBindingAddr, "attached.0", "vpc-"+cluster+"-default"),
 			},
 			{Config: vpcBindingConfig(cluster, group, false), PlanOnly: true},
 		},

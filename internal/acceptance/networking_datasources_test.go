@@ -76,10 +76,10 @@ data %q "read" {
 }
 
 data %q "vpc_default" {
-  id         = "default"
+  id         = "vpc-%s-default"
   depends_on = [%s.test]
 }
-`, securityGroupType, group, securityGroupType, securityGroupType, clusterType),
+`, securityGroupType, group, securityGroupType, securityGroupType, cluster, clusterType),
 			Check: resource.ComposeAggregateTestCheckFunc(
 				resource.TestCheckResourceAttr(securityGroupDataAddr, "state", "active"),
 				resource.TestCheckResourceAttr(securityGroupDataAddr, "rule_count", "2"),

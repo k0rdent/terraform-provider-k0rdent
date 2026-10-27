@@ -451,6 +451,11 @@ EOF
   output_is "$name" cluster 'v["state"] == "active" and v["ssh_users"] == ["ops"]'
   output_is "$name" network 'sorted(v["subnets"]) == ["nodes", "storage"] and all("/28" in s for s in v["subnets"].values())'
   output_is "$name" filtering 'len(v["rules"]) == 19 and sum(" from 198.51.100.0/25" in r for r in v["rules"]) == 3 and sum(r.startswith("in:  deny ") and " from 0.0.0.0/0 " in r for r in v["rules"]) == 2 and not any(r.startswith("in:  deny tcp 6443") for r in v["rules"]) and not any(r.startswith("out: permit any") for r in v["rules"]) and any(r.startswith("out: permit tcp from port 22 ") for r in v["rules"])'
+  # Each VPC keeps its own default group, after ours. A list without it
+  # would replace the default's rules for traffic between the VPC's subnets.
+  output_is "$name" scorecard 'v["security group on the VPCs"].endswith(", each with its default group after it")'
+  # A lambda, because a generator inside eval can't see v.
+  output_is "$name" filtering '(lambda g, bs: len(bs) >= 1 and all(len(b) == 2 and b[0] == g and b[1] != g for b in bs) and len({b[1] for b in bs}) == len(bs))(v["group"], list(v["vpc_bindings"].values()))'
   good "the scorecard says what ran and what was off"
 
   plans_clean "$name" "after the apply"

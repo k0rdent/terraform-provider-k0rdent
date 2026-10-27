@@ -32,3 +32,24 @@ func TestASecondBindingWhileUpdatingIs409InUse(t *testing.T) {
 		t.Errorf("binding once settled: %d %v", code, out)
 	}
 }
+
+// "Another VPC's default group is refused with `422`." A VPC's own default
+// group is accepted.
+func TestABindingTakesOnlyItsOwnVPCsDefaultGroup(t *testing.T) {
+	s := newState()
+	clusterInP(t, s)
+	if code, out := in(t, s.createCluster, http.MethodPost, "r", "p", nil,
+		`{"id":"d","clusterType":"`+inferenceRef+`/versions/`+inferenceV2+`"}`); code != http.StatusCreated {
+		t.Fatalf("second cluster: %d %v", code, out)
+	}
+	vpc := map[string]string{"id": "vpc-c"}
+	settleIn(t, s.getVPC, "p", vpc)
+
+	code, out := in(t, s.setVPCSecurityGroups, http.MethodPost, "r", "p", vpc, `{"securityGroups":["vpc-d-default"]}`)
+	if code != http.StatusUnprocessableEntity || !strings.Contains(message(out), "another VPC's default group") {
+		t.Fatalf("another VPC's default: %d %q, want 422 naming it", code, message(out))
+	}
+	if code, out := in(t, s.setVPCSecurityGroups, http.MethodPost, "r", "p", vpc, `{"securityGroups":["vpc-c-default"]}`); code != http.StatusAccepted {
+		t.Errorf("its own default: %d %v, want 202", code, out)
+	}
+}

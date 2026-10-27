@@ -84,7 +84,7 @@ func (o *objects) vpcForOwner(ownerKind, ownerID string) {
 	o.vpcs[at{id: vpc}] = &fakeVPC{
 		id: vpc, uid: uidFor(o.scope, "vpc", vpc), backend: backend,
 		owner: ownerID, ownerKind: ownerKind, ownerUID: uidFor(o.scope, ownerKind, ownerID),
-		securityGroups: []string{"default"}, state: "active",
+		securityGroups: []string{defaultGroupID(vpc)}, state: "active",
 	}
 
 	// The DEFAULT group the VPC is bound to, and the network and subnet the
@@ -92,11 +92,14 @@ func (o *objects) vpcForOwner(ownerKind, ownerID string) {
 	// tenant's, and the tenant API answers 409 to any write. Three provider
 	// schemas say so and nothing could ever import one to prove it, because the
 	// fake only ever held objects a tenant had created.
-	if _, held := o.groupsSec[at{id: "default"}]; !held {
-		o.groupsSec[at{id: "default"}] = &fakeSecurityGroup{
-			id: "default", ownerKind: "vpc", ownerID: uidFor(o.scope, "vpc", vpc), state: "active",
-			displayName: ptr("DEFAULT"),
-		}
+	//
+	// One per VPC, owned by it and named as the k0rdent API v1.3.0-rc.3 names
+	// it, "Default (<VPC id>)", which is how a configuration finds it. The id
+	// upstream is `<VPC id>-<8 random hex>-default`. Here it's fixed, so tests
+	// can name it.
+	o.groupsSec[at{id: defaultGroupID(vpc)}] = &fakeSecurityGroup{
+		id: defaultGroupID(vpc), ownerKind: "vpc", ownerID: uidFor(o.scope, "vpc", vpc), state: "active",
+		displayName: ptr("Default (" + vpc + ")"),
 	}
 	o.networks[at{id: vpc + "-net"}] = &fakeNetwork{
 		id: vpc + "-net", kind: "evpn", serviceType: "l2vpn", vlanID: "4002",
@@ -108,6 +111,16 @@ func (o *objects) vpcForOwner(ownerKind, ownerID string) {
 		cidr: "10.90.0.0/24", clusterID: ownerID, state: "active",
 		displayName: ptr("cluster subnet"),
 	}
+}
+
+// defaultGroupID is the id of a VPC's default group in the fake.
+func defaultGroupID(vpc string) string { return vpc + "-default" }
+
+// dropVPC takes a VPC away with its owner, and its default group with it,
+// which upstream is "removed only when its VPC is".
+func (o *objects) dropVPC(vpc string) {
+	delete(o.groupsSec, at{id: defaultGroupID(vpc)})
+	delete(o.vpcs, at{id: vpc})
 }
 
 func ptr[T any](v T) *T { return &v }
@@ -916,16 +929,23 @@ func (s *state) setVPCSecurityGroups(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for _, group := range *body.SecurityGroups {
-		if _, ok := o.groupsSec[at{id: group}]; !ok {
+		held, ok := o.groupsSec[at{id: group}]
+		if !ok {
 			apiError(w, http.StatusUnprocessableEntity, "INVALID_ARGUMENT",
 				"no security group named "+group)
+			return
+		}
+		// "Another VPC's default group is refused with `422`."
+		if held.ownerKind == "vpc" && held.ownerID != target.uid {
+			apiError(w, http.StatusUnprocessableEntity, "INVALID_ARGUMENT",
+				group+" is another VPC's default group, and attaches only to that VPC")
 			return
 		}
 	}
 
 	target.securityGroups = *body.SecurityGroups
 	if len(target.securityGroups) == 0 {
-		target.securityGroups = []string{"default"}
+		target.securityGroups = []string{defaultGroupID(target.id)}
 	}
 	target.state, target.reads = "updating", 0
 

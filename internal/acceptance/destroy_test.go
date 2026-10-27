@@ -89,8 +89,9 @@ func checkVPCCarriesOnlyDefault(vpc string) resource.TestCheckFunc {
 		if err := json.Unmarshal(body, &read); err != nil {
 			return err
 		}
-		if len(read.SecurityGroups) != 1 || read.SecurityGroups[0] != "default" {
-			return fmt.Errorf("%s carries %v, wanted the platform's [default]. The tenant's "+
+		// The fake names a VPC's default group <VPC id>-default.
+		if len(read.SecurityGroups) != 1 || read.SecurityGroups[0] != vpc+"-default" {
+			return fmt.Errorf("%s carries %v, wanted only its own default group. The tenant's "+
 				"groups are still enforced on a VPC Terraform has stopped tracking",
 				vpc, read.SecurityGroups)
 		}
