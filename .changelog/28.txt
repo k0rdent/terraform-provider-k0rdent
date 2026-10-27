@@ -3,9 +3,5 @@ data-source/k0rdent_cluster_types: Read every page of the catalog. Before, only 
 ```
 
 ```release-note:bug
-data-source/k0rdent_cluster_types: `status = "draft"` finds a type whose only versions are drafts
-```
-
-```release-note:note
-data-source/k0rdent_cluster_types: A `status` other than `available` beside `include_deprecated = false` fails the plan
+data-source/k0rdent_cluster_types: `status = "draft"` finds a type whose only versions are drafts on a platform that hides types with no `available` version unless asked. The pinned API, v1.3.0-rc.2, already lists them
 ```

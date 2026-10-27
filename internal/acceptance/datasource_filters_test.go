@@ -306,7 +306,7 @@ data %[1]q "running" {
 }
 
 // A pattern RE2 can't compile, a state the platform doesn't have, a tag
-// filter with a null value, or asking for only deprecated or draft types while
+// filter with a null value, or asking for only deprecated types while
 // excluding them, fails the plan on the attribute. Nothing is read: the step is plan-only and the
 // fake would answer a read.
 func TestAccDataSourceFiltersAreCheckedAtPlan(t *testing.T) {
@@ -327,11 +327,6 @@ func TestAccDataSourceFiltersAreCheckedAtPlan(t *testing.T) {
 			config: fmt.Sprintf("data %q \"bad\" {\n  status             = \"deprecated\"\n  include_deprecated = false\n}\n",
 				provider.ResourceName("cluster_types")),
 			want: `Deprecated types excluded and asked for`,
-		},
-		"draft excluded": {
-			config: fmt.Sprintf("data %q \"bad\" {\n  status             = \"draft\"\n  include_deprecated = false\n}\n",
-				provider.ResourceName("cluster_types")),
-			want: `Draft types excluded and asked for`,
 		},
 	} {
 		t.Run(name, func(t *testing.T) {

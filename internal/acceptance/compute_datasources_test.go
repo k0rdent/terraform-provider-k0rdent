@@ -262,3 +262,36 @@ func TestAccClusterTypesDataSourceFindsADraftType(t *testing.T) {
 		}},
 	})
 }
+
+// `status = "draft"` beside `include_deprecated = false` planned on v0.1.0-rc.1
+// and still finds the draft type: Read asks for the hidden types anyway. A
+// refusal at plan would also block `terraform destroy`, whose refresh plan
+// reads the data source, so the test applies the pair and destroys it.
+func TestAccClusterTypesDataSourceDraftBesideIncludeDeprecatedFalse(t *testing.T) {
+	clusterTypesType := provider.ResourceName("cluster_types")
+	clusterTypesAddr := "data." + clusterTypesType + ".draft"
+	config := fmt.Sprintf(`data %q "draft" {
+  status             = "draft"
+  include_deprecated = false
+}
+
+resource "terraform_data" "pick" {
+  input = length(%s.cluster_types)
+}
+`, clusterTypesType, clusterTypesAddr)
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: protoV6,
+		Steps: []resource.TestStep{
+			{
+				Config: config,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr(clusterTypesAddr, "cluster_types.#", "1"),
+					resource.TestCheckResourceAttr(clusterTypesAddr, "cluster_types.0.id", "gpu-preview"),
+					resource.TestCheckResourceAttr(clusterTypesAddr, "cluster_types.0.status", "draft"),
+					resource.TestCheckResourceAttr("terraform_data.pick", "input", "1"),
+				),
+			},
+			{Config: config, Destroy: true},
+		},
+	})
+}
