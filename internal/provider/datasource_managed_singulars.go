@@ -2,11 +2,13 @@ package provider
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
+	rschema "github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
@@ -370,6 +372,9 @@ type securityGroupDataSourceModel struct {
 	State        types.String `tfsdk:"state"`
 	StatusReason types.String `tfsdk:"status_reason"`
 	SelfLink     types.String `tfsdk:"self_link"`
+
+	Ingress []ruleModel `tfsdk:"ingress"`
+	Egress  []ruleModel `tfsdk:"egress"`
 }
 
 func (d *securityGroupDataSource) Metadata(_ context.Context, _ datasource.MetadataRequest, resp *datasource.MetadataResponse) {
@@ -384,10 +389,11 @@ func (d *securityGroupDataSource) Schema(_ context.Context, _ datasource.SchemaR
 			"deleted, and it can be bound only to the VPC named by `owner_id`. Binding it back to " +
 			"that VPC is how to keep it alongside your own groups; binding it anywhere else is " +
 			"refused at apply rather than at plan.\n\n" +
-			"The rules are not returned here. Use the `" +
-			ResourceName("effective_security_groups") + "` data source for what is actually " +
-			"enforced on a VPC, which is the question rules are usually asked about and which no " +
-			"single group answers on its own.",
+			"`ingress` and `egress` are the group's own rules, in the order they're matched. " +
+			"A VPC's default group can't be managed, so this is how to read what it allows. " +
+			"A group is rarely all that filters an interface: the `" +
+			ResourceName("effective_security_groups") + "` data source says which groups reach " +
+			"one, and in what order.",
 		Attributes: map[string]schema.Attribute{
 			"id":           schema.StringAttribute{Required: true, MarkdownDescription: "The group's name.", Validators: []validator.String{urlSafeIdentifier{}}},
 			"region":       dataSourceRegionAttribute(),
@@ -408,9 +414,35 @@ func (d *securityGroupDataSource) Schema(_ context.Context, _ datasource.SchemaR
 			"state":         schema.StringAttribute{Computed: true, MarkdownDescription: "Lifecycle state as last read from the platform."},
 			"status_reason": schema.StringAttribute{Computed: true, MarkdownDescription: "Why the group is in this state, where the platform gives a reason."},
 			"self_link":     schema.StringAttribute{Computed: true, MarkdownDescription: "Platform-defined reference to this object."},
+			"ingress": schema.ListNestedAttribute{
+				Computed:            true,
+				MarkdownDescription: ingressRulesDescription,
+				NestedObject:        schema.NestedAttributeObject{Attributes: ruleDataSourceAttributes()},
+			},
+			"egress": schema.ListNestedAttribute{
+				Computed:            true,
+				MarkdownDescription: egressRulesDescription,
+				NestedObject:        schema.NestedAttributeObject{Attributes: ruleDataSourceAttributes()},
+			},
 		},
 	}
 	documentDataSourceSchema(&resp.Schema)
+}
+
+// ruleDataSourceAttributes is the resource's rule shape, read only. It's built
+// from ruleAttributes so the names and descriptions can't drift apart.
+func ruleDataSourceAttributes() map[string]schema.Attribute {
+	out := map[string]schema.Attribute{}
+	for name, attr := range ruleAttributes() {
+		s, ok := attr.(rschema.StringAttribute)
+		if !ok {
+			// Every rule field is a string today. Another type needs its own
+			// case here, and every schema test fails until it has one.
+			panic(fmt.Sprintf("rule attribute %q is a %T, which the data source can't mirror", name, attr))
+		}
+		out[name] = schema.StringAttribute{Computed: true, MarkdownDescription: s.MarkdownDescription}
+	}
+	return out
 }
 
 func (d *securityGroupDataSource) Configure(_ context.Context, req datasource.ConfigureRequest, resp *datasource.ConfigureResponse) {
@@ -461,6 +493,10 @@ func (data *securityGroupDataSourceModel) fill(g k0rdent.SecurityGroup) {
 		data.State = types.StringValue(string(*g.State))
 	}
 
+	// The resource's conversion, with no configuration to keep a port spelling
+	// from. Never nil: an empty group reads as [], so length() works on it.
+	data.Ingress = append([]ruleModel{}, rulesFrom(g.Rules.Ingress, nil)...)
+	data.Egress = append([]ruleModel{}, rulesFrom(g.Rules.Egress, nil)...)
 }
 
 // ---------------------------------------------------------------------------

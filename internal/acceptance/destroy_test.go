@@ -39,8 +39,7 @@ func checkGone(resourceType string, pathOf func(attrs map[string]string) string)
 	return func(state *terraform.State) error {
 		matched := 0
 		for name, rs := range state.RootModule().Resources {
-			// A data source is not destroyed, and the default group one reads
-			// outlives every test.
+			// A data source is not destroyed.
 			if rs.Type != resourceType || strings.HasPrefix(name, "data.") {
 				continue
 			}
@@ -86,13 +85,94 @@ func checkVPCCarriesOnlyDefault(vpc string) resource.TestCheckFunc {
 		var read struct {
 			SecurityGroups []string `json:"securityGroups"`
 		}
-		if err := json.Unmarshal(body, &read); err != nil {
+		if err = json.Unmarshal(body, &read); err != nil {
 			return err
 		}
-		if len(read.SecurityGroups) != 1 || read.SecurityGroups[0] != "default" {
-			return fmt.Errorf("%s carries %v, wanted the platform's [default]. The tenant's "+
+		def, err := defaultGroupOf(vpc)
+		if err != nil {
+			return err
+		}
+		if len(read.SecurityGroups) != 1 || read.SecurityGroups[0] != def {
+			return fmt.Errorf("%s carries %v, wanted only its default group, %s. The tenant's "+
 				"groups are still enforced on a VPC Terraform has stopped tracking",
-				vpc, read.SecurityGroups)
+				vpc, read.SecurityGroups, def)
+		}
+		return nil
+	}
+}
+
+// defaultGroupOf finds a VPC's default security group the way the contract
+// identifies one: the group whose ownerKind is `vpc` and whose ownerId is the
+// VPC's uid. Its id is random, so a test can't write it out.
+func defaultGroupOf(vpc string) (string, error) {
+	uid, err := vpcUID(vpc)
+	if err != nil {
+		return "", err
+	}
+	status, body, err := readFake("/v1/regions/us-texas-1/projects/demo/networking/security-groups?limit=500")
+	if err != nil {
+		return "", err
+	}
+	var list struct {
+		SecurityGroups []struct {
+			ID        string `json:"id"`
+			OwnerKind string `json:"ownerKind"`
+			OwnerID   string `json:"ownerId"`
+		} `json:"securityGroups"`
+	}
+	if status != http.StatusOK || json.Unmarshal(body, &list) != nil {
+		return "", fmt.Errorf("listing the security groups answered %d", status)
+	}
+	var found []string
+	for _, g := range list.SecurityGroups {
+		if g.OwnerKind == "vpc" && g.OwnerID == uid {
+			found = append(found, g.ID)
+		}
+	}
+	if len(found) != 1 {
+		return "", fmt.Errorf("%s owns %d default groups, %v, wanted one", vpc, len(found), found)
+	}
+	return found[0], nil
+}
+
+// vpcUID reads a VPC's uid, which no data source reports.
+func vpcUID(vpc string) (string, error) {
+	status, body, err := readFake("/v1/regions/us-texas-1/projects/demo/networking/vpcs/" + vpc)
+	if err != nil {
+		return "", err
+	}
+	var v struct {
+		UID string `json:"uid"`
+	}
+	if status != http.StatusOK || json.Unmarshal(body, &v) != nil || v.UID == "" {
+		return "", fmt.Errorf("reading %s answered %d with no uid", vpc, status)
+	}
+	return v.UID, nil
+}
+
+// isUIDOf checks an attribute is a VPC's uid.
+func isUIDOf(vpc string) func(string) error {
+	return func(value string) error {
+		uid, err := vpcUID(vpc)
+		if err != nil {
+			return err
+		}
+		if value != uid {
+			return fmt.Errorf("got %q, wanted %s's uid, %s", value, vpc, uid)
+		}
+		return nil
+	}
+}
+
+// isDefaultGroupOf checks an attribute names a VPC's default group.
+func isDefaultGroupOf(vpc string) func(string) error {
+	return func(value string) error {
+		def, err := defaultGroupOf(vpc)
+		if err != nil {
+			return err
+		}
+		if value != def {
+			return fmt.Errorf("got %q, wanted %s's default group, %s", value, vpc, def)
 		}
 		return nil
 	}
