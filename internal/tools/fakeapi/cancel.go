@@ -72,10 +72,6 @@ func (s *state) cancelCluster(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !nameCarries(c.displayName, cancelLoses) {
-		c.targets = nil
-		c.upgradeTo = nil
-	}
 	c.op.status = "cancelling"
 	c.reads = 0
 	writeJSON(w, http.StatusAccepted, s.clusterBody(region, c, false))
@@ -96,6 +92,8 @@ func (c *cluster) settleCancel() bool {
 		c.complete()
 		return true
 	}
+	// As v1.3.0-rc.3's failed settle does: the old count and version stay.
+	c.targets, c.upgradeTo = nil, nil
 	c.state = "failed"
 	c.stateReason = "CANCELLED"
 	c.stateMessage = "the in-flight operation was cancelled"

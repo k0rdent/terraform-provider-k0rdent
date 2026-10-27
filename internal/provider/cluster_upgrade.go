@@ -575,8 +575,8 @@ func upgradeWaitError(diags *diag.Diagnostics, waitErr error, from, to int32, fa
 		addAdvisedError(diags, fmt.Sprintf("The cluster is failed at version %d of its ClusterType", from),
 			fmt.Sprintf("The upgrade to version %d did not complete, and the platform reports the cluster "+
 				"`failed` and still bound to version %d, which state now records. The platform does not "+
-				"retry an upgrade from `failed`, so applying again cannot continue until the cluster is "+
-				"recovered to `active` on the platform. Nothing was deleted.", to, from), waitErr)
+				"retry an upgrade from `failed` and has no call to resume one, so applying again can't "+
+				"continue it. Nothing was deleted.", to, from), waitErr)
 		return
 	}
 	advice := fmt.Sprintf("State records the version the platform reports, version %d unless the upgrade has "+
@@ -736,8 +736,8 @@ func (r *clusterResource) upgradeRefused(ctx context.Context, target clusterTarg
 		addAdvisedError(diags, "The cluster cannot be upgraded in its current state",
 			"The platform admits an upgrade only from `active`. A cluster that is `creating`, "+
 				"`updating` or `deleting` is busy with another change, so apply again once it settles. "+
-				"A `failed` cluster is not retried through an upgrade and has to be recovered on the "+
-				"platform first. "+unchanged+" Nothing was deleted.", checked)
+				"A `failed` cluster can't be upgraded, and the platform has no call to retry or resume "+
+				"an upgrade. "+unchanged+" Nothing was deleted.", checked)
 	case http.StatusUnprocessableEntity:
 		if pool, count, allows, ok := r.outsideBounds(ctx, target, id, typeID, to, next); ok {
 			addAdvisedError(diags, fmt.Sprintf("Upgrading to version %d would put a node pool outside its bounds", to),

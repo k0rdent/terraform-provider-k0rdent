@@ -1344,6 +1344,14 @@ func (s *state) updateCluster(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &body) {
 		return
 	}
+	// Measured on the k0rdent API v1.3.0-dev.3: securityGroups combined with
+	// any other field answers 422, as the contract says it does, so a provider
+	// that folded it into the metadata PATCH fails here as it would there.
+	if body.SecurityGroups != nil && (body.DisplayName != nil || body.Description != nil || body.Tags != nil) {
+		apiError(w, http.StatusUnprocessableEntity, "INVALID_ARGUMENT",
+			"securityGroups cannot be combined with other fields in one PATCH; send it on its own")
+		return
+	}
 	if body.Storage != nil {
 		msg := ceilingRefusal(body.Storage)
 		if msg == "" && body.SecurityGroups != nil {
@@ -1363,32 +1371,16 @@ func (s *state) updateCluster(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if body.Storage != nil && c.state != "active" {
-		// v1.3.0-dev.4: a raise on a cluster that isn't ACTIVE answers 409
-		// with no reason, and can be retried once it is.
-		errorEnvelope(w, http.StatusConflict, "", "conflict: cluster \""+c.id+"\" is "+c.state+
-			"; a storage raise needs it active", nil)
-		return
-	}
-	if body.Storage != nil {
-		if want := *body.Storage.CeilingGiB; want < c.ceiling {
-			apiError(w, http.StatusUnprocessableEntity, "INVALID_ARGUMENT",
-				fmt.Sprintf("storage.ceilingGiB cannot be lowered from %d to %d", c.ceiling, want))
-			return
-		}
-		c.ceiling = *body.Storage.CeilingGiB
-	}
-	if c.state != "active" {
-		apiError(w, http.StatusConflict, "CONFLICT", "the cluster is "+c.state)
-		return
-	}
+	// v1.3.0-rc.3 admits securityGroups from `active` or `failed` until a
+	// delete is accepted, tags, displayName and description in any state but
+	// `deleting`, and a storage raise only from `active`.
 	if body.SecurityGroups != nil {
-		// Measured on the k0rdent API v1.3.0-dev.3: the field combined with any
-		// other answers 422, as the contract says it does, so a provider that
-		// folded it into the metadata PATCH fails here as it would there.
-		if body.DisplayName != nil || body.Description != nil || body.Tags != nil {
-			apiError(w, http.StatusUnprocessableEntity, "INVALID_ARGUMENT",
-				"securityGroups cannot be combined with other fields in one PATCH; send it on its own")
+		if c.released {
+			msg := "cluster \"" + c.id + "\" has a delete that did not complete; retry the delete"
+			if c.state == "deleting" {
+				msg = "cluster \"" + c.id + "\" is being deleted"
+			}
+			apiError(w, http.StatusConflict, "CONFLICT", msg)
 			return
 		}
 		groups := *body.SecurityGroups
@@ -1396,13 +1388,40 @@ func (s *state) updateCluster(w http.ResponseWriter, r *http.Request) {
 		if len(groups) > 0 && !o.admitsGroups(w, c.ct, groups) {
 			return
 		}
+		if c.state != "active" && c.state != "failed" {
+			apiError(w, http.StatusConflict, "CONFLICT",
+				"cluster \""+c.id+"\" cannot change its security groups in state \""+c.state+"\"")
+			return
+		}
 		// Asynchronous: 202, and the cluster is `updating` while the
 		// bundles are re-rendered.
 		c.securityGroups = groups
 		c.state, c.reads = "updating", 0
+		c.stateReason, c.stateMessage = "", ""
 		c.start("applying security groups", "rendering-network-bundles")
 		writeJSON(w, http.StatusAccepted, s.clusterBody(region, c, false))
 		return
+	}
+	if c.state == "deleting" {
+		apiError(w, http.StatusConflict, "CONFLICT", "cluster \""+c.id+"\" is being deleted")
+		return
+	}
+	if body.Storage != nil {
+		want := *body.Storage.CeilingGiB
+		if want < c.ceiling {
+			apiError(w, http.StatusUnprocessableEntity, "INVALID_ARGUMENT",
+				fmt.Sprintf("storage.ceilingGiB cannot be lowered from %d to %d", c.ceiling, want))
+			return
+		}
+		// An unchanged ceiling is no raise, so any state takes it.
+		if want != c.ceiling && c.state != "active" {
+			// v1.3.0-dev.4: a raise on a cluster that isn't ACTIVE answers 409
+			// with no reason, and can be retried once it is.
+			errorEnvelope(w, http.StatusConflict, "", "conflict: cluster \""+c.id+"\" is "+c.state+
+				"; a storage raise needs it active", nil)
+			return
+		}
+		c.ceiling = want
 	}
 
 	// A PATCH: an absent field is left alone and an empty one clears it.

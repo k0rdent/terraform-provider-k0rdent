@@ -61,18 +61,29 @@ func (a *clusterCancelOperationAction) Schema(ctx context.Context, _ action.Sche
 			"`terraform apply -invoke=action." + ResourceName(clusterCancelOperationActionSuffix) +
 			".<name>`, or bind it to a resource with `action_trigger`. Actions need Terraform 1.14 or " +
 			"later, and nothing else in this provider needs it.\n\n" +
-			"A wait that times out leaves the operation running. Otherwise only a destroy cancels it, " +
-			"to delete the cluster: `terraform destroy`, or the destroy that starts an apply replacing " +
-			"the cluster, a tainted one included, unless `on_destroy_busy` is `wait`. This action is the " +
-			"way to stop an operation and keep the cluster.\n\n" +
+			"It stops a create, scale or upgrade that's still running and keeps the cluster. Without it, " +
+			"the only way to stop one is `terraform destroy`, which deletes the cluster. A realistic use " +
+			"is a scale-up stuck waiting on hosts that won't come (like a dead BMC), when you want the " +
+			"existing cluster to stay.\n\n" +
+			"A wait that times out leaves the operation running. The destroys that cancel it are " +
+			"`terraform destroy` and the destroy that starts an apply replacing the cluster, a tainted " +
+			"one included, unless `on_destroy_busy` is `wait`.\n\n" +
 			"It reads the cluster and cancels the operation running then, by the `operation.executionId` " +
 			"the platform reports, or only the one `execution_id` names. The platform settles a cancelled " +
 			"cluster `failed`, with `operation.status` `cancelled`, and the action waits for that and " +
 			"reports each state it reads as progress. Whatever the operation was doing doesn't finish. " +
 			"An accepted cancel can still lose the race: when the operation finishes or fails first, the " +
-			"action says so, with a warning that nothing was cancelled. " +
-			"The platform admits neither a scale nor an upgrade from `failed`, so the cluster then waits " +
-			"on the platform to recover it, or on a destroy.\n\n" +
+			"action says so, with a warning that nothing was cancelled.\n\n" +
+			"The platform has no call to retry or resume a cancelled operation, and it neither scales nor " +
+			"upgrades a `failed` cluster. After a cancelled create, the platform tears down what it built, " +
+			"unless the cancel came after the cluster was ready. Terraform has the cluster tainted, so the " +
+			"next apply replaces it. After a cancelled scale, the platform records the old node count, " +
+			"though some new nodes may already be in the cluster. The next plan asks for the scale again, " +
+			"and its apply fails. To plan clean, set `node_count` to the count the plan shows the cluster " +
+			"has. After a cancelled upgrade, the platform records the old version, though the cluster may " +
+			"already run the new one. A plan whose `cluster_type` names the new version fails, and so does " +
+			"`terraform destroy`, which plans first. To plan clean, set `cluster_type` to the version the " +
+			"error names.\n\n" +
 			"A plan that invokes it reads the cluster and warns what it will cancel. Left unpinned, the " +
 			"invoke cancels whatever is running when it runs, which can be an operation that started after " +
 			"the plan. Set `execution_id` to cancel only the one the plan read.\n\n" +
