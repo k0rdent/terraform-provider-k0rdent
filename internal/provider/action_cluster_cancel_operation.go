@@ -75,7 +75,8 @@ func (a *clusterCancelOperationAction) Schema(ctx context.Context, _ action.Sche
 			"An accepted cancel can still lose the race: when the operation finishes or fails first, the " +
 			"action says so, with a warning that nothing was cancelled.\n\n" +
 			"The platform has no call to retry or resume a cancelled operation, and it neither scales nor " +
-			"upgrades a `failed` cluster. After a cancelled create, the platform tears down what it built, " +
+			"upgrades a `failed` cluster. Its `tags`, `display_name` and `description` can still change. " +
+			"After a cancelled create, the platform tears down what it built, " +
 			"unless the cancel came after the cluster was ready. Terraform has the cluster tainted, so the " +
 			"next apply replaces it. After a cancelled scale, the platform records the old node count, " +
 			"though some new nodes may already be in the cluster. The next plan asks for the scale again, " +

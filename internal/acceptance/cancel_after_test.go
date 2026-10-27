@@ -1,9 +1,12 @@
 package acceptance
 
 import (
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"runtime"
 	"testing"
+	"time"
 )
 
 // What a user sees after the cancel action stops a scale or an upgrade that
@@ -116,4 +119,123 @@ func TestAccAfterACancelledUpgrade(t *testing.T) {
 	c.write(cancelledCluster(name, clusterTypeV2ID, held, 1))
 	out, _ = c.run("plan")
 	mustSay(t, "the plan with the old version", out, "No changes.")
+}
+
+// metadataCluster is a cluster at one worker with tags, and a description
+// unless it's empty. It has no `timeouts` block, so an apply waits as long as
+// a default configuration does.
+func metadataCluster(name, displayName, description, team string) string {
+	if description != "" {
+		description = fmt.Sprintf("\n  description  = %q", description)
+	}
+	return fmt.Sprintf(`
+resource %q "test" {
+  id           = %q
+  cluster_type = "%s/versions/%s"
+  display_name = %q%s
+  tags         = { team = %q }
+  node_pool = {
+    "gpu-workers" = { node_count = 1 }
+  }
+}
+`, clusterType, name, clusterTypeRef, clusterTypeV2ID, displayName, description, team)
+}
+
+// checkFakeMetadata fails unless the fake holds what the apply sent.
+func checkFakeMetadata(t *testing.T, name, displayName, description, team string) {
+	t.Helper()
+	status, body, err := readFake("/v1/regions/us-texas-1/projects/demo/compute/clusters/" + name)
+	if err != nil || status != http.StatusOK {
+		t.Fatalf("reading %s from the fake: %d %v", name, status, err)
+	}
+	var got struct {
+		DisplayName string            `json:"displayName"`
+		Description string            `json:"description"`
+		Tags        map[string]string `json:"tags"`
+	}
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.DisplayName != displayName || got.Description != description || got.Tags["team"] != team {
+		t.Errorf("the fake holds display name %q, description %q, team %q, want %q, %q, %q",
+			got.DisplayName, got.Description, got.Tags["team"], displayName, description, team)
+	}
+}
+
+// Tags, the display name and the description can still change after a
+// cancel. The platform leaves the cluster `failed` through each, so the apply
+// doesn't wait for it to become `active`.
+func TestAccAMetadataChangeToACancelledCluster(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the CLI sequence runs on unix")
+	}
+	const name = "acc-cancelled-metadata"
+	stuck := "acceptance " + neverSettles
+	c := newCLIRun(t)
+	c.write(cancelledCluster(name, clusterTypeV2ID, "acceptance", 1))
+	if out, ok := c.run("apply", "-auto-approve"); !ok {
+		t.Fatalf("create:\n%s", out)
+	}
+	t.Cleanup(func() {
+		if out, ok := c.run("destroy", "-auto-approve"); !ok {
+			t.Errorf("cleanup destroy failed:\n%s", out)
+		}
+	})
+	cancelAfterTimeout(t, c, name, cancelledCluster(name, clusterTypeV2ID, stuck, 2))
+
+	for _, step := range []struct{ what, displayName, description, team string }{
+		{"a tag change", stuck, "", "ml"},
+		{"a display name change", stuck + " renamed", "", "ml"},
+		{"a description change", stuck + " renamed", "after the cancel", "ml"},
+	} {
+		c.write(metadataCluster(name, step.displayName, step.description, step.team))
+		start := time.Now()
+		out, ok := c.run("apply", "-auto-approve")
+		if !ok {
+			t.Fatalf("%s to a failed cluster failed:\n%s", step.what, out)
+		}
+		if took := time.Since(start); took > 30*time.Second {
+			t.Errorf("%s to a failed cluster took %s", step.what, took.Round(time.Second))
+		}
+		mustSay(t, step.what, out, "0 added, 1 changed, 0 destroyed")
+		checkFakeMetadata(t, name, step.displayName, step.description, step.team)
+		checkFakeStateNow(t, name, "failed")
+		out, _ = c.run("plan")
+		mustSay(t, "the plan after "+step.what, out, "No changes.")
+	}
+
+	out, ok := c.run("destroy", "-auto-approve")
+	if !ok {
+		t.Fatalf("the destroy of the failed cluster failed:\n%s", out)
+	}
+	mustSay(t, "the destroy", out, "1 destroyed")
+}
+
+// A tag change to an `active` cluster still reaches the platform and plans
+// clean after.
+func TestAccATagChangeToAnActiveCluster(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the CLI sequence runs on unix")
+	}
+	const name = "acc-active-metadata"
+	c := newCLIRun(t)
+	c.write(metadataCluster(name, "acceptance", "", "ml"))
+	if out, ok := c.run("apply", "-auto-approve"); !ok {
+		t.Fatalf("create:\n%s", out)
+	}
+	t.Cleanup(func() {
+		if out, ok := c.run("destroy", "-auto-approve"); !ok {
+			t.Errorf("cleanup destroy failed:\n%s", out)
+		}
+	})
+	c.write(metadataCluster(name, "acceptance", "", "infra"))
+	out, ok := c.run("apply", "-auto-approve")
+	if !ok {
+		t.Fatalf("the tag change failed:\n%s", out)
+	}
+	mustSay(t, "the tag change", out, "0 added, 1 changed, 0 destroyed")
+	checkFakeMetadata(t, name, "acceptance", "", "infra")
+	checkFakeStateNow(t, name, "active")
+	out, _ = c.run("plan")
+	mustSay(t, "the plan after the tag change", out, "No changes.")
 }
