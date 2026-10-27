@@ -191,13 +191,25 @@ func (s *state) getInstance(w http.ResponseWriter, r *http.Request) {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for _, in := range s.in(r).allInstances() {
-		if in.id == id {
-			writeJSON(w, http.StatusOK, in.body(region, project))
+	for _, in := range s.in(r).allInstances(true) {
+		if in.id != id {
+			continue
+		}
+		// A deleted record is a 410 unless asked for, as the contract says.
+		if in.deleted && r.URL.Query().Get("showDeleted") != "true" {
+			instanceGone(w, id)
 			return
 		}
+		writeJSON(w, http.StatusOK, in.body(region, project))
+		return
 	}
 	apiError(w, http.StatusNotFound, "NOT_FOUND", "not found: instance \""+id+"\"")
+}
+
+// instanceGone is the service's answer for an instance that was deleted: an
+// id is never reused, so it's a 410 and not a 404.
+func instanceGone(w http.ResponseWriter, id string) {
+	apiError(w, http.StatusGone, "GONE", "instance \""+id+"\" was deleted")
 }
 
 // narrowedAddresses resolves a selector that names one interface by its
@@ -232,11 +244,12 @@ func (o *objects) narrowedAddresses(g *instanceGroup, n fakeConsumerNetwork) ([]
 //   - A machine with no power control is a permanent 409 with
 //     `POWER_ACTION_UNSUPPORTED`. A group whose display name carries
 //     powerUnsupported holds only such machines.
-//   - An instance that isn't there is the service's 404.
+//   - An instance that isn't there is the service's 404, and one that was
+//     deleted its 410, which the service answers although the contract
+//     doesn't list it for this operation.
 //
-// ASSUMPTION: the guard interval. The contract makes it configurable and
-// gives no default, so the fake picks one long enough that a test's second
-// action always lands inside it.
+// The guard interval is the service's default. The contract makes it
+// configurable and gives none.
 const (
 	powerGuard       = 10 * time.Minute
 	powerFails       = "fake-power-fails"
@@ -270,7 +283,7 @@ func (s *state) executeInstancePowerAction(w http.ResponseWriter, r *http.Reques
 	defer s.mu.Unlock()
 	o := s.in(r)
 	var found *fakeInstance
-	for _, in := range o.allInstances() {
+	for _, in := range o.allInstances(true) {
 		if in.id == id {
 			found = &in
 			break
@@ -278,6 +291,10 @@ func (s *state) executeInstancePowerAction(w http.ResponseWriter, r *http.Reques
 	}
 	if found == nil {
 		apiError(w, http.StatusNotFound, "NOT_FOUND", "not found: instance \""+id+"\"")
+		return
+	}
+	if found.deleted {
+		instanceGone(w, id)
 		return
 	}
 	if found.group.displayName != nil && strings.Contains(*found.group.displayName, powerUnsupported) {

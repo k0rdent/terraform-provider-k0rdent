@@ -123,10 +123,12 @@ func instanceAttributes() map[string]schema.Attribute {
 		},
 		"last_power_action_error": schema.StringAttribute{
 			Computed: true,
-			MarkdownDescription: "Why the most recent power action on the host's machine is known to have " +
-				"failed, whether it was sent by `" + ResourceName(instancePowerActionSuffix) + "` or by an " +
-				"operator on the machine directly. Null when no failure is known, which is also how a power " +
-				"action that succeeded reads: the platform doesn't report success. Separate from `state`.",
+			MarkdownDescription: "Why the most recent power operation on the host's machine is known to have " +
+				"failed: a power action sent by `" + ResourceName(instancePowerActionSuffix) + "` or by an " +
+				"operator on the machine directly, or a reset of the machine's BMC that an operator ran. So a " +
+				"failure here can be one this configuration never asked for. Null when no failure is known, " +
+				"which is also how an operation that succeeded reads: the platform doesn't report success. " +
+				"Separate from `state`.",
 		},
 		"created_at": schema.StringAttribute{
 			Computed:            true,

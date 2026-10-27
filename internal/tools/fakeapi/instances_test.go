@@ -251,3 +251,27 @@ func TestAFailedPowerActionShowsOnTheInstance(t *testing.T) {
 		t.Errorf("after the action the instance reports %v, want %q", got, powerFailure)
 	}
 }
+
+// A deleted instance's record answers 410, not 404, to a power action and to
+// a read, as the service does, and a read with showDeleted returns it.
+func TestADeletedInstanceIsGone(t *testing.T) {
+	s := newState()
+	o := s.in(httptest.NewRequest(http.MethodGet, "/", nil))
+	old := groupHolding(s, "trainers", map[string]int32{"gpu": 1})
+	instanceGroupKind.drop(o, at{id: old.id}, old)
+	id := o.released[0].id
+
+	if rec := power(s, id, "powerOn"); rec.Code != http.StatusGone ||
+		!bytes.Contains(rec.Body.Bytes(), []byte(`"GONE"`)) {
+		t.Errorf("a power action on a deleted instance: %d %s", rec.Code, rec.Body)
+	}
+	for query, want := range map[string]int{"": http.StatusGone, "?showDeleted=true": http.StatusOK} {
+		r := httptest.NewRequest(http.MethodGet, "/"+query, nil)
+		r.SetPathValue("id", id)
+		rec := httptest.NewRecorder()
+		s.getInstance(rec, r)
+		if rec.Code != want {
+			t.Errorf("reading a deleted instance with %q answered %d, want %d: %s", query, rec.Code, want, rec.Body)
+		}
+	}
+}

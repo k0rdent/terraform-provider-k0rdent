@@ -670,7 +670,7 @@ var timeoutOperations = map[string]string{
 	"update": "Bounds the whole update, including the wait until the platform settles.",
 	"delete": "Bounds the whole destroy, including the wait until the platform reports it gone.",
 	"open":   "Bounds opening it, including the wait while the cluster is creating or updating.",
-	"invoke": "Bounds the whole invocation, including the wait until the platform settles.",
+	"invoke": "Bounds the whole invocation, including any wait until the platform settles.",
 }
 
 // describeTimeouts writes the timeouts block's descriptions. The library

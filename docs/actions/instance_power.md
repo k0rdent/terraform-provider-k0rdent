@@ -5,7 +5,8 @@ subcategory: ""
 description: |-
   Powers the machine an instance occupies on, off, or through a restart. Invoke it by name with terraform apply -invoke=action.k0rdent_instance_power.<name>, or bind it to a resource with action_trigger. Actions need Terraform 1.14 or later.
   The platform accepts the action and dispatches it to the machine, and the action ends there. It doesn't wait for the machine to get there, because nothing reports when it has: the platform's answer is the instance as it was when the action was submitted, and that's the last word it gives on an action that succeeds. A failure the platform learns of afterwards, such as the machine's controller refusing it, shows on the k0rdent_instance data source as last_power_action_error.
-  A plan that invokes it reads the instance and warns what it will do. The platform refuses a second power action on the same machine for a while after one is accepted, and the action then fails, says how long to wait, and sends nothing. It's never sent again on its own: a power action twice isn't the same as once. It also fails, having done nothing, when the instance doesn't exist, when the platform can't confirm the machine is still this instance's, and when the machine has no power control at all.
+  A plan that invokes it reads the instance and warns what it will do. The platform refuses a second power action on the same machine for a while after one is accepted, and the action then fails, says how long to wait, and sends nothing. It's never sent again on its own: a power action twice isn't the same as once. It also fails, having done nothing, when the instance doesn't exist or was deleted, when the platform can't confirm the machine is still this instance's, and when the machine has no power control at all.
+  Bound to a resource with action_trigger, it runs each time one of the trigger's events happens to that resource, not once. With after_update it runs on every apply that changes the resource in place, so a power cycle bound to an instance group cycles the machine on each such change to the group. With after_create it runs on a create and on every replacement. It doesn't run on an apply that leaves the resource unchanged. Before Terraform 1.16 no event fires on a destroy. From 1.16, before_destroy and after_destroy run it on a destroy and on every replacement. A condition on the trigger narrows any of these.
 ---
 
 # k0rdent_instance_power (Action)
@@ -14,7 +15,9 @@ Powers the machine an instance occupies on, off, or through a restart. Invoke it
 
 The platform accepts the action and dispatches it to the machine, and the action ends there. It doesn't wait for the machine to get there, because nothing reports when it has: the platform's answer is the instance as it was when the action was submitted, and that's the last word it gives on an action that succeeds. A failure the platform learns of afterwards, such as the machine's controller refusing it, shows on the `k0rdent_instance` data source as `last_power_action_error`.
 
-A plan that invokes it reads the instance and warns what it will do. The platform refuses a second power action on the same machine for a while after one is accepted, and the action then fails, says how long to wait, and sends nothing. It's never sent again on its own: a power action twice isn't the same as once. It also fails, having done nothing, when the instance doesn't exist, when the platform can't confirm the machine is still this instance's, and when the machine has no power control at all.
+A plan that invokes it reads the instance and warns what it will do. The platform refuses a second power action on the same machine for a while after one is accepted, and the action then fails, says how long to wait, and sends nothing. It's never sent again on its own: a power action twice isn't the same as once. It also fails, having done nothing, when the instance doesn't exist or was deleted, when the platform can't confirm the machine is still this instance's, and when the machine has no power control at all.
+
+Bound to a resource with `action_trigger`, it runs each time one of the trigger's `events` happens to that resource, not once. With `after_update` it runs on every apply that changes the resource in place, so a power cycle bound to an instance group cycles the machine on each such change to the group. With `after_create` it runs on a create and on every replacement. It doesn't run on an apply that leaves the resource unchanged. Before Terraform 1.16 no event fires on a destroy. From 1.16, `before_destroy` and `after_destroy` run it on a destroy and on every replacement. A `condition` on the trigger narrows any of these.
 
 ## Example Usage
 
@@ -63,6 +66,34 @@ action "k0rdent_instance_power" "elsewhere" {
 
 - `project` (String) Project the instance is in. Defaults to the provider's `project`. **Constraints:** Must be lower-case letters, digits and hyphens, starting with a letter and not ending with a hyphen (`[a-z]([-a-z0-9]*[a-z0-9])?`), because it becomes a segment of a request URL.
 - `region` (String) Region the instance is in. Defaults to the provider's `region`. **Constraints:** Must be lower-case letters, digits and hyphens, starting with a letter and not ending with a hyphen (`[a-z]([-a-z0-9]*[a-z0-9])?`), because it becomes a segment of a request URL.
+- `timeouts` (Block, Optional) How long each operation may take before it fails. Each operation left out defaults to the provider's `operation_timeout`, which is `2h` unless the provider block or `K0RDENT_OPERATION_TIMEOUT` sets it. (see [below for nested schema](#nestedblock--timeouts))
+
+<a id="nestedblock--timeouts"></a>
+### Nested Schema for `timeouts`
+
+Optional:
+
+- `invoke` (String) Bounds the whole invocation, including any wait until the platform settles. Left out, it defaults to the provider's `operation_timeout`, which is `2h` unless the provider block or `K0RDENT_OPERATION_TIMEOUT` sets it. **Constraints:** Must be a positive duration of hours, minutes or seconds, such as `45m`, `2h` or `1h30m`.
+
+## Timeouts
+
+The `timeouts` block sets how long each operation may take before it fails:
+
+- `invoke` (default `2h`). Bounds the whole invocation, including any wait until the platform settles.
+
+Each default is the provider's `operation_timeout`, which is `2h` unless the provider block or `K0RDENT_OPERATION_TIMEOUT` sets it. An operation the block leaves out takes that value, so raising `operation_timeout` raises all of them at once. A value of zero or less is refused at plan time rather than read as no limit.
+
+```terraform
+action "k0rdent_instance_power" "example" {
+  config {
+    # ...
+
+    timeouts {
+      invoke = "45m"
+    }
+  }
+}
+```
 
 ## Related
 

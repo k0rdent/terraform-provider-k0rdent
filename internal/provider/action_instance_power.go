@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/hashicorp/terraform-plugin-framework-timeouts/action/timeouts"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/action"
 	"github.com/hashicorp/terraform-plugin-framework/action/schema"
@@ -52,10 +53,11 @@ func newInstancePowerAction() action.Action {
 type instancePowerAction struct{ meta *Meta }
 
 type instancePowerModel struct {
-	Region     types.String `tfsdk:"region"`
-	Project    types.String `tfsdk:"project"`
-	InstanceID types.String `tfsdk:"instance_id"`
-	Action     types.String `tfsdk:"action"`
+	Region     types.String   `tfsdk:"region"`
+	Project    types.String   `tfsdk:"project"`
+	InstanceID types.String   `tfsdk:"instance_id"`
+	Action     types.String   `tfsdk:"action"`
+	Timeouts   timeouts.Value `tfsdk:"timeouts"`
 }
 
 // powerActions are the contract's single-machine power verbs, in its order.
@@ -78,7 +80,7 @@ func (a *instancePowerAction) Metadata(_ context.Context, _ action.MetadataReque
 	resp.TypeName = ResourceName(instancePowerActionSuffix)
 }
 
-func (a *instancePowerAction) Schema(_ context.Context, _ action.SchemaRequest, resp *action.SchemaResponse) {
+func (a *instancePowerAction) Schema(ctx context.Context, _ action.SchemaRequest, resp *action.SchemaResponse) {
 	resp.Schema = schema.Schema{
 		MarkdownDescription: "Powers the machine an instance occupies on, off, or through a restart. Invoke " +
 			"it by name with `terraform apply -invoke=action." + ResourceName(instancePowerActionSuffix) +
@@ -93,8 +95,15 @@ func (a *instancePowerAction) Schema(_ context.Context, _ action.SchemaRequest, 
 			"second power action on the same machine for a while after one is accepted, and the action " +
 			"then fails, says how long to wait, and sends nothing. It's never sent again on its own: a " +
 			"power action twice isn't the same as once. It also fails, having done nothing, when the " +
-			"instance doesn't exist, when the platform can't confirm the machine is still this instance's, " +
-			"and when the machine has no power control at all.",
+			"instance doesn't exist or was deleted, when the platform can't confirm the machine is still " +
+			"this instance's, and when the machine has no power control at all.\n\n" +
+			"Bound to a resource with `action_trigger`, it runs each time one of the trigger's `events` " +
+			"happens to that resource, not once. With `after_update` it runs on every apply that changes " +
+			"the resource in place, so a power cycle bound to an instance group cycles the machine on each " +
+			"such change to the group. With `after_create` it runs on a create and on every replacement. " +
+			"It doesn't run on an apply that leaves the resource unchanged. Before Terraform 1.16 no event " +
+			"fires on a destroy. From 1.16, `before_destroy` and `after_destroy` run it on a destroy and on " +
+			"every replacement. A `condition` on the trigger narrows any of these.",
 		Attributes: map[string]schema.Attribute{
 			"instance_id": schema.StringAttribute{
 				Required: true,
@@ -122,6 +131,9 @@ func (a *instancePowerAction) Schema(_ context.Context, _ action.SchemaRequest, 
 				MarkdownDescription: "Project the instance is in. Defaults to the provider's `project`.",
 				Validators:          []validator.String{urlSafeIdentifier{}},
 			},
+		},
+		Blocks: map[string]schema.Block{
+			"timeouts": timeouts.Block(ctx),
 		},
 	}
 	documentActionSchema(&resp.Schema)
@@ -181,6 +193,13 @@ func (a *instancePowerAction) Invoke(ctx context.Context, req action.InvokeReque
 	if !ok {
 		return
 	}
+	// The action ends at the answer, so this bounds the one request, which
+	// otherwise waits as long as the platform holds it open.
+	ctx, cancel := withTimeout(ctx, data.Timeouts.Invoke, a.meta.Wait.Timeout, &resp.Diagnostics)
+	defer cancel()
+	if resp.Diagnostics.HasError() {
+		return
+	}
 	run := powerRun{
 		meta: a.meta, target: target,
 		id: data.InstanceID.ValueString(), action: data.Action.ValueString(),
@@ -216,8 +235,8 @@ func (p powerRun) power(ctx context.Context) {
 	got, err := p.meta.Client.ExecuteInstancePowerActionWithResponse(ctx, p.target.region, p.target.project, p.id, p.action)
 	switch {
 	case err != nil:
-		// No answer: the request was cut off, and may have reached the
-		// platform before it was.
+		// No answer: the request was cut off, by Ctrl-C, the invoke timeout
+		// or the connection, and may have reached the platform before it was.
 		addAdvisedError(p.diags, powerFailed, p.mayHaveLanded(), err)
 		return
 	case got.JSON202 != nil:
@@ -272,6 +291,9 @@ func (p powerRun) refusalAdvice(resp *http.Response, body []byte) string {
 	case has(powerTargetUnreachable):
 		return fmt.Sprintf("Instance `%s` exists, but the platform no longer knows the machine it records. "+
 			"Nothing was sent. Read the instance's `state` and `state_message`.", p.id)
+	case status == http.StatusGone:
+		return fmt.Sprintf("Instance `%s` was deleted, so there's no machine to act on, and nothing was sent. "+
+			"Remove the action or point `instance_id` at an instance that exists.", p.id)
 	case status == http.StatusNotFound:
 		return fmt.Sprintf("There's no instance `%s` in project `%s`, region `%s`, so nothing was sent. Check "+
 			"`instance_id`, and `region` and `project` or the provider's.", p.id, p.target.project, p.target.region)
@@ -283,12 +305,16 @@ func (p powerRun) refusalAdvice(resp *http.Response, body []byte) string {
 }
 
 // mayHaveLanded is the advice for an action that got no answer, or a 5xx: it
-// may have reached the platform.
+// may have reached the platform. The platform's guard claims every action it
+// accepts, and keeps the claim when it can't tell whether the dispatch
+// started, so a second invoke can be refused although nothing ran. And with
+// the guard off, its own dedup is a fixed 60-second bucket, so a repeat isn't
+// reliably dropped either. Neither way is invoking again known to be safe.
 func (p powerRun) mayHaveLanded() string {
-	return fmt.Sprintf("`%s` may have reached the platform before the request failed. Invoking again soon "+
-		"is safe: the platform drops a repeat of a request it took, and refuses a second power action on "+
-		"the machine for a while after it accepts one, rather than send it twice. The instance's "+
-		"`last_power_action_error` shows a failure the platform learns of.", p.action)
+	return fmt.Sprintf("`%s` may have reached the platform before the request failed, so it may or may not "+
+		"have run. The platform can refuse another power action on this machine for up to its guard "+
+		"interval even if this one never ran. Before invoking again, read the instance's "+
+		"`last_power_action_error` and check the host itself.", p.action)
 }
 
 // retryAfterSeconds is how long an in-flight refusal says to wait, from the
