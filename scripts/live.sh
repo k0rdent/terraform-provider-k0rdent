@@ -280,10 +280,10 @@ for p in rows[:10]:
   fi
 
   step "4/5  The cluster-type catalog for $REGION"
-  api_get "/v1/regions/$REGION/compute/cluster-types" | CT_REGION="$REGION" python3 -c '
+  # Every page by offset: a request without one answers the first page only.
+  list_all "/v1/regions/$REGION/compute/cluster-types" clusterTypes | CT_REGION="$REGION" python3 -c '
 import json, os, sys
-d = json.load(sys.stdin)
-cts = d.get("clusterTypes") or []
+cts = [json.loads(line) for line in sys.stdin if line.strip()]
 print("   %d cluster type(s)" % len(cts))
 for c in cts[:10]:
     print("   %-28s %s" % (c.get("id", "?"), c.get("status", "")))
@@ -472,13 +472,19 @@ def get(url):
         sys.exit(1)
 base, ct = os.environ["BASE"], os.environ["CT"]
 if not ct:
-    ids, token = [], ""
-    for _ in range(100):
-        d = get(base + ("?pageToken=" + urllib.parse.quote(token) if token else ""))
-        ids += [c["id"] for c in d.get("clusterTypes") or []]
-        token = d.get("nextPageToken") or ""
-        if not token:
+    # Every page by offset, as the data source reads it: a request without
+    # one answers the first page only.
+    ids, limit = [], 500
+    for _ in range(40):
+        d = get(base + "?" + urllib.parse.urlencode({"offset": len(ids), "limit": limit, "includeTotal": "true"}))
+        rows = d.get("clusterTypes") or []
+        ids += [c["id"] for c in rows]
+        total = d.get("totalCount")
+        if not rows or (total is not None and len(ids) >= total) or (total is None and len(rows) < limit):
             break
+    else:
+        sys.stderr.write("the cluster type list did not end after 40 pages\n")
+        sys.exit(1)
     if not ids:
         print("-"); sys.exit(0)
     ct = sorted(ids)[0]

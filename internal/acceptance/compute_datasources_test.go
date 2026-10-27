@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+
+	"github.com/k0rdent/terraform-provider-k0rdent/internal/provider"
 )
 
 const (
@@ -220,5 +222,76 @@ resource "terraform_data" "scope" {
 `, clusterType, name, clusterTypeRef, clusterType, clusterType, clusterType),
 			Check: resource.TestCheckResourceAttr("terraform_data.scope", "output", "us-texas-1"),
 		}},
+	})
+}
+
+// The suite asks for two rows a page, so the seven cluster types the fake
+// lists by default are four pages. The fake answers a request without `offset` with its first two
+// and no token, as the real list answers with its first page, so a provider
+// that read that page would report two.
+func TestAccClusterTypesDataSourceReadsEveryPage(t *testing.T) {
+	clusterTypesType := provider.ResourceName("cluster_types")
+	clusterTypesAddr := "data." + clusterTypesType + ".all"
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: protoV6,
+		Steps: []resource.TestStep{{
+			Config: fmt.Sprintf("data %q \"all\" {}\n", clusterTypesType),
+			Check: resource.ComposeAggregateTestCheckFunc(
+				resource.TestCheckResourceAttr(clusterTypesAddr, "cluster_types.#", "7"),
+				resource.TestCheckResourceAttr(clusterTypesAddr, "cluster_types.0.id", "cpu-general"),
+				resource.TestCheckResourceAttr(clusterTypesAddr, "cluster_types.6.id", "gpu-training"),
+			),
+		}},
+	})
+}
+
+// The fake leaves out a type with no `available` version unless asked, so a
+// `draft` filter finds gpu-preview only if the read asks for it.
+func TestAccClusterTypesDataSourceFindsADraftType(t *testing.T) {
+	clusterTypesType := provider.ResourceName("cluster_types")
+	clusterTypesAddr := "data." + clusterTypesType + ".draft"
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: protoV6,
+		Steps: []resource.TestStep{{
+			Config: fmt.Sprintf("data %q \"draft\" {\n  status = \"draft\"\n}\n", clusterTypesType),
+			Check: resource.ComposeAggregateTestCheckFunc(
+				resource.TestCheckResourceAttr(clusterTypesAddr, "cluster_types.#", "1"),
+				resource.TestCheckResourceAttr(clusterTypesAddr, "cluster_types.0.id", "gpu-preview"),
+				resource.TestCheckResourceAttr(clusterTypesAddr, "cluster_types.0.status", "draft"),
+			),
+		}},
+	})
+}
+
+// `status = "draft"` beside `include_deprecated = false` planned on v0.1.0-rc.1
+// and still finds the draft type: Read asks for the hidden types anyway. A
+// refusal at plan would also block `terraform destroy`, whose refresh plan
+// reads the data source, so the test applies the pair and destroys it.
+func TestAccClusterTypesDataSourceDraftBesideIncludeDeprecatedFalse(t *testing.T) {
+	clusterTypesType := provider.ResourceName("cluster_types")
+	clusterTypesAddr := "data." + clusterTypesType + ".draft"
+	config := fmt.Sprintf(`data %q "draft" {
+  status             = "draft"
+  include_deprecated = false
+}
+
+resource "terraform_data" "pick" {
+  input = length(%s.cluster_types)
+}
+`, clusterTypesType, clusterTypesAddr)
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: protoV6,
+		Steps: []resource.TestStep{
+			{
+				Config: config,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr(clusterTypesAddr, "cluster_types.#", "1"),
+					resource.TestCheckResourceAttr(clusterTypesAddr, "cluster_types.0.id", "gpu-preview"),
+					resource.TestCheckResourceAttr(clusterTypesAddr, "cluster_types.0.status", "draft"),
+					resource.TestCheckResourceAttr("terraform_data.pick", "input", "1"),
+				),
+			},
+			{Config: config, Destroy: true},
+		},
 	})
 }

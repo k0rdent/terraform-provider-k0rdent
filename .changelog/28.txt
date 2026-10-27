@@ -1,0 +1,7 @@
+```release-note:bug
+data-source/k0rdent_cluster_types: Read every page of the catalog. Before, only the first page was read, at most 500 types
+```
+
+```release-note:bug
+data-source/k0rdent_cluster_types: `status = "draft"` finds a type whose only versions are drafts on a platform that hides types with no `available` version unless asked. The pinned API, v1.3.0-rc.2, already lists them
+```

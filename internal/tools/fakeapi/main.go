@@ -728,6 +728,25 @@ var catalog = []fakeClusterType{
 		fakeVersion{}, fakeVersion{}, fakeVersion{poolMax: map[string]int32{"workers": 1}},
 		fakeVersion{bmaasOnly: true}, fakeVersion{}),
 	poolGrowType(),
+	{
+		// No `available` version, so the list leaves it out unless asked, and
+		// a create can't bind it.
+		id:          "gpu-preview",
+		displayName: "GPU preview",
+		description: "Only a draft so far.",
+		status:      "draft",
+		version:     1,
+		pools: []fakePool{
+			{id: "workers", role: "worker", displayName: "Workers", def: i32(1), min: i32(1), max: i32(8)},
+		},
+		versions: []fakeVersion{
+			{
+				versionID: "ffffffff-0000-4000-8000-000000000001", version: 1,
+				displayName: "GPU preview v1", status: "draft",
+				createdAt: "2026-10-01T09:00:00Z", k0sVersion: "v1.36.0+k0s.0",
+			},
+		},
+	},
 }
 
 // poolGrowType is a ClusterType whose second version brings a pool the first
@@ -812,8 +831,8 @@ func clusterTypePath(region, id string) string {
 // echoed would let a provider that simply compares strings pass, and that
 // provider would then diff forever against a real server.
 //
-// A pinned reference binds that version, which must be `available`. It
-// returns the resolved reference, and the ClusterType and version it bound.
+// A pinned reference binds that version, an unpinned one the head, and either
+// must be `available`. It returns the resolved reference, and the ClusterType and version it bound.
 func resolveClusterTypeRef(region, ref string) (string, fakeClusterType, fakeVersion, bool) {
 	path := ref
 	if i := strings.Index(path, "://"); i >= 0 {
@@ -839,11 +858,8 @@ func resolveClusterTypeRef(region, ref string) (string, fakeClusterType, fakeVer
 	v, found := headVersion(ct)
 	if pinned {
 		v, found = findVersion(ct, pin)
-		if found && v.status != "available" {
-			found = false
-		}
 	}
-	if !found {
+	if !found || v.status != "available" {
 		return "", fakeClusterType{}, fakeVersion{}, false
 	}
 	// Always answer with the pinned form, whichever form arrived.
@@ -896,8 +912,15 @@ func (s *state) listClusterTypes(w http.ResponseWriter, r *http.Request) {
 		gatewayNoRoute(w)
 		return
 	}
+	// A type with no `available` version is left out unless asked for, as
+	// the contract after this provider's pinned one has it. That contract
+	// reads `includeDeprecated` as an alias of `includeUnavailable`.
+	include := r.URL.Query().Get("includeDeprecated") == "true"
 	items := make([]any, 0, len(catalog))
 	for _, ct := range catalog {
+		if ct.status != "available" && !include {
+			continue
+		}
 		items = append(items, map[string]any{
 			"id":          ct.id,
 			"displayName": ct.displayName,
