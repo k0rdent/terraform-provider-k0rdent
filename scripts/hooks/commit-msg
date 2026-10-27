@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+#
+# Optional, and on with the pre-commit hook. It runs the public-text check on
+# the commit message, leaving out git's comments and the diff `git commit -v`
+# adds below them. CI checks every commit message in a pull request too.
+set -euo pipefail
+
+scripts="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+message="$(mktemp)"
+trap 'rm -f "$message"' EXIT
+sed '/^. -\{24\} >8 -\{24\}$/,$d' "$1" | git stripspace --strip-comments > "$message"
+"$scripts/check-public-text.sh" --text "commit message" "$message"
