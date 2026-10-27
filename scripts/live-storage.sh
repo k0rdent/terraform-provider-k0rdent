@@ -28,17 +28,10 @@
 # TF_VAR_probe_image and TF_VAR_cluster_type_id reach the configuration as
 # they are. See its variables.
 #
-# WHAT THIS PROVES
-#   That a workload's claim binds through the cluster's own CSI path, and that
-#   the provider's part of it is only the connection. The apply fails if the
-#   claim doesn't read Bound or the pod can't mount it, and the run fails if
-#   the configuration's check block says the claim names no volume. Results go
-#   to .live/storage/results.txt, one PASS, FAIL or SKIP line per step, in the
-#   shape `make live` writes.
+# Results go to .live/storage/results.txt in the shape `make live` writes.
 #
-# On a kind stack (MOCK_MODE=true) the kubeconfig names a mock server and its
-# CA is a placeholder, so the kubernetes provider has nothing to connect to.
-# The run fails there, and says that's the stack and not the provider.
+# A kind stack (MOCK_MODE=true) hands over a kubeconfig for a mock server, so
+# the run fails there, and says that's the stack and not the provider.
 
 set -uo pipefail
 
@@ -51,12 +44,8 @@ RESULTS="$RUN_DIR/results.txt"
 # shellcheck source=lib/common.sh
 . "$REPO/scripts/lib/common.sh"
 
-# The kubernetes provider doesn't fail when its `host` is null. It falls back
-# to KUBE_HOST, KUBE_TOKEN, KUBE_CONFIG_PATH(S), KUBE_CTX and the rest, so a
-# shell pointed at a kind or management cluster would have the claim bind
-# there and the run pass for the wrong cluster. None of them reaches Terraform
-# from here. The configuration's postcondition on the kubeconfig is the other
-# half of this.
+# With a null `host` the kubernetes provider falls back to KUBE_* and
+# KUBECONFIG, and the claim would bind on whatever cluster this shell points at.
 for kube_var in $(env | sed -n 's/^\(KUBE_[A-Za-z0-9_]*\)=.*/\1/p'); do
   unset "$kube_var"
 done
@@ -86,29 +75,26 @@ build_storage_provider() {
 tf() { ( cd "$STORAGE_DIR" && "$TF_BIN" "$@" ); }
 
 # destroy_all <log> destroys what the run made. It returns 0 when a full
-# destroy did it, 1 when only the fallback below did, and 2 when the cluster
+# destroy did it, 1 when only the targeted fallback did, and 2 when the cluster
 # may still exist.
 #
-# A full destroy opens the kubeconfig to configure the kubernetes provider,
-# even with no kubernetes resource left in state, and the open fails for a
-# cluster that's `failed` or never issued one. Then nothing is destroyed and
-# the cluster is left holding machines. So on a failure the kubernetes
-# resources are dropped from state, and a destroy targeted at the cluster
-# alone runs. That one doesn't open the kubeconfig. The claim and the pod go
-# with the cluster, though a volume whose class retains it can outlive it on
-# the storage backend.
+# A full destroy opens the kubeconfig, which fails for a `failed` cluster. The
+# fallback drops the kubernetes resources from state and destroys the cluster
+# alone, which doesn't open it.
 destroy_all() {
   local log="$1"
   if tf destroy -auto-approve -input=false -no-color "${VARS[@]}" >"$log" 2>&1; then
     return 0
   fi
+
   warn "the full destroy failed. Dropping the kubernetes resources from state and destroying the cluster alone"
-  local addrs
-  addrs="$(tf state list 2>>"$log" | grep -E '^kubernetes_' || true)"
-  if [ -n "$addrs" ]; then
+  local kube_addresses
+  kube_addresses="$(tf state list 2>>"$log" | grep -E '^kubernetes_' || true)"
+  if [ -n "$kube_addresses" ]; then
     # shellcheck disable=SC2086 # one address per word
-    tf state rm -no-color $addrs >>"$log" 2>&1 || { warn "terraform state rm failed, see $log"; return 2; }
+    tf state rm -no-color $kube_addresses >>"$log" 2>&1 || { warn "terraform state rm failed, see $log"; return 2; }
   fi
+
   if tf destroy -auto-approve -input=false -no-color "${VARS[@]}" \
        -target="${PROVIDER_NAME}_kubernetes_cluster.storage" >>"$log" 2>&1; then
     return 1
@@ -139,6 +125,7 @@ read_config() {
 
 cmd_validate() {
   read_names; find_terraform
+
   step "Validate examples/live/storage"
   rm -rf "$RUN_DIR/tfdata"
   build_storage_provider
@@ -157,6 +144,7 @@ cmd_run() {
    Confirm the deployment by naming its host:
 
        LIVE_CONFIRM=$HOST make live-storage"
+
   [ "$LIVE_CONFIRM" = "$HOST" ] || die "LIVE_CONFIRM is \"$LIVE_CONFIRM\" but ${ENV_PREFIX}ENDPOINT's host is \"$HOST\". They have to match."
 
   CLUSTER="${LIVE_CLUSTER:-tf-live-storage-$(date +%s)}"
@@ -182,6 +170,7 @@ cmd_run() {
   cleanup() {
     local rc=$?
     trap - EXIT INT TERM
+
     if [ "$destroyed" = "1" ]; then
       :
     elif [ "${LIVE_KEEP:-0}" = "1" ]; then
@@ -192,9 +181,9 @@ cmd_run() {
       printf '\n%s━━ Cleaning up %s\n' "$B" "$R"
       note "attempting a destroy even though the run did not finish"
       pace
-      local how=0
-      destroy_all "$RUN_DIR/cleanup.txt" || how=$?
-      case "$how" in
+      local destroy_result=0
+      destroy_all "$RUN_DIR/cleanup.txt" || destroy_result=$?
+      case "$destroy_result" in
         0) good "destroyed $CLUSTER"
            record PASS destroy "on cleanup"
            destroyed=1 ;;
@@ -205,6 +194,7 @@ cmd_run() {
            record FAIL destroy "cleanup destroy failed, $CLUSTER may still exist" ;;
       esac
     fi
+
     if [ "$destroyed" = "1" ] && [ "${LIVE_KEEP:-0}" != "1" ]; then
       rm -f "$STORAGE_DIR/terraform.tfstate" "$STORAGE_DIR"/terraform.tfstate.*.backup \
             "$STORAGE_DIR/terraform.tfstate.backup" "$STORAGE_DIR/.terraform.lock.hcl"
@@ -236,6 +226,7 @@ cmd_run() {
   step "2/5  terraform apply: the cluster, the kubeconfig, the claim and the pod"
   note "the claim's create waits for Bound and the pod's for Running"
   pace
+
   local apply_out="$RUN_DIR/apply.txt"
   set +e
   tf apply -auto-approve -input=false -no-color "${VARS[@]}" 2>&1 | tee "$apply_out"
@@ -249,6 +240,7 @@ cmd_run() {
   record PASS apply "cluster $CLUSTER, then a claim and a pod through the handed-over kubeconfig"
 
   step "3/5  The claim, as the cluster bound it"
+
   local claim claim_status
   set +e
   claim="$(tf output -no-color -json claim 2>/dev/null | python3 -c '
@@ -264,6 +256,7 @@ sys.exit(0 if c.get("volume") and c.get("storage_class") else 1)
     record FAIL bound "$claim"
     die "the claim is not bound to a volume"
   fi
+
   if grep -q 'Check block assertion failed' "$apply_out"; then
     grep -A3 'Check block assertion failed' "$apply_out" | sed 's/^/     /'
     record FAIL check "a check block failed on apply, see $apply_out"
@@ -275,11 +268,13 @@ sys.exit(0 if c.get("volume") and c.get("storage_class") else 1)
   step "4/5  terraform plan: nothing to change, and both checks hold on a fresh read"
   note "this opens the kubeconfig during the plan, with a token minted for it"
   pace
+
   local plan_out="$RUN_DIR/replan.txt"
   set +e
   tf plan -detailed-exitcode -input=false -no-color "${VARS[@]}" >"$plan_out" 2>&1
   local plan_status=$?
   set -e
+
   if grep -q 'Check block assertion failed' "$plan_out"; then
     record FAIL replan "a check block failed on a fresh read, see $plan_out"
     die "a check block failed on the re-plan. Full output: $plan_out"
@@ -301,9 +296,9 @@ sys.exit(0 if c.get("volume") and c.get("storage_class") else 1)
     destroyed=1
   else
     pace
-    local how=0
-    destroy_all "$RUN_DIR/destroy.txt" || how=$?
-    case "$how" in
+    local destroy_result=0
+    destroy_all "$RUN_DIR/destroy.txt" || destroy_result=$?
+    case "$destroy_result" in
       0) good "destroyed"
          record PASS destroy ;;
       # The cluster is gone, but a full destroy of a healthy run failing is a

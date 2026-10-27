@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 #
-# The demo. One command that shows the whole provider working, on a laptop,
-# against a local fake control plane.
+# The whole provider working on a laptop, against a local fake control plane.
 #
 #   scripts/demo.sh            the full sequence, then clean up
 #   scripts/demo.sh setup      start the fake and build the provider
@@ -9,26 +8,14 @@
 #   scripts/demo.sh cleanup    stop only the fake owned by this run directory
 #   scripts/demo.sh env        print the exports setup created, for a new shell
 #
-# NEEDS NOTHING SECRET. No API credential, no GitHub token, no registry account,
-# no access to the k0rdent org, and no network except to a fake on 127.0.0.1.
+# Needs no secret and no network beyond the fake on 127.0.0.1. Needs Go
+# 1.26.10 or newer (go.mod), terraform or tofu on PATH, and a populated Go
+# module cache or network access on the first run.
 #
-# PREREQUISITES
-#   * Go 1.26.10 or newer. go.mod declares `go 1.26.10`, and a lower
-#     toolchain fails outright rather than degrading.
-#   * `terraform` or `tofu` on PATH. On macOS: `brew install terraform`, or
-#     `brew install opentofu`. The script prefers terraform and falls back.
-#   * A populated Go module cache, or network access on the first run.
-#
-# WHAT THIS PROVES, AND WHAT IT DOES NOT
-#   Everything on the provider's side of the wire is real: real HCL, real plugin
-#   protocol, real provider binary, real generated client, real token mint over
-#   HTTP. The control plane is not. A green run says the provider's wiring is
-#   right *given the behaviour the fake models* — and the fake deliberately does
-#   not echo back what it was sent. Read the ASSUMPTION comments in
-#   internal/tools/fakeapi/main.go for what it assumes and why.
-#
-#   It says nothing about the real server. Nobody has run this against a live
-#   landscape; there is no credential for one yet.
+# Caveats: everything on the provider's side of the wire is real, the control
+# plane is not. A pass says the provider is right given the behaviour the fake
+# models, which the ASSUMPTION comments in internal/tools/fakeapi/main.go list.
+# It says nothing about the real server.
 
 set -euo pipefail
 
@@ -40,20 +27,14 @@ case "$RUN_DIR" in /*) ;; *) RUN_DIR="$REPO/$RUN_DIR" ;; esac
 DEMO_TF_DIR="${DEMO_TF_DIR:-$RUN_DIR/terraform}"
 case "$DEMO_TF_DIR" in /*) ;; *) DEMO_TF_DIR="$REPO/$DEMO_TF_DIR" ;; esac
 PORT_FILE="$RUN_DIR/endpoint"
-# The fake makes its credentials for each run and writes them here, 0600. Its
-# owner token, in the same file, is what tells this script the fake on the
-# port is the one it started.
+# The fake's credentials for this run, 0600. Its owner token here is how this
+# script knows the fake on the port is the one it started.
 SECRETS_FILE="$RUN_DIR/fake-secrets.env"
 LOG_FILE="$RUN_DIR/fake.log"
 
 # shellcheck source=lib/common.sh
 . "$REPO/scripts/lib/common.sh"
 
-# ---------------------------------------------------------------------------
-# The fake
-# ---------------------------------------------------------------------------
-
-# owner_token prints the owner token from this run's secrets file.
 owner_token() {
   # shellcheck source=/dev/null # written by internal/tools/fakeapi
   ( . "$SECRETS_FILE" && printf '%s' "$FAKE_OWNER_TOKEN" )
@@ -80,6 +61,7 @@ start_fake() {
   go build -o "$RUN_DIR/fakeapi" ./internal/tools/fakeapi
   if start_loopback_server "$RUN_DIR/fakeapi" -secrets-file "$SECRETS_FILE" "$PORT_FILE" "$LOG_FILE"; then
     ENDPOINT="$SERVER_URL"
+
     local _
     for _ in $(seq 1 100); do
       if fake_running; then
@@ -111,6 +93,7 @@ stop_fake() {
       status="$(curl_bearer "$token" -sS -A k0rdent-test-harness -o /dev/null -w '%{http_code}' \
         --connect-timeout 1 --max-time 2 -X POST "$endpoint/_harness/shutdown" 2>/dev/null || true)"
       [ "$status" = "202" ] || die "the fake rejected owner-token shutdown (HTTP $status); preserving run files"
+
       local _
       for _ in $(seq 1 100); do
         if [ "$(curl_bearer "$token" -sS -A k0rdent-test-harness -o /dev/null -w '%{http_code}' \
@@ -134,9 +117,8 @@ seed_demo_dir() {
   fi
 }
 
-# print_env prints what a new shell needs. The credential is this fake's, made
-# for this run, and every value in the secrets file is a fixed prefix and hex,
-# so single quotes are enough.
+# print_env prints what a new shell needs. Every value in the secrets file is a
+# fixed prefix and hex, so single quotes are enough.
 print_env() {
   # shellcheck source=/dev/null # written by internal/tools/fakeapi
   . "$SECRETS_FILE"
@@ -154,9 +136,14 @@ EOF
 
 tf() { ( cd "$DEMO_TF_DIR" && "$TF_BIN" "$@" ); }
 
-# ---------------------------------------------------------------------------
-# Subcommands
-# ---------------------------------------------------------------------------
+# run_plan <plan args...> runs terraform plan and sets plan_status to its exit
+# code, leaving set -e on.
+run_plan() {
+  set +e
+  tf plan "$@"
+  plan_status=$?
+  set -e
+}
 
 setup_environment() {
   read_names; find_terraform
@@ -173,9 +160,8 @@ cmd_setup() {
   printf '\nStop it with: %sDEMO_RUN_DIR=%q scripts/demo.sh cleanup%s\n\n' "$B" "$RUN_DIR" "$R"
 }
 
-# Both source the run directory's secrets file, so they check the directory
-# the way setup does before trusting what's in it. A run directory that isn't
-# there has no fake to stop, and cleanup doesn't make one.
+# cleanup and env source the run directory's secrets file, so they check the
+# directory first, the way setup does. cleanup doesn't make a missing one.
 cmd_cleanup() {
   if [ ! -e "$RUN_DIR" ] && [ ! -L "$RUN_DIR" ]; then
     note "no owned fake was running"
@@ -193,19 +179,21 @@ cmd_env() {
   print_env
 }
 
-# Some agent command runners terminate every background child after a command
-# exits. Keep the fake, provider environment, and user's shell in one managed
-# process tree; leaving the shell runs the ownership-aware cleanup trap.
+# Some command runners kill every background child once a command exits, so
+# the fake and the user's shell share one process tree. Leaving the shell
+# stops the fake.
 cmd_session() {
   private_dir "$RUN_DIR"
   export GOCACHE="${GOCACHE:-$RUN_DIR/go-build}"
   export GOMODCACHE="${GOMODCACHE:-$RUN_DIR/go/pkg/mod}"
   mkdir -p "$GOCACHE" "$GOMODCACHE"
   read_names; find_terraform
+
   trap stop_fake EXIT
   start_fake
   build_provider "$RUN_DIR" 0.0.0-demo
   export_fake_credential "$RUN_DIR" "$SECRETS_FILE"
+
   printf '\nManaged demo session ready at %s. Type exit to stop its fake.\n' "$ENDPOINT"
   printf 'Run Terraform from a private work directory with -var endpoint=%s.\n\n' "$ENDPOINT"
   bash --noprofile --norc -i
@@ -230,18 +218,14 @@ cmd_run() {
   note "runner: $($TF_BIN version | head -1),  $(go version | awk '{print $3}')"
   note "no credential, no registry, no network beyond 127.0.0.1"
 
-  # -------------------------------------------------------------------------
   step "1/8  Build the provider and start the fake control plane"
-  # -------------------------------------------------------------------------
   start_fake
   build_provider "$RUN_DIR" 0.0.0-demo
   seed_demo_dir
   export_fake_credential "$RUN_DIR" "$SECRETS_FILE"
   note "the API credential is the fake's own, made for this run and exported into this shell only"
 
-  # -------------------------------------------------------------------------
   step "2/8  No init — and why, because this is the confusing part"
-  # -------------------------------------------------------------------------
   rm -rf "$DEMO_TF_DIR/.terraform" "$DEMO_TF_DIR/.terraform.lock.hcl" \
          "$DEMO_TF_DIR/terraform.tfstate" "$DEMO_TF_DIR/terraform.tfstate.backup"
   warn "This demo does not run \`$TF_BIN init\`, on purpose."
@@ -255,23 +239,17 @@ cmd_run() {
   warn "effect\" warning. That is the override working, not a failure."
   good "nothing to initialise; skipping init is correct here"
 
-  # -------------------------------------------------------------------------
   step "3/8  terraform apply — create the cluster and the instance group"
-  # -------------------------------------------------------------------------
   tf apply -auto-approve -input=false -no-color -var endpoint="$ENDPOINT" \
     || die "terraform apply failed"
   good "applied"
 
-  # -------------------------------------------------------------------------
   step "4/8  terraform plan — THE MEASUREMENT"
-  # -------------------------------------------------------------------------
   printf '%s   Everything else here is setup. This is the claim: a plan straight after an\n' "$DIM"
   printf '   apply, with the configuration untouched, must report no changes. Exit code 0\n'
   printf '   means no changes, 2 means changes, 1 means error.%s\n' "$R"
-  set +e
-  tf plan -detailed-exitcode -input=false -no-color -var endpoint="$ENDPOINT"
-  local plan_status=$?
-  set -e
+  local plan_status
+  run_plan -detailed-exitcode -input=false -no-color -var endpoint="$ENDPOINT"
   case "$plan_status" in
     0) good "exit 0 — no changes. The round trip held." ;;
     2) die "exit 2 — the plan proposes changes after an apply that changed nothing.
@@ -288,32 +266,23 @@ cmd_run() {
   printf '   assumptions — not a tautology. None of them has been checked against a real\n'
   printf '   server.%s\n' "$R"
 
-  # -------------------------------------------------------------------------
   step "5/8  The round trip, made visible"
-  # -------------------------------------------------------------------------
   tf output -no-color cluster_type_round_trip
   note "different strings, no diff: the provider tolerates the platform's resolution"
   note "and records it, rather than proposing to change an immutable field forever."
 
-  # -------------------------------------------------------------------------
   step "6/8  Scale the cluster, then plan again"
-  # -------------------------------------------------------------------------
   local scaled=$(( ${DEMO_WORKERS:-2} + 2 ))
   note "worker pool 2 -> $scaled nodes"
   tf apply -auto-approve -input=false -no-color \
     -var endpoint="$ENDPOINT" -var worker_nodes="$scaled" || die "the scale apply failed"
-  set +e
-  tf plan -detailed-exitcode -input=false -no-color \
+  run_plan -detailed-exitcode -input=false -no-color \
     -var endpoint="$ENDPOINT" -var worker_nodes="$scaled" >/dev/null
-  plan_status=$?
-  set -e
   [ "$plan_status" = "0" ] || die "the plan after scaling proposes changes (exit $plan_status)"
   good "scaled, and the plan is still clean"
   tf output -no-color cluster
 
-  # -------------------------------------------------------------------------
   step "7/8  Import — drop the cluster from state and adopt it back"
-  # -------------------------------------------------------------------------
   tf state rm -no-color "${PROVIDER_NAME}_kubernetes_cluster.demo" >/dev/null \
     || die "could not remove the cluster from state"
   note "removed from state; the cluster still exists on the platform"
@@ -323,28 +292,15 @@ cmd_run() {
     || die "terraform import failed"
   good "imported — state rebuilt from the platform alone, with no configuration to copy from"
 
-  # An import has no configuration to reconcile against, so it adopts every node
-  # pool the platform materialized. This configuration manages one of them. The
-  # first plan after import therefore narrows the managed set, and that is
-  # correct rather than a defect — it is the ordinary "import, then plan, then
-  # make the configuration say what you want" loop. Showing it is more useful
-  # than hiding it: the apply that follows makes no API call at all, because
-  # every count already matches.
-  set +e
-  tf plan -detailed-exitcode -input=false -no-color \
+  # Import adopts every node pool the platform made and this configuration
+  # manages one, so the first plan narrows the set. Its apply makes no API call.
+  run_plan -detailed-exitcode -input=false -no-color \
     -var endpoint="$ENDPOINT" -var worker_nodes="$scaled" > "$RUN_DIR/import-plan.txt" 2>&1
-  plan_status=$?
-  set -e
   case "$plan_status" in
     0) good "the plan after import is already clean" ;;
     2)
-      # The one outcome that must never pass. A plan that proposes destroying
-      # and recreating a cluster nobody touched is the destructive wrong diff,
-      # and the first version of this provider did exactly that: an imported
-      # `cluster_type` held the platform's resolved reference while the
-      # configuration held the head form, and the RequiresReplace on that
-      # attribute turned the disagreement into a replacement. Asserting it here
-      # is what keeps the fix honest.
+      # A replacement here destroys a cluster nobody touched. An early version
+      # of the provider did that over cluster_type's resolved reference.
       if grep -qE 'must be replaced|forces replacement|destroy and then create' "$RUN_DIR/import-plan.txt"; then
         # awk rather than `sed -n '/x/,+12p'`: the +N address form is GNU-only
         # and this script has to run on a Mac.
@@ -364,6 +320,7 @@ cmd_run() {
       note "  node_pool narrows: import adopted every pool the platform materialized,"
       note "  and this configuration manages only the worker pool."
       note "Applying it touches no API — watch the request count."
+
       local before after
       before="$(wc -l < "$LOG_FILE")"
       tf apply -auto-approve -input=false -no-color \
@@ -371,27 +328,21 @@ cmd_run() {
         || die "the reconciling apply failed"
       after="$(wc -l < "$LOG_FILE")"
       note "requests during that apply: $(( after - before )) (reads only — no PATCH, no scale)"
-      set +e
-      tf plan -detailed-exitcode -input=false -no-color \
+
+      run_plan -detailed-exitcode -input=false -no-color \
         -var endpoint="$ENDPOINT" -var worker_nodes="$scaled" >/dev/null
-      plan_status=$?
-      set -e
       [ "$plan_status" = "0" ] || die "the plan after reconciling still proposes changes (exit $plan_status)"
       good "reconciled, and the plan is clean"
       ;;
     *) die "the plan after import failed with exit $plan_status" ;;
   esac
 
-  # -------------------------------------------------------------------------
   step "8/8  terraform destroy"
-  # -------------------------------------------------------------------------
   tf destroy -auto-approve -input=false -no-color \
     -var endpoint="$ENDPOINT" -var worker_nodes="$scaled" || die "terraform destroy failed"
   good "destroyed"
 
-  # -------------------------------------------------------------------------
   step "What the fake saw"
-  # -------------------------------------------------------------------------
   local total mints
   total="$(wc -l < "$LOG_FILE" | tr -d ' ')"
   mints="$(grep -c 'POST /v1/regions/global/auth/token' "$LOG_FILE" || true)"

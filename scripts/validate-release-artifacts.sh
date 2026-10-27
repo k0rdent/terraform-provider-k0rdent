@@ -59,15 +59,16 @@ for platform in "${expected_platforms[@]}"; do
   fi
 
   expected_archives+=("$archive_name")
-  # The SBOM is covered by the same signed manifest as the archive it
-  # describes. An SBOM outside the manifest reads as provenance and carries
-  # none.
+
+  # Each SBOM is in the signed checksums with its archive. One outside them
+  # reads as provenance and carries none.
   sbom_name="${archive_name}.sbom.json"
   if [[ ! -f "$dist_dir/$sbom_name" ]]; then
     echo "release artifact validation: missing $sbom_name" >&2
     exit 1
   fi
   expected_archives+=("$sbom_name")
+
   binary="${provider}_v${version}"
   if [[ "$platform" == windows_* ]]; then
     binary="${binary}.exe"
@@ -122,18 +123,15 @@ if [[ "$require_signature" == true ]]; then
     echo "release artifact validation: missing detached signature $(basename "$signature_path")" >&2
     exit 1
   fi
-  # --status-fd, not a bare --verify. A bare verify succeeds for any key in
-  # the keyring, so a rotated or additional key passes validation and the
-  # release ships signed by something the registry namespace does not carry.
-  # VALIDSIG's first field is the key that made the signature, which is the
-  # signing subkey when there is one; the primary key is the last field.
+  # A bare --verify passes for any key in the keyring, so the VALIDSIG status
+  # line is matched against the release key: its first field is the signing
+  # subkey, its last the primary key.
   if [[ -n "${GPG_KEY_FINGERPRINT:-}" ]]; then
-    # gpg prints VALIDSIG as 40 uppercase hex digits. A fingerprint pasted with
-    # spaces or in lowercase still signs, so it is normalized before the match.
-    fpr="$(printf '%s' "$GPG_KEY_FINGERPRINT" | tr -d ' ' | tr '[:lower:]' '[:upper:]')"
+    # VALIDSIG is 40 uppercase hex digits, with no spaces.
+    fingerprint="$(printf '%s' "$GPG_KEY_FINGERPRINT" | tr -d ' ' | tr '[:lower:]' '[:upper:]')"
     if ! gpg --batch --status-fd=1 --verify "$signature_path" "$checksum_path" 2>/dev/null |
-      grep -qE "^\[GNUPG:\] VALIDSIG (${fpr} .*|.* ${fpr})$"; then
-      echo "release artifact validation: $(basename "$signature_path") does not carry a valid signature from ${fpr}" >&2
+      grep -qE "^\[GNUPG:\] VALIDSIG (${fingerprint} .*|.* ${fingerprint})$"; then
+      echo "release artifact validation: $(basename "$signature_path") does not carry a valid signature from ${fingerprint}" >&2
       exit 1
     fi
   else

@@ -42,7 +42,7 @@ run() { say "$*"; "$@"; }
 stop() { printf '\n%s\n' "$*" >&2; exit 1; }
 
 setup() {
-  local ref="${1:-origin/main}" repo run_dir sha f d
+  local ref="${1:-origin/main}" repo run_dir sha tfvars_file example
   repo="$(git -C "$here" rev-parse --show-toplevel 2>/dev/null)" ||
     stop "setup works from a clone. Run it as examples/walkthrough/walkthrough.sh setup there."
 
@@ -70,10 +70,10 @@ setup() {
     "  dev_overrides { \"k0rdent/k0rdent\" = \"$run_dir/bin\" }" \
     '  direct {}' '}' > "$run_dir/terraform.rc"
 
-  for f in "$run_dir"/walkthrough/*/terraform.tfvars; do
-    d="$(basename "$(dirname "$f")")"
-    if [[ -f "$config/$d.tfvars" ]]; then
-      run cp "$config/$d.tfvars" "$f"
+  for tfvars_file in "$run_dir"/walkthrough/*/terraform.tfvars; do
+    example="$(basename "$(dirname "$tfvars_file")")"
+    if [[ -f "$config/$example.tfvars" ]]; then
+      run cp "$config/$example.tfvars" "$tfvars_file"
     fi
   done
 
@@ -89,10 +89,12 @@ ready() {
   [[ -f "$rc" ]] ||
     stop "This isn't a run folder. Make one with walkthrough.sh setup from a clone."
   [[ -d "$here/$1" ]] || stop "No directory $1 in $here."
+
   [[ "${TF_CLI_CONFIG_FILE:-}" == "$rc" && -n "${K0RDENT_ENDPOINT:-}" ]] ||
     stop "This shell isn't set up for this run folder. Run . ./setup.sh in $here first."
   [[ -n "${K0RDENT_CLIENT_SECRET:-}${K0RDENT_API_KEY:-}" ]] ||
     stop "No credential in this shell. Run . ./setup.sh in $here first."
+
   if command -v "$tf" >/dev/null 2>&1; then
     :
   elif command -v tofu >/dev/null 2>&1; then
@@ -100,6 +102,7 @@ ready() {
   else
     stop "Neither terraform nor tofu is on PATH. See docs/support-matrix.md."
   fi
+
   if grep -Eq '^prefix *= *""' "$here/$1/terraform.tfvars" 2>/dev/null; then
     stop "Fill in $1/terraform.tfvars first. Its plan names each value."
   fi
@@ -134,6 +137,7 @@ main() {
     up | check | down) [[ -n "$dir" ]] || stop "Usage: $0 $cmd <directory>" ;;
     *) stop "Usage: $0 setup [ref] | up <directory> | check <directory> | down <directory>" ;;
   esac
+
   shift 2
   ready "$dir"
   say "cd $here/$dir"

@@ -2,13 +2,11 @@
 #
 # Fetches the pinned syft release, which goreleaser shells out to for the
 # SBOMs, and prints the directory it's in. Each run downloads into a new
-# private directory and checks the archive against the checksum written here,
-# so a changed download fails instead of running, and nothing left over from
-# an earlier run is used. The release signing job runs it, so what it installs
-# runs beside the signing key.
+# private directory and checks the archive against the checksum written here.
+# The release signing job runs it, so what it installs runs beside the key.
 #
-# anchore/sbom-action/download-syft did this before. Pinning that action to a
-# commit didn't pin syft: it runs the install.sh on syft's main branch.
+# Not anchore/sbom-action/download-syft: pinning that action to a commit
+# doesn't pin syft, because it runs the install.sh on syft's main branch.
 #
 # Usage: dir="$(scripts/install-syft.sh)" && PATH="$dir:$PATH" goreleaser ...
 # then remove "$dir".
@@ -35,20 +33,23 @@ sha256() {
 case "$(uname -s)" in Linux) os=linux ;; Darwin) os=darwin ;; *) die "no syft build for $(uname -s)" ;; esac
 case "$(uname -m)" in x86_64 | amd64) arch=amd64 ;; arm64 | aarch64) arch=arm64 ;; *) die "no syft build for $(uname -m)" ;; esac
 platform="${os}_${arch}"
-want="$(syft_sha256 "$platform")" || die "no pinned checksum for $platform"
+want_sha="$(syft_sha256 "$platform")" || die "no pinned checksum for $platform"
 
-dir="$(mktemp -d "${TMPDIR:-/tmp}/syft.XXXXXX")" || die "could not create a directory for syft"
-chmod 700 "$dir"
+syft_dir="$(mktemp -d "${TMPDIR:-/tmp}/syft.XXXXXX")" || die "could not create a directory for syft"
+chmod 700 "$syft_dir"
 # A failed run leaves nothing behind. A good one leaves the directory to its
 # caller, which removes it once goreleaser is done.
-trap 'rm -rf "$dir"' EXIT
+trap 'rm -rf "$syft_dir"' EXIT
+
 archive="syft_${SYFT_VERSION}_${platform}.tar.gz"
-curl -fsSL --retry 3 -o "$dir/$archive" \
+curl -fsSL --retry 3 -o "$syft_dir/$archive" \
   "https://github.com/anchore/syft/releases/download/v${SYFT_VERSION}/$archive" ||
   die "couldn't download syft $SYFT_VERSION"
-got="$(sha256 "$dir/$archive")"
-[ "$got" = "$want" ] || die "$archive has checksum $got, want $want"
-tar -xzf "$dir/$archive" -C "$dir" syft || die "couldn't unpack syft"
-rm -f "$dir/$archive"
+
+got_sha="$(sha256 "$syft_dir/$archive")"
+[ "$got_sha" = "$want_sha" ] || die "$archive has checksum $got_sha, want $want_sha"
+
+tar -xzf "$syft_dir/$archive" -C "$syft_dir" syft || die "couldn't unpack syft"
+rm -f "$syft_dir/$archive"
 trap - EXIT
-printf '%s\n' "$dir"
+printf '%s\n' "$syft_dir"

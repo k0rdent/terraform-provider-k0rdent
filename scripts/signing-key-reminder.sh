@@ -20,6 +20,7 @@
 # label can put the label on an issue, and that issue is never edited or
 # closed. If several carry the label, the oldest of the workflow's own is
 # managed, and each other one gets a single comment pointing to it.
+#
 # Needs GH_TOKEN with issues: write, and GH_REPO.
 set -euo pipefail
 
@@ -28,8 +29,8 @@ label="signing-key-rotation"
 bot="github-actions[bot]"
 pointer="<!-- signing-key-rotation pointer -->"
 
-# Open issues with the label, oldest first: number, then author. Pull
-# requests come back from this endpoint too, so they're dropped.
+# Open labeled issues, oldest first, as number and author. This endpoint also
+# returns pull requests, so they're dropped.
 labeled="$(gh api "repos/$GH_REPO/issues?state=open&labels=$label&sort=created&direction=asc&per_page=100" \
   --jq '.[] | select(.pull_request | not) | "\(.number)\t\(.user.login)"')"
 number="$(awk -F'\t' -v bot="$bot" '$2 == bot { print $1; exit }' <<<"$labeled")"
@@ -37,12 +38,14 @@ number="$(awk -F'\t' -v bot="$bot" '$2 == bot { print $1; exit }' <<<"$labeled")
 # point_others: one comment on every other labeled issue, naming the managed
 # one. Never twice, and never an edit or a close.
 point_others() {
-  local other seen
+  local other pointer_count
   while IFS=$'\t' read -r other _; do
     [ -n "$other" ] && [ "$other" != "$number" ] || continue
-    seen="$(gh api "repos/$GH_REPO/issues/$other/comments?per_page=100" \
+
+    pointer_count="$(gh api "repos/$GH_REPO/issues/$other/comments?per_page=100" \
       --jq "[.[] | select(.user.login == \"$bot\" and (.body | contains(\"$pointer\")))] | length")"
-    [ "$seen" = 0 ] || continue
+    [ "$pointer_count" = 0 ] || continue
+
     gh issue comment "$other" --body "The signing key rotation is tracked in #$number, which the nightly keeps up to date. This issue isn't changed by it. $pointer"
   done <<<"$labeled"
 }
@@ -58,9 +61,10 @@ if [ -z "$due" ]; then
 fi
 
 # The title names what's due and the earliest date, the body every key.
-whats="$(cut -f1 <<<"$due" | sed 's/^signing subkey$/subkey/' | sort -u | paste -sd ',' - | sed 's/,/ and /')"
+due_keys="$(cut -f1 <<<"$due" | sed 's/^signing subkey$/subkey/' | sort -u | paste -sd ',' - | sed 's/,/ and /')"
 earliest="$(cut -f3 <<<"$due" | sort | head -n 1)"
-title="Rotate the release signing $whats (due $earliest)"
+title="Rotate the release signing $due_keys (due $earliest)"
+
 body="$(
   echo "The release signing key is due to rotate."
   echo
@@ -79,8 +83,9 @@ if [ -z "$number" ]; then
   echo "$url"
   number="${url##*/}"
 else
-  before="$(gh issue view "$number" --json title --jq '.title')"
+  title_before="$(gh issue view "$number" --json title --jq '.title')"
   gh issue edit "$number" --title "$title" --body "$body"
-  [ "$before" = "$title" ] || gh issue comment "$number" --body "Now due: $title. ${RUN_URL:-}"
+  [ "$title_before" = "$title" ] || gh issue comment "$number" --body "Now due: $title. ${RUN_URL:-}"
 fi
+
 point_others

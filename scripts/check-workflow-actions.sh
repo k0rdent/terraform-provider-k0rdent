@@ -1,29 +1,18 @@
 #!/usr/bin/env bash
 #
-# Refuses three things in .github/ that hand a secret to code nobody reviewed,
-# and a fourth that lets the vulnerability gate scan a Go the release doesn't
-# ship.
+# Refuses five things in .github/:
 #
-# 1. A `uses:` that names a tag or a branch. A tag moves, so `@v4` runs whatever
-#    its owner points it at on the day of the run, in a job that may hold the
-#    App key or the signing key. Every action outside this repository is pinned
-#    to a full commit, with the release it came from in a `# vX.Y.Z` comment.
-# 2. An actions/checkout that leaves its token in .git/config, where every later
-#    step can read it. There are no exceptions: a job that needs more history
-#    asks the checkout for it with fetch-depth.
-# 3. A signing job that leaves the keyring on the runner for the steps after it,
-#    the release's or the signing check's, or that restores a Go cache. Another job wrote that cache, and the build
-#    trusts a cache entry without rebuilding it, so whatever wrote it has a say
-#    in what gets signed.
+# 1. A `uses:` that names a tag or a branch. A tag moves, and the job may hold
+#    the App key or the signing key. Pin a full commit with a `# vX.Y.Z` comment.
+# 2. An actions/checkout that leaves its token in .git/config for every later
+#    step. A job that needs more history asks for it with fetch-depth.
+# 3. A signing job that leaves the keyring on the runner, or restores a Go
+#    cache another job wrote, which the build trusts without rebuilding.
 # 4. A release toolchain named anywhere but .go-release-version, or a `make
-#    vulncheck` that doesn't scan under it. govulncheck reports standard
-#    library advisories for the Go it runs under, so a gate run only under the
-#    CI build version says nothing about the standard library the signed
-#    binaries link.
-# 5. A setup-terraform or setup-opentofu that doesn't name an exact version,
-#    or two jobs that name different ones. Without a version they install
-#    whatever shipped that day, so a run that turns red can't be told apart
-#    from a new CLI, and two versions measure two things under one name.
+#    vulncheck` that doesn't scan under it. govulncheck only reports standard
+#    library advisories for the Go it runs under.
+# 5. A setup-terraform or setup-opentofu without an exact version, or two jobs
+#    on different versions.
 #
 # Usage: scripts/check-workflow-actions.sh [repository root]
 set -euo pipefail
@@ -34,13 +23,11 @@ problems=0
 report() { echo "workflow actions: $*" >&2; problems=$((problems + 1)); }
 
 # steps FILE CONDITION prints "LINE JOB" for each step in FILE where the awk
-# expression CONDITION is true. LINE is the line the step's "- " is on. A step
-# runs from that line to the next one indented no deeper than the dash, and
-# CONDITION sees its text in `step`, with comments stripped, so a setting that
-# only appears in a comment doesn't count. JOB is "-" outside a workflow's
-# jobs. Every check below that looks at a step goes through this one parser.
-# Most callers read it through process substitution, which hides a failure, so
-# a parser that fails stops the whole run instead of reporting nothing.
+# expression CONDITION is true. LINE is the line of the step's "- ", and the
+# step runs to the next line indented no deeper than the dash. CONDITION sees
+# the step's text, comments stripped, in `step`. JOB is "-" outside `jobs:`.
+# Callers read it through process substitution, which hides a failure, so a
+# parse failure kills the whole run.
 steps() {
   local cond out
   cond="$(printf '%s' "$2" | tr '\n' ' ')"
@@ -72,21 +59,20 @@ steps() {
 first() { local row="${1%%$'\n'*}"; printf '%s' "${row%% *}"; }
 
 files=()
-while IFS= read -r f; do files+=("$f"); done < <(
+while IFS= read -r file; do files+=("$file"); done < <(
   find "$root/.github/workflows" "$root/.github/actions" -type f \
     \( -name '*.yml' -o -name '*.yaml' \) 2>/dev/null | sort
 )
 [ "${#files[@]}" -gt 0 ] || { report "no workflow files under $root/.github"; exit 1; }
 
-for f in "${files[@]}"; do
-  rel="${f#"$root"/}"
+for file in "${files[@]}"; do
+  rel="${file#"$root"/}"
 
   # 1. Every non-local action is a 40-hex commit with a version comment.
   # The regular expression is bash's, not awk's: mawk on the runner has no {40}.
-  # awk finds each `uses:` key, block or flow style, quoted or not, and prints
-  # its value. A line that says uses followed by a colon in any other shape is
-  # printed as unread and refused, so a layout this parser doesn't know fails
-  # the check instead of slipping past it.
+  # awk prints each `uses:` value, block or flow style, quoted or not. Any other
+  # line with a uses key is printed as unread and refused, so an unknown layout
+  # fails instead of slipping past.
   pin='^[^@[:space:]]+@[0-9a-f]{40}[[:space:]]+#[[:space:]]*v[0-9]+\.[0-9]+\.[0-9]+([[:space:]]|$)'
   while IFS=' ' read -r line kind value; do
     if [ "$kind" = unread ]; then
@@ -103,19 +89,18 @@ for f in "${files[@]}"; do
       if (lead ~ /[{]/) sub(/[[:space:]]*[}].*$/, "", v)
       print NR, "value", v; next
     }
-    (" " $0) ~ /[^A-Za-z0-9_-]["\047]?uses["\047]?[[:space:]]*:/ { print NR, "unread" }' "$f")
+    (" " $0) ~ /[^A-Za-z0-9_-]["\047]?uses["\047]?[[:space:]]*:/ { print NR, "unread" }' "$file")
 
   # 2. Every checkout says persist-credentials: false. Comments don't count.
   while IFS=' ' read -r line job; do
     report "$rel:$line actions/checkout in job $job keeps its credentials. Add persist-credentials: false"
-  done < <(steps "$f" '
+  done < <(steps "$file" '
     step ~ /uses["\047]?[[:space:]]*:[[:space:]]*["\047]?actions\/checkout@/ &&
     step !~ /persist-credentials["\047]?[[:space:]]*:[[:space:]]*["\047]?false/')
 done
 
-# 3. A job that holds the signing key removes the keyring, always, before
-#    anything after it runs. In the release, upload-artifact is the step that
-#    follows signing.
+# 3. A job that holds the signing key always removes the keyring before
+#    anything after it runs. In the release, upload-artifact follows signing.
 check="$root/.github/workflows/release-signing-check.yml"
 if [ -f "$check" ]; then
   if [ -z "$(first "$(steps "$check" 'job == "check-signing-key" &&
@@ -142,11 +127,13 @@ if [ -f "$dispatch" ]; then
     step ~ /rm -rf "\$RUNNER_TEMP\/gnupg"/')")"
   upload="$(first "$(steps "$dispatch" "$signing"' &&
     step ~ /uses["\047]?[[:space:]]*:[[:space:]]*["\047]?actions\/upload-artifact@/')")"
+
   if [ -z "$cleanup" ]; then
     report "release-dispatch.yml build-signed-artifacts has no 'if: always()' step that stops gpg-agent and removes \$RUNNER_TEMP/gnupg"
   elif [ -n "$upload" ] && [ "$cleanup" -gt "$upload" ]; then
     report "release-dispatch.yml build-signed-artifacts removes the keyring after upload-artifact runs"
   fi
+
   # setup-go caches unless told not to, so the setting has to be there.
   while IFS=' ' read -r line _; do
     report "release-dispatch.yml:$line build-signed-artifacts sets up Go with a cache. Add cache: false"
@@ -161,12 +148,10 @@ release_go=""
 [[ "$release_go" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] ||
   report ".go-release-version is missing or doesn't hold one Go version such as 1.27.2"
 
-# A go-version other than the workflow's GO_VERSION is a second place a
-# toolchain is decided, whether it's a number or a word like stable. The build
-# floor comes from each workflow's GO_VERSION, and the release Go from the file
-# through go-version-file.
-for f in "${files[@]}"; do
-  rel="${f#"$root"/}"
+# Any go-version but the workflow's GO_VERSION, a number or a word like
+# stable, is a second place the toolchain is decided.
+for file in "${files[@]}"; do
+  rel="${file#"$root"/}"
   while IFS=' ' read -r line value; do
     report "$rel:$line sets go-version to '$value'. Use \${{ env.GO_VERSION }} or go-version-file: .go-release-version"
   done < <(awk '
@@ -176,7 +161,7 @@ for f in "${files[@]}"; do
       if (!match(s, /[^A-Za-z0-9_-]["\047]?go-version["\047]?[[:space:]]*:[[:space:]]*/)) next
       v = substr(s, RSTART + RLENGTH)
       if (v !~ /^["\047]?[$][{][{][[:space:]]*env\.GO_VERSION[[:space:]]*[}][}]["\047]?[[:space:]]*([,}].*)?$/) print NR, v
-    }' "$f")
+    }' "$file")
 done
 
 # Every setup-go in the release workflow reads the file, and nothing else.
@@ -196,10 +181,13 @@ recipe="$(awk '
   /^vulncheck:/ { on = 1; next }
   on && /^[^\t]/ { exit }
   on { print }' "$root/Makefile" 2>/dev/null || true)"
+
 grep -Eq '^RELEASE_GO_VERSION[[:space:]]*[:?]?=.*\.go-release-version' "$root/Makefile" 2>/dev/null ||
   report "Makefile doesn't read RELEASE_GO_VERSION from .go-release-version"
+
 printf '%s\n' "$recipe" | grep -Fq 'GOTOOLCHAIN=go$(RELEASE_GO_VERSION) go run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION)' ||
   report "make vulncheck doesn't scan under the release toolchain (GOTOOLCHAIN=go\$(RELEASE_GO_VERSION))"
+
 awk '
   /^  vulncheck:/ { on = 1; next }
   on && /^  [A-Za-z0-9_-]+:/ { exit }
@@ -212,21 +200,25 @@ exact='["\047]?[0-9]+\.[0-9]+\.[0-9]+["\047]?([[:space:]]|$)'
 for cli in terraform:hashicorp/setup-terraform tofu:opentofu/setup-opentofu; do
   key="${cli%%:*}_version" action="${cli#*:}"
   versions=()
-  for f in "${files[@]}"; do
-    rel="${f#"$root"/}"
+
+  for file in "${files[@]}"; do
+    rel="${file#"$root"/}"
+
     while IFS=' ' read -r line _; do
       report "$rel:$line uses $action but doesn't pin $key to an exact version such as 1.2.3"
-    done < <(steps "$f" '
+    done < <(steps "$file" '
       step ~ /uses["\047]?[[:space:]]*:[[:space:]]*["\047]?'"${action//\//\\/}"'@/ &&
       step !~ /'"$key"'["\047]?[[:space:]]*:[[:space:]]*'"$exact"'/')
-    while IFS= read -r v; do versions+=("$v"); done < <(awk -v key="$key" '
+
+    while IFS= read -r version; do versions+=("$version"); done < <(awk -v key="$key" '
       /^[[:space:]]*#/ { next }
       {
         s = $0; sub(/[[:space:]]#.*$/, "", s)
         if (!match(s, "^[[:space:]]*[\"\047]?" key "[\"\047]?[[:space:]]*:[[:space:]]*")) next
         v = substr(s, RLENGTH + 1); gsub(/[\"\047[:space:]]/, "", v); print v
-      }' "$f")
+      }' "$file")
   done
+
   if [ "${#versions[@]}" -gt 0 ] && [ "$(printf '%s\n' "${versions[@]}" | sort -u | wc -l)" -gt 1 ]; then
     report "the workflows pin more than one ${cli%%:*} version: $(printf '%s\n' "${versions[@]}" | sort -u | tr '\n' ' ')"
   fi

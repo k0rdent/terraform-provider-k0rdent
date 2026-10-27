@@ -18,8 +18,8 @@ trap cleanup EXIT
 fail() { echo "signing-key-check-test: FAIL - $*" >&2; exit 1; }
 
 day=86400
-pass=throwaway-passphrase
-printf '%s' "$pass" >"$work/passphrase"
+passphrase=throwaway-passphrase
+printf '%s' "$passphrase" >"$work/passphrase"
 
 # make_key NAME [PARENT_ALGO] [PARENT_EXPIRY] [SUBKEY_EXPIRY]: a parent that
 # only certifies, 10 years, and a signing subkey, 2 years, the shape the
@@ -27,21 +27,23 @@ printf '%s' "$pass" >"$work/passphrase"
 make_key() {
   local home="$work/$1" algo="${2:-rsa2048}"
   install -d -m 700 "$home"
-  gpg --homedir "$home" --batch --pinentry-mode loopback --passphrase "$pass" \
+  gpg --homedir "$home" --batch --pinentry-mode loopback --passphrase "$passphrase" \
     --quick-generate-key "throwaway $1 <$1@example.invalid>" "$algo" cert "${3:-10y}" 2>/dev/null
   add_subkey "$1" rsa2048 sign "${4:-2y}"
 }
+
 # add_subkey NAME ALGO USAGE EXPIRY
 add_subkey() {
-  gpg --homedir "$work/$1" --batch --pinentry-mode loopback --passphrase "$pass" \
+  gpg --homedir "$work/$1" --batch --pinentry-mode loopback --passphrase "$passphrase" \
     --quick-add-key "$(fpr_of "$1")" "$2" "$3" "$4" 2>/dev/null
 }
+
 # subkey_fprs NAME: every subkey's fingerprint, oldest first.
 subkey_fprs() { gpg --homedir "$work/$1" --with-colons --list-keys 2>/dev/null | awk -F: '$1 == "sub" { s = 1; next } s && $1 == "fpr" { print $10; s = 0 }'; }
 fpr_of() { gpg --homedir "$work/$1" --with-colons --list-keys 2>/dev/null | awk -F: '$1 == "fpr" { print $10; exit }'; }
 public_of() { gpg --homedir "$work/$1" --armor --export "$(fpr_of "$1")" 2>/dev/null; }
-subkeys_of() { gpg --homedir "$work/$1" --batch --pinentry-mode loopback --passphrase "$pass" --armor --export-secret-subkeys "$(fpr_of "$1")"; }
-full_of() { gpg --homedir "$work/$1" --batch --pinentry-mode loopback --passphrase "$pass" --armor --export-secret-keys "$(fpr_of "$1")"; }
+subkeys_of() { gpg --homedir "$work/$1" --batch --pinentry-mode loopback --passphrase "$passphrase" --armor --export-secret-subkeys "$(fpr_of "$1")"; }
+full_of() { gpg --homedir "$work/$1" --batch --pinentry-mode loopback --passphrase "$passphrase" --armor --export-secret-keys "$(fpr_of "$1")"; }
 created_of() { gpg --homedir "$work/$1" --with-colons --list-keys 2>/dev/null | awk -F: '$1 == "sub" { print $6 }' | tail -n 1; }
 
 # run_secret OUT PUBLIC_FILE SECRET FINGERPRINT [PASSPHRASE_FILE]: the secret
@@ -54,6 +56,7 @@ run_secret() {
   GNUPGHOME="$home" GPG_PRIVATE_KEY="$secret" GPG_KEY_FINGERPRINT="$fpr" GPG_PASSPHRASE_FILE="$passfile" \
     "$check" secret "$keyfile" >"$out" 2>&1
 }
+
 expect_fail() {
   local want="$1"
   shift
@@ -90,6 +93,7 @@ expect_fail "isn't a fingerprint" \
 for form in "$leak" "MY SECRET PASS PHRASE" mysecretpassphrase MYSECRETPASSPHRASE; do
   grep -Fiq "$form" "$work/out" && { cat "$work/out" >&2; fail "the check printed the fingerprint secret as $form"; }
 done
+
 # A hex value of the wrong key isn't printed either.
 expect_fail "doesn't name" \
   run_secret "$work/out" "$work/good.asc" "$(subkeys_of good)" "0123456789ABCDEF0123456789ABCDEF01234567"
@@ -119,6 +123,7 @@ make_key other
 public_of other >"$work/other.asc"
 expect_fail "doesn't name" \
   run_secret "$work/out" "$work/other.asc" "$(subkeys_of good)" "$good_fpr"
+
 # The fingerprint right, the key in the secret someone else's.
 expect_fail "holds no key" \
   run_secret "$work/out" "$work/good.asc" "$(subkeys_of other)" "$good_fpr"
@@ -133,7 +138,7 @@ expect_fail "Signing failed" \
 old_secret="$(subkeys_of good)"
 old_public="$work/good.asc"
 sleep 1
-gpg --homedir "$work/good" --batch --pinentry-mode loopback --passphrase "$pass" \
+gpg --homedir "$work/good" --batch --pinentry-mode loopback --passphrase "$passphrase" \
   --quick-add-key "$good_fpr" rsa2048 sign 2y 2>/dev/null
 public_of good >"$work/rotated.asc"
 expect_fail "GitHub has an old subkey" \
@@ -152,11 +157,12 @@ add_subkey other rsa2048 encr 2y
 public_of other >"$work/other-encr.asc"
 "$check" public "$work/other-encr.asc" >"$work/out" 2>&1 || { cat "$work/out" >&2; fail "a key with an encryption subkey was refused"; }
 grep -Fq "signing subkey $other_sign" "$work/out" || { cat "$work/out" >&2; fail "a newer encryption subkey was taken for the signing subkey"; }
+
 sleep 1
 add_subkey other rsa2048 sign 2y
 revoked="$(subkey_fprs other | tail -n 1)"
 printf 'key 3\nrevkey\ny\n0\n\ny\nsave\n' |
-  gpg --homedir "$work/other" --batch --pinentry-mode loopback --passphrase "$pass" \
+  gpg --homedir "$work/other" --batch --pinentry-mode loopback --passphrase "$passphrase" \
     --command-fd 0 --status-fd 2 --edit-key "$(fpr_of other)" 2>/dev/null
 public_of other >"$work/other-revoked.asc"
 gpg --batch --with-colons --show-keys "$work/other-revoked.asc" 2>/dev/null | grep -q '^sub:r:' ||
@@ -197,6 +203,7 @@ SIGNING_KEY_DUE_FILE="$work/due" SIGNING_KEY_NOW=$((long_created + 1830 * day)) 
   { cat "$work/out" >&2; fail "a parent past its rotation date failed instead of warning"; }
 grep -Fq "The parent $long_fpr was due to rotate" "$work/out" || { cat "$work/out" >&2; fail "a parent past 5 years didn't warn"; }
 grep -q "^parent	$long_fpr	" "$work/due" || { cat "$work/due" >&2; fail "a rotation-due parent wasn't written to the due file"; }
+
 SIGNING_KEY_NOW=$((long_created + (3650 - 30) * day)) "$check" public "$work/long.asc" >"$work/out" 2>&1 &&
   { cat "$work/out" >&2; fail "a parent 30 days from expiry passed"; }
 grep -Fq "The parent $long_fpr expires" "$work/out" || { cat "$work/out" >&2; fail "a parent near expiry didn't say so"; }
@@ -213,10 +220,12 @@ grep -Fq "::warning title=No expiry::" "$work/out" || { cat "$work/out" >&2; fai
 : >"$work/due"
 SIGNING_KEY_DUE_FILE="$work/due" "$check" public "$work/good.asc" >"$work/out" 2>&1 || fail "a fresh key failed"
 [ ! -s "$work/due" ] || { cat "$work/due" >&2; fail "a fresh key was reported due"; }
+
 SIGNING_KEY_DUE_FILE="$work/due" SIGNING_KEY_NOW=$((created + 400 * day)) "$check" public "$work/good.asc" >"$work/out" 2>&1 ||
   fail "a key past its rotation date failed"
 grep -q "^signing subkey	$(awk -F: '$1=="fpr"{f=$10} END{print f}' <(gpg --batch --with-colons --show-keys "$work/good.asc" 2>/dev/null))	" "$work/due" ||
   { cat "$work/due" >&2; fail "a rotation-due subkey wasn't written to the due file"; }
+
 : >"$work/due"
 SIGNING_KEY_DUE_FILE="$work/due" SIGNING_KEY_NOW=$((created + 700 * day)) "$check" public "$work/good.asc" >"$work/out" 2>&1 &&
   fail "a subkey near expiry passed"
@@ -263,16 +272,20 @@ case "$1 $2" in
 esac
 STUB
 chmod +x "$stub/gh"
+
+# remind RESULT DUE_FILE runs the reminder against the stub gh.
 remind() {
   GH_STATE="$work/gh" GH_REPO=k0rdent/terraform-provider-k0rdent PATH="$stub:$PATH" RESULT="$1" RUN_URL=https://example.invalid/run \
     "$PWD/scripts/signing-key-reminder.sh" "$2" >"$work/out" 2>&1 || { cat "$work/out" >&2; fail "the reminder failed"; }
 }
+
 calls() { grep -c "^issue $1" "$work/gh/calls" || true; }
 # add_issue NUMBER AUTHOR: an open issue carrying the label.
 add_issue() { mkdir -p "$work/gh/issues/$1" && echo "$2" >"$work/gh/issues/$1/author" && : >"$work/gh/issues/$1/open" && echo "theirs" >"$work/gh/issues/$1/title"; }
 is_open() { [ -f "$work/gh/issues/$1/open" ]; }
 pointers() { cat "$work/gh/issues/$1/pointers" 2>/dev/null || echo 0; }
 fresh() { rm -rf "$work/gh" && mkdir -p "$work/gh/issues" && : >"$work/gh/calls"; }
+
 fresh
 printf 'signing subkey\tABCD\t2027-10-23\t2028-10-22\n' >"$work/due1"
 
