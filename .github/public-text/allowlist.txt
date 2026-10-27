@@ -7,8 +7,8 @@
 # The rules themselves, and this file's reasons
 ^\.github/public-text/(denylist|allowlist|hashed)\.txt$:.
 
-# ticket: standards and encodings, not tickets
-.:^(SHA|UTF|RFC|ISO|HTTP|CVE|TLS|AES|ECDSA|RSA|PKCS|X|LICENSE|GPL|BSD|MIT|EC|P|ARM|AMD|ED|IPV|IPv|CP|DES|SHA3|HMAC|ECMA|DNS)-[0-9]+$
+# ticket: standards, encodings and advisory ids, not tickets
+.:^(SHA|UTF|RFC|ISO|HTTP|CVE|GO|TLS|AES|ECDSA|RSA|PKCS|X|LICENSE|GPL|BSD|MIT|EC|P|ARM|AMD|ED|IPV|IPv|CP|DES|SHA3|HMAC|ECMA|DNS)-[0-9]+$
 
 # email: noreply, the reserved example and test domains, git remotes
 .:^noreply@
@@ -16,6 +16,8 @@
 .:^git@github\.com$
 .:@[A-Za-z0-9-]+\.iam$
 .:@users\.noreply\.github\.com$
+# email: the address Dependabot signs its commits off with
+^commit [0-9a-f]{12}$:^support@github\.com$
 
 # private-ip: documentation CIDRs used anywhere (10.0.x.x, the kube service range)
 .:^(10\.0\.[0-9]+\.[0-9]+|10\.96\.0\.0)$

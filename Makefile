@@ -259,9 +259,10 @@ hygiene: ## Refuse a tree that has grown a cache, an archive or a build output
 	./scripts/repo-hygiene.sh
 
 # The text a public repository mustn't hold, from .github/public-text/. The
-# pre-commit hook runs the same two checks on what a commit adds. `make hooks`
-# sets core.hooksPath in the clone's config, so every worktree of the clone
-# runs the hook its own branch carries, and a branch without one runs none.
+# pre-commit hook runs the same two checks on what a commit adds, and the
+# commit-msg hook runs the first on its message. `make hooks` sets
+# core.hooksPath in the clone's config, so every worktree of the clone
+# runs the hooks its own branch carries, and a branch without them runs none.
 .PHONY: public-text-check
 public-text-check: ## Refuse ticket keys, internal links, people and other text that isn't for a public repo
 	./scripts/check-public-text.sh
@@ -279,9 +280,9 @@ secrets-test: ## Prove secrets-check fails on a planted token and passes the fak
 	./scripts/tests/test-secrets.sh
 
 .PHONY: hooks
-hooks: ## Opt in to the pre-commit hook in scripts/hooks for this clone
+hooks: ## Opt in to the pre-commit and commit-msg hooks in scripts/hooks for this clone
 	git config core.hooksPath scripts/hooks
-	@echo "pre-commit hook on. 'git config --unset core.hooksPath' turns it off."
+	@echo "pre-commit and commit-msg hooks on. 'git config --unset core.hooksPath' turns it off."
 
 .PHONY: doc-commands
 doc-commands: ## Refuse a # comment in a Markdown shell block, which breaks when pasted into zsh
