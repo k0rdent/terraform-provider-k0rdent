@@ -223,9 +223,31 @@ locals {
     } if s.port != "6443"
   ]
 
-  egress_rules = [
-    { name = "everything out", protocol = "any", destination = "0.0.0.0/0" },
+  # What nodes reach out to. Each rule names a destination port and no source
+  # port, the only shape whose replies the nico fabric lets back in, so no
+  # "any" rule.
+  egress_out = [
+    { name = "dns", protocol = "udp", port = "53" },
+    { name = "dns over tcp", protocol = "tcp", port = "53" },
+    { name = "ntp", protocol = "udp", port = "123" },
+    { name = "http", protocol = "tcp", port = "80" },
+    { name = "https", protocol = "tcp", port = "443" },
+    { name = "kubernetes api", protocol = "tcp", port = "6443" },
+    { name = "konnectivity", protocol = "tcp", port = "8132" },
+    { name = "nfs", protocol = "tcp", port = "2049" },
   ]
+
+  # Ingress rules are stateless, so each service's replies need a rule from
+  # its own port.
+  egress_replies = [
+    for service, s in var.ingress_services : {
+      name        = "${service} replies"
+      protocol    = s.protocol
+      source_port = s.port
+    }
+  ]
+
+  egress_rules = concat(local.egress_out, local.egress_replies)
 }
 
 # Filters node interfaces on a nico VPC. It doesn't filter the cluster's
@@ -272,11 +294,13 @@ resource "k0rdent_security_group" "this" {
     for_each = local.egress_rules
 
     content {
-      name               = egress.value.name
-      action             = "permit"
-      protocol           = egress.value.protocol
-      source_prefix      = "0.0.0.0/0"
-      destination_prefix = egress.value.destination
+      name                   = egress.value.name
+      action                 = "permit"
+      protocol               = egress.value.protocol
+      source_prefix          = "0.0.0.0/0"
+      destination_prefix     = "0.0.0.0/0"
+      source_port_range      = try(egress.value.source_port, null)
+      destination_port_range = try(egress.value.port, null)
     }
   }
 }
