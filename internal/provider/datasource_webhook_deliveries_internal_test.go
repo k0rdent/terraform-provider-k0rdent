@@ -17,6 +17,11 @@ import (
 
 const testDeliveriesSubscription = "0f8fad5b-d9cb-469f-a165-70867728950e"
 
+// maxDeliveryRequests is more delivery requests than any read here needs.
+// Past it the server fails the test and answers an error, so a read that
+// doesn't stop fails at once rather than when the test times out.
+const maxDeliveryRequests = 10
+
 // deliveriesAPI serves one subscription and its delivery history, newest
 // first, at most page rows a page whatever `limit` asks for. It records the
 // `limit` and `cursor` of every delivery request.
@@ -59,7 +64,13 @@ func (a *deliveriesAPI) serve(t *testing.T) *httptest.Server {
 		a.requests++
 		a.limits = append(a.limits, limit)
 		a.cursors = append(a.cursors, cursor)
+		requests := a.requests
 		a.mu.Unlock()
+		if requests > maxDeliveryRequests {
+			t.Errorf("delivery request %d: the read didn't stop", requests)
+			writeTestError(t, w, http.StatusInternalServerError, "too many requests")
+			return
+		}
 
 		start := 0
 		if cursor != "" && !a.repeat {
@@ -237,7 +248,10 @@ func TestWebhookDeliveriesOfAnUnknownSubscriptionIsAnError(t *testing.T) {
 }
 
 // Every field the contract gives a delivery reaches the model, and the
-// optional ones it leaves out read as null.
+// optional ones it leaves out read as null. `next_attempt_at` reads as null
+// unless a retry is scheduled: the platform keeps one on every delivery, from
+// when it was queued or claimed, and doesn't clear it when the delivery
+// settles.
 func TestWebhookDeliveriesCarryEveryField(t *testing.T) {
 	t.Parallel()
 	api := &deliveriesAPI{page: 2, deliveries: []map[string]any{
@@ -245,13 +259,19 @@ func TestWebhookDeliveriesCarryEveryField(t *testing.T) {
 			"last_error": "endpoint answered 503", "created_at": "2026-10-26T12:00:00Z", "settled_at": nil,
 			"next_attempt_at": "2026-10-26T12:10:00Z", "retry_scheduled": true},
 		{"id": "00000000-0000-4000-8000-000000000002", "status": "queued", "attempts": 0,
-			"created_at": "2026-10-26T11:00:00Z", "retry_scheduled": false},
+			"created_at": "2026-10-26T11:00:00Z", "next_attempt_at": "2026-10-26T11:00:00Z", "retry_scheduled": false},
+		{"id": "00000000-0000-4000-8000-000000000003", "status": "failed", "attempts": 8,
+			"last_error": "dial tcp: connection refused", "created_at": "2026-10-26T10:00:00Z",
+			"settled_at": "2026-10-26T10:30:00Z", "next_attempt_at": "2026-10-26T10:31:00Z", "retry_scheduled": false},
+		{"id": "00000000-0000-4000-8000-000000000004", "status": "delivered", "attempts": 3, "response_code": 200,
+			"created_at": "2026-10-26T09:00:00Z", "settled_at": "2026-10-26T09:05:00Z",
+			"next_attempt_at": "2026-10-26T09:06:00Z", "retry_scheduled": false},
 	}}
 	got, resp := readDeliveries(t, api, nil)
 	if resp.Diagnostics.HasError() {
 		t.Fatalf("read: %v", resp.Diagnostics.Errors())
 	}
-	if len(got.Deliveries) != 2 {
+	if len(got.Deliveries) != 4 {
 		t.Fatalf("read %d deliveries", len(got.Deliveries))
 	}
 	failed, queued := got.Deliveries[0], got.Deliveries[1]
@@ -264,5 +284,10 @@ func TestWebhookDeliveriesCarryEveryField(t *testing.T) {
 	if !queued.ResponseCode.IsNull() || !queued.LastError.IsNull() || !queued.SettledAt.IsNull() ||
 		!queued.NextAttemptAt.IsNull() || queued.RetryScheduled.ValueBool() {
 		t.Errorf("queued delivery = %+v", queued)
+	}
+	for _, settled := range got.Deliveries[2:] {
+		if !settled.NextAttemptAt.IsNull() || settled.SettledAt.IsNull() {
+			t.Errorf("%s delivery = %+v, want a settled one with no next attempt", settled.Status, settled)
+		}
 	}
 }
