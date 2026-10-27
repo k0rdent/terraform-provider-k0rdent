@@ -322,3 +322,62 @@ func TestACancelThatLosesTheRaceSettlesActiveAndSucceeded(t *testing.T) {
 	}
 	t.Fatal("the cancel never settled")
 }
+
+// The platform clears a cancelled operation's targets when the cancel
+// settles, not when it's asked for: until then a scale's pool still reads its
+// targetNodeCount and an upgrade its target version. Afterwards the pool keeps
+// its old count and the cluster its old version.
+func TestACancelKeepsTheTargetsUntilItSettles(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		start func(t *testing.T, s *state) (int, map[string]any)
+	}{
+		{"scale", func(t *testing.T, s *state) (int, map[string]any) {
+			return call(t, s.scaleCluster, http.MethodPost, "c", `{"nodePools":[{"id":"workers","nodeCount":3}]}`)
+		}},
+		{"upgrade", func(t *testing.T, s *state) (int, map[string]any) { return upgrade(t, s, inferenceV4) }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := newState()
+			createAt(t, s, inferenceV2, 2)
+			call(t, s.updateCluster, http.MethodPatch, "c", `{"displayName":"`+neverSettles+`"}`)
+			if code, out := tc.start(t, s); code != http.StatusOK {
+				t.Fatalf("%s: %d %v", tc.name, code, out)
+			}
+			if code, out := cancelNow(t, s); code != http.StatusAccepted {
+				t.Fatalf("cancel: %d %v", code, out)
+			}
+			_, winding := read(t, s)
+			workers := func(out map[string]any) map[string]any {
+				pools, ok := out["nodePools"].([]any)
+				if !ok {
+					t.Fatalf("nodePools = %v", out["nodePools"])
+				}
+				for _, p := range pools {
+					if pool := object(t, p); pool["id"] == "workers" {
+						return pool
+					}
+				}
+				t.Fatalf("no workers pool: %v", out)
+				return nil
+			}
+			if tc.name == "scale" && workers(winding)["targetNodeCount"] != float64(3) {
+				t.Errorf("winding down, the pool reads %v", workers(winding))
+			}
+			if tc.name == "upgrade" && winding["targetClusterTypeVersionId"] != inferenceV4 {
+				t.Errorf("winding down, the target version reads %v", winding["targetClusterTypeVersionId"])
+			}
+
+			out := settleNow(t, s)
+			if out["state"] != "failed" {
+				t.Fatalf("settled: %v", out)
+			}
+			if pool := workers(out); pool["nodeCount"] != float64(2) || pool["targetNodeCount"] != nil {
+				t.Errorf("settled, the pool reads %v", pool)
+			}
+			if out["targetClusterTypeVersionId"] != nil || !strings.HasSuffix(fmt.Sprint(out["clusterType"]), inferenceV2) {
+				t.Errorf("settled bound to %v, target %v", out["clusterType"], out["targetClusterTypeVersionId"])
+			}
+		})
+	}
+}
