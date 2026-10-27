@@ -64,6 +64,7 @@ listShareTypes
 listSubnets
 listVPCPeerings
 listVPCs
+listWebhookDeliveries
 listWebhookSubscriptions
 mintToken
 rotateWebhookSubscriptionSecret

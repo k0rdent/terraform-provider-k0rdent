@@ -84,6 +84,9 @@ var relatedPages = map[string][]relatedLink{
 		{"data-sources/vpcs", "lists the VPCs `vpc` takes."},
 		{"data-sources/effective_security_groups", "reports what actually filters a VPC's interfaces."},
 	},
+	"resources/webhook_subscription": {
+		{"data-sources/webhook_deliveries", "lists the subscription's recent deliveries, and what the endpoint answered each."},
+	},
 
 	"data-sources/address_pool":  {{"resources/subnet", "takes the pool's `self_link` in `address_pool`."}},
 	"data-sources/address_pools": {{"resources/subnet", "takes a pool's `self_link` in `address_pool`."}},
@@ -190,6 +193,13 @@ var relatedPages = map[string][]relatedLink{
 	},
 	"data-sources/vpc_peerings": {
 		{"data-sources/vpcs", "lists the VPCs a peering joins."},
+	},
+	"data-sources/webhook_deliveries": {
+		{"resources/webhook_subscription", "manages the subscription whose deliveries this reads."},
+		{"data-sources/webhook_subscription", "reads the endpoint's rolled-up delivery health."},
+	},
+	"data-sources/webhook_subscription": {
+		{"data-sources/webhook_deliveries", "lists the subscription's recent deliveries, and what the endpoint answered each."},
 	},
 
 	"actions/cluster_cancel_operation": {

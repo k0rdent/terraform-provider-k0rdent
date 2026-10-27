@@ -10,6 +10,8 @@ import (
 	"net/url"
 	"slices"
 	"sort"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -29,6 +31,8 @@ import (
 //   - A rotation keeps the previous secret for 24 hours unless asked not to,
 //     and `previous_secret_expires_at` is reported only while that's open.
 //   - A delete is synchronous: 204, and the next list doesn't have it.
+//   - A subscription's delivery history is read by its id, and an id the
+//     caller's organization doesn't have answers an empty page, not a 404.
 type fakeWebhook struct {
 	id             string
 	url            string
@@ -39,6 +43,8 @@ type fakeWebhook struct {
 	createdAt      time.Time
 	rotatedAt      *time.Time
 	previousUntil  *time.Time
+	// deliveries is the delivery history, newest first.
+	deliveries []map[string]any
 
 	// state and reads are what the object table needs from every row. A
 	// subscription has no lifecycle state of its own, so it's always
@@ -161,6 +167,9 @@ func (s *state) createWebhook(w http.ResponseWriter, r *http.Request) {
 	if body.Secret != nil {
 		h.secret = *body.Secret
 	}
+	if strings.Contains(h.url, webhookDeliveryHistory) {
+		h.deliveries = seededDeliveries(h.createdAt)
+	}
 	webhookKind.put(s.global(), "", h.id, h)
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"id":             h.id,
@@ -236,6 +245,108 @@ func (s *state) rotateWebhook(w http.ResponseWriter, r *http.Request) {
 		answer["previous_secret_expires_at"] = h.previousUntil.Format(time.RFC3339)
 	}
 	writeJSON(w, http.StatusOK, answer)
+}
+
+// webhookDeliveryHistory, in a subscription's URL, gives it a delivery
+// history when it's created. The fake sends no events, so a subscription
+// without it has none, as the platform answers for an endpoint nothing has
+// been sent to yet.
+const webhookDeliveryHistory = "fake-delivery-history"
+
+// webhookDeliveryPage is the most deliveries the fake answers a page with,
+// whatever `limit` asks for.
+// ASSUMPTION: the contract calls `limit` the page size and doesn't promise a
+// page that full. A page this small means a handful of deliveries spans
+// several, so a provider that reads one page and stops fails here.
+const webhookDeliveryPage = 2
+
+// seededDeliveries is one of every shape the contract gives a delivery,
+// newest first: queued and never tried, failing with a retry due, failed with
+// no answer and dead-lettered, and delivered twice. `response_code` and
+// `last_error` are left out where there's none, as the contract's optional
+// fields, and `settled_at` is null until the delivery settles.
+//
+// `next_attempt_at` is on every row, as the platform stores it: the time a
+// delivery was queued, then when a worker's claim on it lapses or its next
+// retry is due, never cleared once it settles.
+func seededDeliveries(created time.Time) []map[string]any {
+	after := func(minutes int) string {
+		return created.Add(time.Duration(minutes) * time.Minute).Format(time.RFC3339)
+	}
+	return []map[string]any{
+		{"id": newUUID(), "status": "queued", "attempts": 0, "created_at": after(5),
+			"settled_at": nil, "next_attempt_at": after(5), "retry_scheduled": false},
+		{"id": newUUID(), "status": "failed", "attempts": 2, "response_code": 503,
+			"last_error": "endpoint answered 503 Service Unavailable", "created_at": after(4),
+			"settled_at": nil, "next_attempt_at": after(10), "retry_scheduled": true},
+		{"id": newUUID(), "status": "failed", "attempts": 8,
+			"last_error": "dial tcp: connection refused", "created_at": after(3),
+			"settled_at": after(9), "next_attempt_at": after(11), "retry_scheduled": false},
+		{"id": newUUID(), "status": "delivered", "attempts": 1, "response_code": 200, "created_at": after(2),
+			"settled_at": after(2), "next_attempt_at": after(4), "retry_scheduled": false},
+		{"id": newUUID(), "status": "delivered", "attempts": 1, "response_code": 204, "created_at": after(1),
+			"settled_at": after(1), "next_attempt_at": after(3), "retry_scheduled": false},
+	}
+}
+
+// listWebhookDeliveries answers a page of one subscription's history, newest
+// first, behind a cursor that's valid only for that subscription.
+//
+// What it follows from the contract: `limit` is 1 to 200 and 50 by default,
+// and anything else is a 400. So is a repeated parameter, and a cursor this
+// server can't decode. A present but empty `cursor=` is read as absent. An id
+// the caller's organization doesn't have is an empty page, not an error.
+// ASSUMPTION: an id that isn't a UUID is a 400, as a parameter the operation
+// can't read.
+func (s *state) listWebhookDeliveries(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	for name, values := range q {
+		if len(values) > 1 {
+			apiError(w, http.StatusBadRequest, "INVALID_ARGUMENT", name+" is repeated; send each parameter once")
+			return
+		}
+	}
+	id := r.PathValue("id")
+	if len(id) != 36 || strings.Count(id, "-") != 4 {
+		apiError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "id is not a UUID")
+		return
+	}
+	limit := 50
+	if raw := q.Get("limit"); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil || n < 1 || n > 200 {
+			apiError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "limit must be between 1 and 200, got "+raw)
+			return
+		}
+		limit = n
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var history []map[string]any
+	if h, ok := webhookKind.rows(s.global())[at{id: id}]; ok {
+		history = h.deliveries
+	}
+	start := 0
+	if raw := q.Get("cursor"); raw != "" {
+		owner, offset, found := strings.Cut(raw, ":")
+		n, err := strconv.Atoi(offset)
+		if !found || owner != id || err != nil || n < 0 || n > len(history) {
+			apiError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "cursor is not one this server issued")
+			return
+		}
+		start = n
+	}
+	end := min(start+min(limit, webhookDeliveryPage), len(history))
+	page := make([]any, 0, end-start)
+	for _, d := range history[start:end] {
+		page = append(page, d)
+	}
+	body := map[string]any{"deliveries": page}
+	if end < len(history) {
+		body["next_cursor"] = id + ":" + strconv.Itoa(end)
+	}
+	writeJSON(w, http.StatusOK, body)
 }
 
 // storedWebhook is the harness's read of one subscription, the route the API

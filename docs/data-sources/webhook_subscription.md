@@ -59,3 +59,4 @@ data "k0rdent_webhook_subscription" "cluster_events" {
 
 - [`k0rdent_webhook_subscription`](../resources/webhook_subscription.md) resource: manages one.
 - [`k0rdent_webhook_subscriptions`](../data-sources/webhook_subscriptions.md) data source: lists every one.
+- [`k0rdent_webhook_deliveries`](../data-sources/webhook_deliveries.md) data source: lists the subscription's recent deliveries, and what the endpoint answered each.

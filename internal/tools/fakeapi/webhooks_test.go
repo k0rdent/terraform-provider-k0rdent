@@ -2,8 +2,10 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -100,5 +102,95 @@ func TestWebhookSubscriptionLifecycle(t *testing.T) {
 	}
 	if code, _ := send(http.MethodGet, "/_harness/store"+hooks+"/"+id, secrets.OwnerToken, ""); code != http.StatusNotFound {
 		t.Errorf("the store still has the deleted subscription: %d", code)
+	}
+}
+
+// A marked subscription's delivery history, through the API: newest first,
+// two to a page behind a cursor only that subscription takes, with the
+// contract's refusals. Every delivery has a `next_attempt_at`, as the
+// platform stores one. An id the caller's organization doesn't have is an
+// empty page, and an unmarked subscription has no history.
+func TestWebhookDeliveryHistory(t *testing.T) {
+	h, secrets := guardedFake(t)
+	send := func(method, path, body string) (int, map[string]any) {
+		t.Helper()
+		req := httptest.NewRequest(method, path, strings.NewReader(body))
+		req.Host = "127.0.0.1:" + testPort
+		req.Header.Set("Authorization", "Bearer "+secrets.AccessToken)
+		rec := serve(h, req)
+		out := map[string]any{}
+		if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+			t.Fatalf("%s %s: %v: %s", method, path, err, rec.Body)
+		}
+		return rec.Code, out
+	}
+	const hooks = "/v1/regions/global/notifications/webhooks"
+	create := func(url string) string {
+		t.Helper()
+		code, created := send(http.MethodPost, hooks, `{"url":"`+url+`"}`)
+		id, ok := created["id"].(string)
+		if code != http.StatusCreated || !ok {
+			t.Fatalf("create %s: %d %v", url, code, created)
+		}
+		return id
+	}
+	marked := create("https://hooks.example.test/" + webhookDeliveryHistory)
+	plain := create("https://hooks.example.test/plain")
+
+	var statuses, created []string
+	cursor := ""
+	for pages := 0; ; pages++ {
+		if pages > 5 {
+			t.Fatal("the history didn't end")
+		}
+		path := hooks + "/" + marked + "/deliveries?limit=50"
+		if cursor != "" {
+			path += "&cursor=" + cursor
+		}
+		code, page := send(http.MethodGet, path, "")
+		rows, ok := page["deliveries"].([]any)
+		if code != http.StatusOK || !ok || len(rows) > webhookDeliveryPage {
+			t.Fatalf("%s: %d %v", path, code, page)
+		}
+		for _, r := range rows {
+			row, ok := r.(map[string]any)
+			if !ok {
+				t.Fatalf("a delivery that isn't an object: %v", r)
+			}
+			if row["next_attempt_at"] == nil {
+				t.Errorf("a delivery with no next_attempt_at, which the platform always has: %v", row)
+			}
+			statuses = append(statuses, fmt.Sprint(row["status"]))
+			created = append(created, fmt.Sprint(row["created_at"]))
+		}
+		next, more := page["next_cursor"].(string)
+		if !more {
+			break
+		}
+		cursor = next
+	}
+	if want := "[queued failed failed delivered delivered]"; fmt.Sprint(statuses) != want {
+		t.Errorf("statuses %v, want %s", statuses, want)
+	}
+	if !sort.IsSorted(sort.Reverse(sort.StringSlice(created))) {
+		t.Errorf("not newest first: %v", created)
+	}
+
+	for _, empty := range []string{plain, "0f8fad5b-d9cb-469f-a165-70867728950e"} {
+		code, page := send(http.MethodGet, hooks+"/"+empty+"/deliveries", "")
+		if rows, ok := page["deliveries"].([]any); code != http.StatusOK || !ok || len(rows) != 0 {
+			t.Errorf("%s: %d %v, want an empty page", empty, code, page)
+		}
+	}
+	if code, page := send(http.MethodGet, hooks+"/"+marked+"/deliveries?cursor=", ""); code != http.StatusOK || page["next_cursor"] == nil {
+		t.Errorf("an empty cursor: %d %v, want the first page", code, page)
+	}
+	for _, refused := range []string{
+		"?limit=0", "?limit=201", "?limit=x", "?limit=1&limit=2",
+		"?cursor=" + plain + ":2", "?cursor=nonsense",
+	} {
+		if code, _ := send(http.MethodGet, hooks+"/"+marked+"/deliveries"+refused, ""); code != http.StatusBadRequest {
+			t.Errorf("%s: %d, want 400", refused, code)
+		}
 	}
 }

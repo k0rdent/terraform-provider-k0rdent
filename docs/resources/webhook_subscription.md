@@ -96,6 +96,7 @@ Rotate once per overlap. Only the most recent previous secret is kept, so a seco
 
 - [`k0rdent_webhook_subscription`](../data-sources/webhook_subscription.md) data source: reads one this configuration doesn't manage.
 - [`k0rdent_webhook_subscription`](../list-resources/webhook_subscription.md) list resource: finds every one, for `terraform query` to adopt.
+- [`k0rdent_webhook_deliveries`](../data-sources/webhook_deliveries.md) data source: lists the subscription's recent deliveries, and what the endpoint answered each.
 
 ## Import
 

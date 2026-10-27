@@ -212,6 +212,7 @@ var specBindings = func() map[string]specBinding {
 	each([]string{"createWebhookSubscription", "rotateWebhookSubscriptionSecret"}, "body.secret", onResource(webhook, "secret_wo", asValue))
 	each([]string{"deleteWebhookSubscription", "rotateWebhookSubscriptionSecret"}, "path:id",
 		notConfigurable("the platform assigns a subscription's id, and an import checks it's a UUID before state holds it"))
+	b["listWebhookDeliveries path:id"] = onDataSource(webhookDeliveriesDataSourceSuffix, "subscription_id", asValue)
 	// Service accounts and their credentials, read inside an organization.
 	// The provider makes neither: the platform refuses that to a
 	// client_credentials login.

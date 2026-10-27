@@ -391,5 +391,6 @@ func (p *aiProvider) DataSources(_ context.Context) []func() datasource.DataSour
 		newShareTypeDataSource,
 		newWebhookSubscriptionDataSource,
 		newWebhookSubscriptionsDataSource,
+		newWebhookDeliveriesDataSource,
 	}
 }
