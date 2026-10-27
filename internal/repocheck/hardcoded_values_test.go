@@ -223,6 +223,7 @@ var inputClasses = map[attrRef]inputClass{
 	{"data source", "service_accounts", "status"}:                        free,
 
 	{"ephemeral resource", "cluster_kubeconfig", "cluster_id"}:  free,
+	{"ephemeral resource", "cluster_kubeconfig", "relay"}:       free,
 	{"data source", "cluster_kubeconfig", "cluster_id"}:         free,
 	{"data source", "cluster_kubeconfig", "id"}:                 free,
 	{"data source", "kubernetes_cluster", "id"}:                 free,

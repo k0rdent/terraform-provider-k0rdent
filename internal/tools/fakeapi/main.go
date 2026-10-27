@@ -51,6 +51,7 @@ import (
 	"flag"
 	"fmt"
 	"hash/fnv"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -180,7 +181,13 @@ func main() {
 			}
 		}()
 	}
-	handler := delayed(*latency, newHandler(newState(), secrets, strconv.Itoa(tcpAddr.Port), shutdown))
+	s := newState()
+	api, apiErr := startClusterAPI()
+	if apiErr != nil {
+		log.Fatalf("fakeapi: start the cluster API: %v", apiErr)
+	}
+	s.clusterAPI = api
+	handler := delayed(*latency, newHandler(s, secrets, strconv.Itoa(tcpAddr.Port), shutdown))
 	srv = &http.Server{Handler: handler} //nolint:gosec // local verification harness, no timeouts wanted
 
 	// The harness reads this line to learn the URL. os.Stdout is unbuffered, so
@@ -368,6 +375,7 @@ type cluster struct {
 
 	kubeconfigReads  int // kubeconfig reads since the cluster became active
 	kubeconfigIssued bool
+	kubeconfigServed int // for kubeconfigReissueDenied
 
 	// ceiling is the storage ceiling in GiB the cluster declares, 0 for none
 	// (v1.3.0-dev.4).
@@ -460,6 +468,9 @@ type state struct {
 	// organizations are the ones a project can be created in. See
 	// projects.go.
 	organizations map[string]bool
+
+	// Serves expiring kubeconfigs (clusterapi.go). Nil turns them off.
+	clusterAPI *clusterAPI
 }
 
 // scope is where a project-owned object lives: the region and the project its
@@ -1869,6 +1880,20 @@ func (s *state) serveKubeconfig(w http.ResponseWriter, r *http.Request, kid stri
 	}
 	if !c.kubeconfigReady() {
 		apiError(w, http.StatusNotFound, "NOT_FOUND", fmt.Sprintf("cluster %q has no kubeconfig", id))
+		return
+	}
+	c.kubeconfigServed++
+	if nameCarries(c.displayName, kubeconfigReissueDenied) && c.kubeconfigServed == 2 {
+		apiError(w, http.StatusForbidden, "PERMISSION_DENIED",
+			fmt.Sprintf("the caller may no longer read the kubeconfig of cluster %q", id))
+		return
+	}
+	if body, ok := s.expiringKubeconfig(c); ok {
+		w.Header().Set("Content-Type", "application/yaml")
+		w.WriteHeader(http.StatusOK)
+		if _, err := io.WriteString(w, body); err != nil {
+			log.Printf("fakeapi: write response: %v", err)
+		}
 		return
 	}
 

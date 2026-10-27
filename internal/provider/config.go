@@ -611,6 +611,9 @@ type Meta struct {
 	// addressPools is each address pool as this run read it, for the
 	// plan-time subnet check. See subnet_pool_check.go.
 	addressPools addressPoolMemo
+
+	// relays lets the kubeconfig ephemeral's Close find its relay.
+	relays relayRegistry
 }
 
 // RequireRegion returns the configured region, or an error diagnostic.

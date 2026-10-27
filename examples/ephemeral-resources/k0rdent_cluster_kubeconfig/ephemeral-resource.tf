@@ -26,6 +26,12 @@ ephemeral "k0rdent_cluster_kubeconfig" "elsewhere" {
   project    = "cp-research"
 }
 
+# For in-cluster work that can outlast the token, such as a long Helm install.
+ephemeral "k0rdent_cluster_kubeconfig" "long_install" {
+  cluster_id = "training-03"
+  relay      = true
+}
+
 # `cluster_ca_certificate` is already PEM, so it needs no base64decode. `raw`
 # holds the whole kubeconfig YAML.
 provider "kubernetes" {

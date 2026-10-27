@@ -34,6 +34,7 @@ var wantRequestRuleExemptions = []string{
 	`linters=[forbidigo] path=(_test\.go$|^internal/provider/transport\.go$)`,
 	`linters=[forbidigo] path=^internal/provider/(logging|retry)\.go$ text=RoundTrip`,
 	`linters=[forbidigo] path=^internal/k0rdent/auth\.go$ text=RoundTrip`,
+	`linters=[forbidigo] path=^internal/provider/kubeconfig_relay\.go$ text=RoundTrip`,
 	`linters=[forbidigo] path-except=^internal/`,
 }
 

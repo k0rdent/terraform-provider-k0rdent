@@ -67,6 +67,12 @@ linters:
       - linters: [forbidigo]
         path: ^internal/k0rdent/auth\.go$
         text: RoundTrip
+      # The kubeconfig relay sends on what a kubernetes provider or kubectl
+      # sent it, to the cluster's own API with the cluster's token. It never
+      # reaches the platform's API.
+      - linters: [forbidigo]
+        path: ^internal/provider/kubeconfig_relay\.go$
+        text: RoundTrip
       # The client's tests are copied from k0rdent-clients, which lints them
       # under its own configuration.
       - linters: [durationcheck, errcheck, govet, unconvert]

@@ -133,8 +133,9 @@ provider "helm" {
 ```
 
 - `cluster_ca_certificate` is already PEM, so it needs no `base64decode`.
-- The token is short-lived and doesn't refresh. If in-cluster work takes long,
-  run it separately.
+- The token is short-lived and can't be renewed. If in-cluster work can run
+  past it, set `relay = true` on the ephemeral resource, and the connection
+  keeps working until the run ends.
 - Terraform won't let an ephemeral value be saved, for example in an output or
   a file. Pass it to a provider block, as above.
 
