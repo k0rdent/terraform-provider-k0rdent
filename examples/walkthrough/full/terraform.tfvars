@@ -18,6 +18,7 @@ webhook_url         = ""                      # where cluster events go, such as
 # worker_counts          = { workers = 1 }              # nodes per worker pool. Left out, each starts at its floor
 # cluster_type_version   = ""                           # a version id from the cluster_type output, to pin it
 # webhook_secret_version = 2                            # one more, with a new TF_VAR_webhook_secret, rotates the webhook's secret
+# quota_checks           = false                        # skip the organization and quota reads, for a credential scoped to a project
 # ingress_services = {
 #   ssh      = { protocol = "tcp", port = "22" }
 #   kube-api = { protocol = "tcp", port = "6443" }
@@ -33,7 +34,7 @@ webhook_url         = ""                      # where cluster events go, such as
 build = {
   network             = true  # a network and a subnet per purpose. Needs an address pool that isn't routable
   security_group      = true  # a group on the cluster. Needs nodes on a nico-backed VPC
-  vpc_security_groups = true  # the same group on every VPC this makes. Needs security_group too
+  vpc_security_groups = true  # the same group on every VPC this makes, before its default group. Needs security_group too
   webhook             = true  # cluster events to webhook_url. Needs TF_VAR_webhook_secret
   instance_group      = false # one bare host. Needs real hardware
   file_store          = false # 100 GiB of shared storage. Needs a share type in the region

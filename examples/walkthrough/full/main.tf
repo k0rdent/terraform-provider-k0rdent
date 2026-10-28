@@ -223,9 +223,31 @@ locals {
     } if s.port != "6443"
   ]
 
-  egress_rules = [
-    { name = "everything out", protocol = "any", destination = "0.0.0.0/0" },
+  # What nodes reach out to. Each rule names a destination port and no source
+  # port, the only shape whose replies the nico fabric lets back in, so no
+  # "any" rule.
+  egress_out = [
+    { name = "dns", protocol = "udp", port = "53" },
+    { name = "dns over tcp", protocol = "tcp", port = "53" },
+    { name = "ntp", protocol = "udp", port = "123" },
+    { name = "http", protocol = "tcp", port = "80" },
+    { name = "https", protocol = "tcp", port = "443" },
+    { name = "kubernetes api", protocol = "tcp", port = "6443" },
+    { name = "konnectivity", protocol = "tcp", port = "8132" },
+    { name = "nfs", protocol = "tcp", port = "2049" },
   ]
+
+  # Ingress rules are stateless, so each service's replies need a rule from
+  # its own port.
+  egress_replies = [
+    for service, s in var.ingress_services : {
+      name        = "${service} replies"
+      protocol    = s.protocol
+      source_port = s.port
+    }
+  ]
+
+  egress_rules = concat(local.egress_out, local.egress_replies)
 }
 
 # Filters node interfaces on a nico VPC. It doesn't filter the cluster's
@@ -272,11 +294,13 @@ resource "k0rdent_security_group" "this" {
     for_each = local.egress_rules
 
     content {
-      name               = egress.value.name
-      action             = "permit"
-      protocol           = egress.value.protocol
-      source_prefix      = "0.0.0.0/0"
-      destination_prefix = egress.value.destination
+      name                   = egress.value.name
+      action                 = "permit"
+      protocol               = egress.value.protocol
+      source_prefix          = "0.0.0.0/0"
+      destination_prefix     = "0.0.0.0/0"
+      source_port_range      = try(egress.value.source_port, null)
+      destination_port_range = try(egress.value.port, null)
     }
   }
 }
@@ -431,20 +455,49 @@ data "k0rdent_vpc" "owned" {
   project = local.project
 }
 
-# The same group on every VPC this makes. An instance group has no
-# security_groups of its own, so this is what filters the hosts.
+# Each VPC's default group, which the platform makes with the VPC. Its id is
+# random, so it's found by the name the platform gives it, "Default (<VPC
+# id>)", and by owner_kind, which only the platform's groups carry. The VPC's
+# own security_groups can't be used: it lists the binding, which this
+# changes.
+data "k0rdent_security_groups" "vpc_default" {
+  for_each = var.build.vpc_security_groups ? local.owners : {}
+
+  project            = local.project
+  display_name_regex = "^Default \\(${each.value.vpc}\\)$"
+}
+
+locals {
+  vpc_default_group = {
+    for owner, d in data.k0rdent_security_groups.vpc_default :
+    owner => [for g in d.security_groups : g.id if g.owner_kind == "vpc"]
+  }
+}
+
+# The same group on every VPC this makes, ahead of the VPC's default group.
+# An instance group has no security_groups of its own, so this is what
+# filters the hosts. A list without the default would replace it, and with
+# it the default's rules for traffic between the VPC's subnets.
 resource "k0rdent_vpc_security_groups" "this" {
   for_each = var.build.vpc_security_groups ? local.owners : {}
 
   vpc             = each.value.vpc
   project         = local.project
-  security_groups = [k0rdent_security_group.this[0].id]
+  # Two entries, so a first plan shows ours first even before the default's id
+  # is known. The precondition below stops anything but one default.
+  security_groups = [k0rdent_security_group.this[0].id, try(one(local.vpc_default_group[each.key]), null)]
 
   lifecycle {
     # Fail the plan if the VPC can't take security groups.
     precondition {
       condition     = data.k0rdent_vpc.owned[each.key].backend == "nico"
       error_message = "The ${each.key} VPC, ${each.value.vpc}, is on ${coalesce(data.k0rdent_vpc.owned[each.key].backend, "no backend")}, and only a nico VPC takes security groups. Set build.vpc_security_groups = false."
+    }
+
+    # Fail rather than drop the default group from the VPC.
+    precondition {
+      condition     = data.k0rdent_vpc.owned[each.key].backend != "nico" || length(local.vpc_default_group[each.key]) == 1
+      error_message = "Found ${length(local.vpc_default_group[each.key])} default groups for the ${each.key} VPC, ${each.value.vpc}, not 1: no single group with owner_kind = \"vpc\" is named \"Default (${each.value.vpc})\". Without it, this binding would replace the VPC's rules for traffic between its subnets. Set build.vpc_security_groups = false, or check the VPC's groups with the k0rdent_security_groups data source."
     }
   }
 }
@@ -631,7 +684,11 @@ data "k0rdent_regions" "all" {
   }
 }
 
+# Reading the organization needs the same organizations role as its quota, so
+# quota_checks turns both off, for a credential scoped to a project.
 data "k0rdent_organization" "this" {
+  count = var.quota_checks ? 1 : 0
+
   id = local.organization
 
   lifecycle {
@@ -642,8 +699,7 @@ data "k0rdent_organization" "this" {
   }
 }
 
-# Quota is the likeliest reason a create is refused. Set quota_checks = false
-# for a credential that can't read it.
+# Quota is the likeliest reason a create is refused.
 data "k0rdent_project_quota" "this" {
   count = var.quota_checks ? 1 : 0
 

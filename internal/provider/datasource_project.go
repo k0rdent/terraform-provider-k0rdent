@@ -2,13 +2,17 @@ package provider
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+
+	"github.com/k0rdent/terraform-provider-k0rdent/internal/k0rdent"
 )
 
 var (
@@ -39,9 +43,16 @@ func newProjectDataSource() datasource.DataSource { return &projectDataSource{} 
 // # Why `organization_id` is optional
 //
 // The id alone names one project while only one organization holds it, and
-// the lookup refuses an id that more than one does. Given the organization,
-// the read is one GET. Without it, the organization is found by searching the
-// project list for that exact id.
+// the lookup refuses an id that more than one does. Without the organization,
+// the project is the row the project list has for that exact id: a list row is
+// the same Project a read by id answers. Given the organization, the read is
+// one GET.
+//
+// The list is also the only project read a credential scoped to a project can
+// make. The platform checks the read by id against the organization, where a
+// role bound to a project doesn't count, so it refuses that credential its own
+// project with a bare 403. That 403 falls back to the list, filtered to the
+// organization and the id.
 //
 // # What it carries that the resource does not
 //
@@ -78,7 +89,11 @@ func (d *projectDataSource) Schema(_ context.Context, _ datasource.SchemaRequest
 			"lives on the global control-plane tier and is addressed inside an organization. A " +
 			"project's `id` is normally held by one organization, so `organization_id` can be left " +
 			"out and is then looked up. If more than one organization holds the id, the read is " +
-			"refused and `organization_id` has to be set.",
+			"refused and `organization_id` has to be set.\n\n" +
+			"A credential scoped to a project can read that project, with or without " +
+			"`organization_id`. The platform refuses such a credential a project's read by id, " +
+			"because it checks that read against the organization, so the provider reads the " +
+			"project from the project list instead, which shows the credential its own projects.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
 				Required:            true,
@@ -89,7 +104,7 @@ func (d *projectDataSource) Schema(_ context.Context, _ datasource.SchemaRequest
 				Optional: true,
 				Computed: true,
 				MarkdownDescription: "The organization the project is in. Looked up from `id` when " +
-					"left out, which costs a list request instead of one read.",
+					"left out, in the one list request that reads the project.",
 				Validators: []validator.String{urlSafeIdentifier{}},
 			},
 			"region": schema.StringAttribute{
@@ -143,29 +158,23 @@ func (d *projectDataSource) Read(ctx context.Context, req datasource.ReadRequest
 		return
 	}
 
+	var p k0rdent.Project
 	if data.OrganizationID.IsNull() {
-		org, found := findProjectOrganization(ctx, d.meta, data.ID.ValueString(), &resp.Diagnostics)
+		// The list row is the project, so this is one request, and it's one a
+		// credential scoped to the project can make.
+		row, found := findProject(ctx, d.meta, data.ID.ValueString(), &resp.Diagnostics)
 		if !found {
 			return
 		}
-		data.OrganizationID = types.StringValue(org)
-	}
-
-	got, err := d.meta.Client.GetProjectInOrgWithResponse(ctx,
-		data.OrganizationID.ValueString(), data.ID.ValueString())
-	if err != nil || got.JSON200 == nil {
-		var body []byte
-		var httpResp *http.Response
-		if got != nil {
-			body, httpResp = got.Body, got.HTTPResponse
+		p = row
+		data.OrganizationID = types.StringValue(stateString(row.OrganizationId))
+	} else {
+		row, ok := d.readInOrg(ctx, data.OrganizationID.ValueString(), data.ID.ValueString(), &resp.Diagnostics)
+		if !ok {
+			return
 		}
-		// A 404 is an error here, where it removes the resource from state in
-		// the resource's Read. A data source naming something absent is a
-		// broken configuration, not drift to reconcile.
-		addAPIError(&resp.Diagnostics, "read the project", httpResp, body, err)
-		return
+		p = row
 	}
-	p := *got.JSON200
 
 	data.DisplayName = stringOrNull(p.DisplayName)
 	data.Description = stringOrNull(p.Description)
@@ -191,4 +200,58 @@ func (d *projectDataSource) Read(ctx context.Context, req datasource.ReadRequest
 	}
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+}
+
+// readInOrg reads the project by id inside the organization. The platform
+// checks that read against the organization, so a credential scoped to the
+// project is refused it, with a bare 403. That credential can still see the
+// project in the project list, so a 403 is answered from the list when it
+// shows the project in that organization, and reported as it came otherwise.
+func (d *projectDataSource) readInOrg(ctx context.Context, org, id string, diags *diag.Diagnostics) (k0rdent.Project, bool) {
+	got, err := d.meta.Client.GetProjectInOrgWithResponse(ctx, org, id)
+	if err == nil && got.JSON200 != nil {
+		return *got.JSON200, true
+	}
+	var body []byte
+	var httpResp *http.Response
+	if got != nil {
+		body, httpResp = got.Body, got.HTTPResponse
+	}
+	if err == nil && httpResp != nil && httpResp.StatusCode == http.StatusForbidden {
+		row, found, listErr := listedProject(ctx, d.meta, org, id)
+		if found {
+			return row, true
+		}
+		advice := fmt.Sprintf("The project list doesn't show %q in organization %q either, so this "+
+			"credential can't see it there. Check both ids, or read it with a credential that has "+
+			"organizations-viewer or compute-viewer on the organization.", id, org)
+		if listErr != nil {
+			advice = fmt.Sprintf("The project list, which shows a credential scoped to a project its own "+
+				"projects, couldn't be read either: %s", withoutInlineRequestID(listErr))
+		}
+		addAdvisedError(diags, "Could not read the project", advice, k0rdent.CheckResponse(httpResp, body))
+		return k0rdent.Project{}, false
+	}
+	// A 404 is an error here, where it removes the resource from state in
+	// the resource's Read. A data source naming something absent is a
+	// broken configuration, not drift to reconcile.
+	addAPIError(diags, "read the project", httpResp, body, err)
+	return k0rdent.Project{}, false
+}
+
+// listedProject is the project the list shows with this id in this
+// organization. found is false when the list doesn't show it, and err is set
+// when the list couldn't be read.
+func listedProject(ctx context.Context, meta *Meta, org, id string) (p k0rdent.Project, found bool, err error) {
+	search := id
+	rows, err := readProjects(ctx, meta, k0rdent.ListProjectsParams{OrganizationId: &org, Search: &search})
+	if err != nil {
+		return k0rdent.Project{}, false, err
+	}
+	for _, row := range rows {
+		if stateString(row.Id) == id && stateString(row.OrganizationId) == org {
+			return row, true, nil
+		}
+	}
+	return k0rdent.Project{}, false, nil
 }

@@ -1,9 +1,12 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"net/http"
 	"net/netip"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -64,8 +67,11 @@ type fakeVPC struct {
 	ownerUID       string
 	backend        string // "nico" carries security groups; "ufo" answers 409
 	securityGroups []string
-	state          string
-	reads          int
+	// defaultGroup is the id of the VPC's own default security group, which
+	// an empty binding puts back. Empty on a `ufo` VPC, which has none.
+	defaultGroup string
+	state        string
+	reads        int
 }
 
 // vpcForOwner is how a VPC comes into being. There is no create operation: the
@@ -81,33 +87,111 @@ func (o *objects) vpcForOwner(ownerKind, ownerID string) {
 	if strings.Contains(ownerID, ufoBackendMarker) {
 		backend = "ufo"
 	}
-	o.vpcs[at{id: vpc}] = &fakeVPC{
+	v := &fakeVPC{
 		id: vpc, uid: uidFor(o.scope, "vpc", vpc), backend: backend,
 		owner: ownerID, ownerKind: ownerKind, ownerUID: uidFor(o.scope, ownerKind, ownerID),
-		securityGroups: []string{"default"}, state: "active",
+		securityGroups: []string{}, state: "active",
+	}
+	o.vpcs[at{id: vpc}] = v
+
+	// The network and subnet the workflow materializes, unless the owner id
+	// asks for a VPC with none. Both are the platform's, not the tenant's, and
+	// the tenant API answers 409 to any write.
+	var prefixes []string
+	if !strings.Contains(ownerID, noSubnetsMarker) {
+		o.networks[at{id: vpc + "-net"}] = &fakeNetwork{
+			id: vpc + "-net", kind: "evpn", serviceType: "l2vpn", vlanID: "4002",
+			clusterID: ownerID, state: "active", displayName: ptr("cluster network"),
+		}
+		o.subnets[at{vpc + "-net", vpc + "-net-sub"}] = &fakeSubnet{
+			id: vpc + "-net-sub", network: vpc + "-net",
+			addressPool: "pool-routable", prefixLength: 24,
+			cidr: "10.90.0.0/24", clusterID: ownerID, state: "active",
+			displayName: ptr("cluster subnet"),
+		}
+		prefixes = append(prefixes, "10.90.0.0/24")
 	}
 
-	// The DEFAULT group the VPC is bound to, and the network and subnet the
-	// workflow materializes alongside it. All three are the platform's, not the
-	// tenant's, and the tenant API answers 409 to any write. Three provider
-	// schemas say so and nothing could ever import one to prove it, because the
-	// fake only ever held objects a tenant had created.
-	if _, held := o.groupsSec[at{id: "default"}]; !held {
-		o.groupsSec[at{id: "default"}] = &fakeSecurityGroup{
-			id: "default", ownerKind: "vpc", ownerID: uidFor(o.scope, "vpc", vpc), state: "active",
-			displayName: ptr("DEFAULT"),
+	// The contract: "Only VPCs on the `nico` fabric backend get one."
+	if backend != "nico" {
+		return
+	}
+	g := defaultGroup(v, prefixes)
+	o.groupsSec[at{id: g.id}] = g
+	v.defaultGroup = g.id
+	v.securityGroups = []string{g.id}
+}
+
+// defaultGroup is a VPC's default security group, as the k0rdent API
+// v1.3.0-rc.3 makes it: one per VPC, owned by it, and bound to it.
+//
+// The id is `<vpc id>-<8 random hex>-default`. It's random upstream so a
+// tenant group can't claim it first, which also means nothing can derive it:
+// read it off the VPC's binding, or find the group whose ownerId is the VPC's
+// uid. A provider or a test that wrote the id out would pass against a fixed
+// one and fail on a platform.
+//
+// The rules come from the VPC's subnet prefixes, deduplicated and sorted as
+// strings: an `intra-vpc-<i>` ingress permit for every pair of them, both
+// orders and each with itself, then one `intra-vpc-egress-<i>` egress permit
+// from 0.0.0.0/0 to each. No allow-all egress, which rc.3 dropped. A VPC with
+// no prefixes gets a group with no rules.
+//
+// It's made `active`. rc.3 makes it `creating` and settles it at once, and the
+// recorded read shows `active`.
+func defaultGroup(v *fakeVPC, prefixes []string) *fakeSecurityGroup {
+	const suffix = "-default"
+	random := make([]byte, 4)
+	_, _ = rand.Read(random)
+	// The VPC id is cut to fit 63 characters, never the other two parts.
+	slug := v.id
+	if budget := 63 - len(suffix) - 8 - 1; len(slug) > budget {
+		slug = slug[:budget]
+	}
+	slug = strings.TrimRight(slug, "-")
+
+	sorted := slices.Compact(slices.Sorted(slices.Values(prefixes)))
+	ingress := make([]fakeRule, 0, len(sorted)*len(sorted))
+	for _, src := range sorted {
+		for _, dst := range sorted {
+			ingress = append(ingress, fakeRule{
+				Name: ptr(fmt.Sprintf("intra-vpc-%d", len(ingress))), Protocol: "any", Action: "permit",
+				SourcePrefix: src, DestinationPrefix: dst,
+			})
 		}
 	}
-	o.networks[at{id: vpc + "-net"}] = &fakeNetwork{
-		id: vpc + "-net", kind: "evpn", serviceType: "l2vpn", vlanID: "4002",
-		clusterID: ownerID, state: "active", displayName: ptr("cluster network"),
+	egress := make([]fakeRule, 0, len(sorted))
+	for _, dst := range sorted {
+		egress = append(egress, fakeRule{
+			Name: ptr(fmt.Sprintf("intra-vpc-egress-%d", len(egress))), Protocol: "any", Action: "permit",
+			SourcePrefix: "0.0.0.0/0", DestinationPrefix: dst,
+		})
 	}
-	o.subnets[at{vpc + "-net", vpc + "-net-sub"}] = &fakeSubnet{
-		id: vpc + "-net-sub", network: vpc + "-net",
-		addressPool: "pool-routable", prefixLength: 24,
-		cidr: "10.90.0.0/24", clusterID: ownerID, state: "active",
-		displayName: ptr("cluster subnet"),
+
+	return &fakeSecurityGroup{
+		id:          slug + "-" + hex.EncodeToString(random) + suffix,
+		ownerKind:   "vpc",
+		ownerID:     v.uid,
+		state:       "active",
+		displayName: ptr("Default (" + v.id + ")"),
+		description: ptr("Platform-managed default security group for VPC " + v.id +
+			". Permits traffic between the VPC's subnet prefixes, in both directions, " +
+			"and nothing else. Not editable and cannot be deleted. To add rules, such " +
+			"as egress leaving the VPC, attach your own group to the cluster or " +
+			"instance group, or list it next to this group on the VPC: a VPC list " +
+			"without this group replaces it."),
+		ingress: ingress,
+		egress:  egress,
 	}
+}
+
+// dropVPC takes a VPC away with its owner, and its default group with it:
+// "removed only when its VPC is". The caller holds s.mu.
+func (o *objects) dropVPC(id string) {
+	if v, ok := o.vpcs[at{id: id}]; ok && v.defaultGroup != "" {
+		delete(o.groupsSec, at{id: v.defaultGroup})
+	}
+	delete(o.vpcs, at{id: id})
 }
 
 func ptr[T any](v T) *T { return &v }
@@ -257,7 +341,9 @@ func (s *state) updateNetwork(w http.ResponseWriter, r *http.Request) {
 			n.tags = nil
 		}
 	}
-	n.state, n.reads = "updating", 0
+	// v1.3.0-rc.3 writes the three fields in place, in any state, and starts
+	// no workflow, so the network keeps its state: a `failed` one stays
+	// `failed`.
 	writeJSON(w, http.StatusOK, networkJSON(n))
 }
 
@@ -915,17 +1001,34 @@ func (s *state) setVPCSecurityGroups(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Recorded on v1.3.0-rc.3: every unknown id at once, then another VPC's
+	// default, both with no reason and no details.
+	var unknown []string
 	for _, group := range *body.SecurityGroups {
 		if _, ok := o.groupsSec[at{id: group}]; !ok {
-			apiError(w, http.StatusUnprocessableEntity, "INVALID_ARGUMENT",
-				"no security group named "+group)
+			unknown = append(unknown, group)
+		}
+	}
+	if len(unknown) > 0 {
+		errorEnvelope(w, http.StatusUnprocessableEntity, "",
+			"validation: unknown security group(s): "+strings.Join(unknown, ", "), nil)
+		return
+	}
+	for _, group := range *body.SecurityGroups {
+		// A default group binds only to its own VPC.
+		if held := o.groupsSec[at{id: group}]; held.ownerKind == "vpc" && held.ownerID != target.uid {
+			errorEnvelope(w, http.StatusUnprocessableEntity, "", fmt.Sprintf(
+				"validation: security group %q is the platform-managed default of a different VPC and "+
+					"cannot be attached to vpc %q; send an empty list to reinstate this VPC's own default",
+				group, target.id), nil)
 			return
 		}
 	}
 
 	target.securityGroups = *body.SecurityGroups
 	if len(target.securityGroups) == 0 {
-		target.securityGroups = []string{"default"}
+		// This VPC's own default, by id, which the response names.
+		target.securityGroups = []string{target.defaultGroup}
 	}
 	target.state, target.reads = "updating", 0
 

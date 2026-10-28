@@ -58,7 +58,7 @@ var (
 		},
 		rows:      func(o *objects) table[*cluster] { return o.clusters },
 		advance:   (*objects).advance,
-		gone:      func(o *objects, c *cluster) { delete(o.vpcs, at{id: "vpc-" + c.id}) },
+		gone:      func(o *objects, c *cluster) { o.dropVPC("vpc-" + c.id) },
 		duplicate: alreadyExists("cluster", ""),
 	}
 
@@ -76,7 +76,7 @@ var (
 		rows:          func(o *objects) table[*instanceGroup] { return o.groups },
 		advance:       advanceGroup,
 		gone: func(o *objects, g *instanceGroup) {
-			delete(o.vpcs, at{id: "vpc-" + g.id})
+			o.dropVPC("vpc-" + g.id)
 			o.release(g)
 		},
 		duplicate: alreadyExists("instance group", ""),

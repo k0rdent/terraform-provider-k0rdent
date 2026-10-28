@@ -323,8 +323,9 @@ func vpcSecurityGroupsListSpec() listSpec {
 	return listSpec{
 		suffix:      vpcSecurityGroupsResourceSuffix,
 		newResource: newVPCSecurityGroupsResource,
-		description: "The security group binding of every VPC in a project. Every VPC has one, holding " +
-			"its default group until something else is bound, so this finds one per VPC. " + goingAwayNote,
+		description: "The security group binding of every VPC in a project. Every VPC has one, so this " +
+			"finds one per VPC. On a `nico` VPC it holds the VPC's default group until something " +
+			"else is bound, and on any other backend it's empty. " + goingAwayNote,
 		attributes: scopedAttributes(nil),
 		find: func(ctx context.Context, meta *Meta, config listConfig, diags *diag.Diagnostics) []listedObject {
 			target, ok := listScope(meta, config, diags)

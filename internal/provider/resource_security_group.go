@@ -89,6 +89,17 @@ func (r *securityGroupResource) UpgradeState(context.Context) map[int64]resource
 	return stateHistories[securityGroupResourceSuffix].upgraders()
 }
 
+// The two rule lists' descriptions. The data source repeats them.
+const (
+	ingressRulesDescription = "Rules filtering traffic arriving at the instance, in evaluation order."
+	egressRulesDescription  = "Rules filtering traffic leaving the instance, in evaluation " +
+		"order.\n\nRules are stateless, with one exception the platform applies on the " +
+		"`nico` fabric: an egress `tcp` or `udp` rule with a `destination_port_range` " +
+		"and no `source_port_range` is made stateful, so return traffic does not need " +
+		"a matching ingress rule. It is a property of the enforcement and is not " +
+		"reported back, so nothing in this schema can show it."
+)
+
 // ruleAttributes is the shape of one rule, shared by both directions.
 //
 // Direction is the list a rule sits in, not a field on the rule, which is how
@@ -184,20 +195,14 @@ func (r *securityGroupResource) Schema(ctx context.Context, _ resource.SchemaReq
 			// the configuration is written in is the order traffic is matched
 			// in, so a Set would silently reorder the filter.
 			"ingress": schema.ListNestedBlock{
-				MarkdownDescription: "Rules filtering traffic arriving at the instance, in " +
-					"evaluation order.",
-				NestedObject: schema.NestedBlockObject{Attributes: ruleAttributes()},
+				MarkdownDescription: ingressRulesDescription,
+				NestedObject:        schema.NestedBlockObject{Attributes: ruleAttributes()},
 			},
 			// Ordered for the same reason as ingress, and independently of it:
 			// the two lists are evaluated separately.
 			"egress": schema.ListNestedBlock{
-				MarkdownDescription: "Rules filtering traffic leaving the instance, in evaluation " +
-					"order.\n\nRules are stateless, with one exception the platform applies on the " +
-					"`nico` fabric: an egress `tcp` or `udp` rule with a `destination_port_range` " +
-					"and no `source_port_range` is made stateful, so return traffic does not need " +
-					"a matching ingress rule. It is a property of the enforcement and is not " +
-					"reported back, so nothing in this schema can show it.",
-				NestedObject: schema.NestedBlockObject{Attributes: ruleAttributes()},
+				MarkdownDescription: egressRulesDescription,
+				NestedObject:        schema.NestedBlockObject{Attributes: ruleAttributes()},
 			},
 		},
 		Attributes: map[string]schema.Attribute{

@@ -75,6 +75,28 @@ func TestTransportSeesTheOperationOfEachCall(t *testing.T) {
 	}
 }
 
+// A refusal names the operation that was refused, so a caller can say what
+// that operation needs. A response no generated call made names none.
+func TestARefusalNamesItsOperation(t *testing.T) {
+	f := &fakeAPI{readSays: http.StatusForbidden}
+	c := testClient(t, f.server(t))
+	resp, err := c.ListClusterTypesWithResponse(context.Background(), "r1", nil)
+	if err != nil {
+		t.Fatalf("ListClusterTypes: %v", err)
+	}
+	var apiErr *APIError
+	if !errors.As(CheckResponse(resp.HTTPResult()), &apiErr) {
+		t.Fatalf("a 403 gave no *APIError")
+	}
+	if apiErr.Operation != "listClusterTypes" {
+		t.Errorf("Operation = %q, want listClusterTypes", apiErr.Operation)
+	}
+	bare := NewAPIError(&http.Response{StatusCode: http.StatusForbidden, Status: "403 Forbidden"}, nil)
+	if bare.Operation != "" {
+		t.Errorf("a response with no request named operation %q", bare.Operation)
+	}
+}
+
 func TestOperationIDFromContextIsFalseOffAGeneratedCall(t *testing.T) {
 	if id, ok := OperationIDFromContext(context.Background()); ok {
 		t.Errorf("OperationIDFromContext on a bare context = %q, true", id)

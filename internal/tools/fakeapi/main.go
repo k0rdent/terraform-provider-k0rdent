@@ -98,6 +98,11 @@ const (
 	// rather than `nico`, so the refusal path for a binding is reachable.
 	ufoBackendMarker = "on-ufo"
 
+	// A cluster whose id carries this gets a VPC with no network or subnet,
+	// as a cluster type with no networkSchema subnets does, so its default
+	// security group has no prefixes and no rules.
+	noSubnetsMarker = "no-subnets"
+
 	// An upgrade on a cluster whose display name carries this never settles,
 	// so a test can read one in flight across as many requests as it takes.
 	holdsUpgrade = "fake-holds-upgrade"
@@ -904,8 +909,9 @@ func (s *state) listProjects(w http.ResponseWriter, r *http.Request) {
 	defer s.mu.Unlock()
 
 	matching := []any{}
+	caller := scopedTo(r)
 	for _, p := range projectKind.under(s.global(), "") {
-		if org != "" && p.org != org {
+		if (org != "" && p.org != org) || !caller.sees(p.org, p.id) {
 			continue
 		}
 		if status != "" && p.status != status {
@@ -2479,6 +2485,9 @@ func invalidSSHAccess(users []sshUser) string {
 // so a project missing there is the service's 404.
 func (s *state) gateway(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if scopedToProject(w, r) {
+			return
+		}
 		s.mu.Lock()
 		known, locked := true, ""
 		switch org, project := r.PathValue("orgId"), r.PathValue("project"); {

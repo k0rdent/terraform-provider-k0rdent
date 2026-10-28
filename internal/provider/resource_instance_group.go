@@ -501,6 +501,7 @@ func (r *instanceGroupResource) Update(ctx context.Context, req resource.UpdateR
 	if resp.Diagnostics.HasError() {
 		return
 	}
+	leftFailed := false
 	if changed {
 		updated, err := r.meta.Client.UpdateInstanceGroupWithResponse(ctx, target.region, target.project, id,
 			k0rdent.InstanceGroupUpdateRequest{
@@ -516,6 +517,12 @@ func (r *instanceGroupResource) Update(ctx context.Context, req resource.UpdateR
 			addAPIError(&resp.Diagnostics, "update the instance group", httpResp, respBody, err)
 			return
 		}
+		// The platform leaves a `failed` group `failed` through this PATCH.
+		// One that failed since the plan read it is still waited on, which
+		// reports why.
+		leftFailed = state.State.ValueString() == string(k0rdent.InstanceGroupStateFailed) &&
+			updated.JSON200 != nil && updated.JSON200.State != nil &&
+			*updated.JSON200.State == k0rdent.InstanceGroupStateFailed
 	}
 
 	scaled, diags := r.scaleUp(ctx, target, id, plan, state)
@@ -526,8 +533,9 @@ func (r *instanceGroupResource) Update(ctx context.Context, req resource.UpdateR
 
 	// A change that sent nothing, such as dropping `ssh_access` a failed
 	// group no longer has, has nothing to wait for, and a failed group
-	// would never settle.
-	if changed || scaled {
+	// would never settle. Nor has a display name or description change to a
+	// group the platform left `failed`. A scale is always waited on.
+	if scaled || (changed && !leftFailed) {
 		if err := r.waitForSettled(ctx, target, id, "the instance group to settle"); err != nil {
 			addWaitError(&resp.Diagnostics, "The instance group did not settle after the change", err)
 			return
