@@ -45,7 +45,7 @@ output "organization_ids" {
 
 Read-Only:
 
-- `description` (String) Free-form text describing it, for people to read. Null when the organization has none, and also when the credential holds no role on the organization that reads its settings, such as `organizations-viewer`. A project-scoped credential, or `compute-admin` alone on the organization, gets only the id, name, status and link.
+- `description` (String) Free-form text describing it, for people to read. Null when the credential holds no role on the organization that reads its settings, such as `organizations-viewer`: a project-scoped credential, or `compute-admin` alone on the organization, gets only the id, name, status and link. Also null for an organization created before the platform required a description.
 - `display_name` (String) Human-readable name, if the organization has one.
 - `id` (String) The id that goes in `k0rdent_project`'s `organization_id`.
 - `self_link` (String) Server-defined URL for this organization.

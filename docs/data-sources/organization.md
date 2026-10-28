@@ -48,7 +48,7 @@ resource "k0rdent_project" "research" {
 ### Read-Only
 
 - `created_at` (String) When the organization was created, as RFC 3339.
-- `description` (String) Free-form text describing it, for people to read. Null when it has none.
+- `description` (String) Free-form text describing it, for people to read. Null for an organization created before the platform required a description.
 - `display_name` (String) Human-friendly name, if the organization has one.
 - `self_link` (String) Platform-defined reference to this organization.
 - `status` (String) Lifecycle status. `active` is usable. `suspended` and `disabled` are states the platform holds an organization in, `provisioning` and `failed` belong to its creation, and `deleting` means a teardown has been accepted.

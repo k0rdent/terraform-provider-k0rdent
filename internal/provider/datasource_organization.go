@@ -63,8 +63,9 @@ func (d *organizationDataSource) Schema(_ context.Context, _ datasource.SchemaRe
 				MarkdownDescription: "Human-friendly name, if the organization has one.",
 			},
 			"description": schema.StringAttribute{
-				Computed:            true,
-				MarkdownDescription: "Free-form text describing it, for people to read. Null when it has none.",
+				Computed: true,
+				MarkdownDescription: "Free-form text describing it, for people to read. Null for an " +
+					"organization created before the platform required a description.",
 			},
 			"status": schema.StringAttribute{
 				Computed: true,
