@@ -341,7 +341,9 @@ func (s *state) updateNetwork(w http.ResponseWriter, r *http.Request) {
 			n.tags = nil
 		}
 	}
-	n.state, n.reads = "updating", 0
+	// v1.3.0-rc.3 writes the three fields in place, in any state, and starts
+	// no workflow, so the network keeps its state: a `failed` one stays
+	// `failed`.
 	writeJSON(w, http.StatusOK, networkJSON(n))
 }
 
