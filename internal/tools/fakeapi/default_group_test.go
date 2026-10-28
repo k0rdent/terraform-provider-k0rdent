@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"reflect"
 	"regexp"
@@ -129,15 +130,57 @@ func TestEachVPCGetsItsOwnDefaultGroup(t *testing.T) {
 	}
 }
 
-// A VPC with no subnet prefixes gets a default group all the same, with no
-// rules, as a cluster type with no networkSchema subnets does on rc.3.
-func TestAVPCWithNoSubnetsGetsAnEmptyDefaultGroup(t *testing.T) {
+// On rc.4 a VPC with no subnet prefixes, as a cluster type with no
+// networkSchema subnets makes, gets no default group, and an empty binding
+// on it is refused instead of leaving it with no group.
+func TestAVPCWithNoSubnetsHasNoDefaultGroup(t *testing.T) {
 	s := newState()
 	clusterNamed(t, s, "c-"+noSubnetsMarker)
-	id := defaultGroupOf(t, s, "vpc-c-"+noSubnetsMarker)
-	_, g := call(t, s.getSecurityGroup, http.MethodGet, id, "")
-	if rules := jsonOf(t, g["rules"]); rules != `{"egress":[],"ingress":[]}` || g["ruleCount"] != float64(0) {
-		t.Errorf("rules %s, ruleCount %v: want both lists empty and 0", rules, g["ruleCount"])
+	group(t, s, "mine")
+	vpcID := "vpc-c-" + noSubnetsMarker
+	_, vpc := call(t, s.getVPC, http.MethodGet, vpcID, "")
+	if groups := listOf(t, vpc["securityGroups"]); len(groups) != 0 {
+		t.Errorf("securityGroups = %v, want []", groups)
+	}
+	_, list := call(t, s.listSecurityGroups, http.MethodGet, "", "")
+	for _, g := range listOf(t, list["securityGroups"]) {
+		if m, ok := g.(map[string]any); !ok || m["ownerKind"] == "vpc" {
+			t.Errorf("found a default group: %v", g)
+		}
+	}
+
+	path := map[string]string{"id": vpcID}
+	if code, out := in(t, s.setVPCSecurityGroups, http.MethodPost, "r", "p", path, `{"securityGroups":["mine"]}`); code != http.StatusAccepted {
+		t.Fatalf("bind mine: %d %v", code, out)
+	}
+	settleIn(t, s.getVPC, "p", path)
+	code, out := in(t, s.setVPCSecurityGroups, http.MethodPost, "r", "p", path, `{"securityGroups":[]}`)
+	want := `{"code":409,"details":[{"message":"conflict: vpc \"` + vpcID + `\" has no default security group to fall ` +
+		`back to, so its groups cannot be cleared; attach a group explicitly","reason":"CONFLICT_IN_USE"}],` +
+		`"message":"conflict: vpc \"` + vpcID + `\" has no default security group to fall back to, so its groups ` +
+		`cannot be cleared; attach a group explicitly","requestId":"` + fakeRequestID + `"}`
+	if got := jsonOf(t, out["error"]); code != http.StatusConflict || got != want {
+		t.Errorf("clear: %d %s\nwant 409 %s", code, got, want)
+	}
+}
+
+// More than 16 distinct prefixes need over 256 intra-VPC rules, so rc.4 makes
+// no default group for them either. 16 still gets one.
+func TestADefaultGroupCoversAtMostSixteenPrefixes(t *testing.T) {
+	prefixes := make([]string, 0, maxDefaultGroupPrefixes+1)
+	for i := range maxDefaultGroupPrefixes {
+		prefixes = append(prefixes, fmt.Sprintf("10.%d.0.0/24", i))
+	}
+	v := &fakeVPC{id: "vpc-many", uid: "u"}
+	if g := defaultGroup(v, prefixes); g == nil || len(g.ingress) != 256 {
+		t.Errorf("16 prefixes: %v, want a group with 256 ingress rules", g)
+	}
+	// A repeat isn't another prefix.
+	if g := defaultGroup(v, append(prefixes, prefixes[0])); g == nil {
+		t.Error("16 prefixes and a repeat: no group, want one")
+	}
+	if g := defaultGroup(v, append(prefixes, "10.99.0.0/24")); g != nil {
+		t.Errorf("17 prefixes: %d ingress rules, want no group", len(g.ingress))
 	}
 }
 
@@ -250,7 +293,7 @@ func TestABindingReportsUnknownIDsFirst(t *testing.T) {
 // The VPC id is cut to keep the group's id a valid name, never the random
 // part or the suffix.
 func TestALongVPCIDStillMakesAValidName(t *testing.T) {
-	g := defaultGroup(&fakeVPC{id: "vpc-" + strings.Repeat("a", 41) + "-" + strings.Repeat("b", 20)}, nil)
+	g := defaultGroup(&fakeVPC{id: "vpc-" + strings.Repeat("a", 41) + "-" + strings.Repeat("b", 20)}, []string{"10.0.0.0/24"})
 	if len(g.id) > 63 || !regexp.MustCompile(`^vpc-a+-[0-9a-f]{8}-default$`).MatchString(g.id) {
 		t.Errorf("id = %q (%d characters), want at most 63 ending in -<8 hex>-default", g.id, len(g.id))
 	}

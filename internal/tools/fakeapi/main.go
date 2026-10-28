@@ -99,8 +99,8 @@ const (
 	ufoBackendMarker = "on-ufo"
 
 	// A cluster whose id carries this gets a VPC with no network or subnet,
-	// as a cluster type with no networkSchema subnets does, so its default
-	// security group has no prefixes and no rules.
+	// as a cluster type with no networkSchema subnets does, so it has no
+	// default security group.
 	noSubnetsMarker = "no-subnets"
 
 	// An upgrade on a cluster whose display name carries this never settles,

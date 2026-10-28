@@ -91,8 +91,9 @@ func TestSecurityGroupDataReadsTheRules(t *testing.T) {
 	}
 }
 
-// A VPC with no subnet prefixes gets a default group with no rules. Both lists
-// read as empty, not null, so length() on them is 0 rather than an error.
+// A group with no rules, such as the default group API v1.3.0-rc.3 made for a
+// VPC with no subnet prefixes, reads as two empty lists, not null, so length()
+// on them is 0 rather than an error.
 func TestSecurityGroupDataReadsAnEmptyGroupAsEmptyLists(t *testing.T) {
 	var data securityGroupDataSourceModel
 	data.fill(decodeInto[k0rdent.SecurityGroup](t, `{"id":"vpc-b-a7b5b819-default","ownerKind":"vpc",
