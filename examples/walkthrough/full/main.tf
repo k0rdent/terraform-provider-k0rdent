@@ -707,6 +707,10 @@ data "k0rdent_project_quota" "this" {
 
   organization_id = local.organization
   project_id      = local.project
+
+  # With build.own_project the id is known at plan, so without this the read
+  # runs before the project exists and gets a 404.
+  depends_on = [k0rdent_project.own]
 }
 
 data "k0rdent_tenant_quota" "this" {
