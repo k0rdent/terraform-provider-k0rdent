@@ -361,13 +361,12 @@ The `build` block in `terraform.tfvars` turns each part on or off:
   as quota, the kubeconfig and webhook deliveries.
 - `nodes/` works with this cluster too, since it's also
   `<prefix>-walkthrough`.
-- The platform adds a permit-all ingress rule after every group's own
-  rules, so `full/` adds a deny for each service from anywhere else, except
-  the Kubernetes API port. The `kubernetes_api` output gives an `nc` test to
-  run from inside and outside `allowed_cidrs`.
-- The platform adds a deny-all egress rule after them, and from API
-  v1.3.0-rc.3 a VPC's default group lets nothing out of the VPC. So the
-  groups in `full/` and `network/` list what nodes reach out to: DNS, NTP,
+- On the `nico` fabric, traffic that no rule permits is denied, in both
+  directions. Rules the operator sets for the site are checked first, so a
+  site permit or deny wins over the group. The `kubernetes_api` output gives
+  an `nc` test to run from inside and outside `allowed_cidrs`.
+- From API v1.3.0-rc.3 a VPC's default group lets nothing out of the VPC.
+  So the groups in `full/` and `network/` list what nodes reach out to: DNS, NTP,
   HTTP, HTTPS, the Kubernetes API on 6443 and konnectivity on 8132, and NFS
   in `full/`. Each is a `tcp` or `udp` rule with a destination port and no
   source port, the only shape whose replies the `nico` fabric lets back in.
@@ -378,7 +377,9 @@ The `build` block in `terraform.tfvars` turns each part on or off:
   egress rule for its replies, from its own port.
 - With `vpc_security_groups` on, each VPC gets this group and then the
   VPC's default group, which permits traffic between the VPC's subnets.
-  This group comes first, so its denies also apply between nodes. A list
+  This group comes first, so its denies also apply between nodes. That's
+  why `full/` adds a deny for each service from anywhere else, except the
+  Kubernetes API port. A list
   without the default would replace it. The default's id is random, so
   `full/` finds it by the name the platform gives it, `Default (<VPC id>)`,
   and stops with an error if it can't.

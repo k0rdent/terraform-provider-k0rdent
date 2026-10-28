@@ -1,4 +1,7 @@
-# The first matching rule wins, in the order written.
+# The first matching rule wins, in the order written. On the nico fabric,
+# traffic that no rule permits is denied, so the group needs no final deny.
+# One would also block what the VPC's default group, checked after this one,
+# permits between the VPC's subnets.
 resource "k0rdent_security_group" "office_access" {
   id           = "office-access"
   display_name = "Office access"
@@ -16,14 +19,6 @@ resource "k0rdent_security_group" "office_access" {
     destination_prefix = "0.0.0.0/0"
 
     destination_port_range = "22"
-  }
-
-  ingress {
-    name               = "deny-everything-else"
-    action             = "deny"
-    protocol           = "any"
-    source_prefix      = "0.0.0.0/0"
-    destination_prefix = "0.0.0.0/0"
   }
 
   # On the nico fabric, return traffic for this rule is allowed back in

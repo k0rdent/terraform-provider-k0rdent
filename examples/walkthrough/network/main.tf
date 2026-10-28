@@ -113,9 +113,11 @@ resource "k0rdent_subnet" "this" {
   }
 }
 
-# Rules match first to last. The platform adds a permit-all ingress rule
-# after these, so the denies keep everyone else out. 6443 has no deny,
-# because a cluster's own API traffic may come from outside allowed_cidr.
+# Rules match first to last, and the nico fabric denies what no rule
+# permits. The VPC's default group is checked after this group and permits
+# traffic between the VPC's subnets, so the denies keep SSH and ping closed
+# between nodes too. 6443 has no deny, so nodes can still reach each other's
+# Kubernetes API.
 resource "k0rdent_security_group" "this" {
   id           = local.name
   project      = data.k0rdent_project.this.id
