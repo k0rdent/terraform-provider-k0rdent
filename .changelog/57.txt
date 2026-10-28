@@ -1,0 +1,15 @@
+```release-note:bug
+resource/k0rdent_vpc_security_groups: Fix `terraform destroy` failing with 409 on a VPC with no default security group, which the k0rdent API v1.3.0-rc.4 makes for a VPC with no subnet prefixes or more than 16. The destroy leaves the groups on the VPC, warns that they stay until the VPC is deleted with its owner, and drops the binding from state
+```
+
+```release-note:bug
+resource/k0rdent_security_group: Fix a destroy failing with 409 when a VPC with no default security group still holds the group. The delete is sent again until that VPC is deleted with its owner, within the delete timeout, when this run's binding destroy left the group on it
+```
+
+```release-note:enhancement
+resource/k0rdent_vpc_security_groups: Warn at plan, or at apply when the VPC isn't known at plan, that a binding on a VPC with no default security group can't be taken off later
+```
+
+```release-note:bug
+resource/k0rdent_vpc_security_groups: Fix the destroy and replace warnings saying traffic the tenant groups kept out is let in. With the default group back, traffic between the VPC's subnet prefixes is permitted and all other traffic is denied unless the owner's groups permit it
+```
