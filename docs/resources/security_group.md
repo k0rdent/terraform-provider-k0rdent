@@ -96,6 +96,17 @@ resource "k0rdent_security_group" "office_access" {
 
     destination_port_range = "443"
   }
+
+  # Ingress rules are stateless, so the SSH replies need a rule of their own.
+  egress {
+    name               = "ssh-replies"
+    action             = "permit"
+    protocol           = "tcp"
+    source_prefix      = "0.0.0.0/0"
+    destination_prefix = "203.0.113.0/24"
+
+    source_port_range = "22"
+  }
 }
 ```
 

@@ -165,13 +165,44 @@ resource "k0rdent_security_group" "this" {
     destination_prefix = "0.0.0.0/0"
   }
 
-  egress {
-    name               = "everything-out"
-    action             = "permit"
-    protocol           = "any"
-    source_prefix      = "0.0.0.0/0"
-    destination_prefix = "0.0.0.0/0"
+  dynamic "egress" {
+    for_each = local.egress_rules
+
+    content {
+      name                   = egress.value.name
+      action                 = "permit"
+      protocol               = egress.value.protocol
+      source_prefix          = "0.0.0.0/0"
+      destination_prefix     = "0.0.0.0/0"
+      source_port_range      = try(egress.value.source_port, null)
+      destination_port_range = try(egress.value.port, null)
+    }
   }
+}
+
+locals {
+  # What nodes reach out to. Each rule names a destination port and no source
+  # port, the only shape whose replies the nico fabric lets back in, so no
+  # "any" rule.
+  egress_out = [
+    { name = "dns", protocol = "udp", port = "53" },
+    { name = "dns over tcp", protocol = "tcp", port = "53" },
+    { name = "ntp", protocol = "udp", port = "123" },
+    { name = "http", protocol = "tcp", port = "80" },
+    { name = "https", protocol = "tcp", port = "443" },
+    { name = "kubernetes api", protocol = "tcp", port = "6443" },
+    { name = "konnectivity", protocol = "tcp", port = "8132" },
+  ]
+
+  # Ingress rules are stateless, so the services above need rules for their
+  # replies.
+  egress_replies = [
+    { name = "ssh replies", protocol = "tcp", source_port = "22" },
+    { name = "kubernetes-api replies", protocol = "tcp", source_port = "6443" },
+    { name = "ping replies", protocol = "icmp" },
+  ]
+
+  egress_rules = concat(local.egress_out, local.egress_replies)
 }
 
 output "network" {
@@ -200,7 +231,7 @@ output "security_group" {
     # One line per rule, ingress then egress.
     rules = concat(
       [for r in k0rdent_security_group.this.ingress : "in:  ${r.action} ${r.protocol}${r.destination_port_range == null ? "" : " ${r.destination_port_range}"} from ${r.source_prefix} (${r.name})"],
-      [for r in k0rdent_security_group.this.egress : "out: ${r.action} ${r.protocol} to ${r.destination_prefix} (${r.name})"],
+      [for r in k0rdent_security_group.this.egress : "out: ${r.action} ${r.protocol}${r.destination_port_range == null ? "" : " ${r.destination_port_range}"}${r.source_port_range == null ? "" : " from port ${r.source_port_range}"} to ${r.destination_prefix} (${r.name})"],
     )
   }
 }

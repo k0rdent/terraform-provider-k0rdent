@@ -125,11 +125,12 @@
           }
         },
         "data.k0rdent_security_groups": {
-          "count": 3,
+          "count": 7,
           "unknown": {
-            "ids": "read during the apply, because it waits for terraform_data.made, which this plan creates",
-            "region": "read during the apply, because it waits for terraform_data.made, which this plan creates",
-            "security_groups": "read during the apply, because it waits for terraform_data.made, which this plan creates"
+            "display_name_regex": "vpc_default names the VPC, which the platform creates with the cluster",
+            "ids": "read during the apply: tagged waits for terraform_data.made, which this plan creates, and vpc_default for the VPC the platform creates with the cluster",
+            "region": "read during the apply: tagged waits for terraform_data.made, which this plan creates, and vpc_default for the VPC the platform creates with the cluster",
+            "security_groups": "read during the apply: tagged waits for terraform_data.made, which this plan creates, and vpc_default for the VPC the platform creates with the cluster"
           }
         },
         "data.k0rdent_subnets": {
@@ -215,9 +216,10 @@
           }
         },
         "k0rdent_vpc_security_groups": {
-          "count": 3,
+          "count": 4,
           "unknown": {
             "attached": "what the platform reports attached after the write",
+            "security_groups[*]": "the second entry is the VPC's default group, which the platform makes with the VPC",
             "state": "the VPC's state after the write",
             "vpc": "the cluster's VPC, which the platform materializes with it"
           }
@@ -378,11 +380,12 @@
           }
         },
         "data.k0rdent_security_groups": {
-          "count": 3,
+          "count": 11,
           "unknown": {
-            "ids": "read during the apply, because it waits for terraform_data.made, which this plan creates",
-            "region": "read during the apply, because it waits for terraform_data.made, which this plan creates",
-            "security_groups": "read during the apply, because it waits for terraform_data.made, which this plan creates"
+            "display_name_regex": "vpc_default names the VPC, which the platform creates with the cluster",
+            "ids": "read during the apply: tagged waits for terraform_data.made, which this plan creates, and vpc_default for the VPC the platform creates with the cluster",
+            "region": "read during the apply: tagged waits for terraform_data.made, which this plan creates, and vpc_default for the VPC the platform creates with the cluster",
+            "security_groups": "read during the apply: tagged waits for terraform_data.made, which this plan creates, and vpc_default for the VPC the platform creates with the cluster"
           }
         },
         "data.k0rdent_subnets": {
@@ -513,9 +516,10 @@
           }
         },
         "k0rdent_vpc_security_groups": {
-          "count": 6,
+          "count": 8,
           "unknown": {
             "attached": "what the platform reports attached after the write",
+            "security_groups[*]": "the second entry is the VPC's default group, which the platform makes with the VPC",
             "state": "the VPC's state after the write",
             "vpc": "the cluster's VPC, which the platform materializes with it"
           }
