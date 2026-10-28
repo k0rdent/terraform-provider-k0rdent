@@ -146,7 +146,11 @@ cd look
 terraform apply
 ```
 It only reads, so it reports `0 added, 0 changed, 0 destroyed`, then lists
-regions, organizations, projects, and the cluster types in each region.
+regions, organizations, projects, and the cluster types, address pools and
+share types in each region. For the first active project with a region it
+lists the instances, networks, subnets, security groups, VPCs, peerings and
+quota, and for that project's organization the roles, quota and webhook
+subscriptions.
 `./walkthrough.sh up look` does the same.
 
 If it fails here, it's the endpoint or the credential:
@@ -154,6 +158,8 @@ If it fails here, it's the endpoint or the credential:
 | What you see | What it means |
 | --- | --- |
 | A 401 | Wrong client id or secret |
+| A 403 or 404 on an organization read | The credential is scoped to one project. Run `terraform apply -var read_organization=false` |
+| Another 403 | The credential can't make one of the reads. The error names it |
 | A 429 | Too many token requests. Wait a minute |
 | A connection error | Wrong URL, or you need the VPN |
 

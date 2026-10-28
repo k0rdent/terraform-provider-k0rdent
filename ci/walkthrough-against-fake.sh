@@ -453,6 +453,17 @@ EOF
   output_is "$name" filtering 'len(v["rules"]) == 19 and sum(" from 198.51.100.0/25" in r for r in v["rules"]) == 3 and sum(r.startswith("in:  deny ") and " from 0.0.0.0/0 " in r for r in v["rules"]) == 2 and not any(r.startswith("in:  deny tcp 6443") for r in v["rules"]) and not any(r.startswith("out: permit any") for r in v["rules"]) and any(r.startswith("out: permit tcp from port 22 ") for r in v["rules"])'
   good "the scorecard says what ran and what was off"
 
+  # look again, now that it has something to read by id.
+  tf look apply -auto-approve -input=false || fail "$name: look failed with $name built"
+  if ! grep -q '0 added, 0 changed, 0 destroyed' "$WORK/look/last.log"; then
+    fail "$name: look changed something"
+  fi
+  output_is look webhooks 'len(v) == 1 and all(s.startswith("active") for s in v.values())'
+  if [[ "$name" == full ]]; then
+    output_is look in_project 'v["id"] == "'"$project"' in '"$region"'" and any(n.startswith("ci-walkthrough ") for n in v["networks"]) and v["vpcs"] and v["subnets"]'
+  fi
+  good "look reads what $name built"
+
   plans_clean "$name" "after the apply"
   good "second plan: exit 0, no changes"
 
