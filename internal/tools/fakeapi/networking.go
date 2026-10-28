@@ -94,7 +94,7 @@ func (o *objects) vpcForOwner(ownerKind, ownerID string) {
 	}
 	o.vpcs[at{id: vpc}] = v
 
-	// The network and subnet the workflow materializes, unless the owner id
+	// The network and subnet the workflow creates, unless the owner id
 	// asks for a VPC with none. Both are the platform's, not the tenant's, and
 	// the tenant API answers 409 to any write.
 	var prefixes []string
