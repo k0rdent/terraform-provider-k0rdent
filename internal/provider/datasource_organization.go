@@ -60,7 +60,7 @@ func (d *organizationDataSource) Schema(_ context.Context, _ datasource.SchemaRe
 			},
 			"display_name": schema.StringAttribute{
 				Computed:            true,
-				MarkdownDescription: "Human-friendly name, if the organization has one.",
+				MarkdownDescription: "Human-friendly name. Null for an organization created before the platform required one.",
 			},
 			"description": schema.StringAttribute{
 				Computed: true,
@@ -114,7 +114,7 @@ func (d *organizationDataSource) Read(ctx context.Context, req datasource.ReadRe
 	}
 	o := *got.JSON200
 
-	data.DisplayName = stringOrNull(o.DisplayName)
+	data.DisplayName = textOrNull(o.DisplayName)
 	data.Description = textOrNull(o.Description)
 	data.Status = enumOrNull(o.Status)
 	data.CreatedAt = timeOrNull(o.CreatedAt)
