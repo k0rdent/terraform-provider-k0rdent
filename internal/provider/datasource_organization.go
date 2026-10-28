@@ -64,7 +64,7 @@ func (d *organizationDataSource) Schema(_ context.Context, _ datasource.SchemaRe
 			},
 			"description": schema.StringAttribute{
 				Computed:            true,
-				MarkdownDescription: "Free-form text describing it, for people to read.",
+				MarkdownDescription: "Free-form text describing it, for people to read. Null when it has none.",
 			},
 			"status": schema.StringAttribute{
 				Computed: true,
@@ -114,7 +114,7 @@ func (d *organizationDataSource) Read(ctx context.Context, req datasource.ReadRe
 	o := *got.JSON200
 
 	data.DisplayName = stringOrNull(o.DisplayName)
-	data.Description = stringOrNull(o.Description)
+	data.Description = textOrNull(o.Description)
 	data.Status = enumOrNull(o.Status)
 	data.CreatedAt = timeOrNull(o.CreatedAt)
 	data.SelfLink = stringOrNull(o.SelfLink)

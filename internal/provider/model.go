@@ -37,6 +37,16 @@ func stringOrNull(p *string) types.String {
 	return types.StringValue(*p)
 }
 
+// textOrNull is stringOrNull for a field the platform always sends, as "" when
+// there's nothing in it. Only for read-only attributes: a configured "" would
+// read back as null.
+func textOrNull(p *string) types.String {
+	if p == nil || *p == "" {
+		return types.StringNull()
+	}
+	return types.StringValue(*p)
+}
+
 // optionalStringMap maps a Terraform map to a request pointer, preserving the
 // difference between "no map" and "an empty map".
 func optionalStringMap(ctx context.Context, v types.Map) (*map[string]string, diag.Diagnostics) {
