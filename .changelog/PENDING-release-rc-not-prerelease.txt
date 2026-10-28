@@ -1,0 +1,3 @@
+```release-note:note
+provider: Release candidates such as `0.1.0-rc.2` are listed on registry.terraform.io too, not only registry.opentofu.org. Only an exact `version = "0.1.0-rc.2"` installs one
+```

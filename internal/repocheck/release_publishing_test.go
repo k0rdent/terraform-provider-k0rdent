@@ -16,6 +16,8 @@ var (
 	// The same grant written inline, `permissions: {contents: write}`, which
 	// the line-by-line pattern above can't see.
 	inlineWritePermission = regexp.MustCompile(`permissions:\s*\{[^}]*:\s*write\b`)
+
+	releasePrerelease = regexp.MustCompile(`(?m)^  prerelease:[ \t]*(\S*)`)
 )
 
 // validateReleasePublishing keeps the GitHub Release, which the registries
@@ -46,6 +48,11 @@ func validateReleasePublishing(workflows map[string]string, goreleaser string) e
 	}
 	if !strings.Contains(release, "terraform-registry-manifest.json") {
 		return fmt.Errorf(".goreleaser.yaml leaves the registry manifest off the release")
+	}
+	// registry.terraform.io ignores a GitHub release marked pre-release, so a
+	// candidate marked one never reaches it.
+	if m := releasePrerelease.FindStringSubmatch(release); m != nil && m[1] != "false" {
+		return fmt.Errorf(".goreleaser.yaml sets prerelease: %s, and registry.terraform.io ignores a release marked pre-release", m[1])
 	}
 
 	for name, workflow := range workflows {
@@ -97,6 +104,15 @@ func validateReleasePublishing(workflows map[string]string, goreleaser string) e
 	}
 	if !strings.Contains(job, "sha256sum --check --strict") {
 		return fmt.Errorf("%s doesn't compare the draft's files with dist/", signingJob)
+	}
+	// The tag's .goreleaser.yaml can predate the fix, as a release branch's
+	// does, so the publish clears the flag itself.
+	publishLine := job[publish:]
+	if end := strings.IndexByte(publishLine, '\n'); end != -1 {
+		publishLine = publishLine[:end]
+	}
+	if !strings.Contains(publishLine, "-F prerelease=false") {
+		return fmt.Errorf("%s publishes without -F prerelease=false, so a draft marked pre-release stays one and registry.terraform.io ignores it", signingJob)
 	}
 	return nil
 }
@@ -169,6 +185,14 @@ func TestReleasePublishingRejectsRegressions(t *testing.T) {
 		{"published before validation", replace("release-dispatch.yml", "- name: Validate release artifact layout", "- name: Validate later"), "before validating"},
 		{"published without the draft check", replace("release-dispatch.yml", "- name: Check the draft holds the validated files", "- name: Look at the draft"), "without checking the draft"},
 		{"draft not compared", replace("release-dispatch.yml", "sha256sum --check --strict", "true"), "doesn't compare the draft's files"},
+		{"candidates marked pre-release", replace(".goreleaser.yaml", "  draft: true\n", "  draft: true\n  prerelease: auto\n"), "registry.terraform.io ignores a release marked pre-release"},
+		{"every release marked pre-release", replace(".goreleaser.yaml", "  draft: true\n", "  draft: true\n  prerelease: true\n"), "registry.terraform.io ignores a release marked pre-release"},
+		{"pre-release flag kept at publish", replace("release-dispatch.yml", " -F prerelease=false", ""), "publishes without -F prerelease=false"},
+		{"pre-release flag set at publish", replace("release-dispatch.yml", "-F prerelease=false", "-F prerelease=true"), "publishes without -F prerelease=false"},
+		{"pre-release flag cleared outside the publish", func(w map[string]string, g *string) {
+			replace("release-dispatch.yml", " -F prerelease=false", "")(w, g)
+			replace("release-dispatch.yml", "latest=false\n", "latest=false\n          echo -F prerelease=false\n")(w, g)
+		}, "publishes without -F prerelease=false"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

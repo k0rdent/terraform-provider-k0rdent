@@ -75,14 +75,25 @@ gh secret set TERRAFORM_PROVIDER_GPG_PRIVATE_KEY --env release-signing < private
   prerelease for a constraint such as `~> 0.1`. Only an exact
   `version = "0.1.0-rc.1"` installs one, so a candidate on the registry reaches
   only the people testing it.
+- **Candidates aren't GitHub pre-releases.** registry.terraform.io ignores a
+  GitHub release marked pre-release. The registry's first publish of
+  `v0.1.0-rc.1` failed with "release is a draft or pre-release" until the mark
+  was cleared by hand, though registry.opentofu.org listed it while marked.
+  So `.goreleaser.yaml` doesn't set `prerelease`, and the release job publishes
+  with `prerelease=false` whatever the tag's `.goreleaser.yaml` says. HashiCorp's
+  [publishing docs](https://developer.hashicorp.com/terraform/registry/providers/publishing)
+  don't say so, and
+  [other providers hit it](https://discuss.hashicorp.com/t/publishing-pre-release-versions-of-provider-ignored-draft-release-event/69536).
 - **Every version is permanent.** A published release can't be replaced, and
   users' lock files and caches hold its checksums. If one is wrong, fix
   forward with the next version.
 - **Only the newest final version is Latest.** GitHub marks a release Latest
   by date unless told otherwise, and `/releases/latest` and the repository
   page point people to it. The release job publishes a candidate, and a
-  patch to an older minor, with `make_latest=false`. The version's `-rc.N`,
-  not any GitHub setting, is what Terraform and OpenTofu read.
+  patch to an older minor, with `make_latest=false`. Before the first final
+  version, GitHub can still show a candidate as Latest: `v0.1.0-rc.1` is. The
+  version's `-rc.N`, not any GitHub setting, is what Terraform and OpenTofu
+  read.
 - **A tag push starts nothing.** A release is built only when someone
   dispatches the release workflow from `main` and a second maintainer
   approves it.
@@ -170,6 +181,63 @@ branch, `release-vMAJOR.MINOR.x`, so `main` can take new work meanwhile.
 
    `release-validate` builds an unsigned snapshot and checks its files.
 
+   Then check an upgrade by hand, since CI doesn't. State written by the
+   previous release, installed from the registry, must plan empty under the
+   candidate with the previous release's configuration. Build the candidate
+   into a filesystem mirror, and write one CLI configuration for each source:
+
+   ```sh
+   PREVIOUS=0.1.0-rc.1
+   WORK="$(mktemp -d)"
+   git archive "v$PREVIOUS" examples/walkthrough | tar -x -C "$WORK"
+   PLATFORM="$(go env GOOS)_$(go env GOARCH)"
+   for host in registry.terraform.io registry.opentofu.org; do
+     go build -ldflags "-X main.version=$VERSION" -o "$WORK/mirror/$host/k0rdent/k0rdent/$VERSION/$PLATFORM/terraform-provider-k0rdent_v$VERSION" .
+   done
+   printf 'provider_installation {\n  direct {}\n}\n' > "$WORK/registry.tfrc"
+   cat > "$WORK/candidate.tfrc" <<EOF
+   provider_installation {
+     filesystem_mirror {
+       path    = "$WORK/mirror"
+       include = ["registry.terraform.io/k0rdent/k0rdent", "registry.opentofu.org/k0rdent/k0rdent"]
+     }
+     direct {
+       exclude = ["registry.terraform.io/k0rdent/k0rdent", "registry.opentofu.org/k0rdent/k0rdent"]
+     }
+   }
+   EOF
+   ```
+
+   Then in each directory under `$WORK/examples/walkthrough`, with the
+   variables [docs/walkthrough-hardware.md](docs/walkthrough-hardware.md)
+   gives, against a deployment you can create test objects on or the fake from
+   `make demo-up`:
+
+   1. Pin the previous release: add `version = "0.1.0-rc.1"` under
+      `source = "k0rdent/k0rdent"` in `main.tf`. Create its objects:
+
+      ```sh
+      TF_CLI_CONFIG_FILE="$WORK/registry.tfrc" terraform init
+      TF_CLI_CONFIG_FILE="$WORK/registry.tfrc" terraform apply
+      ```
+
+   2. Change the pin to the candidate's version, keep the rest of the
+      configuration, and plan:
+
+      ```sh
+      TF_CLI_CONFIG_FILE="$WORK/candidate.tfrc" terraform init -upgrade
+      TF_CLI_CONFIG_FILE="$WORK/candidate.tfrc" terraform plan -detailed-exitcode
+      ```
+
+      Exit 0 means no changes. Exit 2 means the candidate would change
+      something the previous release wrote. Read the plan. A change a fix in
+      this version explains, such as an output that now lists more, goes in
+      the upgrade notes (step 11). Don't tag a candidate with any other
+      change.
+
+   3. Destroy with the candidate. Then repeat steps 1 to 3 with `tofu` in a
+      fresh copy of the directory.
+
 4. **Tag the merged commit and push the tag.** `-s` signs the tag. `BRANCH`
    is the release branch for a candidate, the final version and its patches.
    It's `main` only for a version released straight from `main`, with no
@@ -235,10 +303,47 @@ branch, `release-vMAJOR.MINOR.x`, so `main` can take new work meanwhile.
    EXPECTED_VERSION="$VERSION" GPG_KEY_FINGERPRINT=<fingerprint> ./scripts/validate-release-artifacts.sh "release-v$VERSION"
    ```
 
-9. **Check it installs.** Never replace a published file. Check
-   `terraform init` and `tofu init` install it on a clean machine, a candidate
-   with an exact `version`. See [docs/distribution.md](docs/distribution.md)
-   and [docs/install.md](docs/install.md).
+9. **Check the registries took it.** Each lists its versions:
+
+   ```sh
+   curl -s https://registry.terraform.io/v1/providers/k0rdent/k0rdent/versions | jq -r '.versions[].version'
+   curl -s https://registry.opentofu.org/v1/providers/k0rdent/k0rdent/versions | jq -r '.versions[].version'
+   ```
+
+   registry.terraform.io learns of a release from the repository webhook
+   whose URL starts `https://registry.terraform.io/`. If the version is
+   missing there, read that webhook's recent deliveries. A `release` delivery
+   the registry answered with "Ignored draft release event" means the release
+   was marked pre-release or still a draft. Reading deliveries needs the
+   `admin:repo_hook` scope (`gh auth refresh -s admin:repo_hook`). Delivery ids
+   are above 2^53, past what a float64 holds exactly, so the second command
+   prints the list with Python, not `--jq`:
+
+   ```sh
+   HOOK="$(gh api $R/hooks --jq '.[] | select(.config.url | startswith("https://registry.terraform.io/")) | .id')"
+   gh api "$R/hooks/$HOOK/deliveries?per_page=20" | python3 -c 'import json, sys; [print(d["id"], d["delivered_at"], d["event"], d["action"], d["status_code"]) for d in json.load(sys.stdin)]'
+   gh api "$R/hooks/$HOOK/deliveries/<id>" --jq '.response.payload'
+   ```
+
+10. **Check it installs.** Never replace a published file. Check
+    `terraform init` and `tofu init` install it on a clean machine, a
+    candidate with an exact `version`. See
+    [docs/distribution.md](docs/distribution.md) and
+    [docs/install.md](docs/install.md).
+
+11. **Write the release notes** in the GitHub release's body. The job
+    publishes it empty. Say:
+
+    - the k0rdent API version it was tested against, such as "the k0rdent API
+      v1.3.0-rc.4"
+    - the exact pin that installs it: `version = "0.1.0-rc.2"`
+    - upgrade notes: what changes for state or configuration written by the
+      previous release, or that nothing does
+    - known issues, each with its workaround
+
+    ```sh
+    gh release edit "v$VERSION" --notes-file notes.md
+    ```
 
 The release is built with the Go version in `.go-release-version`. To change
 it, change that file. `make vulncheck` scans under both CI's Go and that one.
