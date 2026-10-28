@@ -131,6 +131,9 @@ func (r *webhookSubscriptionResource) Schema(_ context.Context, _ resource.Schem
 			"platform's rotation, which keeps the id and everything queued for the endpoint. By " +
 			"default the previous secret is still accepted for 24 hours, and every delivery carries " +
 			"a signature under each, so receivers can move to the new one at their own pace.\n\n" +
+			"**A subscription the platform turned off is replaced.** After sustained delivery failure " +
+			"the platform turns a subscription off for good, and `is_active` reads `false`. The next " +
+			"plan replaces it, under a new id. Fix the endpoint before applying.\n\n" +
 			"Delivery health (last success, consecutive failures) is on the `" +
 			ResourceName(webhookSubscriptionDataSourceSuffix) + "` data source rather than here, " +
 			"because it moves with every delivery and isn't anything a configuration sets.",
@@ -209,9 +212,14 @@ func (r *webhookSubscriptionResource) Schema(_ context.Context, _ resource.Schem
 				PlanModifiers: []planmodifier.Int64{keepUnlessChanged("secret_wo_version")},
 			},
 			"is_active": schema.BoolAttribute{
-				Computed:            true,
-				MarkdownDescription: "Whether the platform is delivering to this endpoint.",
-				PlanModifiers:       []planmodifier.Bool{keepUnlessChanged("secret_wo_version")},
+				Computed: true,
+				MarkdownDescription: "Whether the platform delivers to this endpoint. It reads `false` once the " +
+					"platform has turned the subscription off after sustained delivery failure, and that " +
+					"can't be undone: a subscription turned off is never delivered to again, and the only way " +
+					"back is to delete it and create it again. So when a refresh reads `false`, the plan " +
+					"does that, the new one gets a new id, and the plan warns why. That needs `secret_wo`: " +
+					"without it the plan only warns.",
+				PlanModifiers: []planmodifier.Bool{keepUnlessChanged("secret_wo_version")},
 			},
 			"created_at": schema.StringAttribute{
 				Computed:            true,
@@ -507,6 +515,12 @@ func (r *webhookSubscriptionResource) ModifyPlan(ctx context.Context, req resour
 			return
 		}
 		creating = !plan.URL.Equal(state.URL) || !plan.EventTypes.Equal(state.EventTypes)
+		if !creating && state.IsActive.Equal(types.BoolValue(false)) {
+			if r.replaceDisabled(ctx, state, secret, resp) {
+				return
+			}
+			creating = true
+		}
 	}
 	if creating && secret.IsNull() {
 		resp.Diagnostics.AddAttributeError(path.Root("secret_wo"), "A new subscription needs a signing secret",
@@ -527,6 +541,36 @@ func (r *webhookSubscriptionResource) ModifyPlan(ctx context.Context, req resour
 				"recent previous secret. Rotating now replaces it, so receivers still on the secret from "+
 				"before the last rotation start refusing deliveries at once. Wait until then if any are.", until))
 	}
+}
+
+// replaceDisabled plans the replacement of a subscription the platform turned
+// off. The platform does that after sustained delivery failure and never
+// delivers to it again, and the contract's only way back is a delete and a
+// create. is_active planned unknown is what lets Terraform take the
+// RequiresReplace: it ignores one on an attribute that isn't changing. It
+// reports true when the plan is left alone, because with no secret configured
+// the replacement couldn't be made.
+func (r *webhookSubscriptionResource) replaceDisabled(ctx context.Context, state webhookSubscriptionModel, secret types.String, resp *resource.ModifyPlanResponse) bool {
+	id := state.ID.ValueString()
+	history := fmt.Sprintf("Its delivery history goes with it, so read the `%s` data source first to keep "+
+		"the failures that turned it off.", ResourceName(webhookDeliveriesDataSourceSuffix))
+	if secret.IsNull() {
+		resp.Diagnostics.AddAttributeWarning(path.Root("is_active"), "The platform turned this subscription off",
+			fmt.Sprintf("Subscription %s is no longer delivered to: the platform turns a subscription off "+
+				"after sustained delivery failure, and it can't be turned back on. Replacing it needs a "+
+				"signing secret, and this configuration sets no `secret_wo`, so nothing is planned. Set "+
+				"`secret_wo` and `secret_wo_version`, and the next plan replaces it under a new id. %s",
+				id, history))
+		return true
+	}
+	resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, path.Root("is_active"), types.BoolUnknown())...)
+	resp.RequiresReplace = append(resp.RequiresReplace, path.Root("is_active"))
+	resp.Diagnostics.AddAttributeWarning(path.Root("is_active"), "The platform turned this subscription off, so it's replaced",
+		fmt.Sprintf("Subscription %s is no longer delivered to: the platform turns a subscription off after "+
+			"sustained delivery failure, and a subscription it turned off can only be deleted and created "+
+			"again. Applying this plan does that, so the subscription gets a new id. Fix the endpoint "+
+			"first, or the new one fails the same way. %s", id, history))
+	return false
 }
 
 // parkedSecretDropped reports whether a rotation now would drop a previous
