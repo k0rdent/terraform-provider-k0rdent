@@ -50,7 +50,7 @@ Read-Only:
 - `event_types` (Set of String) The event types delivered. Null means every event.
 - `failing_since` (String) When the current run of failures began. Null when `consecutive_failures` is 0. Read the two together to tell a blip from an endpoint that's been down for days.
 - `id` (String) The subscription's id, a UUID.
-- `is_active` (Boolean) Whether the platform delivers to this endpoint. It reads `false` once the platform has turned the subscription off after sustained delivery failure, which can't be undone: only deleting it and creating it again gets deliveries going.
+- `is_active` (Boolean) Whether the platform delivers events to the subscription's `url`. It reads `false` once the platform has turned the subscription off because deliveries there kept failing, which can't be undone: only deleting it and creating it again gets deliveries going.
 - `last_success_at` (String) When the endpoint last accepted a delivery with a 2xx. Null if it never has.
 - `previous_secret_expires_at` (String) When the previous secret stops being accepted. Only set while a rotation's overlap is open.
 - `rotated_at` (String) When the secret was last rotated. Null if it never has been.

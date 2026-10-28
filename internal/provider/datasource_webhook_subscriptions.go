@@ -156,8 +156,8 @@ func webhookSubscriptionViewAttributes() map[string]schema.Attribute {
 		},
 		"is_active": schema.BoolAttribute{
 			Computed: true,
-			MarkdownDescription: "Whether the platform delivers to this endpoint. It reads `false` once the " +
-				"platform has turned the subscription off after sustained delivery failure, which can't be " +
+			MarkdownDescription: "Whether the platform delivers events to the subscription's `url`. It reads " +
+				"`false` once the platform has turned the subscription off because deliveries there kept failing, which can't be " +
 				"undone: only deleting it and creating it again gets deliveries going.",
 		},
 		"created_at": schema.StringAttribute{

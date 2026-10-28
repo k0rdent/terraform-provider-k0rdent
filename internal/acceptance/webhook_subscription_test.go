@@ -837,8 +837,9 @@ func TestAccWebhookSubscriptionTurnedOffPlanWarns(t *testing.T) {
 		"is_active = false -> (known after apply) # forces replacement",
 		"1 to add, 0 to change, 1 to destroy",
 		"Warning: The platform turned this subscription off, so it's replaced",
-		"Subscription "+first+" is no longer delivered to", "can only be deleted and created again",
-		"the subscription gets a new id")
+		"Subscription "+first+" gets no more events", "deliveries to your `url` kept failing",
+		"can only be deleted and created again", "the subscription gets a new id",
+		"Fix the server that receives the events first, or the new subscription gets turned off too")
 	out, ok = c.run("apply", "-auto-approve")
 	if !ok {
 		t.Fatalf("the replacing apply failed:\n%s", out)
@@ -865,7 +866,7 @@ func TestAccWebhookSubscriptionTurnedOffPlanWarns(t *testing.T) {
 	}
 	out, _ = c.run("plan", "-detailed-exitcode")
 	mustSay(t, "the plan with no secret", out, "No changes.", "Warning: The platform turned this subscription off",
-		"this configuration sets no `secret_wo`, so nothing is planned")
+		"deliveries to your `url` kept failing", "this configuration sets no `secret_wo`, so nothing is planned")
 }
 
 var uuidPattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
