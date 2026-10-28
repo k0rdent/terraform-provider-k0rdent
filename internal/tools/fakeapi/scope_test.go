@@ -106,7 +106,7 @@ var scopedKinds = []struct {
 		routes: func(s *state) scopedRoutes {
 			return scopedRoutes{s.createSecurityGroup, s.getSecurityGroup, s.listSecurityGroups, s.deleteSecurityGroup}
 		},
-		body:    `{"id":"x"}`,
+		body:    `{` + oneRule + `,"id":"x"}`,
 		listKey: "securityGroups",
 	},
 	{

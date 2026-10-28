@@ -20,7 +20,20 @@ var (
 	projectQuotaAddr  = "data." + projectQuotaType + ".team"
 )
 
-var regexpPortsOnICMP = regexp.MustCompile(`Ports cannot be set on this protocol`)
+var (
+	regexpPortsOnICMP = regexp.MustCompile(`Ports cannot be set on this protocol`)
+	regexpNoRules     = regexp.MustCompile(`A security group needs at least one rule`)
+)
+
+// oneEgressRule is the least a group is made with, for a test about something
+// other than its rules.
+const oneEgressRule = `
+  egress {
+    action             = "permit"
+    protocol           = "any"
+    source_prefix      = "0.0.0.0/0"
+    destination_prefix = "0.0.0.0/0"
+  }`
 
 func securityGroupConfig(name string, extraIngress bool) string {
 	extra := ""
@@ -130,6 +143,73 @@ resource %q "test" {
 			ExpectError: regexpPortsOnICMP,
 		}},
 	})
+}
+
+// A group with no rules is a 422 upstream, on a create and on a PATCH that
+// empties both lists. The plan refuses it first, whether the blocks are left
+// out or a `dynamic` block's list is empty.
+func TestAccSecurityGroupRefusesNoRulesInThePlan(t *testing.T) {
+	for name, body := range map[string]string{
+		"no blocks": ``,
+		"an empty dynamic block": `
+  dynamic "ingress" {
+    for_each = []
+    content {
+      action             = "permit"
+      protocol           = "any"
+      source_prefix      = "0.0.0.0/0"
+      destination_prefix = "0.0.0.0/0"
+    }
+  }`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			resource.Test(t, resource.TestCase{
+				ProtoV6ProviderFactories: protoV6,
+				Steps: []resource.TestStep{{
+					Config: fmt.Sprintf(`
+resource %q "test" {
+  id = "acc-no-rules"
+%s
+}
+`, securityGroupType, body),
+					PlanOnly:    true,
+					ExpectError: regexpNoRules,
+				}},
+			})
+		})
+	}
+}
+
+// One rule in either list is enough: each direction alone creates the group
+// and plans no change after it.
+func TestAccSecurityGroupWithRulesInOneDirection(t *testing.T) {
+	for direction, rule := range map[string]string{
+		"ingress": strings.Replace(oneEgressRule, "egress", "ingress", 1),
+		"egress":  oneEgressRule,
+	} {
+		t.Run(direction, func(t *testing.T) {
+			config := fmt.Sprintf(`
+resource %q "test" {
+  id = "acc-only-%s"
+%s
+}
+`, securityGroupType, direction, rule)
+			resource.Test(t, resource.TestCase{
+				ProtoV6ProviderFactories: protoV6,
+				CheckDestroy:             checkGone(securityGroupType, securityGroupPath),
+				Steps: []resource.TestStep{
+					{
+						Config: config,
+						Check: resource.ComposeAggregateTestCheckFunc(
+							resource.TestCheckResourceAttr(securityGroupAddr, "rule_count", "1"),
+							resource.TestCheckResourceAttr(securityGroupAddr, direction+".#", "1"),
+						),
+					},
+					{Config: config, PlanOnly: true},
+				},
+			})
+		})
+	}
 }
 
 // Each of these is a 422 the server would raise partway through an approved

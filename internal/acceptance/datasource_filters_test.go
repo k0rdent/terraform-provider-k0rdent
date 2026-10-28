@@ -91,6 +91,7 @@ resource %[1]q "kept" {
   id           = "acc-filter-sg-kept"
   display_name = "web-kept"
   tags         = { suite = "acc-filters-sg" }
+%[3]s
 }
 
 # Fails only the tags filter.
@@ -98,6 +99,7 @@ resource %[1]q "other_tag" {
   id           = "acc-filter-sg-other-tag"
   display_name = "web-other-tag"
   tags         = { suite = "acc-filters-sg-other" }
+%[3]s
 }
 
 # Fails only the regex.
@@ -105,6 +107,7 @@ resource %[1]q "other_name" {
   id           = "acc-filter-sg-other-name"
   display_name = "db-other-name"
   tags         = { suite = "acc-filters-sg" }
+%[3]s
 }
 
 data %[2]q "mine" {
@@ -121,7 +124,7 @@ data %[2]q "failed" {
   state              = "failed"
   depends_on         = [%[1]s.kept, %[1]s.other_tag, %[1]s.other_name]
 }
-`, securityGroupType, securityGroupsType),
+`, securityGroupType, securityGroupsType, oneEgressRule),
 			Check: resource.ComposeAggregateTestCheckFunc(
 				resource.TestCheckResourceAttr(list, "security_groups.#", "1"),
 				resource.TestCheckResourceAttr(list, "ids.0", "acc-filter-sg-kept"),

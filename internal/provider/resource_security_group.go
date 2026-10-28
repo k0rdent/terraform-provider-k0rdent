@@ -180,7 +180,7 @@ func (r *securityGroupResource) Schema(ctx context.Context, _ resource.SchemaReq
 			"interfaces, not the Kubernetes API endpoint, and there is no allowlist for that " +
 			"endpoint on the public API today.\n\n" +
 			"Rules are evaluated first-match in list order, and ingress and egress are " +
-			"independent. Only a VPC on the `nico` fabric backend can carry security groups.\n\n" +
+			"independent. A group needs at least one rule, in either list. Only a VPC on the `nico` fabric backend can carry security groups.\n\n" +
 			"**The platform adds its own rules after the group's:** permit all ingress, then deny " +
 			"all egress. So a group of only permits filters nothing incoming: end it with a deny for " +
 			"what it shouldn't let in. A change can take up to a few minutes to reach the nodes, and " +
@@ -271,15 +271,41 @@ func (r *securityGroupResource) Schema(ctx context.Context, _ resource.SchemaReq
 	describeReplacement(&resp.Schema, "security group")
 }
 
-// ValidateConfig rejects a port range on a protocol that cannot carry one.
+// ValidateConfig rejects a group with no rules and a port range on a protocol
+// that cannot carry one.
 func (r *securityGroupResource) ValidateConfig(ctx context.Context, req resource.ValidateConfigRequest, resp *resource.ValidateConfigResponse) {
+	lists := map[string]types.List{}
 	for _, direction := range []string{"ingress", "egress"} {
-		// A `dynamic` block over a variable is unknown under `terraform validate`.
 		var list types.List
 		resp.Diagnostics.Append(req.Config.GetAttribute(ctx, path.Root(direction), &list)...)
 		if resp.Diagnostics.HasError() {
 			return
 		}
+		lists[direction] = list
+	}
+
+	// A `dynamic` block over a variable is unknown under `terraform validate`,
+	// and so is its length. Whether the group has a rule is known only once
+	// both lists are.
+	ingress, egress := lists["ingress"], lists["egress"]
+	if !ingress.IsUnknown() && !egress.IsUnknown() && len(ingress.Elements())+len(egress.Elements()) == 0 {
+		// Local: configuration validation, no request made. The server answers
+		// 422 for a group with no rules, on a create and on a PATCH that sends
+		// both lists empty, because the fabric can't apply one: it would settle
+		// `failed` and leave what it's bound to waiting on it.
+		resp.Diagnostics.AddError(
+			"A security group needs at least one rule",
+			"This group has no `ingress` and no `egress` block, and the platform refuses a group "+
+				"with no rules. Add an `ingress` or `egress` block.\n\n"+
+				"To stop using a group, remove it from what it's bound to, then remove its "+
+				"resource block and apply, which deletes it. `terraform destroy` checks this "+
+				"block too, so it fails the same way until the block has a rule or is gone.",
+		)
+		return
+	}
+
+	for _, direction := range []string{"ingress", "egress"} {
+		list := lists[direction]
 		if list.IsUnknown() {
 			continue
 		}
@@ -741,8 +767,8 @@ var securityGroupStates = stateKind[k0rdent.SecurityGroup]{
 
 func rulesRequest(m securityGroupModel) k0rdent.SecurityGroupRules {
 	// Both lists are always present, never nil. An omitted `rules` leaves the
-	// group's rules alone and empty lists clear them, and a configuration with
-	// no blocks means the second.
+	// group's rules alone, and an empty list clears that direction. Both empty
+	// is refused by the server and, before that, by ValidateConfig.
 	out := k0rdent.SecurityGroupRules{
 		Ingress: make([]k0rdent.SecurityGroupRule, 0, len(m.Ingress)),
 		Egress:  make([]k0rdent.SecurityGroupRule, 0, len(m.Egress)),

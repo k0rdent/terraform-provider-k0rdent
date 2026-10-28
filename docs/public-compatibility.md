@@ -76,6 +76,19 @@ interface.
 
 ## Migrations
 
+### A security group needs a rule
+
+A `k0rdent_security_group` with no `ingress` and no `egress` block now fails
+the plan with "A security group needs at least one rule". The platform
+refuses such a group, because the fabric can't apply it, and a group left
+`failed` keeps whatever it's bound to waiting.
+
+- To keep the group, add an `ingress` or `egress` block. One rule in either
+  list is enough.
+- To stop using it, remove it from what it's bound to, then remove its
+  resource block and apply, which deletes it. `terraform destroy` fails the
+  same way while the block has no rule, so remove the block first.
+
 ### Projects locked to a region
 
 Every project now belongs to one region, set when it's created.
