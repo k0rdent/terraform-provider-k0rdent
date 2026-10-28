@@ -1,0 +1,3 @@
+```release-note:bug
+resource/k0rdent_security_group: Fix the description saying the platform adds a permit-all ingress rule after a group's own rules, so a group of only permits filters nothing incoming. The platform adds no rules to a group, and on the `nico` fabric traffic that no rule permits is denied in both directions
+```
