@@ -155,16 +155,16 @@ PY
     refresh_clean "$1" "after the change"
   fi
 
-  # full/ only: one security group rule edited, the egress rule's range.
+  # full/ only: one security group rule edited, an egress rule's port.
   if [ "$2" = full ]; then
     python3 - "$DIR/main.tf" <<'PY' || fail "$1: no egress rule to edit"
 import sys
 path = sys.argv[1]
 src = open(path).read()
-old = '{ name = "everything out", protocol = "any", destination = "0.0.0.0/0" }'
+old = '{ name = "https", protocol = "tcp", port = "443" }'
 if src.count(old) != 1:
     sys.exit(1)
-open(path, "w").write(src.replace(old, old.replace("0.0.0.0/0", "10.0.0.0/8")))
+open(path, "w").write(src.replace(old, old.replace('"443"', '"8443"')))
 PY
     plan_saved "$1-rule-change"
     grep -qF "Plan: 0 to add, 1 to change, 0 to destroy." "$DIR/last.log" \
