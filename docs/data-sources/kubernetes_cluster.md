@@ -94,8 +94,8 @@ output "api_endpoint" {
 - `health_state` (String) Observed health, which is reported separately from `state` and never drives it. `unknown` until the platform first reports it.
 - `kubernetes_version` (String) The Kubernetes version the bound ClusterType version carries, such as `v1.35.1+k0s.0`, read from that version's `k8s.k0sVersion`. It's the version the cluster is bound to: `control_plane_version` is what a hosted control plane runs, and lags it while an upgrade rolls out. Null when the bound version carries no Kubernetes configuration, or the platform no longer finds it.
 - `next_available_cluster_type_version` (String) The ClusterType version this cluster could move to, when one is available. Null when it is on the latest.
-- `node_count` (Number) Total nodes across every materialized pool.
-- `node_pools` (Attributes Map) Every pool the platform materialized, including the ones a configuration did not name, keyed by pool slug: the same key a cluster's `node_pool` map uses. (see [below for nested schema](#nestedatt--node_pools))
+- `node_count` (Number) Total nodes across every pool the cluster has.
+- `node_pools` (Attributes Map) Every pool the platform created, including the ones a configuration did not name, keyed by pool slug: the same key a cluster's `node_pool` map uses. (see [below for nested schema](#nestedatt--node_pools))
 - `operation` (Attributes) The cluster's current or last lifecycle operation: a create, a scale, an upgrade or a delete. This is where an upgrade's phase and start time are read. Null on a cluster that has never run one. (see [below for nested schema](#nestedatt--operation))
 - `security_groups` (List of String) Security groups applied to the cluster's instances. Order is significant: it is the order the fabric applies them in.
 - `self_link` (String) Platform-defined reference to this cluster.

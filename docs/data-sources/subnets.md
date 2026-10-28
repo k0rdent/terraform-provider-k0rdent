@@ -3,13 +3,13 @@
 page_title: "k0rdent_subnets Data Source - k0rdent"
 subcategory: ""
 description: |-
-  Every subnet inside one network, including the ones a cluster materialized.
+  Every subnet inside one network, including the ones a cluster created.
   This is how a configuration learns the CIDR a cluster was given, which is the value a firewall rule or a peering has to be written against.
 ---
 
 # k0rdent_subnets (Data Source)
 
-Every subnet inside one network, including the ones a cluster materialized.
+Every subnet inside one network, including the ones a cluster created.
 
 This is how a configuration learns the CIDR a cluster was given, which is the value a firewall rule or a peering has to be written against.
 

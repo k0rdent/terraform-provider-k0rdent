@@ -19,7 +19,7 @@ import (
 //
 // The plural data sources beside these answer a different question. They exist
 // for discovery: what networks does this project have, which of them did a
-// cluster materialize for itself, which security groups are in play. They
+// cluster create for itself, which security groups are in play. They
 // return summaries, and selecting one means filtering a list.
 //
 // These answer the question a second state boundary asks, which is not a

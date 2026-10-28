@@ -41,7 +41,7 @@ var relatedPages = map[string][]relatedLink{
 		{"resources/security_group", "defines a group `security_groups` lists."},
 		{"ephemeral-resources/cluster_kubeconfig", "fetches the credential for the cluster's API without writing it to state."},
 		{"data-sources/effective_security_groups", "reports what actually filters the cluster's interfaces."},
-		{"resources/vpc_peering", "peers the VPC the cluster materialized with another."},
+		{"resources/vpc_peering", "peers the cluster's VPC with another."},
 		{"actions/cluster_cancel_operation", "cancels the operation the cluster is running, and keeps the cluster."},
 	},
 	"resources/instance_group": {
@@ -75,8 +75,8 @@ var relatedPages = map[string][]relatedLink{
 	"resources/vpc_peering": {
 		{"data-sources/vpc", "reads a VPC's `self_link`, which `remote_vpc` takes for one in another project."},
 		{"data-sources/vpcs", "lists the VPCs `vpc` and `remote_vpc` name."},
-		{"resources/kubernetes_cluster", "materializes the VPC a peering is declared under."},
-		{"resources/instance_group", "materializes a VPC too, whose `vpc` a peering in this project takes as `remote_vpc`."},
+		{"resources/kubernetes_cluster", "creates the VPC a peering is declared under."},
+		{"resources/instance_group", "creates a VPC too, whose `vpc` a peering in this project takes as `remote_vpc`."},
 	},
 	"resources/vpc_security_groups": {
 		{"resources/security_group", "defines a group `security_groups` lists."},
@@ -134,7 +134,7 @@ var relatedPages = map[string][]relatedLink{
 	"data-sources/network": {{"resources/subnet", "allocates a CIDR inside a network."}},
 	"data-sources/networks": {
 		{"resources/subnet", "allocates a CIDR inside a network."},
-		{"resources/kubernetes_cluster", "materializes networks of its own, which carry a `cluster_id`."},
+		{"resources/kubernetes_cluster", "creates networks of its own, which carry a `cluster_id`."},
 	},
 	"data-sources/organization": {
 		{"resources/project", "takes an organization's id in `organization_id`."},

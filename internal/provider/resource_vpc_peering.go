@@ -153,7 +153,7 @@ func (r *vpcPeeringResource) Schema(ctx context.Context, _ resource.SchemaReques
 				Required: true,
 				MarkdownDescription: "Id of the local VPC this peering is declared under. Find it " +
 					"with the `" + ResourceName(vpcsDataSourceSuffix) + "` data source: a VPC is " +
-					"materialized by a cluster or instance group, never created directly.",
+					"created with a cluster or instance group, never on its own.",
 				PlanModifiers: replaceString,
 				Validators:    []validator.String{urlSafeIdentifier{}},
 			},

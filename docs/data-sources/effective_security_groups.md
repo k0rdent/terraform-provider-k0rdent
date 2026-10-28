@@ -4,7 +4,7 @@ page_title: "k0rdent_effective_security_groups Data Source - k0rdent"
 subcategory: ""
 description: |-
   The security groups that actually filter one object's interfaces, merged and in the order the fabric applies them.
-  A cluster or instance_group read returns the merged set: the object's own binding plus the floor of every VPC it materialized. A vpc read returns only that VPC's own binding, because the owner's groups filter traffic there too and are read from the owner.
+  A cluster or instance_group read returns the merged set: the object's own binding plus the floor of every VPC created with it. A vpc read returns only that VPC's own binding, because the owner's groups filter traffic there too and are read from the owner.
   An empty list for a VPC means nothing filters interfaces in it. That is not an error, and it is always the case on a fabric backend with no security-group construct behind it, where neither binding can be enforced.
 ---
 
@@ -12,7 +12,7 @@ description: |-
 
 The security groups that actually filter one object's interfaces, merged and in the order the fabric applies them.
 
-A `cluster` or `instance_group` read returns the merged set: the object's own binding plus the floor of every VPC it materialized. A `vpc` read returns only that VPC's own binding, because the owner's groups filter traffic there too and are read from the owner.
+A `cluster` or `instance_group` read returns the merged set: the object's own binding plus the floor of every VPC created with it. A `vpc` read returns only that VPC's own binding, because the owner's groups filter traffic there too and are read from the owner.
 
 An empty list for a VPC means nothing filters interfaces in it. That is not an error, and it is always the case on a fabric backend with no security-group construct behind it, where neither binding can be enforced.
 

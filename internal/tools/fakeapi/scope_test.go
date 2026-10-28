@@ -129,7 +129,7 @@ var scopedKinds = []struct {
 	},
 }
 
-// clusterInP creates cluster "c" in project "p", which materializes VPC
+// clusterInP creates cluster "c" in project "p", and with it VPC
 // "vpc-c" there.
 func clusterInP(t *testing.T, s *state) {
 	t.Helper()

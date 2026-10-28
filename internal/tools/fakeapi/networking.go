@@ -12,7 +12,7 @@ import (
 )
 
 // The networking slice of the fake: tenant networks, the subnets allocated
-// inside them, and the read-only VPCs the cluster workflow materializes.
+// inside them, and the read-only VPCs the cluster workflow creates.
 //
 // Same rule as the rest of the file: the fake must not agree with itself. Four
 // hazards are modelled here, each of them the reading that breaks a provider
@@ -75,7 +75,7 @@ type fakeVPC struct {
 }
 
 // vpcForOwner is how a VPC comes into being. There is no create operation: the
-// cluster and instance-group workflows materialize one, which is exactly why
+// cluster and instance-group workflows make one, which is exactly why
 // the provider exposes VPCs as a data source and not a resource.
 func (o *objects) vpcForOwner(ownerKind, ownerID string) {
 	vpc := "vpc-" + ownerID

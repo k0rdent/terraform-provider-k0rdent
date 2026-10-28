@@ -11,7 +11,7 @@ import (
 )
 
 // Instances are the hosts an instance group holds. The contract has no create
-// for one: they are materialized when a group is created or scaled. So the fake
+// for one: the platform makes them when a group is created or scaled. So the fake
 // stores none and derives them on every read from what each group holds, the
 // way the platform reads them from the infrastructure service on every request.
 //

@@ -54,7 +54,7 @@ Read-Only:
 - `display_name` (String) Human-friendly name, for display only.
 - `id` (String) The VPC's name.
 - `owner_id` (String) UID of the owning cluster or instance group.
-- `owner_kind` (String) What materialized this VPC: a cluster or an instance group. Deleting that owner deletes the VPC.
+- `owner_kind` (String) What created this VPC: a cluster or an instance group. Deleting that owner deletes the VPC.
 - `security_groups` (List of String) Ids of the attached security groups, in the order they were last set. Never empty on a `nico` VPC: clearing the binding reinstates the platform's DEFAULT group rather than leaving none.
 - `self_link` (String) Platform-defined reference to this VPC.
 - `state` (String) Lifecycle state. `updating` means a security-group change has been accepted and `security_groups` is what the API will converge on, not necessarily what the fabric enforces yet.

@@ -132,7 +132,7 @@ func (r *networkResource) Schema(ctx context.Context, _ resource.SchemaRequest, 
 			"decides the network's `type`. Everything except `display_name`, `description` and " +
 			"`tags` is immutable: the API offers no way to change a fabric in place, so a change " +
 			"anywhere else replaces the network.\n\n" +
-			"Networks materialized by a cluster are not managed here. They carry a `cluster_id`, " +
+			"Networks created by a cluster are not managed here. They carry a `cluster_id`, " +
 			"and the tenant API answers `409` to any write against them.\n\n" +
 			"Requires `region` and `project` on the provider.",
 		Blocks: map[string]schema.Block{

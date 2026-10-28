@@ -129,7 +129,7 @@ func parsePort(s string) (int, error) {
 // owns rather than the tenant.
 //
 // Three resources expose a Computed attribute that says so: `cluster_id` on a
-// network or subnet the cluster lifecycle materialized, and `owner_kind` on a
+// network or subnet the cluster lifecycle created, and `owner_kind` on a
 // VPC's DEFAULT security group. The tenant API answers 409 to any write to one,
 // so without this an import plans cleanly and fails partway through the apply.
 //

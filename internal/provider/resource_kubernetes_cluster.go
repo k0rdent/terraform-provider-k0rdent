@@ -252,7 +252,7 @@ func (r *clusterResource) Schema(ctx context.Context, _ resource.SchemaRequest, 
 			tagsAllAttribute: tagsAllSchemaAttribute(""),
 			// Optional+Computed, and the drift cost is real and accepted: a pool
 			// this map does not name is not drift-checked, because the platform
-			// materializes it from the ClusterType and Terraform has no
+			// creates it from the ClusterType and Terraform has no
 			// configured value to compare. Named pools are checked normally.
 			//
 			// Left out of the configuration, Terraform proposes null rather than
@@ -264,12 +264,12 @@ func (r *clusterResource) Schema(ctx context.Context, _ resource.SchemaRequest, 
 				PlanModifiers: []planmodifier.Map{mapplanmodifier.UseStateForUnknown()},
 				MarkdownDescription: "Per-pool node counts, keyed by the ClusterType node pool's id.\n\n" +
 					"This is a **sparse override set**, not the full pool list. The platform " +
-					"materializes one pool for every pool on the bound ClusterType version, using " +
+					"creates one pool for every pool on the bound ClusterType version, using " +
 					"each pool's default count where this map does not name it, so naming one pool " +
 					"here does not remove the others. A pool named here is managed by Terraform: " +
 					"changing its count scales the cluster. A pool left out is left to the " +
 					"ClusterType's default and is not drift-checked.\n\n" +
-					"Omit the attribute entirely and the platform's materialized counts are read " +
+					"Omit the attribute entirely and the platform's counts are read " +
 					"into state as-is." +
 					knownGap("A pool's machine type is readable only as a name, not as hardware, "+
 						"so choosing a pool for its hardware means writing its id as a literal."),
@@ -289,7 +289,7 @@ func (r *clusterResource) Schema(ctx context.Context, _ resource.SchemaRequest, 
 			// no-op, and ModifyPlan then decides what a change can move.
 			"node_count": schema.Int64Attribute{
 				Computed:            true,
-				MarkdownDescription: "Total nodes across every materialized pool, as reported by the platform.",
+				MarkdownDescription: "Total nodes across every pool the cluster has, as reported by the platform.",
 				PlanModifiers:       []planmodifier.Int64{int64planmodifier.UseStateForUnknown()},
 			},
 			"state": schema.StringAttribute{
@@ -1117,7 +1117,7 @@ func clusterStateFrom(ctx context.Context, c k0rdent.Cluster, prior clusterModel
 		out.ClusterType = types.StringValue(returned)
 	}
 
-	// Node pools. The platform returns every materialized pool; the model holds
+	// Node pools. The platform returns every pool the cluster has. The model holds
 	// the sparse set this configuration manages. Narrow the read to the keys
 	// already known, so a pool nobody asked about does not appear in state and
 	// then look like something to remove. With nothing known, as on an import,

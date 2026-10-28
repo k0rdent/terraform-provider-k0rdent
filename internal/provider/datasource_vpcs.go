@@ -33,7 +33,7 @@ type vpcsDataSource struct{ meta *Meta }
 type vpcDataSource struct{ meta *Meta }
 
 // Read-only: there is no createVPC, updateVPC or deleteVPC. A VPC is
-// materialized by the cluster or instance-group workflow and goes with its
+// created by the cluster or instance-group workflow and goes with its
 // owner. The security-group binding is the one tenant-writable part.
 type vpcEntryModel struct {
 	ID             types.String `tfsdk:"id"`
@@ -106,7 +106,7 @@ func vpcEntryAttributes() map[string]schema.Attribute {
 		},
 		"owner_kind": schema.StringAttribute{
 			Computed: true,
-			MarkdownDescription: "What materialized this VPC: a cluster or an instance group. " +
+			MarkdownDescription: "What created this VPC: a cluster or an instance group. " +
 				"Deleting that owner deletes the VPC.",
 		},
 		"owner_id": schema.StringAttribute{

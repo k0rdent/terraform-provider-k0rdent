@@ -118,7 +118,7 @@ var (
 	}
 
 	// A VPC has no create and no delete: the cluster and instance-group
-	// workflows materialize one and take it away with their owner.
+	// workflows make one and take it away with their owner.
 	vpcKind = &kind[*fakeVPC]{
 		name: "vpc",
 		// createVPCPeering: CONFLICT_IN_USE "when a VPC you can already read
@@ -609,7 +609,7 @@ func (sub *fakeSubnet) life() (*string, *int, *string) {
 	return &sub.state, &sub.reads, sub.displayName
 }
 
-// A VPC is materialized, not created, so it carries no display name and can
+// Only the platform creates a VPC, so it carries no display name and can
 // never be steered anywhere but active.
 func (v *fakeVPC) life() (*string, *int, *string) { return &v.state, &v.reads, nil }
 func (g *fakeSecurityGroup) life() (*string, *int, *string) {

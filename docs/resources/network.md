@@ -5,7 +5,7 @@ subcategory: ""
 description: |-
   A tenant fabric network: an Ethernet (EVPN), InfiniBand or NVLink segment that subnets are allocated inside.
   Exactly one of evpn, infiniband or nvlink must be set, and it is the one that decides the network's type. Everything except display_name, description and tags is immutable: the API offers no way to change a fabric in place, so a change anywhere else replaces the network.
-  Networks materialized by a cluster are not managed here. They carry a cluster_id, and the tenant API answers 409 to any write against them.
+  Networks created by a cluster are not managed here. They carry a cluster_id, and the tenant API answers 409 to any write against them.
   Requires region and project on the provider.
   What replaces it. Changing evpn, id, infiniband, nvlink, project or region cannot be done in place and replaces the network. A network carries the subnets and interfaces tenant workloads attach to, and a replacement deletes it and allocates a new fabric segment. So a plan that would replace it fails and names the attribute, unless allow_replace = true is set on the resource. Everything else changes in place.
 ---
@@ -16,7 +16,7 @@ A tenant fabric network: an Ethernet (EVPN), InfiniBand or NVLink segment that s
 
 Exactly one of `evpn`, `infiniband` or `nvlink` must be set, and it is the one that decides the network's `type`. Everything except `display_name`, `description` and `tags` is immutable: the API offers no way to change a fabric in place, so a change anywhere else replaces the network.
 
-Networks materialized by a cluster are not managed here. They carry a `cluster_id`, and the tenant API answers `409` to any write against them.
+Networks created by a cluster are not managed here. They carry a `cluster_id`, and the tenant API answers `409` to any write against them.
 
 Requires `region` and `project` on the provider.
 
