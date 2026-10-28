@@ -8,9 +8,8 @@ resource "k0rdent_vpc_security_groups" "training" {
   ]
 }
 
-# Destroying this puts back the VPC's default group. From API v1.3.0-rc.3 it
-# allows traffic inside the VPC and nothing else. `attached` shows what's
-# bound.
+# Destroying this puts back the VPC's default group, which allows traffic
+# inside the VPC and all egress. `attached` shows what's bound.
 output "actually_attached" {
   value = k0rdent_vpc_security_groups.training.attached
 }

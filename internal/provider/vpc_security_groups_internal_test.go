@@ -53,9 +53,9 @@ func TestBindingConflictNamesTheBackendOnlyWhenItIsTheCause(t *testing.T) {
 }
 
 // Taking a binding off puts the VPC's platform-managed DEFAULT group back on,
-// which filters differently from the groups it replaces. A replacement takes
-// the old binding off just as a destroy does, and the old VPC keeps DEFAULT
-// when the new binding names another one, so both plans carry the warning. A change made in place swaps
+// which permits all egress. A replacement takes the old binding off just as a
+// destroy does, and the old VPC keeps DEFAULT when the new binding names
+// another one, so both plans carry the warning. A change made in place swaps
 // one list for another and never passes through DEFAULT, so it doesn't.
 func TestTheWideningWarningFiresOnEveryPlanThatTakesTheBindingOff(t *testing.T) {
 	r := &vpcSecurityGroupsResource{meta: &Meta{Region: "test", Project: "test"}}
@@ -111,10 +111,10 @@ func TestTheWideningWarningFiresOnEveryPlanThatTakesTheBindingOff(t *testing.T) 
 }
 
 // wideningWarning is the summary and detail of the warning that the VPC's
-// filter changes, or empty.
+// filter widens, or empty.
 func wideningWarning(diags diag.Diagnostics) string {
 	for _, d := range diags.Warnings() {
-		if strings.Contains(d.Summary(), "changes the VPC's filter") {
+		if strings.Contains(d.Summary(), "widens the VPC's filter") {
 			return d.Summary() + " " + d.Detail()
 		}
 	}

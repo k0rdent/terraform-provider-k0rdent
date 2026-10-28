@@ -89,16 +89,10 @@ func (r *vpcSecurityGroupsResource) Schema(ctx context.Context, _ resource.Schem
 			"A VPC is materialized by a cluster or instance group and has no lifecycle of its own, " +
 			"so this binding is the only part of one that Terraform can write. It is a whole-list " +
 			"replace: the groups named here are attached, and any attached before and absent now " +
-			"are detached. A list without the VPC's default group replaces it, and with it the " +
-			"default's rules for traffic between the VPC's subnets. To keep them, list the default " +
-			"group's id too.\n\n" +
+			"are detached.\n\n" +
 			"**Destroying this resource does not leave the VPC unfiltered.** It reinstates the " +
-			"VPC's platform-managed DEFAULT group. From the k0rdent API v1.3.0-rc.3, a new VPC's " +
-			"default group permits traffic between the VPC's own subnet prefixes and nothing " +
-			"else, and has no rules on a VPC with no subnet prefixes. Traffic leaving the VPC " +
-			"needs a group of your own. A default group from an earlier release also carries an " +
-			"allow-all egress rule, which never took effect on the `nico` fabric. A VPC always " +
-			"carries at least one group. A " +
+			"VPC's platform-managed DEFAULT group, which permits traffic between the VPC's own " +
+			"subnet prefixes and permits all egress. A VPC always carries at least one group. A " +
 			"replacement does the same to the old VPC, because it destroys the old binding. The " +
 			"plan warns about a destroy, and about a replacement that a change to `vpc`, `region` " +
 			"or `project` causes. It can't warn about one forced by `-replace` or " +
@@ -183,13 +177,6 @@ func (r *vpcSecurityGroupsResource) Configure(_ context.Context, req resource.Co
 	r.meta = configureMeta(req.ProviderData, &resp.Diagnostics)
 }
 
-// What the DEFAULT group lets through, for the destroy and replace warnings.
-const defaultGroupFilters = "From the k0rdent API v1.3.0-rc.3, a new VPC's default group " +
-	"permits traffic between the VPC's own subnet prefixes and nothing else. So traffic the " +
-	"tenant groups kept out is let in, and traffic they let out of the VPC stops unless the " +
-	"cluster or instance group's own groups permit it. A default group from an earlier " +
-	"release also carries an allow-all egress rule, which never took effect on the nico fabric."
-
 func (r *vpcSecurityGroupsResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
 	modifyScopePlan(ctx, r.meta, req, resp)
 	if resp.Diagnostics.HasError() {
@@ -197,13 +184,12 @@ func (r *vpcSecurityGroupsResource) ModifyPlan(ctx context.Context, req resource
 	}
 
 	// Taking the binding off reinstates the VPC's platform-managed DEFAULT
-	// group, which filters differently from the groups it replaces. A destroy
-	// does that, and so does a replacement: Terraform destroys the old binding
-	// whichever order it runs the two halves in. When the new one names
-	// another VPC the old one is left on DEFAULT for good. On the same VPC
-	// create_before_destroy runs the destroy last, and Delete finds the new
-	// binding there and leaves it, so only the other order passes through
-	// DEFAULT. A destroy plan is the one
+	// group, which permits all egress. A destroy does that, and so does a
+	// replacement: Terraform destroys the old binding whichever order it runs
+	// the two halves in. When the new one names another VPC the old one is
+	// left on DEFAULT for good. On the same VPC create_before_destroy runs the
+	// destroy last, and Delete finds the new binding there and leaves it, so
+	// only the other order passes through DEFAULT. A destroy plan is the one
 	// place Terraform renders no provider text, so the warning is the only sign
 	// of it there. A replacement forced by -replace or replace_triggered_by
 	// never reaches this: Terraform decides it after ModifyPlan answers, and
@@ -214,11 +200,12 @@ func (r *vpcSecurityGroupsResource) ModifyPlan(ctx context.Context, req resource
 	}
 	if !req.State.Raw.IsNull() && req.Plan.Raw.IsNull() {
 		resp.Diagnostics.AddWarning(
-			"Destroying this resource changes the VPC's filter",
+			"Destroying this resource widens the VPC's filter",
 			fmt.Sprintf("The tenant security groups come off %q and the VPC's platform-managed "+
-				"DEFAULT group goes back on. "+defaultGroupFilters+" If the VPC holds anything "+
-				"but what this resource last read by the time the destroy runs, it's left as it "+
-				"is and the resource is only dropped from state.",
+				"DEFAULT group goes back on. That group permits all egress and permits traffic "+
+				"between the VPC's own subnet prefixes, so the VPC ends up less filtered than it is "+
+				"now. If the VPC holds anything but what this resource last read by the time the "+
+				"destroy runs, it's left as it is and the resource is only dropped from state.",
 				prior.ValueString()),
 		)
 		return
@@ -233,13 +220,13 @@ func (r *vpcSecurityGroupsResource) ModifyPlan(ctx context.Context, req resource
 			changed = "`" + replacing[0].path.String() + "` changing"
 		}
 		resp.Diagnostics.AddWarning(
-			"Replacing this resource changes the VPC's filter",
+			"Replacing this resource widens the VPC's filter",
 			fmt.Sprintf("This plan replaces the binding on %q, because of %s. Terraform destroys "+
 				"the old binding as part of that, which takes the tenant security groups off %q and "+
-				"puts its platform-managed DEFAULT group back on. "+defaultGroupFilters+
-				" If the new binding names another VPC, %q stays on DEFAULT after the apply. If "+
-				"it names the same VPC, it's on DEFAULT between the destroy and the create. With "+
-				"`create_before_destroy` it "+
+				"puts its platform-managed DEFAULT group back on. That group permits all egress and "+
+				"permits traffic between the VPC's own subnet prefixes. If the new binding names "+
+				"another VPC, %q stays on DEFAULT after the apply. If it names the same VPC, it's "+
+				"on DEFAULT between the destroy and the create. With `create_before_destroy` it "+
 				"isn't, because the new binding is written first and the destroy that runs after "+
 				"finds it and leaves it.", prior.ValueString(), changed,
 				prior.ValueString(), prior.ValueString()),

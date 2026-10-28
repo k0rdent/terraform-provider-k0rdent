@@ -300,8 +300,8 @@ Both directories run the same way: fill in `terraform.tfvars`, then `plan`,
 
 [`network/`](../examples/walkthrough/network/main.tf) makes a network, a
 subnet, and a security group that lets in SSH, the Kubernetes API and ping
-from `allowed_cidr`, the range you connect from, and lets out what nodes
-need. No cluster, so it takes seconds.
+from `allowed_cidr`, the range you connect from. No cluster, so it takes
+seconds.
 
 - It takes `prefix`, `region`, `project` and `allowed_cidr`.
 - The subnet is a /28 from the region's first active address pool that isn't
@@ -357,24 +357,10 @@ The `build` block in `terraform.tfvars` turns each part on or off:
   as quota, the kubeconfig and webhook deliveries.
 - `nodes/` works with this cluster too, since it's also
   `<prefix>-walkthrough`.
-- The platform adds a permit-all ingress rule after every group's own
-  rules, so `full/` adds a deny for each service from anywhere else, except
-  the Kubernetes API port. The `kubernetes_api` output gives an `nc` test to
-  run from inside and outside `allowed_cidrs`.
-- The platform adds a deny-all egress rule after them, and from API
-  v1.3.0-rc.3 a VPC's default group lets nothing out of the VPC. So the
-  groups in `full/` and `network/` list what nodes reach out to: DNS, NTP,
-  HTTP, HTTPS, the Kubernetes API on 6443 and konnectivity on 8132, and NFS
-  in `full/`. Each is a `tcp` or `udp` rule with a destination port and no
-  source port, the only shape whose replies the `nico` fabric lets back in.
-  A cluster type can use other ports for those two, such as 30443 and 30132
-  for a `NodePort` control plane. Add those, or anything else your nodes
-  reach, to `egress_out` in `main.tf`.
-- Ingress rules are stateless, so each service you let in also gets an
-  egress rule for its replies, from its own port.
-- With `vpc_security_groups` on, this group replaces the VPC's default
-  group, and with it the rules for traffic between the VPC's subnets. Nodes
-  then reach each other only on the ports in `egress_out`.
+- The platform adds an allow-all rule after every group's own rules, so
+  `full/` adds a deny for each service from anywhere else, except the
+  Kubernetes API port. The `kubernetes_api` output gives an `nc` test to run
+  from inside and outside `allowed_cidrs`.
 - A security group change can take a few minutes to reach the nodes.
 
 ## When something goes wrong

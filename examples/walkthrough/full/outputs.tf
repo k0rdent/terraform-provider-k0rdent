@@ -93,7 +93,7 @@ output "filtering" {
     group = k0rdent_security_group.this[0].id
     rules = concat(
       [for r in k0rdent_security_group.this[0].ingress : "in:  ${r.action} ${r.protocol}${r.destination_port_range == null ? "" : " ${r.destination_port_range}"} from ${r.source_prefix} (${r.name})"],
-      [for r in k0rdent_security_group.this[0].egress : "out: ${r.action} ${r.protocol}${r.destination_port_range == null ? "" : " ${r.destination_port_range}"}${r.source_port_range == null ? "" : " from port ${r.source_port_range}"} to ${r.destination_prefix} (${r.name})"],
+      [for r in k0rdent_security_group.this[0].egress : "out: ${r.action} ${r.protocol} to ${r.destination_prefix} (${r.name})"],
     )
     vpc_bindings = { for owner, b in k0rdent_vpc_security_groups.this : "${owner} VPC ${b.vpc}" => b.attached }
     # Each group that reaches each owner, in the order it applies, and what
