@@ -15,14 +15,21 @@
 #   check-public-text.sh --staged   what the next commit adds, from the index
 #   check-public-text.sh --hash NAME FLAGS WORD
 #                                   the hashed.txt line for WORD
+#   check-public-text.sh --commits RANGE --text NAME FILE
+#                                   the messages of the commits in RANGE, and
+#                                   FILE's text reported as NAME, such as a
+#                                   pull request's title. Each repeats.
 #
 # Exits 0 when clean, 1 on a hit, 2 when it can't run.
 set -euo pipefail
 
+start="$PWD"
 cd "$(git rev-parse --show-toplevel)"
 
-python3 - "$@" <<'PY'
+python3 - "$start" "$@" <<'PY'
 import hashlib, os, re, subprocess, sys
+
+START = sys.argv.pop(1)  # where a relative --text FILE is read from
 
 DENY = ".github/public-text/denylist.txt"
 HASHED = ".github/public-text/hashed.txt"
@@ -127,7 +134,30 @@ def git(*args):
 
 args = sys.argv[1:]
 staged = args[:1] == ["--staged"]
-if staged:
+# (source, bytes) from --commits and --text, scanned instead of files.
+texts = []
+commits = 0
+text_mode = args[:1] in (["--commits"], ["--text"])
+if text_mode:
+    while args:
+        if args[0] == "--commits" and len(args) > 1:
+            log = git("log", "-z", "--format=%H%n%B", "--end-of-options", args[1], "--")
+            for entry in filter(None, log.split(b"\0")):
+                sha, _, message = entry.partition(b"\n")
+                texts.append((f"commit {sha.decode()[:12]}", message))
+                commits += 1
+            args = args[2:]
+        elif args[0] == "--text" and len(args) > 2:
+            try:
+                with open(os.path.join(START, args[2]), "rb") as f:
+                    texts.append((args[1], f.read()))
+            except OSError as e:
+                die(f"can't read {args[2]}: {e}")
+            args = args[3:]
+        else:
+            die("--commits RANGE and --text NAME FILE go together, and with nothing else")
+    paths = []
+elif staged:
     args = args[1:]
     if args:
         die("--staged takes no files")
@@ -148,11 +178,17 @@ def content(path):
         return f.read()
 
 
+def sources():
+    """Each (path or source, bytes) to scan."""
+    yield from texts
+    for path in paths:
+        data = content(path)
+        if data is not None and b"\0" not in data[:8000]:  # binary, as grep -I would skip it
+            yield path, data
+
+
 hits = {}
-for path in paths:
-    data = content(path)
-    if data is None or b"\0" in data[:8000]:
-        continue  # binary, as grep -I would skip it
+for path, data in sources():
     text = data.decode("utf-8", errors="replace")
     for lineno, line in enumerate(text.splitlines(), 1):
         for name, pattern, rx in rules:
@@ -166,19 +202,38 @@ for path in paths:
                 continue
             hits.setdefault((name, "a word in " + HASHED), []).append((path, lineno, tok))
 
+def esc(s, prop=False):
+    """s escaped for a workflow command, so it can't end the command early."""
+    s = s.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+    return s.replace(":", "%3A").replace(",", "%2C") if prop else s
+
+
+def shown(s):
+    """s with control characters escaped, and without the "##[" the Actions
+    runner reads as a command anywhere in a line."""
+    s = s if s.isprintable() else ascii(s)[1:-1]
+    return s.replace("##[", "#\\x23[")
+
+
 annotate = os.environ.get("GITHUB_ACTIONS") == "true"
 total = 0
 for (name, pattern), found in hits.items():
     print(f"== {name} ({len(found)} hits) /{pattern}/")
     for path, lineno, tok in found:
+        path, tok = shown(path), shown(tok)
         print(f"{path}:{lineno}:{tok}")
-        if annotate:
-            print(f"::error file={path},line={lineno}::public text rule {name} matched {tok!r}")
+        if annotate and text_mode:
+            print(f"::error title=public text::{esc(f'rule {name} matched {tok!r} in {path} line {lineno}')}")
+        elif annotate:
+            print(f"::error file={esc(path, True)},line={lineno}::{esc(f'public text rule {name} matched {tok!r}')}")
     print()
     total += len(found)
 
-where = "staged file(s)" if staged else "tracked file(s)"
-print(f"public text: {total} hit(s) in {len(paths)} {where}")
+if text_mode:
+    where = f"{commits} commit message(s) and {len(texts) - commits} text(s)"
+else:
+    where = f"{len(paths)} {'staged' if staged else 'tracked'} file(s)"
+print(f"public text: {total} hit(s) in {where}")
 if total:
     print(f"Reword each hit, or add a narrow PATH:MATCH line to {ALLOW} when it is meant to be there.")
 sys.exit(1 if total else 0)

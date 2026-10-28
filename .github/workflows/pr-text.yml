@@ -1,0 +1,38 @@
+name: Pull request text
+
+# The public-text rules on what a pull request adds besides its files: its
+# commit messages, title and description. ci.yml checks the files.
+#
+# Its own workflow so that editing the title or description reruns it, without
+# rerunning every job in ci.yml.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pr-text:
+    name: pull request text
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # The checkout is the merge commit. Its parents are the base branch and
+      # the pull request, and git log reads every commit between them.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      # Anyone can open a pull request here and choose its title, so the text
+      # comes from the event file and is never pasted into the script.
+      - name: no text that isn't for a public repository
+        run: |
+          jq -r '.pull_request.title' "$GITHUB_EVENT_PATH" > "$RUNNER_TEMP/title"
+          jq -r '.pull_request.body // ""' "$GITHUB_EVENT_PATH" > "$RUNNER_TEMP/body"
+          ./scripts/check-public-text.sh --commits HEAD^1..HEAD^2 \
+            --text title "$RUNNER_TEMP/title" --text body "$RUNNER_TEMP/body"
