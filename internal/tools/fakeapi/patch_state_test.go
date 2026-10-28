@@ -136,3 +136,61 @@ func cancelledScale(t *testing.T, s *state) {
 		t.Fatalf("settled after the cancel: %v", out)
 	}
 }
+
+// A network's or an instance group's metadata PATCH lands in any state and
+// leaves the state as it was, as v1.3.0-rc.3 does: it starts no workflow, and
+// its query neither reads nor writes the state.
+func TestANetworkOrGroupPatchKeepsItsState(t *testing.T) {
+	for _, tc := range []struct {
+		kind, body string
+		make       func(t *testing.T, s *state)
+		put        func(s *state, to string)
+		patch      func(s *state) http.HandlerFunc
+		landed     func(t *testing.T, out map[string]any) bool
+	}{
+		{
+			kind: "network",
+			body: `{"tags":{"team":"ml"},"displayName":"renamed","description":"kept"}`,
+			make: func(t *testing.T, s *state) {
+				if code, out := in(t, s.createNetwork, http.MethodPost, "r", "p", nil,
+					`{"id":"x","type":"evpn","evpn":{"type":"l2vpn"}}`); code != http.StatusCreated {
+					t.Fatalf("create: %d %v", code, out)
+				}
+			},
+			put:   func(s *state, to string) { s.scopes[scope{"r", "p"}].networks[at{id: "x"}].state = to },
+			patch: func(s *state) http.HandlerFunc { return s.updateNetwork },
+			landed: func(t *testing.T, out map[string]any) bool {
+				return object(t, out["tags"])["team"] == "ml" &&
+					out["displayName"] == "renamed" && out["description"] == "kept"
+			},
+		},
+		{
+			kind:  "instance group",
+			body:  `{"displayName":"renamed","description":"kept"}`,
+			make:  func(t *testing.T, s *state) { activeGroup(t, s, "g") },
+			put:   func(s *state, to string) { s.scopes[scope{"r", "p"}].groups[at{id: "x"}].state = to },
+			patch: func(s *state) http.HandlerFunc { return s.updateInstanceGroup },
+			landed: func(_ *testing.T, out map[string]any) bool {
+				return out["displayName"] == "renamed" && out["description"] == "kept"
+			},
+		},
+	} {
+		for _, st := range []string{"active", "creating", "updating", "failed", "deleting"} {
+			t.Run(tc.kind+" "+st, func(t *testing.T) {
+				s := newState()
+				tc.make(t, s)
+				tc.put(s, st)
+				code, out := call(t, tc.patch(s), http.MethodPatch, "x", tc.body)
+				if code != http.StatusOK {
+					t.Fatalf("PATCH: %d %v, want 200", code, out)
+				}
+				if !tc.landed(t, out) {
+					t.Errorf("the PATCH didn't land: %v", out)
+				}
+				if out["state"] != st {
+					t.Errorf("the PATCH answered %v, want %s", out["state"], st)
+				}
+			})
+		}
+	}
+}
