@@ -145,10 +145,9 @@ resource %q "test" {
 	})
 }
 
-// A group with no rules is a 422 upstream, on a create and on a PATCH that
-// empties both lists. The plan refuses it first, whether the blocks are left
-// out or a `dynamic` block's list is empty.
-func TestAccSecurityGroupRefusesNoRulesInThePlan(t *testing.T) {
+// A create with no rules is a 422 upstream. The plan refuses it first, whether
+// the blocks are left out or a `dynamic` block's list is empty.
+func TestAccSecurityGroupRefusesACreateWithNoRules(t *testing.T) {
 	for name, body := range map[string]string{
 		"no blocks": ``,
 		"an empty dynamic block": `
@@ -178,6 +177,31 @@ resource %q "test" {
 			})
 		})
 	}
+}
+
+// A PATCH that empties both lists is a 422 upstream too, so a change that
+// removes a group's last rule fails at plan. The group keeps its rule, and the
+// last step puts the block back so the test's own destroy plans no change.
+func TestAccSecurityGroupRefusesAChangeThatRemovesTheLastRule(t *testing.T) {
+	withRule := fmt.Sprintf(`
+resource %q "test" {
+  id = "acc-last-rule"
+%s
+}
+`, securityGroupType, oneEgressRule)
+	without := strings.Replace(withRule, oneEgressRule, "", 1)
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: protoV6,
+		CheckDestroy:             checkGone(securityGroupType, securityGroupPath),
+		Steps: []resource.TestStep{
+			{Config: withRule},
+			{Config: without, ExpectError: regexpNoRules},
+			{
+				Config: withRule,
+				Check:  resource.TestCheckResourceAttr(securityGroupAddr, "rule_count", "1"),
+			},
+		},
+	})
 }
 
 // One rule in either list is enough: each direction alone creates the group

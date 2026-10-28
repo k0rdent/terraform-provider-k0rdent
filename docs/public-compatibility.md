@@ -78,16 +78,24 @@ interface.
 
 ### A security group needs a rule
 
-A `k0rdent_security_group` with no `ingress` and no `egress` block now fails
-the plan with "A security group needs at least one rule". The platform
-refuses such a group, because the fabric can't apply it, and a group left
-`failed` keeps whatever it's bound to waiting.
+A plan to create a `k0rdent_security_group` with no `ingress` and no
+`egress` block, or to change one that has none, now fails with "A security
+group needs at least one rule". The platform refuses such a create or
+change, because the fabric can't apply a group with no rules, and a group
+left `failed` keeps whatever it's bound to waiting.
+
+A group already in state with no rules and nothing to change plans with the
+warning "This security group has no rules", and `terraform destroy` deletes
+it.
 
 - To keep the group, add an `ingress` or `egress` block. One rule in either
   list is enough.
 - To stop using it, remove it from what it's bound to, then remove its
-  resource block and apply, which deletes it. `terraform destroy` fails the
-  same way while the block has no rule, so remove the block first.
+  resource block and apply, which deletes it.
+- A destroy plans the configuration first, so a tainted group with no rules,
+  or one whose configuration also changes it, stops `terraform destroy` with
+  the same error. Remove the block and apply, or run
+  `terraform destroy -refresh=false`.
 
 ### Projects locked to a region
 

@@ -180,7 +180,9 @@ func (r *securityGroupResource) Schema(ctx context.Context, _ resource.SchemaReq
 			"interfaces, not the Kubernetes API endpoint, and there is no allowlist for that " +
 			"endpoint on the public API today.\n\n" +
 			"Rules are evaluated first-match in list order, and ingress and egress are " +
-			"independent. A group needs at least one rule, in either list. Only a VPC on the `nico` fabric backend can carry security groups.\n\n" +
+			"independent. A group needs at least one rule, in either list: a plan to create " +
+			"a group with none, or to change a group that has none, fails. One already in state " +
+			"with none plans with a warning and can be destroyed. Only a VPC on the `nico` fabric backend can carry security groups.\n\n" +
 			"**The platform adds its own rules after the group's:** permit all ingress, then deny " +
 			"all egress. So a group of only permits filters nothing incoming: end it with a deny for " +
 			"what it shouldn't let in. A change can take up to a few minutes to reach the nodes, and " +
@@ -271,41 +273,15 @@ func (r *securityGroupResource) Schema(ctx context.Context, _ resource.SchemaReq
 	describeReplacement(&resp.Schema, "security group")
 }
 
-// ValidateConfig rejects a group with no rules and a port range on a protocol
-// that cannot carry one.
+// ValidateConfig rejects a port range on a protocol that cannot carry one.
 func (r *securityGroupResource) ValidateConfig(ctx context.Context, req resource.ValidateConfigRequest, resp *resource.ValidateConfigResponse) {
-	lists := map[string]types.List{}
 	for _, direction := range []string{"ingress", "egress"} {
+		// A `dynamic` block over a variable is unknown under `terraform validate`.
 		var list types.List
 		resp.Diagnostics.Append(req.Config.GetAttribute(ctx, path.Root(direction), &list)...)
 		if resp.Diagnostics.HasError() {
 			return
 		}
-		lists[direction] = list
-	}
-
-	// A `dynamic` block over a variable is unknown under `terraform validate`,
-	// and so is its length. Whether the group has a rule is known only once
-	// both lists are.
-	ingress, egress := lists["ingress"], lists["egress"]
-	if !ingress.IsUnknown() && !egress.IsUnknown() && len(ingress.Elements())+len(egress.Elements()) == 0 {
-		// Local: configuration validation, no request made. The server answers
-		// 422 for a group with no rules, on a create and on a PATCH that sends
-		// both lists empty, because the fabric can't apply one: it would settle
-		// `failed` and leave what it's bound to waiting on it.
-		resp.Diagnostics.AddError(
-			"A security group needs at least one rule",
-			"This group has no `ingress` and no `egress` block, and the platform refuses a group "+
-				"with no rules. Add an `ingress` or `egress` block.\n\n"+
-				"To stop using a group, remove it from what it's bound to, then remove its "+
-				"resource block and apply, which deletes it. `terraform destroy` checks this "+
-				"block too, so it fails the same way until the block has a rule or is gone.",
-		)
-		return
-	}
-
-	for _, direction := range []string{"ingress", "egress"} {
-		list := lists[direction]
 		if list.IsUnknown() {
 			continue
 		}
@@ -365,6 +341,88 @@ func (r *securityGroupResource) ModifyPlan(ctx context.Context, req resource.Mod
 	// update waits for it to come back.
 	planResume(ctx, req, resp)
 	planSettledState(ctx, securityGroupStates.settle, req, resp)
+	planNeedsARule(ctx, req, resp)
+}
+
+// noRulesFix is what every diagnostic about a group with no rules ends with.
+const noRulesFix = "Add an `ingress` or `egress` block. To stop using a group, remove it from " +
+	"what it's bound to, then remove its resource block and apply, which deletes it."
+
+// noRulesDestroy follows noRulesFix in the errors. `terraform destroy` runs a
+// normal plan first, to refresh state. That plan replaces a tainted group, or
+// makes the change the configuration asks for, so the error stops the destroy
+// too. `-refresh=false` skips that plan.
+const noRulesDestroy = " If this is `terraform destroy`, remove the block and apply instead, or run " +
+	"`terraform destroy -refresh=false`."
+
+// planNeedsARule refuses a create or a change that would leave the group with
+// no rules, and warns about a group already in state that has none.
+//
+// The platform answers 422 to a create with no rules and to a PATCH whose
+// `rules` has both lists empty, because the fabric can't apply such a group:
+// it would settle `failed` and leave what it's bound to waiting on it. Every
+// update here sends `rules`, so any change to such a group is refused, one to
+// `tags` or `tags_all` alone included.
+//
+// No change is told apart the way Terraform tells it: the planned state equal
+// to the prior state, which Terraform plans as a no-op and sends nothing for.
+// So this runs last, once every other step has written the plan, and an
+// unknown anywhere makes it a change. A group made before the platform refused
+// one plans no change, and gets a warning instead of an error, so it can stay
+// or be deleted. A destroy has no plan and is left alone.
+//
+// The plan `terraform destroy` runs first can't be told apart from any other.
+// A tainted group is planned as a create, with no prior state, and a generated
+// `id` is unknown there, so nothing in the plan says it's a replacement. So
+// the destroy of a tainted group with no rules, or of one whose configuration
+// also changes it, stops on the error, which names the two ways past it.
+//
+// A list a `dynamic` block builds from a value not known yet is unknown, and
+// so is its length, so nothing is said until both lists are known.
+func planNeedsARule(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
+	if req.Plan.Raw.IsNull() || resp.Diagnostics.HasError() {
+		return
+	}
+	// The platform makes a VPC's default group, and refusePlatformOwned has
+	// already refused any change to it.
+	if _, owned := platformOwner(ctx, "owner_kind", string(k0rdent.SecurityGroupOwnerKindVpc), req.State); owned {
+		return
+	}
+	rules := 0
+	for _, direction := range []string{"ingress", "egress"} {
+		var list types.List
+		resp.Diagnostics.Append(req.Config.GetAttribute(ctx, path.Root(direction), &list)...)
+		if resp.Diagnostics.HasError() || list.IsUnknown() {
+			return
+		}
+		rules += len(list.Elements())
+	}
+	if rules > 0 {
+		return
+	}
+
+	// Local: planned from configuration and prior state, no request made.
+	switch {
+	case req.State.Raw.IsNull():
+		resp.Diagnostics.AddError(
+			"A security group needs at least one rule",
+			"This group has no `ingress` and no `egress` block, and the platform refuses to "+
+				"create a group with no rules. "+noRulesFix+noRulesDestroy,
+		)
+	case resp.Plan.Raw.Equal(req.State.Raw):
+		resp.Diagnostics.AddWarning(
+			"This security group has no rules",
+			"The group has no `ingress` and no `egress` block. The platform can't apply a group "+
+				"with no rules, and refuses any change to it until it has one. "+noRulesFix,
+		)
+	default:
+		resp.Diagnostics.AddError(
+			"A security group needs at least one rule",
+			"This group has no `ingress` and no `egress` block. Every change to a group sends its "+
+				"rules, a change to `tags` alone included, and the platform refuses a change that "+
+				"leaves it with none. "+noRulesFix+noRulesDestroy,
+		)
+	}
 }
 
 func (r *securityGroupResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
@@ -768,7 +826,7 @@ var securityGroupStates = stateKind[k0rdent.SecurityGroup]{
 func rulesRequest(m securityGroupModel) k0rdent.SecurityGroupRules {
 	// Both lists are always present, never nil. An omitted `rules` leaves the
 	// group's rules alone, and an empty list clears that direction. Both empty
-	// is refused by the server and, before that, by ValidateConfig.
+	// is refused by the server and, before that, by planNeedsARule.
 	out := k0rdent.SecurityGroupRules{
 		Ingress: make([]k0rdent.SecurityGroupRule, 0, len(m.Ingress)),
 		Egress:  make([]k0rdent.SecurityGroupRule, 0, len(m.Egress)),

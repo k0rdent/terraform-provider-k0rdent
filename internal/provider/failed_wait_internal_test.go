@@ -104,9 +104,11 @@ func pendingKinds() map[string]pendingKind {
 			idAttr: "id",
 		},
 		"security group": {
-			build:  func(m *Meta) resource.Resource { return &securityGroupResource{meta: m} },
-			plan:   scoped(map[string]tftypes.Value{"id": str("g1")}),
-			body:   map[string]any{"id": "g1", "state": "creating", "rules": map[string]any{"ingress": []any{}, "egress": []any{}}},
+			build: func(m *Meta) resource.Resource { return &securityGroupResource{meta: m} },
+			plan: func(t *testing.T, r resource.Resource) map[string]tftypes.Value {
+				return scoped(map[string]tftypes.Value{"id": str("g1"), "egress": oneEgressRule(t)})(t, r)
+			},
+			body:   map[string]any{"id": "g1", "state": "creating", "rules": oneEgressRuleBody},
 			idAttr: "id",
 		},
 		"VPC peering": {

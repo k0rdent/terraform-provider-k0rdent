@@ -66,6 +66,27 @@ func TestAPatchWithoutRulesIsAllowedOnAGroupWithNone(t *testing.T) {
 	}
 }
 
+// A group whose display name carries madeBeforeRulesRequired stands for one
+// made before the API refused a group with no rules, so it may have none, on a
+// create and on a PATCH. Acceptance tests hold one in state this way.
+func TestAGroupMadeBeforeRulesWereRequiredMayHaveNone(t *testing.T) {
+	s := newState()
+	code, out := call(t, s.createSecurityGroup, http.MethodPost, "",
+		`{`+oneRule+`,"id":"old","displayName":"`+madeBeforeRulesRequired+`"}`)
+	if code != http.StatusCreated {
+		t.Fatalf("create: %d %v, want 201", code, out)
+	}
+	code, out = call(t, s.updateSecurityGroup, http.MethodPatch, "old", `{"rules":{"ingress":[],"egress":[]}}`)
+	if code != http.StatusOK || out["ruleCount"] != float64(0) {
+		t.Fatalf("patch to no rules: %d %v, want 200 with no rules", code, out)
+	}
+	code, out = call(t, s.createSecurityGroup, http.MethodPost, "",
+		`{"id":"older","displayName":"`+madeBeforeRulesRequired+`"}`)
+	if code != http.StatusCreated || out["ruleCount"] != float64(0) {
+		t.Fatalf("create with no rules: %d %v, want 201 with no rules", code, out)
+	}
+}
+
 func errorReason(out map[string]any) string {
 	if e, ok := out["error"].(map[string]any); ok {
 		if r, ok := e["reason"].(string); ok {

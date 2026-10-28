@@ -547,7 +547,8 @@ func TestADefaultsChangeAlonePlansTheNewTagsAll(t *testing.T) {
 		extra map[string]tftypes.Value
 	}{
 		{"network", &networkResource{meta: taggedMeta(map[string]string{"owner": "new"})}, nil},
-		{"security group", &securityGroupResource{meta: taggedMeta(map[string]string{"owner": "new"})}, nil},
+		{"security group", &securityGroupResource{meta: taggedMeta(map[string]string{"owner": "new"})},
+			map[string]tftypes.Value{"egress": oneEgressRule(t)}},
 		{"cluster", &clusterResource{meta: taggedMeta(map[string]string{"owner": "new"})},
 			clusterValues(verRef(1), verRef(1), 2, "active")},
 	} {

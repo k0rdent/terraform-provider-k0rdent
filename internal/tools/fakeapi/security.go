@@ -137,7 +137,7 @@ func (s *state) updateSecurityGroup(w http.ResponseWriter, r *http.Request) {
 	// set is checked before anything is changed, so a refused PATCH leaves
 	// the group as it was.
 	if body.Rules != nil {
-		next := &fakeSecurityGroup{ingress: body.Rules.Ingress, egress: body.Rules.Egress}
+		next := &fakeSecurityGroup{ingress: body.Rules.Ingress, egress: body.Rules.Egress, displayName: g.displayName}
 		normalizePorts(next.ingress)
 		normalizePorts(next.egress)
 		if err := validateRules(next); err != "" {
@@ -317,12 +317,18 @@ func (s *state) listSecurityGroupAttachments(w http.ResponseWriter, r *http.Requ
 const noRulesMessage = "rules: at least one ingress or egress rule is required; " +
 	"a security group with no rules cannot be applied"
 
+// madeBeforeRulesRequired is a display name marker for a group that may have
+// no rules, on a create and on a PATCH. It stands for a group made before the
+// API refused one, so a test can hold such a group in state and plan and
+// destroy it.
+const madeBeforeRulesRequired = "fake-made-before-rules-required"
+
 // validateRules is the 422 the server answers, modelled so the provider's
 // plan-time check has something to be checked against. Create calls it
 // always, so an omitted `rules` is refused, and update only when the PATCH
 // carries `rules`, so a rename is not.
 func validateRules(g *fakeSecurityGroup) string {
-	if len(g.ingress)+len(g.egress) == 0 {
+	if len(g.ingress)+len(g.egress) == 0 && !nameCarries(g.displayName, madeBeforeRulesRequired) {
 		return noRulesMessage
 	}
 	for _, list := range [][]fakeRule{g.ingress, g.egress} {
