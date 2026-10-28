@@ -597,6 +597,9 @@ func (r *securityGroupResource) Delete(ctx context.Context, req resource.DeleteR
 		}
 		return deleted.HTTPResponse, deleted.Body, nil
 	}
+	if len(r.meta.vpcBindings.leftHolding(target, id)) > 0 {
+		send = releasedByLeftVPCs(r.meta, target, id, send)
+	}
 	// The delete is waited out rather than assumed: a group at `deleting`
 	// still holds its name, so returning early would let a replacement in the
 	// same apply hit a 409 on a name Terraform believes is free.
