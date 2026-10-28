@@ -5,8 +5,12 @@ instance groups, networks, subnets, security groups, VPC peerings, file
 stores, projects and webhooks.
 
 - Registry address: `k0rdent/k0rdent`
+- Registry pages: the
+  [Terraform Registry](https://registry.terraform.io/providers/k0rdent/k0rdent/latest)
+  and the
+  [OpenTofu Registry](https://search.opentofu.org/provider/k0rdent/k0rdent/latest)
 - Needs Terraform 1.10 or later, or OpenTofu
-- Reference docs: [`docs/`](docs/index.md), the same pages the registry shows
+- Reference docs: [`docs/`](docs/index.md), the same pages both registries show
 
 ## Install
 
