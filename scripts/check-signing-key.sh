@@ -27,11 +27,11 @@
 # or expired. It's the one gpg signs with.
 #
 # Rotation is at 1 year for a subkey and 5 years for the parent, well before
-# their 2 and 10 year expiries, so there's room for things to go wrong.
-# SIGNING_KEY_NOW, in seconds since the epoch, stands in for the clock in tests.
-# With SIGNING_KEY_DUE_FILE set, each key that's due to rotate is appended to
-# that file as one tab-separated line: which key, its fingerprint, its
-# rotation date and its expiry date. scripts/signing-key-reminder.sh reads it.
+# their 2 and 10 year expiries. SIGNING_KEY_NOW, in seconds since the epoch,
+# stands in for the clock in tests. With SIGNING_KEY_DUE_FILE set, each key
+# that's due to rotate is appended to that file as one tab-separated line:
+# which key, its fingerprint, its rotation date and its expiry date.
+# scripts/signing-key-reminder.sh reads it.
 set -euo pipefail
 
 day=86400
@@ -50,13 +50,13 @@ problems=0
 error() { echo "::error title=$1::$2" >&2; problems=$((problems + 1)); }
 warning() { echo "::warning title=$1::$2"; }
 # GNU date takes -d @SECONDS, BSD date takes -r SECONDS.
-on() { date -u -d "@$1" +%F 2>/dev/null || date -u -r "$1" +%F; }
+iso_date() { date -u -d "@$1" +%F 2>/dev/null || date -u -r "$1" +%F; }
 
 [ -f "$keyfile" ] || { error "No signing key file" "$keyfile doesn't exist."; exit 1; }
 
 # One line per key in KEYFILE: kind fingerprint algorithm created expires
-# validity capabilities. --show-keys reads the file without importing it.
-# The listing is taken whole before awk reads it, so a gpg failure stops here.
+# validity capabilities. --show-keys reads the file without importing it, and
+# the listing is taken whole first so a gpg failure stops here.
 listing="$(gpg --batch --with-colons --fixed-list-mode --show-keys "$keyfile" 2>/dev/null)" ||
   { error "Unreadable signing key" "gpg couldn't read $keyfile."; exit 1; }
 keys="$(awk -F: '
@@ -75,17 +75,17 @@ fi
 read -r _ parent_fpr parent_algo parent_created parent_expires _ _ <<<"$parents"
 
 # The newest subkey that can sign and is neither revoked nor expired.
-current="$(awk -v now="$now" '
+current_subkey="$(awk -v now="$now" '
   $1 == "sub" && $7 ~ /s/ && $6 !~ /[re]/ && ($5 == "never" || $5 > now) && $4 > best { best = $4; line = $0 }
   END { print line }' <<<"$keys")"
 
+# registry.terraform.io accepts RSA (1, 2, 3) and DSA (17), and rejects ECC,
+# which gpg offers by default. Algorithm ids are from gpg's DETAILS.
 accepted_algorithm() {
-  # registry.terraform.io accepts RSA (1, 2, 3) and DSA (17), and rejects
-  # ECC, which gpg offers by default. Algorithm ids are from gpg's DETAILS.
   case "$1" in 1 | 2 | 3 | 17) return 0 ;; *) return 1 ;; esac
 }
 
-if [ "$mode" = secret ]; then
+require_secret_env() {
   for name in GNUPGHOME GPG_PRIVATE_KEY GPG_KEY_FINGERPRINT GPG_PASSPHRASE_FILE; do
     if [ -z "${!name:-}" ]; then
       error "Signing secret missing" "$name is not set."
@@ -93,40 +93,48 @@ if [ "$mode" = secret ]; then
   done
   [ "$problems" -eq 0 ] || exit 1
   [ -f "$GPG_PASSPHRASE_FILE" ] || { error "Signing secret missing" "GPG_PASSPHRASE_FILE names no file."; exit 1; }
-  # The value is never printed, raw or cleaned up. GitHub masks a secret only
-  # in the exact form it was set, so a passphrase pasted here by mistake would
-  # show in the log uppercased or with its spaces gone.
-  raw="$GPG_KEY_FINGERPRINT"
-  if [[ ! "$raw" =~ ^[0-9A-Fa-f\ ]+$ ]]; then
+}
+
+# The value is never printed, raw or cleaned up. GitHub masks a secret only in
+# the exact form it was set, so a passphrase pasted here by mistake would show
+# in the log uppercased or with its spaces gone.
+check_fingerprint_secret() {
+  fpr_as_set="$GPG_KEY_FINGERPRINT"
+  if [[ ! "$fpr_as_set" =~ ^[0-9A-Fa-f\ ]+$ ]]; then
     found=""
-    case "$raw" in *$'\n'*) found+=", a newline" ;; esac
-    case "$raw" in *$'\r'*) found+=", a carriage return" ;; esac
-    case "$raw" in *$'\t'*) found+=", a tab" ;; esac
-    error "Fingerprint isn't a fingerprint" "TERRAFORM_PROVIDER_GPG_KEY_FINGERPRINT is ${#raw} characters, not only hex digits and spaces${found:+ (it holds${found#,})}. Set it to $parent_fpr with nothing around it. The value isn't shown, in case another secret was pasted there."
-    exit 1
-  fi
-  # Spaces and lowercase still sign, so they're allowed, and dropped only for
-  # the comparison. gpg gets the raw value, as the release passes it.
-  fpr="$(printf '%s' "${raw// /}" | tr '[:lower:]' '[:upper:]')"
-  if [ "$fpr" != "$parent_fpr" ]; then
-    error "Fingerprint doesn't match" "TERRAFORM_PROVIDER_GPG_KEY_FINGERPRINT (${#raw} characters) doesn't name $keyfile's key, $parent_fpr. The value isn't shown, in case another secret was pasted there."
+    case "$fpr_as_set" in *$'\n'*) found+=", a newline" ;; esac
+    case "$fpr_as_set" in *$'\r'*) found+=", a carriage return" ;; esac
+    case "$fpr_as_set" in *$'\t'*) found+=", a tab" ;; esac
+    error "Fingerprint isn't a fingerprint" "TERRAFORM_PROVIDER_GPG_KEY_FINGERPRINT is ${#fpr_as_set} characters, not only hex digits and spaces${found:+ (it holds${found#,})}. Set it to $parent_fpr with nothing around it. The value isn't shown, in case another secret was pasted there."
     exit 1
   fi
 
+  # Spaces and lowercase still sign, so they're dropped only for the
+  # comparison. gpg gets the value as set, as the release passes it.
+  secret_fpr="$(printf '%s' "${fpr_as_set// /}" | tr '[:lower:]' '[:upper:]')"
+  if [ "$secret_fpr" != "$parent_fpr" ]; then
+    error "Fingerprint doesn't match" "TERRAFORM_PROVIDER_GPG_KEY_FINGERPRINT (${#fpr_as_set} characters) doesn't name $keyfile's key, $parent_fpr. The value isn't shown, in case another secret was pasted there."
+    exit 1
+  fi
+}
+
+import_secret() {
   printf '%s' "$GPG_PRIVATE_KEY" | gpg --batch --import 2>/dev/null ||
     { error "Signing key didn't import" "gpg couldn't import TERRAFORM_PROVIDER_GPG_PRIVATE_KEY."; exit 1; }
-  secret="$(gpg --batch --with-colons --fixed-list-mode --list-secret-keys "$raw" 2>/dev/null)" ||
-    { error "Signing key not in the secret" "TERRAFORM_PROVIDER_GPG_PRIVATE_KEY holds no key $fpr."; exit 1; }
+  secret_listing="$(gpg --batch --with-colons --fixed-list-mode --list-secret-keys "$fpr_as_set" 2>/dev/null)" ||
+    { error "Signing key not in the secret" "TERRAFORM_PROVIDER_GPG_PRIVATE_KEY holds no key $secret_fpr."; exit 1; }
 
-  # Field 15 of a sec record is # when only a stub of the parent is there.
-  # A full parent in GitHub could make new subkeys, so anyone who reads the
+  # Field 15 of a sec record is # when only a stub of the parent is there. A
+  # full parent in GitHub could make new subkeys, so anyone who reads the
   # secret could keep signing after a rotation.
-  if ! awk -F: '$1 == "sec" && $15 != "#" { full = 1 } END { exit full }' <<<"$secret"; then
+  if ! awk -F: '$1 == "sec" && $15 != "#" { full = 1 } END { exit full }' <<<"$secret_listing"; then
     error "Parent key in GitHub" "TERRAFORM_PROVIDER_GPG_PRIVATE_KEY holds the parent's secret part. Put the signing subkey only in GitHub: gpg --export-secret-subkeys."
   fi
-  accepted_algorithm "$(awk -F: '$1 == "sec" { print $4; exit }' <<<"$secret")" ||
+  accepted_algorithm "$(awk -F: '$1 == "sec" { print $4; exit }' <<<"$secret_listing")" ||
     error "Unsupported signing key algorithm" "The registry accepts RSA (1, 2, 3) and DSA (17)."
+}
 
+sign_probe() {
   work="$(mktemp -d)"
   verifier="$work/public"
   cleanup() {
@@ -134,44 +142,58 @@ if [ "$mode" = secret ]; then
     rm -rf "$work"
   }
   trap cleanup EXIT
+
   install -d -m 700 "$verifier"
   printf 'release signing check %s\n' "$now" >"$work/probe"
   if ! gpg --batch --yes --pinentry-mode loopback --passphrase-file "$GPG_PASSPHRASE_FILE" \
-    --local-user "$raw" --output "$work/probe.sig" --detach-sign "$work/probe" 2>"$work/sign.log"; then
-    error "Signing failed" "gpg couldn't sign with $fpr: $(tail -n 1 "$work/sign.log")"
+    --local-user "$fpr_as_set" --output "$work/probe.sig" --detach-sign "$work/probe" 2>"$work/sign.log"; then
+    error "Signing failed" "gpg couldn't sign with $secret_fpr: $(tail -n 1 "$work/sign.log")"
     exit 1
   fi
+}
 
-  # Verified with the committed key alone, as someone installing a release
-  # would. VALIDSIG's first field is the key that signed, and its last the
-  # primary key.
+# Verified with the committed key alone, as someone installing a release
+# would. VALIDSIG's first field is the key that signed, and its last the
+# primary key.
+check_probe_signer() {
   gpg --batch --homedir "$verifier" --import "$keyfile" 2>/dev/null
-  status="$(gpg --batch --homedir "$verifier" --status-fd=1 --verify "$work/probe.sig" "$work/probe" 2>/dev/null || true)"
-  validsig="$(awk -v fpr="$fpr" '$1 == "[GNUPG:]" && $2 == "VALIDSIG" && ($3 == fpr || $NF == fpr)' <<<"$status")"
+  verify_status="$(gpg --batch --homedir "$verifier" --status-fd=1 --verify "$work/probe.sig" "$work/probe" 2>/dev/null || true)"
+  validsig="$(awk -v fpr="$secret_fpr" '$1 == "[GNUPG:]" && $2 == "VALIDSIG" && ($3 == fpr || $NF == fpr)' <<<"$verify_status")"
+
   if [ -z "$validsig" ]; then
-    # Against the secret's own keyring it names the subkey that signed, which
-    # says whether the committed key is just missing a new subkey.
-    own="$(gpg --batch --status-fd=1 --verify "$work/probe.sig" "$work/probe" 2>/dev/null || true)"
-    signer="$(awk -v fpr="$fpr" '$1 == "[GNUPG:]" && $2 == "VALIDSIG" && $NF == fpr { print $3 }' <<<"$own")"
+    # The secret's own keyring names the subkey that signed, which says
+    # whether the committed key is just missing a new subkey.
+    own_verify_status="$(gpg --batch --status-fd=1 --verify "$work/probe.sig" "$work/probe" 2>/dev/null || true)"
+    signer="$(awk -v fpr="$secret_fpr" '$1 == "[GNUPG:]" && $2 == "VALIDSIG" && $NF == fpr { print $3 }' <<<"$own_verify_status")"
     if [ -n "$signer" ] && ! awk -v s="$signer" '$2 == s { found = 1 } END { exit !found }' <<<"$keys"; then
       error "Subkey not committed" "GitHub signs with subkey $signer, which $keyfile doesn't hold. Commit the public key from the vault."
     else
-      error "Signature doesn't verify" "A signature made with the secret doesn't verify against $keyfile as a signature from $fpr."
+      error "Signature doesn't verify" "A signature made with the secret doesn't verify against $keyfile as a signature from $secret_fpr."
     fi
-  else
-    read -r _ _ signer _ _ _ _ _ signer_algo _ <<<"$validsig"
-    accepted_algorithm "$signer_algo" ||
-      error "Unsupported signing key algorithm" "GitHub signs with subkey $signer, algorithm $signer_algo. The registry accepts RSA (1, 2, 3) and DSA (17)."
-    if [ -z "$current" ]; then
-      : # Reported below.
-    elif [ "$signer" != "$(awk '{ print $2 }' <<<"$current")" ]; then
-      if awk -v s="$signer" '$1 == "sub" && $2 == s { found = 1 } END { exit !found }' <<<"$keys"; then
-        error "GitHub has an old subkey" "GitHub signs with subkey $signer, and $keyfile's current signing subkey is $(awk '{ print $2 }' <<<"$current"). Put the current subkey in TERRAFORM_PROVIDER_GPG_PRIVATE_KEY."
-      else
-        error "Subkey not committed" "GitHub signs with subkey $signer, which $keyfile doesn't hold. Commit the public key from the vault."
-      fi
+    return
+  fi
+
+  read -r _ _ signer _ _ _ _ _ signer_algo _ <<<"$validsig"
+  accepted_algorithm "$signer_algo" ||
+    error "Unsupported signing key algorithm" "GitHub signs with subkey $signer, algorithm $signer_algo. The registry accepts RSA (1, 2, 3) and DSA (17)."
+
+  if [ -z "$current_subkey" ]; then
+    : # Reported below.
+  elif [ "$signer" != "$(awk '{ print $2 }' <<<"$current_subkey")" ]; then
+    if awk -v s="$signer" '$1 == "sub" && $2 == s { found = 1 } END { exit !found }' <<<"$keys"; then
+      error "GitHub has an old subkey" "GitHub signs with subkey $signer, and $keyfile's current signing subkey is $(awk '{ print $2 }' <<<"$current_subkey"). Put the current subkey in TERRAFORM_PROVIDER_GPG_PRIVATE_KEY."
+    else
+      error "Subkey not committed" "GitHub signs with subkey $signer, which $keyfile doesn't hold. Commit the public key from the vault."
     fi
   fi
+}
+
+if [ "$mode" = secret ]; then
+  require_secret_env
+  check_fingerprint_secret
+  import_secret
+  sign_probe
+  check_probe_signer
 fi
 
 # The public checks, in both modes.
@@ -182,29 +204,31 @@ accepted_algorithm "$parent_algo" ||
 check_dates() {
   local what="$1" fpr="$2" created="$3" expires="$4" rotate_days="$5"
   local rotate_at=$((created + rotate_days * day))
+
   if [ "$expires" = never ]; then
     warning "No expiry" "The $what $fpr never expires. A lost key would stay trusted for good."
   else
     local left=$(((expires - now) / day))
     if [ "$left" -lt "$min_days_left" ]; then
-      error "Signing key near expiry" "The $what $fpr expires on $(on "$expires"), in $left days. Rotate it now: see docs/release-signing.md."
+      error "Signing key near expiry" "The $what $fpr expires on $(iso_date "$expires"), in $left days. Rotate it now: see docs/release-signing.md."
     fi
   fi
+
   if [ "$now" -ge "$rotate_at" ]; then
-    warning "Signing key due to rotate" "The $what $fpr was due to rotate on $(on "$rotate_at"). See docs/release-signing.md."
+    warning "Signing key due to rotate" "The $what $fpr was due to rotate on $(iso_date "$rotate_at"). See docs/release-signing.md."
     if [ -n "${SIGNING_KEY_DUE_FILE:-}" ]; then
       local expiry=never
-      [ "$expires" = never ] || expiry="$(on "$expires")"
-      printf '%s\t%s\t%s\t%s\n' "$what" "$fpr" "$(on "$rotate_at")" "$expiry" >>"$SIGNING_KEY_DUE_FILE"
+      [ "$expires" = never ] || expiry="$(iso_date "$expires")"
+      printf '%s\t%s\t%s\t%s\n' "$what" "$fpr" "$(iso_date "$rotate_at")" "$expiry" >>"$SIGNING_KEY_DUE_FILE"
     fi
   fi
 }
 
 check_dates parent "$parent_fpr" "$parent_created" "$parent_expires" "$parent_rotate_days"
-if [ -z "$current" ]; then
+if [ -z "$current_subkey" ]; then
   error "No signing subkey" "$keyfile has no subkey that can still sign. Releases can't be signed until one is added."
 else
-  read -r _ sub_fpr sub_algo sub_created sub_expires _ _ <<<"$current"
+  read -r _ sub_fpr sub_algo sub_created sub_expires _ _ <<<"$current_subkey"
   # The registry verifies with the subkey that signed, so its algorithm counts
   # as much as the parent's.
   accepted_algorithm "$sub_algo" ||
@@ -216,10 +240,11 @@ if [ "$problems" -gt 0 ]; then
   echo "signing key: $problems problem(s)" >&2
   exit 1
 fi
+
 summary="signing key: parent $parent_fpr"
-if [ "$parent_expires" != never ]; then summary+=" expires $(on "$parent_expires")"; fi
+if [ "$parent_expires" != never ]; then summary+=" expires $(iso_date "$parent_expires")"; fi
 summary+=", signing subkey $sub_fpr"
-if [ "$sub_expires" != never ]; then summary+=" expires $(on "$sub_expires")"; fi
-summary+=", rotate by $(on $((sub_created + subkey_rotate_days * day)))"
+if [ "$sub_expires" != never ]; then summary+=" expires $(iso_date "$sub_expires")"; fi
+summary+=", rotate by $(iso_date $((sub_created + subkey_rotate_days * day)))"
 if [ "$mode" = secret ]; then summary+=". The secret signs, holds no parent, and matches $keyfile"; fi
 echo "$summary"

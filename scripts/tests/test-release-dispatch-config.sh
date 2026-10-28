@@ -1,9 +1,7 @@
 #!/usr/bin/env bash
-# The release workflows themselves are checked by
-# validateProtectedReleaseSigning in internal/repocheck, which `go test` runs on
-# every change. What is left
-# here is the one release guard that check doesn't read: the README's
-# dev_overrides selector.
+# The release workflows are checked by validateProtectedReleaseSigning in
+# internal/repocheck. This checks the one release guard that doesn't read: the
+# README's dev_overrides selector.
 set -euo pipefail
 
 cd "$(dirname "$0")/../.."
