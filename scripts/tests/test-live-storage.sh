@@ -80,25 +80,33 @@ run_case() {
 # argv_of <n> prints call n's argv on one line.
 argv_of() { tr '\n' ' ' < "$work/calls/argv.$1"; }
 
-# --- 1. the fallback destroys the cluster ----------------------------------
+# call_numbers prints the number of every recorded call, in order.
+call_numbers() {
+  for argv_file in "$work/calls"/argv.*; do
+    [ -e "$argv_file" ] && echo "${argv_file##*.}"
+  done | sort -n
+}
+
+# Case 1: the fallback destroys the cluster.
 
 run_case ok
 [ "$status" != 0 ] || { cat "$work/out" >&2; fail "a run whose apply failed exited 0"; }
 [ ! -s "$work/calls/kube-env" ] || { cat "$work/calls/kube-env" >&2; fail "a KUBE_* variable reached Terraform"; }
 
-calls="$(for n in $(for p in "$work/calls"/argv.*; do [ -e "$p" ] && echo "${p##*.}"; done | sort -n); do argv_of "$n"; echo; done)"
+calls="$(for call in $(call_numbers); do argv_of "$call"; echo; done)"
 printf '%s\n' "$calls" | grep -q '^destroy .*' || { echo "$calls" >&2; fail "no full destroy was tried"; }
 printf '%s\n' "$calls" | grep -qx 'state rm -no-color kubernetes_persistent_volume_claim_v1.probe kubernetes_pod_v1.probe ' \
   || { echo "$calls" >&2; fail "the kubernetes resources weren't dropped from state, and only they"; }
 printf '%s\n' "$calls" | grep -q -- '-target=k0rdent_kubernetes_cluster.storage' \
   || { echo "$calls" >&2; fail "no destroy was targeted at the cluster"; }
+
 # In that order: the full destroy, then state rm, then the targeted destroy.
 order="$(printf '%s\n' "$calls" | awk '/^destroy/ && !/-target/ {print "full"} /^state rm/ {print "rm"} /-target=/ {print "targeted"}' | tr '\n' ' ')"
 [ "$order" = "full rm targeted " ] || { echo "$calls" >&2; fail "the cleanup ran as \"$order\", not full, rm, targeted"; }
 grep -q '^PASS  destroy .*targeted at the cluster after the full destroy failed' "$results" \
   || { cat "$results" >&2; fail "the result doesn't say the targeted destroy removed the cluster"; }
 
-# --- 2. when the fallback fails too, the result says so ----------------------
+# Case 2: when the fallback fails too, the result says so.
 
 run_case fail
 grep -q '^FAIL  destroy .*may still exist' "$results" \

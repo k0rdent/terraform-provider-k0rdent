@@ -27,44 +27,56 @@ grep -q 'commits/$commit/pulls' "$work/validate.sh" || fail "could not cut the v
 # removes and remakes it.
 export GIT_CONFIG_COUNT=2 GIT_CONFIG_KEY_0=gc.auto GIT_CONFIG_VALUE_0=0 \
   GIT_CONFIG_KEY_1=maintenance.auto GIT_CONFIG_VALUE_1=false
-g() { git -c user.name=t -c user.email=t@example.invalid -c commit.gpgsign=false -c tag.gpgsign=false "$@"; }
+test_git() { git -c user.name=t -c user.email=t@example.invalid -c commit.gpgsign=false -c tag.gpgsign=false "$@"; }
 
 # origin: main with a merged feature branch, and release-v0.1.x cut from main.
 git init -q -b main "$work/origin"
 cd "$work/origin"
-g commit -q --allow-empty -m first
+test_git commit -q --allow-empty -m first
+
 # A long history, so rev-list prints more than a pipe holds. A check that
 # stops reading at the first match then kills rev-list with SIGPIPE, and
 # under pipefail that reads as a failure. A short history would hide it.
 tree="$(git rev-parse 'HEAD^{tree}')"
 head="$(git rev-parse HEAD)"
-for i in $(seq 1 2000); do head="$(g commit-tree "$tree" -p "$head" -m "history $i")"; done
+for i in $(seq 1 2000); do head="$(test_git commit-tree "$tree" -p "$head" -m "history $i")"; done
 git update-ref refs/heads/main "$head"
 git reset -q --hard
-g checkout -q -b feature; g commit -q --allow-empty -m feature; feature="$(git rev-parse HEAD)"
-g checkout -q main; g merge -q --no-ff -m "merge feature" feature
-g tag v0.1.0
-g checkout -q -b release-v0.1.x
-g checkout -q -b backport; g commit -q --allow-empty -m fix
-g checkout -q release-v0.1.x; g merge -q --no-ff -m "merge backport" backport
+
+test_git checkout -q -b feature
+test_git commit -q --allow-empty -m feature
+feature="$(git rev-parse HEAD)"
+test_git checkout -q main
+test_git merge -q --no-ff -m "merge feature" feature
+test_git tag v0.1.0
+
+test_git checkout -q -b release-v0.1.x
+test_git checkout -q -b backport
+test_git commit -q --allow-empty -m fix
+test_git checkout -q release-v0.1.x
+test_git merge -q --no-ff -m "merge backport" backport
 merged="$(git rev-parse HEAD)"
-g tag v0.1.1
-g commit -q --allow-empty -m "pushed straight to the branch"
-g tag v0.1.2
-g tag v0.2.0 "$merged"
+test_git tag v0.1.1
+test_git commit -q --allow-empty -m "pushed straight to the branch"
+test_git tag v0.1.2
+test_git tag v0.2.0 "$merged"
+
 # A release branch cut from inside a merged feature branch, not from main.
-g checkout -q -b release-v0.3.x "$feature"
-g checkout -q -b backport3; g commit -q --allow-empty -m fix3
-g checkout -q release-v0.3.x; g merge -q --no-ff -m "merge backport3" backport3
+test_git checkout -q -b release-v0.3.x "$feature"
+test_git checkout -q -b backport3
+test_git commit -q --allow-empty -m fix3
+test_git checkout -q release-v0.3.x
+test_git merge -q --no-ff -m "merge backport3" backport3
 off_main="$(git rev-parse HEAD)"
-g tag v0.3.1
-g checkout -q main
+test_git tag v0.3.1
+test_git checkout -q main
+
 # The typo from RELEASE.md's major gate: v1.0.0-rc.1 pushed for v0.1.0-rc.1.
 # Tags can't be deleted, so it stays on main forever.
-g commit -q --allow-empty -m "mistyped candidate"
-g tag v1.0.0-rc.1
-g commit -q --allow-empty -m "the real v1"
-g tag v1.0.0
+test_git commit -q --allow-empty -m "mistyped candidate"
+test_git tag v1.0.0-rc.1
+test_git commit -q --allow-empty -m "the real v1"
+test_git tag v1.0.0
 
 mkdir -p "$work/bin" "$work/stub"
 cat > "$work/bin/gh" <<'EOF'
@@ -87,7 +99,7 @@ case "$path" in
   */rules/branches/*) file="$STUB/rules.json" ;;
   */releases\?*) file="$STUB/releases.json"; [ -e "$file" ] || echo '[]' > "$file" ;;
   */commits/*/pulls) sha="${path%/pulls}"; sha="${sha##*/}"; file="$STUB/pulls-$sha.json"; [ -e "$file" ] || echo '[]' > "$file" ;;
-  */pulls/*/reviews) n="${path%/reviews}"; n="${n##*/}"; file="$STUB/reviews-$n.json"; [ -e "$file" ] || echo '[]' > "$file" ;;
+  */pulls/*/reviews) pr_number="${path%/reviews}"; pr_number="${pr_number##*/}"; file="$STUB/reviews-$pr_number.json"; [ -e "$file" ] || echo '[]' > "$file" ;;
   *) exit 2 ;;
 esac
 jq -r "$jq_expr" "$file"
@@ -97,6 +109,7 @@ chmod +x "$work/bin/gh"
 full_rules='[{"type":"deletion"},{"type":"non_fast_forward"},{"type":"required_signatures"},
   {"type":"pull_request","parameters":{"required_approving_review_count":1}},
   {"type":"required_status_checks","parameters":{"required_status_checks":[{"context":"CI"}]}}]'
+
 # pr_merge BRANCH SHA [APPROVER] [APPROVED_HEAD]: a pull request by "author",
 # number 7, whose head h2 merged into BRANCH as SHA, approved by APPROVER (a
 # reviewer by default) at APPROVED_HEAD (h2 by default).
@@ -119,12 +132,20 @@ validate() {
     GITHUB_REPOSITORY=k0rdent/test GITHUB_OUTPUT="$work/out" RELEASE_TAG="$1" ALLOW_MAJOR=0 \
     bash "$work/validate.sh") > "$work/log" 2>&1
 }
+
 accepted() { validate "$1" || { cat "$work/log" >&2; fail "$1 was refused ($2)"; }; }
+
 refused() {
   if validate "$1"; then fail "$1 was accepted ($2)"; fi
   grep -Fq "$3" "$work/log" || { cat "$work/log" >&2; fail "$1 was refused, but not for $2"; }
 }
-reset() { rm -f "$work/stub/"*; echo "$full_rules" > "$work/stub/rules.json"; pr_merge release-v0.1.x "$merged"; pr_merge release-v0.3.x "$off_main"; }
+
+reset() {
+  rm -f "$work/stub/"*
+  echo "$full_rules" > "$work/stub/rules.json"
+  pr_merge release-v0.1.x "$merged"
+  pr_merge release-v0.3.x "$off_main"
+}
 
 reset
 accepted v0.1.0 "a tag on main"

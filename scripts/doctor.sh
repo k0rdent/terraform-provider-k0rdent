@@ -1,20 +1,16 @@
 #!/usr/bin/env bash
 #
-# Setup preflight. Answers one question, "can this machine run the tests?",
-# before anything long and confusing has a chance to fail halfway.
+# Checks this machine can run the tests, before anything long fails halfway.
 #
 #   scripts/doctor.sh          check tier 1, and report tier 2 separately
 #
-# Tier 1 is the local fake: `make check`, `make demo`, `make plan-fake`.
-# Everything it needs is in the REQUIRED list below and a
-# missing one is an error.
+# Tier 1 is the local fake: `make check`, `make demo`, `make plan-fake`. A
+# missing tool is an error.
 #
 # Tier 2 is a local kind stack serving the real API on http://localhost:8000.
-# Its tools are reported separately and a missing one is a warning, because
-# most people run tier 1 first and never need them.
+# A missing tool is a warning, since most people never need it.
 #
-# Exit status is 0 when tier 1 can run, 1 when it cannot. Tier 2 never fails
-# this script.
+# Exits 0 when tier 1 can run and 1 when it can't. Tier 2 never fails it.
 
 set -uo pipefail
 
@@ -43,26 +39,27 @@ os_kind() {
 
 OS="$(os_kind)"
 
-# Compare dotted versions on major.minor.patch. A missing part counts as 0.
-# Strips a leading "v" or "go". Returns 0 when $1 >= $2.
+# semver_ge A B returns 0 when A >= B, comparing major.minor.patch. A missing
+# part counts as 0, and a leading "v" or "go" is dropped.
 semver_ge() {
   local left="${1#v}"
   local right="${2#v}"
   left="${left#go}"
   right="${right#go}"
-  local l r i
-  local -a lp rp
-  IFS=. read -r -a lp <<< "$left"
-  IFS=. read -r -a rp <<< "$right"
+
+  local left_part right_part i
+  local -a left_parts right_parts
+  IFS=. read -r -a left_parts <<< "$left"
+  IFS=. read -r -a right_parts <<< "$right"
   for i in 0 1 2; do
-    l="${lp[$i]:-0}"
-    r="${rp[$i]:-0}"
-    l="${l%%[!0-9]*}"
-    r="${r%%[!0-9]*}"
-    l="${l:-0}"
-    r="${r:-0}"
-    [ "$l" -gt "$r" ] 2>/dev/null && return 0
-    [ "$l" -lt "$r" ] 2>/dev/null && return 1
+    left_part="${left_parts[$i]:-0}"
+    right_part="${right_parts[$i]:-0}"
+    left_part="${left_part%%[!0-9]*}"
+    right_part="${right_part%%[!0-9]*}"
+    left_part="${left_part:-0}"
+    right_part="${right_part:-0}"
+    [ "$left_part" -gt "$right_part" ] 2>/dev/null && return 0
+    [ "$left_part" -lt "$right_part" ] 2>/dev/null && return 1
   done
   return 0
 }
@@ -160,7 +157,7 @@ tier1_missing=0
 tier2_missing=0
 tier2_missing_cmds=""
 
-# have <command> <label> <install hint>
+# have <command> <label> prints the label as ok when the command is on PATH.
 have() {
   if command -v "$1" >/dev/null 2>&1; then
     good "$2"
@@ -172,13 +169,9 @@ have() {
 printf '%sk0rdent AI Terraform provider: setup check%s\n' "$B" "$R"
 note "repository: $REPO"
 
-# ---------------------------------------------------------------------------
 step "Tier 1: the local fake. Everything here is required."
-# ---------------------------------------------------------------------------
 
-# make: every command this suggests is a make target. Doctor is usually
-# invoked as `make doctor`, but running this script directly still needs make
-# for the five tests that follow.
+# Run directly, this still needs make: every command it suggests is a target.
 if have make "$(make --version 2>/dev/null | head -1)"; then
   :
 else
@@ -188,10 +181,8 @@ else
   tier1_missing=$((tier1_missing + 1))
 fi
 
-# Go, with a version floor: the full version go.mod declares. 1.26.10 is the
-# first 1.26 with the crypto/x509 fix, and golang.org/x/net v0.60.0 needs at
-# least 1.26.0. Go refuses to build a module that declares a newer version than
-# the toolchain, so a lower one fails outright rather than degrading.
+# The floor is the full version go.mod declares, since Go refuses to build a
+# module that declares a newer one than the toolchain.
 MODULE_GO="$(awk '/^go / {print $2; exit}' go.mod 2>/dev/null || true)"
 GO_MIN="${MODULE_GO:-1.26.10}"
 if command -v go >/dev/null 2>&1; then
@@ -210,7 +201,7 @@ else
   tier1_missing=$((tier1_missing + 1))
 fi
 
-# Terraform or OpenTofu. Either is fine; the scripts prefer terraform.
+# Either works, and the scripts prefer terraform.
 if command -v terraform >/dev/null 2>&1; then
   good "terraform $(terraform version 2>/dev/null | head -1 | awk '{print $2}')"
 elif command -v tofu >/dev/null 2>&1; then
@@ -221,12 +212,8 @@ else
   tier1_missing=$((tier1_missing + 1))
 fi
 
-# golangci-lint: `make check` runs it. v1 cannot load `.golangci.yml` (version:
-# "2"). A v2 binary built with a Go older than the module fails with:
-#   the Go language version (go1.XX) used to build golangci-lint is lower
-#   than the targeted Go version (...)
-# Unversioned `@latest` can also demand a newer Go than go.mod. Always install
-# via `make lint-install`.
+# v1 can't load .golangci.yml, and a v2 built with a Go older than go.mod
+# refuses to lint the module.
 if command -v golangci-lint >/dev/null 2>&1; then
   lint_out="$(golangci-lint version 2>/dev/null || true)"
   lint_ver="$(printf '%s\n' "$lint_out" | sed -n 's/.* version v*\([0-9][0-9.]*\).*/\1/p' | head -1)"
@@ -261,7 +248,6 @@ else
   tier1_missing=$((tier1_missing + 1))
 fi
 
-# python3: ci/plan-against-fake.sh reads JSON plans with it.
 if have python3 "python3 $(python3 --version 2>&1 | awk '{print $2}')"; then
   :
 else
@@ -271,18 +257,8 @@ else
   tier1_missing=$((tier1_missing + 1))
 fi
 
-# A dev override that has gone missing, which Terraform will not stop for.
-#
-# `make demo` and `make live` each write their own
-# terraform.rc into a run directory, so none of them can hit this. Driving
-# examples/ by hand can: docs/walkthrough.md asks you to write the file
-# yourself, under your cache directory (under /tmp, which macOS purges, before
-# that). Come back after it has been cleared with
-# TF_CLI_CONFIG_FILE still exported from your shell profile and the file gone,
-# and Terraform prints "Unable to open CLI configuration file" as a WARNING,
-# carries on without the override, tries to resolve the provider from a
-# registry it was never published to, and fails several steps later with
-# "Inconsistent dependency lock file". Nothing in that message names the cause.
+# A missing CLI config file is only a warning to Terraform. It drops the dev
+# override and fails later with a lock-file error that doesn't name the cause.
 if [ -n "${TF_CLI_CONFIG_FILE:-}" ]; then
   if [ ! -r "$TF_CLI_CONFIG_FILE" ]; then
     bad "TF_CLI_CONFIG_FILE points at a file that is not there"
@@ -308,9 +284,9 @@ if [ -n "${TF_CLI_CONFIG_FILE:-}" ]; then
       }' "$TF_CLI_CONFIG_FILE")
     override_addr=${override_pair%%$'\t'*}
     override_dir=${override_pair#*$'\t'}
-    # Terraform looks for terraform-provider-<type>, the type being the last
-    # segment of the source address, with or without a registry host.
+    # The binary is terraform-provider-<type>, the address's last segment.
     override_type=${override_addr##*/}
+
     if [ -z "$override_pair" ]; then
       bad "TF_CLI_CONFIG_FILE has no dev override in it"
       note "    $TF_CLI_CONFIG_FILE"
@@ -332,9 +308,7 @@ if [ -n "${TF_CLI_CONFIG_FILE:-}" ]; then
   fi
 fi
 
-# ---------------------------------------------------------------------------
 step "Tier 2: a local kind stack. Only needed for 'make live'."
-# ---------------------------------------------------------------------------
 note "Skip this section if you are only running tier 1."
 
 for pair in \
@@ -353,14 +327,12 @@ do
     warn "$label is not on PATH"
     hint_tier2 "$cmd"
     tier2_missing=$((tier2_missing + 1))
-    # Docker is a desktop/engine install, not a brew/apt formula in the same way.
+    # Docker isn't a brew formula, so it stays out of the brew install line.
     [ "$cmd" = "docker" ] || tier2_missing_cmds="${tier2_missing_cmds:+$tier2_missing_cmds }$cmd"
   fi
 done
 
-# Docker being installed is not the same as Docker running, and the kind stack
-# needs real CPU. The default OrbStack allocation is 2, which is not enough:
-# pods sit Pending on "Insufficient cpu" and the helm install times out.
+# OrbStack's default of 2 CPUs leaves the kind stack's pods Pending.
 KIND_MIN_CPU=6
 if command -v docker >/dev/null 2>&1; then
   if docker version --format '{{.Server.Version}}' >/dev/null 2>&1; then
@@ -416,9 +388,7 @@ if [ -n "$tier2_missing_cmds" ]; then
   esac
 fi
 
-# ---------------------------------------------------------------------------
 step "Result"
-# ---------------------------------------------------------------------------
 
 if [ "$tier1_missing" -gt 0 ]; then
   printf '%s%sTier 1 cannot run%s: %d prerequisite(s) missing above.\n\n' \
