@@ -80,6 +80,7 @@ func TestClusterGroupRefusals(t *testing.T) {
 	// A VPC's default group, which a cluster may not name.
 	call(t, s.createCluster, http.MethodPost, "",
 		`{"id":"other","clusterType":"/v1/regions/r/compute/cluster-types/gpu-training"}`)
+	otherDefault := defaultGroupOf(t, s, "vpc-other")
 
 	many := make([]string, 17)
 	for i := range many {
@@ -91,7 +92,7 @@ func TestClusterGroupRefusals(t *testing.T) {
 		"unknown ids, every one named": {"gpu-training", `["a","x","y"]`, "unknown security group(s): x, y"},
 		"a duplicate":                  {"gpu-training", `["a","a"]`, `securityGroups[1]: id "a" is duplicated`},
 		"over the limit":               {"gpu-training", "[" + strings.Join(many, ",") + "]", "at most 16"},
-		"a default group":              {"gpu-training", `["vpc-other-default"]`, "default group"},
+		"a default group":              {"gpu-training", `["` + otherDefault + `"]`, "default group"},
 		"no interface to go on":        {"cpu-general", `["a"]`, "no node pool has an interface"},
 	} {
 		t.Run(name, func(t *testing.T) {

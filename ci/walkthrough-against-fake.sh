@@ -458,6 +458,17 @@ EOF
   output_is "$name" filtering '(lambda g, bs: len(bs) >= 1 and all(len(b) == 2 and b[0] == g and b[1] != g for b in bs) and len({b[1] for b in bs}) == len(bs))(v["group"], list(v["vpc_bindings"].values()))'
   good "the scorecard says what ran and what was off"
 
+  # look again, now that it has something to read by id.
+  tf look apply -auto-approve -input=false || fail "$name: look failed with $name built"
+  if ! grep -q '0 added, 0 changed, 0 destroyed' "$WORK/look/last.log"; then
+    fail "$name: look changed something"
+  fi
+  output_is look webhooks 'len(v) == 1 and all(s.startswith("active") for s in v.values())'
+  if [[ "$name" == full ]]; then
+    output_is look in_project 'v["id"] == "'"$project"' in '"$region"'" and any(n.startswith("ci-walkthrough ") for n in v["networks"]) and v["vpcs"] and v["subnets"]'
+  fi
+  good "look reads what $name built"
+
   plans_clean "$name" "after the apply"
   good "second plan: exit 0, no changes"
 

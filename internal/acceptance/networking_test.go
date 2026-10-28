@@ -214,7 +214,7 @@ data %q "all" {
 					resource.TestCheckResourceAttr(vpcsAddr, "vpcs.0.owner_kind", "cluster"),
 					resource.TestCheckResourceAttr(vpcsAddr, "vpcs.0.backend", "nico"),
 					// The default binding is always reported, never an empty list.
-					resource.TestCheckResourceAttr(vpcsAddr, "vpcs.0.security_groups.0", "vpc-"+name+"-default"),
+					resource.TestCheckResourceAttrWith(vpcsAddr, "vpcs.0.security_groups.0", isDefaultGroupOf("vpc-"+name)),
 				),
 			},
 		},
