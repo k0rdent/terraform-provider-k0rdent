@@ -164,6 +164,10 @@ var relatedPages = map[string][]relatedLink{
 		{"data-sources/cluster_types", "lists what a region offers to build clusters from."},
 		{"data-sources/address_pools", "lists the pools a region allocates subnets from."},
 	},
+	"data-sources/security_group": {
+		{"data-sources/vpc", "reads a VPC's binding, which names its default group."},
+		{"data-sources/effective_security_groups", "reports what actually filters an object once every binding is merged."},
+	},
 	"data-sources/security_groups": {
 		{"data-sources/effective_security_groups", "reports what actually filters an object once every binding is merged."},
 	},

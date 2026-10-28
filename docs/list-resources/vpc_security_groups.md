@@ -4,14 +4,14 @@ page_title: "k0rdent_vpc_security_groups List Resource - k0rdent"
 subcategory: ""
 description: |-
   Finds every k0rdent_vpc_security_groups a terraform query can adopt, by its identity. With include_resource = true, or under -generate-config-out, each result also carries the object as an import of that identity would read it, so the generated configuration is what an import plans against. Terraform 1.14 and later.
-  The security group binding of every VPC in a project. Every VPC has one, holding its default group until something else is bound, so this finds one per VPC. An object being deleted is left out: adopting it plans against something about to be gone.
+  The security group binding of every VPC in a project. Every VPC has one, so this finds one per VPC. On a nico VPC it holds the VPC's default group until something else is bound, and on any other backend it's empty. An object being deleted is left out: adopting it plans against something about to be gone.
 ---
 
 # k0rdent_vpc_security_groups (List Resource)
 
 Finds every `k0rdent_vpc_security_groups` a `terraform query` can adopt, by its identity. With `include_resource = true`, or under `-generate-config-out`, each result also carries the object as an import of that identity would read it, so the generated configuration is what an import plans against. Terraform 1.14 and later.
 
-The security group binding of every VPC in a project. Every VPC has one, holding its default group until something else is bound, so this finds one per VPC. An object being deleted is left out: adopting it plans against something about to be gone.
+The security group binding of every VPC in a project. Every VPC has one, so this finds one per VPC. On a `nico` VPC it holds the VPC's default group until something else is bound, and on any other backend it's empty. An object being deleted is left out: adopting it plans against something about to be gone.
 
 ## Example Usage
 
