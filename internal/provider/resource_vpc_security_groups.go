@@ -86,7 +86,7 @@ func (r *vpcSecurityGroupsResource) Schema(ctx context.Context, _ resource.Schem
 		Version: stateHistories[vpcSecurityGroupsResourceSuffix].version(),
 		MarkdownDescription: "The security groups attached to a VPC, in the order the fabric applies " +
 			"them.\n\n" +
-			"A VPC is materialized by a cluster or instance group and has no lifecycle of its own, " +
+			"A VPC is created with a cluster or instance group and has no lifecycle of its own, " +
 			"so this binding is the only part of one that Terraform can write. It is a whole-list " +
 			"replace: the groups named here are attached, and any attached before and absent now " +
 			"are detached. A list without the VPC's default group replaces it, and with it the " +

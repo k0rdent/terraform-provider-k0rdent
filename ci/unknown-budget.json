@@ -127,10 +127,10 @@
         "data.k0rdent_security_groups": {
           "count": 7,
           "unknown": {
-            "display_name_regex": "vpc_default names the VPC, which the platform materializes with the cluster",
-            "ids": "read during the apply: tagged waits for terraform_data.made, which this plan creates, and vpc_default for the VPC the cluster materializes",
-            "region": "read during the apply: tagged waits for terraform_data.made, which this plan creates, and vpc_default for the VPC the cluster materializes",
-            "security_groups": "read during the apply: tagged waits for terraform_data.made, which this plan creates, and vpc_default for the VPC the cluster materializes"
+            "display_name_regex": "vpc_default names the VPC, which the platform creates with the cluster",
+            "ids": "read during the apply: tagged waits for terraform_data.made, which this plan creates, and vpc_default for the VPC the platform creates with the cluster",
+            "region": "read during the apply: tagged waits for terraform_data.made, which this plan creates, and vpc_default for the VPC the platform creates with the cluster",
+            "security_groups": "read during the apply: tagged waits for terraform_data.made, which this plan creates, and vpc_default for the VPC the platform creates with the cluster"
           }
         },
         "data.k0rdent_subnets": {
@@ -382,10 +382,10 @@
         "data.k0rdent_security_groups": {
           "count": 11,
           "unknown": {
-            "display_name_regex": "vpc_default names the VPC, which the platform materializes with the cluster",
-            "ids": "read during the apply: tagged waits for terraform_data.made, which this plan creates, and vpc_default for the VPC the cluster materializes",
-            "region": "read during the apply: tagged waits for terraform_data.made, which this plan creates, and vpc_default for the VPC the cluster materializes",
-            "security_groups": "read during the apply: tagged waits for terraform_data.made, which this plan creates, and vpc_default for the VPC the cluster materializes"
+            "display_name_regex": "vpc_default names the VPC, which the platform creates with the cluster",
+            "ids": "read during the apply: tagged waits for terraform_data.made, which this plan creates, and vpc_default for the VPC the platform creates with the cluster",
+            "region": "read during the apply: tagged waits for terraform_data.made, which this plan creates, and vpc_default for the VPC the platform creates with the cluster",
+            "security_groups": "read during the apply: tagged waits for terraform_data.made, which this plan creates, and vpc_default for the VPC the platform creates with the cluster"
           }
         },
         "data.k0rdent_subnets": {
