@@ -909,8 +909,9 @@ func (s *state) listProjects(w http.ResponseWriter, r *http.Request) {
 	defer s.mu.Unlock()
 
 	matching := []any{}
+	caller := scopedTo(r)
 	for _, p := range projectKind.under(s.global(), "") {
-		if org != "" && p.org != org {
+		if (org != "" && p.org != org) || !caller.sees(p.org, p.id) {
 			continue
 		}
 		if status != "" && p.status != status {
@@ -2484,6 +2485,9 @@ func invalidSSHAccess(users []sshUser) string {
 // so a project missing there is the service's 404.
 func (s *state) gateway(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if scopedToProject(w, r) {
+			return
+		}
 		s.mu.Lock()
 		known, locked := true, ""
 		switch org, project := r.PathValue("orgId"), r.PathValue("project"); {

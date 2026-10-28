@@ -145,7 +145,9 @@ func (s *state) listOrganizations(w http.ResponseWriter, r *http.Request) {
 		s.mu.Lock()
 		defer s.mu.Unlock()
 		for _, id := range sortedMapKeys(s.organizations) {
-			items = append(items, organizationBody(id))
+			if scopedTo(r).seesOrganization(id) {
+				items = append(items, organizationBody(id))
+			}
 		}
 	case "suspended", "disabled", "provisioning", "failed", "deleting":
 		// Every organization the fake knows is active, and an empty page is

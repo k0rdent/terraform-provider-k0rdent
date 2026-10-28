@@ -94,6 +94,77 @@ func TestEveryGuidanceEntryIsTested(t *testing.T) {
 	}
 }
 
+// A bare 403 on a read only an organization role can make says which role it
+// needs, and that a credential scoped to a project can't have it. The same
+// 403 on another operation, or with a reason, isn't given that guidance.
+func TestAForbiddenOrganizationReadSaysWhichRoleItNeeds(t *testing.T) {
+	forbidden := func(operation, reason string) *k0rdent.APIError {
+		resp, body := refusal(t, http.StatusForbidden, reason, "forbidden", false)
+		apiErr := k0rdent.NewAPIError(resp, body)
+		apiErr.Operation = operation
+		return apiErr
+	}
+	tests := []struct {
+		operation string
+		want      []string
+	}{
+		{"getOrganization", []string{"organizations-viewer", "scoped to a project",
+			"`" + ResourceName(organizationsDataSourceSuffix) + "`"}},
+		{"getProjectInOrg", []string{"organizations-viewer or compute-viewer", "A role on the project doesn't count",
+			"`" + ResourceName(projectDataSourceSuffix) + "` data source"}},
+		{"getProjectQuota", []string{"Reading quota", "organizations-viewer", "scoped to a project"}},
+		{"getTenantQuota", []string{"Reading quota", "organizations-viewer", "scoped to a project"}},
+		{"listRoles", []string{"iam-viewer or iam-admin", "scoped to a project"}},
+		{"getServiceAccount", []string{"iam-admin", "not iam-viewer", "scoped to a project"}},
+		{"listServiceAccounts", []string{"iam-admin", "not iam-viewer", "scoped to a project"}},
+		{"listServiceAccountCredentials", []string{"iam-admin", "not iam-viewer", "scoped to a project"}},
+	}
+	tested := map[string]bool{}
+	for _, tt := range tests {
+		tested[tt.operation] = true
+		t.Run(tt.operation, func(t *testing.T) {
+			apiErr := forbidden(tt.operation, "")
+			next := guidanceFor(apiErr)
+			// The gateway's 403 for an organization that doesn't exist is
+			// the same answer, so a wrong id is named alongside the role.
+			for _, want := range append(tt.want, "same 403 for an organization id that doesn't exist") {
+				if !strings.Contains(next, want) {
+					t.Errorf("the next step doesn't say %q: %s", want, next)
+				}
+			}
+			for _, banned := range []string{"—", ";", "->", "→", "customer"} {
+				if strings.Contains(next, banned) {
+					t.Errorf("the next step contains %q: %s", banned, next)
+				}
+			}
+			if n := strings.Count(next, ". "); n > 1 {
+				t.Errorf("the next step is %d sentences, want one or two: %s", n+1, next)
+			}
+			detail := apiErrorDetail(apiErr)
+			if at, id := strings.Index(detail, next), strings.Index(detail, "Request id: req-guide"); at < 0 || id < at {
+				t.Errorf("the next step isn't between the platform's answer and the request id:\n%s", detail)
+			}
+			if got := guidanceFor(forbidden(tt.operation, "NON_INTERACTIVE_PRINCIPAL")); got != reasonGuidance["NON_INTERACTIVE_PRINCIPAL"] {
+				t.Errorf("a 403 with a known reason got %q", got)
+			}
+			// A reason nobody has seen is some other refusal, not the role.
+			if got := guidanceFor(forbidden(tt.operation, "SOMETHING_NEW")); got != "" {
+				t.Errorf("a 403 with an unknown reason got %q", got)
+			}
+		})
+	}
+	for op := range forbiddenGuidance {
+		if !tested[op] {
+			t.Errorf("operation %s has 403 guidance and no case here", op)
+		}
+	}
+	for _, other := range []string{"listClusters", ""} {
+		if got := guidanceFor(forbidden(other, "")); got != "" {
+			t.Errorf("a 403 on %q got guidance: %s", other, got)
+		}
+	}
+}
+
 // A reason the provider doesn't know still shows the status, the message,
 // the reason and the request id, and adds no next step it can't back.
 func TestAnUnknownReasonStillShowsWhatThePlatformSaid(t *testing.T) {

@@ -6,6 +6,7 @@ description: |-
   One project, read rather than managed.
   Use it to name a project another configuration owns, from the state boundary that holds the clusters and networks inside it. status is what to read on that side: a project at deleting still answers reads and still holds its name, and a cluster created in one is refused.
   Unlike every other data source here it takes no region and no project. A project lives on the global control-plane tier and is addressed inside an organization. A project's id is normally held by one organization, so organization_id can be left out and is then looked up. If more than one organization holds the id, the read is refused and organization_id has to be set.
+  A credential scoped to a project can read that project, with or without organization_id. The platform refuses such a credential a project's read by id, because it checks that read against the organization, so the provider reads the project from the project list instead, which shows the credential its own projects.
 ---
 
 # k0rdent_project (Data Source)
@@ -15,6 +16,8 @@ One project, read rather than managed.
 Use it to name a project another configuration owns, from the state boundary that holds the clusters and networks inside it. `status` is what to read on that side: a project at `deleting` still answers reads and still holds its name, and a cluster created in one is refused.
 
 Unlike every other data source here it takes no `region` and no `project`. A project lives on the global control-plane tier and is addressed inside an organization. A project's `id` is normally held by one organization, so `organization_id` can be left out and is then looked up. If more than one organization holds the id, the read is refused and `organization_id` has to be set.
+
+A credential scoped to a project can read that project, with or without `organization_id`. The platform refuses such a credential a project's read by id, because it checks that read against the organization, so the provider reads the project from the project list instead, which shows the credential its own projects.
 
 ## Example Usage
 
@@ -54,7 +57,7 @@ provider "k0rdent" {
 
 ### Optional
 
-- `organization_id` (String) The organization the project is in. Looked up from `id` when left out, which costs a list request instead of one read. **Constraints:** Must be lower-case letters, digits and hyphens, starting with a letter and not ending with a hyphen (`[a-z]([-a-z0-9]*[a-z0-9])?`), because it becomes a segment of a request URL.
+- `organization_id` (String) The organization the project is in. Looked up from `id` when left out, in the one list request that reads the project. **Constraints:** Must be lower-case letters, digits and hyphens, starting with a letter and not ending with a hyphen (`[a-z]([-a-z0-9]*[a-z0-9])?`), because it becomes a segment of a request URL.
 
 ### Read-Only
 

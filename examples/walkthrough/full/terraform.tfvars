@@ -18,6 +18,7 @@ webhook_url         = ""                      # where cluster events go, such as
 # worker_counts          = { workers = 1 }              # nodes per worker pool. Left out, each starts at its floor
 # cluster_type_version   = ""                           # a version id from the cluster_type output, to pin it
 # webhook_secret_version = 2                            # one more, with a new TF_VAR_webhook_secret, rotates the webhook's secret
+# quota_checks           = false                        # skip the organization and quota reads, for a credential scoped to a project
 # ingress_services = {
 #   ssh      = { protocol = "tcp", port = "22" }
 #   kube-api = { protocol = "tcp", port = "6443" }

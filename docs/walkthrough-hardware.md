@@ -40,9 +40,13 @@ Ask whoever runs the platform for:
 
 - You don't need the region, organization or project ids up front. Step 4
   lists them.
-- **Ask for a service account scoped to the organization.** It can create the
-  project this walkthrough builds in. A project-scoped one only works in a
-  project that already exists.
+- **Ask for a service account scoped to the organization.** It can run every
+  step, including the ones that create a project.
+- A service account scoped to a project, with `compute-admin` on it, runs
+  `look/`, `cluster/`, `nodes/` and `network/` in that project. It runs
+  `full/` with `quota_checks = false`, because reading the organization and
+  its quota needs an organizations role on the organization. It can't run
+  `cluster-own-project/` or `full/`'s `own_project`, which create a project.
 - An API key also works, but prefer a service account. `setup.sh` only asks
   for a client id and secret, so with a key, export `K0RDENT_ENDPOINT`,
   `K0RDENT_API_KEY` and `TF_CLI_CONFIG_FILE` yourself.
@@ -390,6 +394,7 @@ The `build` block in `terraform.tfvars` turns each part on or off:
 | 429 | Too many token requests. Wait a minute between commands |
 | `No such project` at plan | This credential can't see that project |
 | 403 or 409 creating the project | The credential is project-scoped, or the project already exists. Change `prefix`, or use `cluster/` |
+| 403 reading the organization or quota in `full/` | The credential is project-scoped. Set `quota_checks = false` |
 | `The cluster did not become active` | The create timed out, but the cluster is still building. Don't apply again, which would replace it. Wait until it's `active`, run `terraform untaint k0rdent_kubernetes_cluster.walkthrough`, then go to step 6 |
 | `The cluster did not finish deleting`, with `timed out` | Freeing hardware can take hours. Wait until the cluster is gone from the UI, then run `terraform destroy` again |
 | `The cluster did not finish deleting`, with `failed` | Try the delete once [with curl](walkthrough-api.md#6-delete-it). If that fails too, send the platform operator the execution id from the error |

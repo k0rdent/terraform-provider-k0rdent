@@ -105,10 +105,15 @@ func regionMismatchAdvice(apiErr *k0rdent.APIError) string {
 			"never changes, so set `region` to %q on this resource, or in the provider block, and plan "+
 			"again.", project, region, asked, region)
 	}
-	return fmt.Sprintf("Project %q is locked to another region than %q, and the platform's answer doesn't "+
-		"say which. The `%s` data source reports it as `region`. A project's region never changes, so set "+
-		"`region` to it on this resource, or in the provider block.", project, asked,
-		ResourceName(projectDataSourceSuffix))
+	// The lookup read the project list, or failed to, and it didn't say, so
+	// pointing at a read of the same list would go nowhere. The read naming the
+	// organization tells two organizations' projects apart, and falls back
+	// to the list filtered to that organization for a credential scoped to
+	// the project.
+	return fmt.Sprintf("Project %q is locked to another region than %q, and neither the platform's answer "+
+		"nor the project list told the provider which. Read it as `region` from the `%s` data source with "+
+		"`organization_id` set. A project's region never changes, so set `region` to it on this resource, "+
+		"or in the provider block.", project, asked, ResourceName(projectDataSourceSuffix))
 }
 
 // projectRegionMemo is each project's region as this provider process read

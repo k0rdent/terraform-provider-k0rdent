@@ -92,6 +92,11 @@ type APIError struct {
 
 	// Header is the full response header set.
 	Header http.Header
+	// Operation is the operationId of the generated call that got this
+	// answer, read from its request's context, or "" when no generated call
+	// made the request. A 403 means a different missing permission on each
+	// operation, and this is how a caller tells which one was refused.
+	Operation string
 	// Body is the undecoded response body, so a caller can see what a
 	// third envelope shape said.
 	Body []byte
@@ -131,6 +136,9 @@ func NewAPIError(resp *http.Response, body []byte) *APIError {
 		e.StatusCode = resp.StatusCode
 		e.Status = resp.Status
 		e.Header = resp.Header
+		if resp.Request != nil {
+			e.Operation, _ = OperationIDFromContext(resp.Request.Context())
+		}
 	}
 	e.Envelope = e.decode(body)
 	if e.RequestID == "" {

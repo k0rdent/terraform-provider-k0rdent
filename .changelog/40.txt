@@ -1,0 +1,39 @@
+```release-note:bug
+data-source/k0rdent_project: Fix a credential scoped to a project getting a bare 403 for its own project. Without `organization_id` the project is now read from the project list in one request, and with it a refused read falls back to that list
+```
+
+```release-note:enhancement
+data-source/k0rdent_organization: Say on a 403 which role the read needs, that a credential scoped to a project can't have it, and that `k0rdent_organizations` lists what such a credential can see
+```
+
+```release-note:enhancement
+data-source/k0rdent_project_quota: Say on a 403 which role the read needs, and that a credential scoped to a project can't have it
+```
+
+```release-note:enhancement
+data-source/k0rdent_tenant_quota: Say on a 403 which role the read needs, and that a credential scoped to a project can't have it
+```
+
+```release-note:enhancement
+data-source/k0rdent_roles: Say on a 403 which role the read needs, and that a credential scoped to a project can't have it
+```
+
+```release-note:enhancement
+data-source/k0rdent_service_account: Say on a 403 which role the read needs, and that a credential scoped to a project can't have it
+```
+
+```release-note:enhancement
+data-source/k0rdent_service_accounts: Say on a 403 which role the read needs, and that a credential scoped to a project can't have it
+```
+
+```release-note:enhancement
+data-source/k0rdent_service_account_credentials: Say on a 403 which role the read needs, and that a credential scoped to a project can't have it
+```
+
+```release-note:enhancement
+resource/k0rdent_project: Say on a 403 reading the project which roles the read needs, that an organization id that doesn't exist gets the same 403, and that the `k0rdent_project` data source reads a project-scoped credential's own project instead
+```
+
+```release-note:enhancement
+provider: Point a `PROJECT_REGION_MISMATCH` whose region the project list doesn't show at `k0rdent_project` with `organization_id` set, instead of at a read of the same list
+```
