@@ -5,7 +5,7 @@ subcategory: ""
 description: |-
   One security group, by name, read rather than managed.
   owner_kind is the attribute to read before doing anything with the result. vpc marks a VPC's default group, which the platform owns: it cannot be changed or deleted, and it can be bound only to the VPC named by owner_id. Binding it back to that VPC is how to keep it alongside your own groups; binding it anywhere else is refused at apply rather than at plan.
-  The rules are not returned here. Use the k0rdent_effective_security_groups data source for what is actually enforced on a VPC, which is the question rules are usually asked about and which no single group answers on its own.
+  ingress and egress are the group's own rules, in the order they're matched. A VPC's default group can't be managed, so this is how to read what it allows. A group is rarely all that filters an interface: the k0rdent_effective_security_groups data source says which groups reach one, and in what order.
 ---
 
 # k0rdent_security_group (Data Source)
@@ -14,7 +14,7 @@ One security group, by name, read rather than managed.
 
 `owner_kind` is the attribute to read before doing anything with the result. `vpc` marks a VPC's default group, which the platform owns: it cannot be changed or deleted, and it can be bound only to the VPC named by `owner_id`. Binding it back to that VPC is how to keep it alongside your own groups; binding it anywhere else is refused at apply rather than at plan.
 
-The rules are not returned here. Use the `k0rdent_effective_security_groups` data source for what is actually enforced on a VPC, which is the question rules are usually asked about and which no single group answers on its own.
+`ingress` and `egress` are the group's own rules, in the order they're matched. A VPC's default group can't be managed, so this is how to read what it allows. A group is rarely all that filters an interface: the `k0rdent_effective_security_groups` data source says which groups reach one, and in what order.
 
 ## Example Usage
 
@@ -32,6 +32,24 @@ check "group_is_ours" {
     condition     = data.k0rdent_security_group.shared_ingress.owner_kind == null
     error_message = "shared-ingress is the default group of VPC ${coalesce(data.k0rdent_security_group.shared_ingress.owner_id, "unknown")} and is read-only here."
   }
+}
+
+# A VPC's default group, which the platform owns. Its id is random, so take it
+# off the VPC's binding, which holds only that group until you bind others.
+data "k0rdent_vpc" "training" {
+  id = "training-vpc"
+}
+
+data "k0rdent_security_group" "training_default" {
+  id = one(data.k0rdent_vpc.training.security_groups)
+}
+
+# What it allows, one line per rule, in the order they're matched.
+output "training_default_rules" {
+  value = concat(
+    [for r in data.k0rdent_security_group.training_default.ingress : "in:  ${r.action} ${r.protocol} ${r.source_prefix} to ${r.destination_prefix}"],
+    [for r in data.k0rdent_security_group.training_default.egress : "out: ${r.action} ${r.protocol} ${r.source_prefix} to ${r.destination_prefix}"],
+  )
 }
 
 # To see every group that applies to a VPC, read this instead.
@@ -57,6 +75,10 @@ data "k0rdent_effective_security_groups" "vpc" {
 
 - `description` (String) Free-form text describing it, for people to read.
 - `display_name` (String) Human-friendly name, for display only.
+- `egress` (Attributes List) Rules filtering traffic leaving the instance, in evaluation order.
+
+Rules are stateless, with one exception the platform applies on the `nico` fabric: an egress `tcp` or `udp` rule with a `destination_port_range` and no `source_port_range` is made stateful, so return traffic does not need a matching ingress rule. It is a property of the enforcement and is not reported back, so nothing in this schema can show it. (see [below for nested schema](#nestedatt--egress))
+- `ingress` (Attributes List) Rules filtering traffic arriving at the instance, in evaluation order. (see [below for nested schema](#nestedatt--ingress))
 - `owner_id` (String) UID of the owning resource: the VPC's `uid` when `owner_kind` is `vpc`. Null on a group a tenant created.
 - `owner_kind` (String) `vpc` on a VPC's default group, which the platform owns and a tenant can't modify through the API. Null on a group a tenant created.
 - `rule_count` (Number) How many rules the group holds.
@@ -64,7 +86,36 @@ data "k0rdent_effective_security_groups" "vpc" {
 - `state` (String) Lifecycle state as last read from the platform.
 - `status_reason` (String) Why the group is in this state, where the platform gives a reason.
 
+<a id="nestedatt--egress"></a>
+### Nested Schema for `egress`
+
+Read-Only:
+
+- `action` (String) `permit` or `deny`. Lowercase: an uppercase spelling is rejected, not normalised.
+- `destination_port_range` (String) As `source_port_range`, for the destination side.
+- `destination_prefix` (String) Destination range in CIDR notation. See `source_prefix`.
+- `name` (String) A label for the rule. Free text, not unique, and not used for ordering: position in the list is the only ordering signal. At most 253 characters.
+- `protocol` (String) `tcp`, `udp`, `icmp`, `icmp6` or `any`. `icmp6` is distinct from `icmp`: a rule written for one does not match the other. Only `tcp` and `udp` may carry ports.
+- `source_port_range` (String) A single port (`"80"`) or an inclusive range (`"80-81"`), as a string. Omit it to match any source port. Valid only on `tcp` and `udp`.
+- `source_prefix` (String) Source range in CIDR notation, with host bits zero. Both prefixes are required: a rule that constrains one side is written with `0.0.0.0/0` or `::/0` on the other, so the intent is in the rule rather than in an omission.
+
+
+<a id="nestedatt--ingress"></a>
+### Nested Schema for `ingress`
+
+Read-Only:
+
+- `action` (String) `permit` or `deny`. Lowercase: an uppercase spelling is rejected, not normalised.
+- `destination_port_range` (String) As `source_port_range`, for the destination side.
+- `destination_prefix` (String) Destination range in CIDR notation. See `source_prefix`.
+- `name` (String) A label for the rule. Free text, not unique, and not used for ordering: position in the list is the only ordering signal. At most 253 characters.
+- `protocol` (String) `tcp`, `udp`, `icmp`, `icmp6` or `any`. `icmp6` is distinct from `icmp`: a rule written for one does not match the other. Only `tcp` and `udp` may carry ports.
+- `source_port_range` (String) A single port (`"80"`) or an inclusive range (`"80-81"`), as a string. Omit it to match any source port. Valid only on `tcp` and `udp`.
+- `source_prefix` (String) Source range in CIDR notation, with host bits zero. Both prefixes are required: a rule that constrains one side is written with `0.0.0.0/0` or `::/0` on the other, so the intent is in the rule rather than in an omission.
+
 ## Related
 
 - [`k0rdent_security_group`](../resources/security_group.md) resource: manages one.
 - [`k0rdent_security_groups`](../data-sources/security_groups.md) data source: lists every one.
+- [`k0rdent_vpc`](../data-sources/vpc.md) data source: reads a VPC's binding, which names its default group.
+- [`k0rdent_effective_security_groups`](../data-sources/effective_security_groups.md) data source: reports what actually filters an object once every binding is merged.

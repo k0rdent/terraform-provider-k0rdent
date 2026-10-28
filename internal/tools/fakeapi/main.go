@@ -98,6 +98,11 @@ const (
 	// rather than `nico`, so the refusal path for a binding is reachable.
 	ufoBackendMarker = "on-ufo"
 
+	// A cluster whose id carries this gets a VPC with no network or subnet,
+	// as a cluster type with no networkSchema subnets does, so its default
+	// security group has no prefixes and no rules.
+	noSubnetsMarker = "no-subnets"
+
 	// An upgrade on a cluster whose display name carries this never settles,
 	// so a test can read one in flight across as many requests as it takes.
 	holdsUpgrade = "fake-holds-upgrade"
