@@ -131,6 +131,21 @@ func (s *state) updateSecurityGroup(w http.ResponseWriter, r *http.Request) {
 			"for its VPC and cannot be modified; attach your own group to the VPC instead", g.id), "CONFLICT_IMMUTABLE")
 		return
 	}
+	// Omitting `rules` leaves the set alone; sending it replaces the set
+	// wholesale. Modelled because a provider that sent a patch of one rule
+	// would silently drop the others here, exactly as it would upstream. The
+	// set is checked before anything is changed, so a refused PATCH leaves
+	// the group as it was.
+	if body.Rules != nil {
+		next := &fakeSecurityGroup{ingress: body.Rules.Ingress, egress: body.Rules.Egress, displayName: g.displayName}
+		normalizePorts(next.ingress)
+		normalizePorts(next.egress)
+		if err := validateRules(next); err != "" {
+			apiError(w, http.StatusUnprocessableEntity, "INVALID_ARGUMENT", err)
+			return
+		}
+		g.ingress, g.egress = next.ingress, next.egress
+	}
 	// "Only the fields present in the body are changed." An empty string clears
 	// a field and an empty object clears every tag.
 	g.displayName = patchString(g.displayName, body.DisplayName)
@@ -139,18 +154,6 @@ func (s *state) updateSecurityGroup(w http.ResponseWriter, r *http.Request) {
 		g.tags = *body.Tags
 		if len(g.tags) == 0 {
 			g.tags = nil
-		}
-	}
-	// Omitting `rules` leaves the set alone; sending it replaces the set
-	// wholesale. Modelled because a provider that sent a patch of one rule
-	// would silently drop the others here, exactly as it would upstream.
-	if body.Rules != nil {
-		g.ingress, g.egress = body.Rules.Ingress, body.Rules.Egress
-		normalizePorts(g.ingress)
-		normalizePorts(g.egress)
-		if err := validateRules(g); err != "" {
-			apiError(w, http.StatusUnprocessableEntity, "INVALID_ARGUMENT", err)
-			return
 		}
 	}
 	g.state, g.reads = "updating", 0
@@ -304,9 +307,30 @@ func (s *state) listSecurityGroupAttachments(w http.ResponseWriter, r *http.Requ
 	attachmentList.serve(w, r, items)
 }
 
+// noRulesMessage is the 422 for a group with no rule in either list. The
+// fabric refuses such a group, so it would settle `failed` and whatever is
+// bound to it would wait on it forever.
+//
+// ASSUMPTION: the k0rdent API change that adds it is open, not merged. The
+// message is the one its description gives. A VPC's default group is made
+// without passing through validateRules, as upstream says it is.
+const noRulesMessage = "rules: at least one ingress or egress rule is required; " +
+	"a security group with no rules cannot be applied"
+
+// madeBeforeRulesRequired is a display name marker for a group that may have
+// no rules, on a create and on a PATCH. It stands for a group made before the
+// API refused one, so a test can hold such a group in state and plan and
+// destroy it.
+const madeBeforeRulesRequired = "fake-made-before-rules-required"
+
 // validateRules is the 422 the server answers, modelled so the provider's
-// plan-time check has something to be checked against.
+// plan-time check has something to be checked against. Create calls it
+// always, so an omitted `rules` is refused, and update only when the PATCH
+// carries `rules`, so a rename is not.
 func validateRules(g *fakeSecurityGroup) string {
+	if len(g.ingress)+len(g.egress) == 0 && !nameCarries(g.displayName, madeBeforeRulesRequired) {
+		return noRulesMessage
+	}
 	for _, list := range [][]fakeRule{g.ingress, g.egress} {
 		for _, rule := range list {
 			switch rule.Protocol {

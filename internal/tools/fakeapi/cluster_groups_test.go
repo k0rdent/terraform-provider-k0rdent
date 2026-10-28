@@ -9,7 +9,7 @@ import (
 
 func group(t *testing.T, s *state, id string) {
 	t.Helper()
-	if code, out := call(t, s.createSecurityGroup, http.MethodPost, "", `{"id":"`+id+`"}`); code != http.StatusCreated {
+	if code, out := call(t, s.createSecurityGroup, http.MethodPost, "", `{`+oneRule+`,"id":"`+id+`"}`); code != http.StatusCreated {
 		t.Fatalf("create group %s: %d %v", id, code, out)
 	}
 	// Settled, as a group has to be before it can be deleted.

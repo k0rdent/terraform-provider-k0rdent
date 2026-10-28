@@ -319,7 +319,7 @@ func TestSubnetsGroupsAndPeeringsTearDownLikeThePlatform(t *testing.T) {
 		"subnet": {s.createSubnet, s.getSubnet, s.deleteSubnet, map[string]string{"networkId": "n"},
 			`{"id":"x","addressPool":"tenant","prefixLength":24}`, http.StatusConflict},
 		"security group": {s.createSecurityGroup, s.getSecurityGroup, s.deleteSecurityGroup, nil,
-			`{"id":"x"}`, http.StatusNoContent},
+			`{` + oneRule + `,"id":"x"}`, http.StatusNoContent},
 		"peering": {s.createVPCPeering, s.getVPCPeering, s.deleteVPCPeering, map[string]string{"vpcId": "vpc-c"},
 			`{"id":"x","remoteVpc":"/v1/regions/r/projects/elsewhere/networking/vpcs/vpc-elsewhere"}`, http.StatusConflict},
 	} {
@@ -567,7 +567,7 @@ func TestANetworkIsRefusedADeleteOnlyWhileDeleting(t *testing.T) {
 func TestAGroupAVPCCarriesIsNotDeleted(t *testing.T) {
 	s := newState()
 	clusterInP(t, s)
-	if code, out := in(t, s.createSecurityGroup, http.MethodPost, "r", "p", nil, `{"id":"psg"}`); code != http.StatusCreated {
+	if code, out := in(t, s.createSecurityGroup, http.MethodPost, "r", "p", nil, `{`+oneRule+`,"id":"psg"}`); code != http.StatusCreated {
 		t.Fatalf("group: %d %v", code, out)
 	}
 	settleIn(t, s.getSecurityGroup, "p", map[string]string{"id": "psg"})

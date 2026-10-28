@@ -5,7 +5,7 @@ subcategory: ""
 description: |-
   A named, ordered set of CIDR filter rules, applied to the instances of whatever it is attached to.
   This is the platform's nearest thing to an address allowlist. It filters node interfaces, not the Kubernetes API endpoint, and there is no allowlist for that endpoint on the public API today.
-  Rules are evaluated first-match in list order, and ingress and egress are independent. Only a VPC on the nico fabric backend can carry security groups.
+  Rules are evaluated first-match in list order, and ingress and egress are independent. A group needs at least one rule, in either list: a plan to create a group with none, or to change a group that has none, fails. One already in state with none plans with a warning and can be destroyed. Only a VPC on the nico fabric backend can carry security groups.
   The platform adds its own rules after the group's: permit all ingress, then deny all egress. So a group of only permits filters nothing incoming: end it with a deny for what it shouldn't let in. A change can take up to a few minutes to reach the nodes, and the cluster's Kubernetes API address isn't filtered at all.
   Requires region and project on the provider.
   What replaces it. Changing id, project or region cannot be done in place and replaces the security group. Everything else changes in place.
@@ -17,7 +17,7 @@ A named, ordered set of CIDR filter rules, applied to the instances of whatever 
 
 This is the platform's nearest thing to an address allowlist. It filters node interfaces, not the Kubernetes API endpoint, and there is no allowlist for that endpoint on the public API today.
 
-Rules are evaluated first-match in list order, and ingress and egress are independent. Only a VPC on the `nico` fabric backend can carry security groups.
+Rules are evaluated first-match in list order, and ingress and egress are independent. A group needs at least one rule, in either list: a plan to create a group with none, or to change a group that has none, fails. One already in state with none plans with a warning and can be destroyed. Only a VPC on the `nico` fabric backend can carry security groups.
 
 **The platform adds its own rules after the group's:** permit all ingress, then deny all egress. So a group of only permits filters nothing incoming: end it with a deny for what it shouldn't let in. A change can take up to a few minutes to reach the nodes, and the cluster's Kubernetes API address isn't filtered at all.
 
