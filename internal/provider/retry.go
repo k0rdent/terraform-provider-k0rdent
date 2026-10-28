@@ -348,8 +348,29 @@ func tooLongToWait(req *http.Request, resp *http.Response, wait time.Duration, w
 	if err == nil {
 		err = k0rdent.CheckResponse(resp, body)
 	}
-	return fmt.Errorf("%s on %s %s: the platform asked for a wait of %s, longer than %s: %w",
-		what, req.Method, req.URL.EscapedPath(), wait, why, err)
+	return &refusedWaitError{what: what, method: req.Method, path: req.URL.EscapedPath(), wait: wait, limit: why, answer: err}
+}
+
+// refusedWaitError is a deferral the transport wouldn't wait out. It's a type
+// so that a diagnostic built from the platform's answer inside it, such as a
+// failed token request's, can still say how long each side would wait.
+type refusedWaitError struct {
+	what, method, path string
+	wait               time.Duration
+	limit              string
+	answer             error
+}
+
+func (e *refusedWaitError) Error() string {
+	return fmt.Sprintf("%s on %s %s: %s: %v", e.what, e.method, e.path, e.waits(), e.answer)
+}
+
+func (e *refusedWaitError) Unwrap() error { return e.answer }
+
+// waits names the wait the platform asked for and the longest this provider
+// would take.
+func (e *refusedWaitError) waits() string {
+	return fmt.Sprintf("the platform asked for a wait of %s, longer than %s", e.wait, e.limit)
 }
 
 // fullJitter draws a wait anywhere from nothing to the whole of d.
