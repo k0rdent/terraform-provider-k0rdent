@@ -225,7 +225,7 @@ func (d *instancesDataSource) Schema(_ context.Context, _ datasource.SchemaReque
 	}
 	resp.Schema = schema.Schema{
 		MarkdownDescription: "Every instance in a project: the hosts its instance groups hold.\n\n" +
-			"An instance is materialized when its group is created or scaled, so there is no " +
+			"An instance is created with its group or when the group is scaled, so there is no " +
 			"resource for one. This is how a configuration reads a host's interfaces, whose " +
 			"`mac_address` or `guid` narrows a `" + ResourceName(fileStoreResourceSuffix) + "` " +
 			"grant to one interface.",

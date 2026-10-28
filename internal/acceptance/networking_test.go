@@ -195,7 +195,7 @@ func TestAccVPCsDataSource(t *testing.T) {
 	const name = "acc-vpc-owner"
 	// `depends_on` is load-bearing, not decoration. Nothing in this data
 	// source's arguments refers to the cluster, so without it Terraform reads
-	// the collection during plan, before the workflow that materializes the
+	// the collection during plan, before the workflow that creates the
 	// VPC has run, and the list comes back empty.
 	config := clusterConfig(name, 1) + fmt.Sprintf(`
 data %q "all" {
@@ -567,13 +567,13 @@ func TestAccNetworkStopsOnAFailedOrUnrecognisedState(t *testing.T) {
 // `cluster_id`. The 409 arrived partway through the apply, and on a destroy
 // that leaves the state entry behind for the next run to try again.
 //
-// The fake materializes this network alongside the VPC, the way the cluster
+// The fake creates this network alongside the VPC, the way the cluster
 // workflow does, so the object being adopted here is one no tenant created.
 func TestAccNetworkRefusesToManageAClusterOwnedOne(t *testing.T) {
 	const cluster = "acc-owned-net"
 	owned := "vpc-" + cluster + "-net"
 
-	// Declared to match what the platform materialized, so that only the
+	// Declared to match what the platform created, so that only the
 	// ownership guard can fail the second step.
 	adoption := func(displayName string) string {
 		return clusterConfig(cluster, 1) + fmt.Sprintf(`

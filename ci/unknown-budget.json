@@ -13,12 +13,12 @@
           "unknown": {
             "cluster_type_resolved": "the platform may resolve an unversioned cluster_type to a pinned version",
             "kubernetes_version": "read from the ClusterType version the platform binds on create",
-            "node_count": "counted across the node pools the platform materializes",
+            "node_count": "counted across the node pools the platform creates",
             "security_groups": "the groups the platform applies when the configuration names none",
             "self_link": "the platform-defined reference, assigned on create",
             "state": "the lifecycle state the create settles on, read back after it",
             "storage_ceiling_gib": "the platform's default, since the configuration leaves it out",
-            "vpc": "the VPC the platform materializes with the cluster"
+            "vpc": "the VPC the platform creates with the cluster"
           }
         }
       }
@@ -31,12 +31,12 @@
           "unknown": {
             "cluster_type_resolved": "the platform may resolve an unversioned cluster_type to a pinned version",
             "kubernetes_version": "read from the ClusterType version the platform binds on create",
-            "node_count": "counted across the node pools the platform materializes",
+            "node_count": "counted across the node pools the platform creates",
             "security_groups": "the groups the platform applies when the configuration names none",
             "self_link": "the platform-defined reference, assigned on create",
             "state": "the lifecycle state the create settles on, read back after it",
             "storage_ceiling_gib": "the platform's default, since the configuration leaves it out",
-            "vpc": "the VPC the platform materializes with the cluster"
+            "vpc": "the VPC the platform creates with the cluster"
           }
         },
         "k0rdent_project": {
@@ -175,11 +175,11 @@
           "unknown": {
             "cluster_type_resolved": "the platform may resolve an unversioned cluster_type to a pinned version",
             "kubernetes_version": "read from the ClusterType version the platform binds on create",
-            "node_count": "counted across the node pools the platform materializes",
+            "node_count": "counted across the node pools the platform creates",
             "self_link": "the platform-defined reference, assigned on create",
             "state": "the lifecycle state the create settles on, read back after it",
             "storage_ceiling_gib": "the platform's default, since the configuration leaves it out",
-            "vpc": "the VPC the platform materializes with the cluster"
+            "vpc": "the VPC the platform creates with the cluster"
           }
         },
         "k0rdent_network": {
@@ -221,7 +221,7 @@
             "attached": "what the platform reports attached after the write",
             "security_groups[*]": "the second entry is the VPC's default group, which the platform makes with the VPC",
             "state": "the VPC's state after the write",
-            "vpc": "the cluster's VPC, which the platform materializes with it"
+            "vpc": "the cluster's VPC, which the platform creates with it"
           }
         },
         "k0rdent_webhook_subscription": {
@@ -450,7 +450,7 @@
             "cluster_type_resolved": "the platform may answer with a different form of the cluster_type reference",
             "self_link": "the platform-defined reference, assigned on create",
             "state": "the lifecycle state the create settles on, read back after it",
-            "vpc": "the VPC the platform materializes with the group"
+            "vpc": "the VPC the platform creates with the group"
           }
         },
         "k0rdent_kubernetes_cluster": {
@@ -458,11 +458,11 @@
           "unknown": {
             "cluster_type_resolved": "the platform may resolve an unversioned cluster_type to a pinned version",
             "kubernetes_version": "read from the ClusterType version the platform binds on create",
-            "node_count": "counted across the node pools the platform materializes",
+            "node_count": "counted across the node pools the platform creates",
             "self_link": "the platform-defined reference, assigned on create",
             "state": "the lifecycle state the create settles on, read back after it",
             "storage_ceiling_gib": "the platform's default, since the configuration leaves it out",
-            "vpc": "the VPC the platform materializes with the cluster"
+            "vpc": "the VPC the platform creates with the cluster"
           }
         },
         "k0rdent_network": {
@@ -509,10 +509,10 @@
           "count": 10,
           "unknown": {
             "local_vpc": "the URI the platform resolves from vpc",
-            "remote_vpc": "the other side's VPC id, which the cluster or the instance group materializes",
+            "remote_vpc": "the id of the other side's VPC, which the platform creates with the cluster or the instance group",
             "self_link": "the platform-defined reference, assigned on create",
             "state": "the lifecycle state the create settles on, read back after it",
-            "vpc": "the VPC the cluster or the instance group materializes"
+            "vpc": "the VPC the platform creates with the cluster or the instance group"
           }
         },
         "k0rdent_vpc_security_groups": {
@@ -521,7 +521,7 @@
             "attached": "what the platform reports attached after the write",
             "security_groups[*]": "the second entry is the VPC's default group, which the platform makes with the VPC",
             "state": "the VPC's state after the write",
-            "vpc": "the cluster's VPC, which the platform materializes with it"
+            "vpc": "the cluster's VPC, which the platform creates with it"
           }
         },
         "k0rdent_webhook_subscription": {

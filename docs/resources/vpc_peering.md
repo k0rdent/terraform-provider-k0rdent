@@ -69,7 +69,7 @@ resource "k0rdent_vpc_peering" "to_inference" {
 Name a VPC in the same project by id, through the `vpc` attribute of the cluster or instance group that brought it. That stays known while the owner changes, so renaming it replaces no peering. A `self_link` read from the `k0rdent_vpc` data source does not: Terraform reads the data source during the apply when the owner has a change pending, and a value it doesn't know at plan replaces the peering. The provider sends an id as the URI the API takes, built from the contract's path for a VPC. Moving between an id and the `self_link` of the same VPC replaces nothing.
 
 It must be an `active` VPC in the same region, and not the local one. It may be in a project you have no permission on, because declaring this side is not by itself enough to establish the peering. **Can force replacement**: replaces the peering unless the new value names the same VPC. **Constraints:** An id must be lower-case letters, digits and hyphens, starting with a letter and not ending with a hyphen. A self_link is sent as written.
-- `vpc` (String) Id of the local VPC this peering is declared under. Find it with the `k0rdent_vpcs` data source: a VPC is materialized by a cluster or instance group, never created directly. **Forces replacement**. **Constraints:** Must be lower-case letters, digits and hyphens, starting with a letter and not ending with a hyphen (`[a-z]([-a-z0-9]*[a-z0-9])?`), because it becomes a segment of a request URL.
+- `vpc` (String) Id of the local VPC this peering is declared under. Find it with the `k0rdent_vpcs` data source: a VPC is created with a cluster or instance group, never on its own. **Forces replacement**. **Constraints:** Must be lower-case letters, digits and hyphens, starting with a letter and not ending with a hyphen (`[a-z]([-a-z0-9]*[a-z0-9])?`), because it becomes a segment of a request URL.
 
 ### Optional
 
@@ -124,8 +124,8 @@ resource "k0rdent_vpc_peering" "example" {
 - [`k0rdent_vpc_peering`](../list-resources/vpc_peering.md) list resource: finds every one, for `terraform query` to adopt.
 - [`k0rdent_vpc`](../data-sources/vpc.md) data source: reads a VPC's `self_link`, which `remote_vpc` takes for one in another project.
 - [`k0rdent_vpcs`](../data-sources/vpcs.md) data source: lists the VPCs `vpc` and `remote_vpc` name.
-- [`k0rdent_kubernetes_cluster`](../resources/kubernetes_cluster.md) resource: materializes the VPC a peering is declared under.
-- [`k0rdent_instance_group`](../resources/instance_group.md) resource: materializes a VPC too, whose `vpc` a peering in this project takes as `remote_vpc`.
+- [`k0rdent_kubernetes_cluster`](../resources/kubernetes_cluster.md) resource: creates the VPC a peering is declared under.
+- [`k0rdent_instance_group`](../resources/instance_group.md) resource: creates a VPC too, whose `vpc` a peering in this project takes as `remote_vpc`.
 
 ## Import
 

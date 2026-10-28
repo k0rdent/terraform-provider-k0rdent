@@ -29,7 +29,7 @@ type networksDataSource struct{ meta *Meta }
 type subnetsDataSource struct{ meta *Meta }
 
 // These exist for the half of a project's networking that Terraform does not
-// own: the networks and subnets a cluster materialized from its ClusterType's
+// own: the networks and subnets a cluster created from its ClusterType's
 // schema. Those carry a `cluster_id`, cannot be written through the tenant API,
 // and are invisible to a configuration that only knows about the resources it
 // created. A module that has to place a workload next to a cluster's own pod
@@ -87,7 +87,7 @@ func (d *networksDataSource) Metadata(_ context.Context, _ datasource.MetadataRe
 
 func (d *networksDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		MarkdownDescription: "Every network in a project, including the ones a cluster materialized " +
+		MarkdownDescription: "Every network in a project, including the ones a cluster created " +
 			"for itself.\n\n" +
 			"A cluster-provisioned network carries a `cluster_id` and cannot be written through " +
 			"the tenant API. This is the only way a configuration can see one.",
@@ -229,7 +229,7 @@ func (d *subnetsDataSource) Metadata(_ context.Context, _ datasource.MetadataReq
 func (d *subnetsDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	resp.Schema = schema.Schema{
 		MarkdownDescription: "Every subnet inside one network, including the ones a cluster " +
-			"materialized.\n\n" +
+			"created.\n\n" +
 			"This is how a configuration learns the CIDR a cluster was given, which is the value " +
 			"a firewall rule or a peering has to be written against.",
 		Attributes: map[string]schema.Attribute{

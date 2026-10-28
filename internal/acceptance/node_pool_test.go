@@ -12,8 +12,8 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/plancheck"
 )
 
-// Leaving `node_pool` out reads every materialized pool into state, and the
-// next plan has to accept that rather than propose an update.
+// Leaving `node_pool` out reads every pool the platform created into state,
+// and the next plan has to accept that rather than propose an update.
 func TestAccClusterWithoutNodePoolPlansEmpty(t *testing.T) {
 	const name = "acc-no-pool"
 	config := fmt.Sprintf(`

@@ -280,11 +280,11 @@ func (d *clusterDataSource) Schema(_ context.Context, _ datasource.SchemaRequest
 			},
 			"node_count": schema.Int64Attribute{
 				Computed:            true,
-				MarkdownDescription: "Total nodes across every materialized pool.",
+				MarkdownDescription: "Total nodes across every pool the cluster has.",
 			},
 			"node_pools": schema.MapNestedAttribute{
 				Computed: true,
-				MarkdownDescription: "Every pool the platform materialized, including the ones a " +
+				MarkdownDescription: "Every pool the platform created, including the ones a " +
 					"configuration did not name, keyed by pool slug: the same key a cluster's " +
 					"`node_pool` map uses.",
 				NestedObject: schema.NestedAttributeObject{

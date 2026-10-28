@@ -3,13 +3,13 @@
 page_title: "k0rdent_networks Data Source - k0rdent"
 subcategory: ""
 description: |-
-  Every network in a project, including the ones a cluster materialized for itself.
+  Every network in a project, including the ones a cluster created for itself.
   A cluster-provisioned network carries a cluster_id and cannot be written through the tenant API. This is the only way a configuration can see one.
 ---
 
 # k0rdent_networks (Data Source)
 
-Every network in a project, including the ones a cluster materialized for itself.
+Every network in a project, including the ones a cluster created for itself.
 
 A cluster-provisioned network carries a `cluster_id` and cannot be written through the tenant API. This is the only way a configuration can see one.
 
@@ -87,4 +87,4 @@ Read-Only:
 
 - [`k0rdent_network`](../data-sources/network.md) data source: reads one by id.
 - [`k0rdent_subnet`](../resources/subnet.md) resource: allocates a CIDR inside a network.
-- [`k0rdent_kubernetes_cluster`](../resources/kubernetes_cluster.md) resource: materializes networks of its own, which carry a `cluster_id`.
+- [`k0rdent_kubernetes_cluster`](../resources/kubernetes_cluster.md) resource: creates networks of its own, which carry a `cluster_id`.

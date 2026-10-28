@@ -4,14 +4,14 @@ page_title: "k0rdent_instances Data Source - k0rdent"
 subcategory: ""
 description: |-
   Every instance in a project: the hosts its instance groups hold.
-  An instance is materialized when its group is created or scaled, so there is no resource for one. This is how a configuration reads a host's interfaces, whose mac_address or guid narrows a k0rdent_file_store grant to one interface.
+  An instance is created with its group or when the group is scaled, so there is no resource for one. This is how a configuration reads a host's interfaces, whose mac_address or guid narrows a k0rdent_file_store grant to one interface.
 ---
 
 # k0rdent_instances (Data Source)
 
 Every instance in a project: the hosts its instance groups hold.
 
-An instance is materialized when its group is created or scaled, so there is no resource for one. This is how a configuration reads a host's interfaces, whose `mac_address` or `guid` narrows a `k0rdent_file_store` grant to one interface.
+An instance is created with its group or when the group is scaled, so there is no resource for one. This is how a configuration reads a host's interfaces, whose `mac_address` or `guid` narrows a `k0rdent_file_store` grant to one interface.
 
 ## Example Usage
 

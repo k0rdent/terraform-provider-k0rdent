@@ -260,7 +260,7 @@ cmd_run() {
   esac
   printf '\n%s   What that does and does not mean: the fake does not echo back what it was\n' "$DIM"
   printf '   sent. It resolves the unversioned cluster type to a pinned version, returns\n'
-  printf '   relative paths for a field declared format:uri, materializes node pools the\n'
+  printf '   relative paths for a field declared format:uri, creates node pools the\n'
   printf '   configuration never mentioned, drops an empty tag map, and answers an empty\n'
   printf '   list by omitting the key. So exit 0 is a bounded claim — correct given those\n'
   printf '   assumptions — not a tautology. None of them has been checked against a real\n'
@@ -317,7 +317,7 @@ cmd_run() {
       note "  cluster_type moves from the platform's resolved reference to the head form"
       note "  the configuration uses. Note that it is an in-place update, NOT a"
       note "  replacement — getting that wrong destroys a running cluster."
-      note "  node_pool narrows: import adopted every pool the platform materialized,"
+      note "  node_pool narrows: import adopted every pool the platform created,"
       note "  and this configuration manages only the worker pool."
       note "Applying it touches no API — watch the request count."
 

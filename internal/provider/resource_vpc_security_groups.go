@@ -909,7 +909,7 @@ func vpcReader(meta *Meta, target clusterTarget, vpc string) stateRead[k0rdent.V
 }
 
 // vpcDependency is a VPC as a write that's refused while it changes depends
-// on it. A VPC is `creating` while it is first materialized and `updating`
+// on it. A VPC is `creating` while it is first created and `updating`
 // while a binding renders, and the contract refuses a peering create and a
 // second binding during either.
 func vpcDependency(meta *Meta, target clusterTarget, vpc string) dependency {

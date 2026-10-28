@@ -588,7 +588,7 @@ type fakePool struct {
 	max         *int32
 	displayName string
 	// since is the first version of the ClusterType that has this pool, and
-	// 0 means every version does. A pool a later version brings materializes
+	// 0 means every version does. A pool a later version brings is created
 	// when an upgrade into that version lands, which is what moves a
 	// cluster's node total during an upgrade.
 	since int32
@@ -641,8 +641,8 @@ func i32(v int32) *int32 { return &v }
 
 // The catalog. `gpu-training` deliberately has two pools, one of them a
 // control-plane pool that cannot be scaled, so that a cluster created with a
-// single-pool override reads back with two materialized pools: hazard H2, the
-// node-pool materialization asymmetry. A one-pool catalog would hide it.
+// single-pool override reads back with two pools: hazard H2, where a cluster
+// has more pools than its request named. A one-pool catalog would hide it.
 var catalog = []fakeClusterType{
 	{
 		id:          "gpu-training",
@@ -682,7 +682,7 @@ var catalog = []fakeClusterType{
 	{
 		id:          "cpu-general",
 		displayName: "CPU general purpose",
-		description: "A single worker pool, for the case where nothing is materialized implicitly.",
+		description: "A single worker pool, for the case where no pool is created implicitly.",
 		status:      "available",
 		version:     1,
 		// The one type whose pools have no interface a security group can go
@@ -1211,13 +1211,13 @@ func (s *state) createCluster(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Materialize every pool on the bound ClusterType, using the override where
+	// Create every pool on the bound ClusterType, using the override where
 	// one was given.
 	//
-	// ASSUMPTION (hazard H2): a sparse override list materializes the full pool
-	// set. This one is documented rather than guessed: "The server materializes
-	// one node pool for every entry in `ClusterType.nodePools[]`, using each
-	// pool's `nodeCountDefault` when no override is supplied", and it is
+	// ASSUMPTION (hazard H2): a sparse override list creates the full pool
+	// set. This one is documented rather than guessed. The contract says the
+	// server creates one node pool for every entry in `ClusterType.nodePools[]`,
+	// using each pool's `nodeCountDefault` when no override is supplied. It is
 	// modelled because a fake that returned only the pools it was sent would let
 	// a naive list-to-list provider pass.
 	pools := map[string]int{}
@@ -1279,7 +1279,7 @@ func (s *state) createCluster(w http.ResponseWriter, r *http.Request) {
 	}
 	c.start("provisioning the cluster", "reserving-hardware", "provisioning-nodes", "bootstrapping-control-plane", "joining-workers")
 	clusterKind.put(o, "", id, c)
-	// A VPC is materialized by the cluster workflow, never created directly.
+	// The cluster workflow creates the VPC. There is no create call for one.
 	o.vpcForOwner("cluster", id)
 
 	// ASSUMPTION: a mutation response is a different
@@ -1996,7 +1996,7 @@ func (s *state) createInstanceGroup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Unlike a cluster, an instance group provisions exactly the pools it is
-	// given, with no materialization.
+	// given and no others.
 	pools := map[string]int32{}
 	for _, p := range body.NodePools {
 		known := false

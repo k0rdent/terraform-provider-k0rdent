@@ -5,7 +5,7 @@ subcategory: ""
 description: |-
   A CIDR block allocated inside a k0rdent_network from a regional AddressPool.
   Every attribute replaces the subnet. The API offers no update operation, so a change to anything, a display name included, is a destroy and recreate with a new CIDR. exclude_ranges is compared as addresses, so writing the same addresses another way is not a change. The API does not report allocate_gateway, so after an import that cannot infer it, the first apply records the configured value in place.
-  Subnets materialized by a cluster are not managed here. They carry a cluster_id, and DELETE against one answers 409.
+  Subnets created by a cluster are not managed here. They carry a cluster_id, and DELETE against one answers 409.
   Requires region and project on the provider.
   What replaces it. Changing address_pool, allocate_gateway, description, display_name, exclude_ranges, id, network, prefix_length, project or region cannot be done in place and replaces the subnet. A subnet holds the address allocation the workloads on it use. The API has no update for a subnet, so any change deletes it and allocates a new one from the pool, which can get a different CIDR and gateway. So a plan that would replace it fails and names the attribute, unless allow_replace = true is set on the resource. Everything else changes in place.
 ---
@@ -16,7 +16,7 @@ A CIDR block allocated inside a `k0rdent_network` from a regional AddressPool.
 
 **Every attribute replaces the subnet.** The API offers no update operation, so a change to anything, a display name included, is a destroy and recreate with a new CIDR. `exclude_ranges` is compared as addresses, so writing the same addresses another way is not a change. The API does not report `allocate_gateway`, so after an import that cannot infer it, the first apply records the configured value in place.
 
-Subnets materialized by a cluster are not managed here. They carry a `cluster_id`, and `DELETE` against one answers `409`.
+Subnets created by a cluster are not managed here. They carry a `cluster_id`, and `DELETE` against one answers `409`.
 
 Requires `region` and `project` on the provider.
 

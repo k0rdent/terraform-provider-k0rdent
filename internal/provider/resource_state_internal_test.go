@@ -133,14 +133,14 @@ func TestClusterStateFromAdoptsThePlatformValueOnImport(t *testing.T) {
 	if got.ClusterType.ValueString() != testPinnedRef {
 		t.Errorf("cluster_type = %q, want %q", got.ClusterType.ValueString(), testPinnedRef)
 	}
-	// With nothing known, every materialized pool is adopted: it is the only way
+	// With nothing known, every pool the cluster has is adopted: it is the only way
 	// a user learns what the cluster actually has.
 	if n := len(got.NodePool.Elements()); n != 2 {
-		t.Errorf("node_pool has %d entries, want both materialized pools on an import", n)
+		t.Errorf("node_pool has %d entries, want both of the cluster's pools on an import", n)
 	}
 }
 
-// The platform materializes one pool per pool on the bound ClusterType, whether
+// The platform creates one pool per pool on the bound ClusterType, whether
 // or not the configuration mentioned it. A provider that stored all of them
 // against a configuration naming one would propose removing the rest on every
 // plan.

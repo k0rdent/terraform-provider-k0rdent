@@ -250,7 +250,7 @@ func (d *effectiveSecurityGroupsDataSource) Schema(_ context.Context, _ datasour
 		MarkdownDescription: "The security groups that actually filter one object's interfaces, " +
 			"merged and in the order the fabric applies them.\n\n" +
 			"A `cluster` or `instance_group` read returns the merged set: the object's own " +
-			"binding plus the floor of every VPC it materialized. A `vpc` read returns only that " +
+			"binding plus the floor of every VPC created with it. A `vpc` read returns only that " +
 			"VPC's own binding, because the owner's groups filter traffic there too and are read " +
 			"from the owner.\n\n" +
 			"An empty list for a VPC means nothing filters interfaces in it. That is not an " +

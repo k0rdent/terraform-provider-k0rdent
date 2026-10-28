@@ -110,7 +110,7 @@ func (r *subnetResource) Schema(ctx context.Context, _ resource.SchemaRequest, r
 			"CIDR. `exclude_ranges` is compared as addresses, so writing the same addresses another " +
 			"way is not a change. The API does not report `allocate_gateway`, so after an import " +
 			"that cannot infer it, the first apply records the configured value in place.\n\n" +
-			"Subnets materialized by a cluster are not managed here. They carry a `cluster_id`, " +
+			"Subnets created by a cluster are not managed here. They carry a `cluster_id`, " +
 			"and `DELETE` against one answers `409`.\n\n" +
 			"Requires `region` and `project` on the provider.",
 		Blocks: map[string]schema.Block{

@@ -161,7 +161,7 @@ func (r *instanceGroupResource) Schema(ctx context.Context, _ resource.SchemaReq
 				MarkdownDescription: "Free-form description. The other mutable field.",
 			},
 			// Optional+Computed. See the same attribute on the cluster: an
-			// unnamed pool is materialized by the platform and not drift-checked.
+			// unnamed pool is created by the platform and not drift-checked.
 			"node_pool": schema.MapNestedAttribute{
 				Optional: true,
 				Computed: true,
