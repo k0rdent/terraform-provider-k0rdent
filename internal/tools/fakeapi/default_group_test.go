@@ -185,6 +185,11 @@ func TestAnEmptyBindingPutsTheVPCsOwnDefaultBack(t *testing.T) {
 	if got := defaultGroupOf(t, s, "vpc-a"); got != a {
 		t.Errorf("read after []: %s, want %s", got, a)
 	}
+
+	// Its own default named on its own, rather than put back with [].
+	if code, out = in(t, s.setVPCSecurityGroups, http.MethodPost, "r", "p", vpc, `{"securityGroups":["`+a+`"]}`); code != http.StatusAccepted {
+		t.Errorf("its own default alone: %d %v, want 202", code, out)
+	}
 }
 
 // "Removed only when its VPC is."
