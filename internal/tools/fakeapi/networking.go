@@ -117,13 +117,23 @@ func (o *objects) vpcForOwner(ownerKind, ownerID string) {
 		return
 	}
 	g := defaultGroup(v, prefixes)
+	if g == nil {
+		return
+	}
 	o.groupsSec[at{id: g.id}] = g
 	v.defaultGroup = g.id
 	v.securityGroups = []string{g.id}
 }
 
+// maxDefaultGroupPrefixes is the most distinct subnet prefixes a default
+// group's rules can cover on API v1.3.0-rc.4. The full mesh for 17 would be
+// 289 ingress rules, over the 256 a group holds.
+const maxDefaultGroupPrefixes = 16
+
 // defaultGroup is a VPC's default security group, as the k0rdent API
-// v1.3.0-rc.3 makes it: one per VPC, owned by it, and bound to it.
+// v1.3.0-rc.4 makes it: one per VPC, owned by it, and bound to it. It's nil
+// for a VPC with no subnet prefixes or more than maxDefaultGroupPrefixes,
+// which gets no default group and starts with an empty binding.
 //
 // The id is `<vpc id>-<8 random hex>-default`. It's random upstream so a
 // tenant group can't claim it first, which also means nothing can derive it:
@@ -134,8 +144,7 @@ func (o *objects) vpcForOwner(ownerKind, ownerID string) {
 // The rules come from the VPC's subnet prefixes, deduplicated and sorted as
 // strings: an `intra-vpc-<i>` ingress permit for every pair of them, both
 // orders and each with itself, then one `intra-vpc-egress-<i>` egress permit
-// from 0.0.0.0/0 to each. No allow-all egress, which rc.3 dropped. A VPC with
-// no prefixes gets a group with no rules.
+// from 0.0.0.0/0 to each. No allow-all egress, which rc.3 dropped.
 //
 // It's made `active`. rc.3 makes it `creating` and settles it at once, and the
 // recorded read shows `active`.
@@ -151,6 +160,9 @@ func defaultGroup(v *fakeVPC, prefixes []string) *fakeSecurityGroup {
 	slug = strings.TrimRight(slug, "-")
 
 	sorted := slices.Compact(slices.Sorted(slices.Values(prefixes)))
+	if len(sorted) == 0 || len(sorted) > maxDefaultGroupPrefixes {
+		return nil
+	}
 	ingress := make([]fakeRule, 0, len(sorted)*len(sorted))
 	for _, src := range sorted {
 		for _, dst := range sorted {
@@ -1025,6 +1037,13 @@ func (s *state) setVPCSecurityGroups(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if len(*body.SecurityGroups) == 0 && target.defaultGroup == "" {
+		// Read on API v1.3.0-rc.4: a VPC with no default refuses rather than
+		// being left with no group.
+		inUse(w, fmt.Sprintf("conflict: vpc %q has no default security group to fall back to, so its "+
+			"groups cannot be cleared; attach a group explicitly", target.id))
+		return
+	}
 	target.securityGroups = *body.SecurityGroups
 	if len(target.securityGroups) == 0 {
 		// This VPC's own default, by id, which the response names.
