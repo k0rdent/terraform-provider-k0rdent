@@ -109,8 +109,11 @@ func TestARegionMismatchReadsTheProjectOnce(t *testing.T) {
 	}
 }
 
-// A project the credential can't see still gets a diagnostic that says what
-// to do and where to read the region.
+// A project the list doesn't place still gets a diagnostic that says what to
+// do and where to read the region. That isn't the project list again, which
+// the lookup already read: it's the read that names the organization, which
+// tells two organizations' projects apart, and which falls back to the list
+// for a credential scoped to the project.
 func TestARegionMismatchWithAnUnseenProjectSaysWhereToLook(t *testing.T) {
 	api := &mismatchAPI{home: "us-east", hidden: true}
 	meta := mismatchMeta(t, api)
@@ -121,7 +124,8 @@ func TestARegionMismatchWithAnUnseenProjectSaysWhereToLook(t *testing.T) {
 	var diags diag.Diagnostics
 	addAPIError(&diags, "read the network", got.HTTPResponse, got.Body, nil)
 	detail := diags.Errors()[0].Detail()
-	for _, want := range []string{"another region", ResourceName(projectDataSourceSuffix), "`region`"} {
+	for _, want := range []string{"another region", "nor the project list told the provider which",
+		ResourceName(projectDataSourceSuffix) + "` data source with `organization_id` set", "`region`"} {
 		if !strings.Contains(detail, want) {
 			t.Errorf("diagnostic does not say %q:\n%s", want, detail)
 		}

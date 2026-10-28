@@ -1,0 +1,3 @@
+```release-note:bug
+resource/k0rdent_kubernetes_cluster: Fix an apply that changes only `tags`, `display_name` or `description` of a `failed` cluster waiting about two minutes for it to become `active` and then failing. The platform keeps the cluster `failed` through that change, so the apply no longer waits
+```

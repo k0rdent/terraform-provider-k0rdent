@@ -86,7 +86,7 @@ variable "organization" {
 
 variable "quota_checks" {
   type        = bool
-  description = "Read the project's and the organization's quota, and warn when either is over. Set false for a credential that can't read quota."
+  description = "Read the organization's status, and the project's and the organization's quota, and warn when either is over. These need an organizations role on the organization, so set false for a credential scoped to a project."
   default     = true
 }
 
@@ -259,8 +259,8 @@ variable "ingress_services" {
 
   # The platform refuses a group past 256 rules, ingress and egress together.
   validation {
-    condition     = length(var.ingress_services) * (length(var.allowed_cidrs) + 1) + 1 <= 256
-    error_message = "ingress_services times allowed_cidrs, plus a deny per service and the egress rule, comes to more than the 256 rules a group can hold."
+    condition     = length(var.ingress_services) * (length(var.allowed_cidrs) + 1) + length([for s in values(var.ingress_services) : s if s.port != "6443"]) + length(local.egress_out) <= 256
+    error_message = "The security group would hold more than the 256 rules a group can: a permit for each service and range, a reply rule for each service, a deny for each service but 6443, and the outbound rules. Use fewer ingress_services or allowed_cidrs."
   }
 }
 

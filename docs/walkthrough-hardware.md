@@ -40,9 +40,13 @@ Ask whoever runs the platform for:
 
 - You don't need the region, organization or project ids up front. Step 4
   lists them.
-- **Ask for a service account scoped to the organization.** It can create the
-  project this walkthrough builds in. A project-scoped one only works in a
-  project that already exists.
+- **Ask for a service account scoped to the organization.** It can run every
+  step, including the ones that create a project.
+- A service account scoped to a project, with `compute-admin` on it, runs
+  `look/`, `cluster/`, `nodes/` and `network/` in that project. It runs
+  `full/` with `quota_checks = false`, because reading the organization and
+  its quota needs an organizations role on the organization. It can't run
+  `cluster-own-project/` or `full/`'s `own_project`, which create a project.
 - An API key also works, but prefer a service account. `setup.sh` only asks
   for a client id and secret, so with a key, export `K0RDENT_ENDPOINT`,
   `K0RDENT_API_KEY` and `TF_CLI_CONFIG_FILE` yourself.
@@ -146,7 +150,11 @@ cd look
 terraform apply
 ```
 It only reads, so it reports `0 added, 0 changed, 0 destroyed`, then lists
-regions, organizations, projects, and the cluster types in each region.
+regions, organizations, projects, and the cluster types, address pools and
+share types in each region. For the first active project with a region it
+lists the instances, networks, subnets, security groups, VPCs, peerings and
+quota, and for that project's organization the roles, quota and webhook
+subscriptions.
 `./walkthrough.sh up look` does the same.
 
 If it fails here, it's the endpoint or the credential:
@@ -154,6 +162,8 @@ If it fails here, it's the endpoint or the credential:
 | What you see | What it means |
 | --- | --- |
 | A 401 | Wrong client id or secret |
+| A 403 or 404 on an organization read | The credential is scoped to one project. Run `terraform apply -var read_organization=false` |
+| Another 403 | The credential can't make one of the reads. The error names it |
 | A 429 | Too many token requests. Wait a minute |
 | A connection error | Wrong URL, or you need the VPN |
 
@@ -294,8 +304,8 @@ Both directories run the same way: fill in `terraform.tfvars`, then `plan`,
 
 [`network/`](../examples/walkthrough/network/main.tf) makes a network, a
 subnet, and a security group that lets in SSH, the Kubernetes API and ping
-from `allowed_cidr`, the range you connect from. No cluster, so it takes
-seconds.
+from `allowed_cidr`, the range you connect from, and lets out what nodes
+need. No cluster, so it takes seconds.
 
 - It takes `prefix`, `region`, `project` and `allowed_cidr`.
 - The subnet is a /28 from the region's first active address pool that isn't
@@ -314,7 +324,7 @@ By default it makes:
 - a security group with a rule for each service and each range in
   `allowed_cidrs`
 - a cluster behind that group, with your users on every node
-- the group on the cluster's VPC
+- the group on the cluster's VPC, before the VPC's default group
 - a webhook
 
 It takes what `cluster/` takes, plus:
@@ -339,7 +349,7 @@ The `build` block in `terraform.tfvars` turns each part on or off:
 | --- | --- | --- | --- |
 | `network` | on | A network and a subnet per purpose | An address pool that isn't routable |
 | `security_group` | on | A group on the cluster | A cluster type whose nodes sit on a `nico` VPC |
-| `vpc_security_groups` | on | The same group on every VPC this makes | `security_group` |
+| `vpc_security_groups` | on | The same group on every VPC this makes, before the VPC's default group | `security_group` |
 | `webhook` | on | A subscription to cluster events | `webhook_url` and the secret |
 | `instance_group` | off | One bare host, with your users on it | A free host |
 | `file_store` | off | 100 GiB of shared storage the host can mount | A share type in the region |
@@ -351,10 +361,27 @@ The `build` block in `terraform.tfvars` turns each part on or off:
   as quota, the kubeconfig and webhook deliveries.
 - `nodes/` works with this cluster too, since it's also
   `<prefix>-walkthrough`.
-- The platform adds an allow-all rule after every group's own rules, so
-  `full/` adds a deny for each service from anywhere else, except the
-  Kubernetes API port. The `kubernetes_api` output gives an `nc` test to run
-  from inside and outside `allowed_cidrs`.
+- The platform adds a permit-all ingress rule after every group's own
+  rules, so `full/` adds a deny for each service from anywhere else, except
+  the Kubernetes API port. The `kubernetes_api` output gives an `nc` test to
+  run from inside and outside `allowed_cidrs`.
+- The platform adds a deny-all egress rule after them, and from API
+  v1.3.0-rc.3 a VPC's default group lets nothing out of the VPC. So the
+  groups in `full/` and `network/` list what nodes reach out to: DNS, NTP,
+  HTTP, HTTPS, the Kubernetes API on 6443 and konnectivity on 8132, and NFS
+  in `full/`. Each is a `tcp` or `udp` rule with a destination port and no
+  source port, the only shape whose replies the `nico` fabric lets back in.
+  A cluster type can use other ports for those two, such as 30443 and 30132
+  for a `NodePort` control plane. Add those, or anything else your nodes
+  reach, to `egress_out` in `main.tf`.
+- Ingress rules are stateless, so each service you let in also gets an
+  egress rule for its replies, from its own port.
+- With `vpc_security_groups` on, each VPC gets this group and then the
+  VPC's default group, which permits traffic between the VPC's subnets.
+  This group comes first, so its denies also apply between nodes. A list
+  without the default would replace it. The default's id is random, so
+  `full/` finds it by the name the platform gives it, `Default (<VPC id>)`,
+  and stops with an error if it can't.
 - A security group change can take a few minutes to reach the nodes.
 
 ## When something goes wrong
@@ -367,6 +394,7 @@ The `build` block in `terraform.tfvars` turns each part on or off:
 | 429 | Too many token requests. Wait a minute between commands |
 | `No such project` at plan | This credential can't see that project |
 | 403 or 409 creating the project | The credential is project-scoped, or the project already exists. Change `prefix`, or use `cluster/` |
+| 403 reading the organization or quota in `full/` | The credential is project-scoped. Set `quota_checks = false` |
 | `The cluster did not become active` | The create timed out, but the cluster is still building. Don't apply again, which would replace it. Wait until it's `active`, run `terraform untaint k0rdent_kubernetes_cluster.walkthrough`, then go to step 6 |
 | `The cluster did not finish deleting`, with `timed out` | Freeing hardware can take hours. Wait until the cluster is gone from the UI, then run `terraform destroy` again |
 | `The cluster did not finish deleting`, with `failed` | Try the delete once [with curl](walkthrough-api.md#6-delete-it). If that fails too, send the platform operator the execution id from the error |

@@ -704,6 +704,7 @@ func (r *clusterResource) Update(ctx context.Context, req resource.UpdateRequest
 		return
 	}
 
+	leftFailed := false
 	if metadataChanged {
 		// A PATCH's tags replace the platform's. The create token isn't in
 		// state, so it's read back and sent with them.
@@ -739,15 +740,23 @@ func (r *clusterResource) Update(ctx context.Context, req resource.UpdateRequest
 			addAPIError(&resp.Diagnostics, "update the cluster", httpResp, respBody, err)
 			return
 		}
+		// The platform leaves a `failed` cluster `failed` through this PATCH.
+		// One that failed since the plan read it is still waited on, which
+		// reports why.
+		leftFailed = state.State.ValueString() == string(k0rdent.ClusterStateFailed) &&
+			updated.JSON200 != nil && updated.JSON200.State != nil &&
+			*updated.JSON200.State == k0rdent.ClusterStateFailed
 	}
 
 	// The security groups go second, as a PATCH of their own: the platform
 	// answers 422 to `securityGroups` sent alongside any other field. The
 	// change is asynchronous, so it is waited out before a scale or an
 	// upgrade, which would otherwise meet a cluster that is `updating`.
-	sent := metadataChanged
+	//
+	// queued says a change went that the platform works on after answering.
+	queued := false
 	if securityGroupsChanged(plan, state) {
-		sent = true
+		queued = true
 		resp.Diagnostics.Append(r.setSecurityGroups(ctx, target, id, plan.SecurityGroups)...)
 		if resp.Diagnostics.HasError() {
 			return
@@ -758,7 +767,7 @@ func (r *clusterResource) Update(ctx context.Context, req resource.UpdateRequest
 	// a raise is refused while the cluster isn't `active`. The platform
 	// refuses `storage` alongside `securityGroups` in any case.
 	if storageRaised(plan, state) {
-		sent = true
+		queued = true
 		resp.Diagnostics.Append(r.raiseStorage(ctx, target, id, plan.StorageCeilingGiB)...)
 		if resp.Diagnostics.HasError() {
 			return
@@ -773,14 +782,14 @@ func (r *clusterResource) Update(ctx context.Context, req resource.UpdateRequest
 	case refUpgrade, refRefused:
 		// The upgrade makes the node count changes too, each before or after
 		// the step whose bounds admit it.
-		sent = true
+		queued = true
 		resp.Diagnostics.Append(r.upgrade(ctx, target, id, plan, &resp.State)...)
 	default:
 		want, have, d := r.poolCounts(ctx, target, id, plan, state)
 		resp.Diagnostics.Append(d...)
 		if !resp.Diagnostics.HasError() {
 			up, down := poolChanges(want, have)
-			sent = sent || len(up.NodePools)+len(down.NodePools) > 0
+			queued = queued || len(up.NodePools)+len(down.NodePools) > 0
 			resp.Diagnostics.Append(r.scaleEach(ctx, target, id, up, down)...)
 		}
 	}
@@ -791,15 +800,18 @@ func (r *clusterResource) Update(ctx context.Context, req resource.UpdateRequest
 	// Nothing went to the platform, such as a node_pool that stops naming a
 	// pool, which an import makes common. Waiting would sit out whatever the
 	// cluster is doing, a create included, for a change that was never sent.
-	if !sent {
+	if !queued && !metadataChanged {
 		next := planOverPrior(plan, state)
 		resp.Diagnostics.Append(resp.State.Set(ctx, &next)...)
 		return
 	}
 
-	if err := r.waitForSettled(ctx, target, id, "the cluster to finish updating"); err != nil {
-		addClusterWaitError(&resp.Diagnostics, "The cluster did not settle after the change", changeKeepsRunning, err)
-		return
+	// Metadata alone on a `failed` cluster has nothing to wait for.
+	if queued || !leftFailed {
+		if err := r.waitForSettled(ctx, target, id, "the cluster to finish updating"); err != nil {
+			addClusterWaitError(&resp.Diagnostics, "The cluster did not settle after the change", changeKeepsRunning, err)
+			return
+		}
 	}
 
 	// After an upgrade, state holds what its last pass read, the Kubernetes
