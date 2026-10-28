@@ -181,10 +181,12 @@ func (r *securityGroupResource) Schema(ctx context.Context, _ resource.SchemaReq
 			"endpoint on the public API today.\n\n" +
 			"Rules are evaluated first-match in list order, and ingress and egress are " +
 			"independent. Only a VPC on the `nico` fabric backend can carry security groups.\n\n" +
-			"**The platform adds its own rules after the group's:** permit all ingress, then deny " +
-			"all egress. So a group of only permits filters nothing incoming: end it with a deny for " +
-			"what it shouldn't let in. A change can take up to a few minutes to reach the nodes, and " +
-			"the cluster's Kubernetes API address isn't filtered at all.\n\n" +
+			"The platform adds no rules to a group. On the `nico` fabric, traffic that no rule " +
+			"permits is denied, in both directions. Rules the operator sets for the site are " +
+			"checked before the group's, so a site permit or deny wins over the group. Replies to " +
+			"a connection a node opened through a stateful egress rule are let back in. A change " +
+			"can take up to a few minutes to reach the nodes, and the cluster's Kubernetes API " +
+			"address isn't filtered at all.\n\n" +
 			"Requires `region` and `project` on the provider.",
 		Blocks: map[string]schema.Block{
 			"timeouts": timeouts.Block(ctx, timeouts.Opts{
