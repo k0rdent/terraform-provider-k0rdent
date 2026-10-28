@@ -6,7 +6,7 @@ description: |-
   A named, ordered set of CIDR filter rules, applied to the instances of whatever it is attached to.
   This is the platform's nearest thing to an address allowlist. It filters node interfaces, not the Kubernetes API endpoint, and there is no allowlist for that endpoint on the public API today.
   Rules are evaluated first-match in list order, and ingress and egress are independent. Only a VPC on the nico fabric backend can carry security groups.
-  The platform adds its own rules after the group's: permit all ingress, then deny all egress. So a group of only permits filters nothing incoming: end it with a deny for what it shouldn't let in. A change can take up to a few minutes to reach the nodes, and the cluster's Kubernetes API address isn't filtered at all.
+  The platform adds no rules to a group. On the nico fabric, traffic that no rule permits is denied, in both directions. Rules the operator sets for the site are checked before the group's, so a site permit or deny wins over the group. Replies to a connection a node opened through a stateful egress rule are let back in. A change can take up to a few minutes to reach the nodes, and the cluster's Kubernetes API address isn't filtered at all.
   Requires region and project on the provider.
   What replaces it. Changing id, project or region cannot be done in place and replaces the security group. Everything else changes in place.
 ---
@@ -19,7 +19,7 @@ This is the platform's nearest thing to an address allowlist. It filters node in
 
 Rules are evaluated first-match in list order, and ingress and egress are independent. Only a VPC on the `nico` fabric backend can carry security groups.
 
-**The platform adds its own rules after the group's:** permit all ingress, then deny all egress. So a group of only permits filters nothing incoming: end it with a deny for what it shouldn't let in. A change can take up to a few minutes to reach the nodes, and the cluster's Kubernetes API address isn't filtered at all.
+The platform adds no rules to a group. On the `nico` fabric, traffic that no rule permits is denied, in both directions. Rules the operator sets for the site are checked before the group's, so a site permit or deny wins over the group. Replies to a connection a node opened through a stateful egress rule are let back in. A change can take up to a few minutes to reach the nodes, and the cluster's Kubernetes API address isn't filtered at all.
 
 Requires `region` and `project` on the provider.
 
@@ -57,7 +57,10 @@ resource "k0rdent_security_group" "baseline" {
 ```
 
 ```terraform
-# The first matching rule wins, in the order written.
+# The first matching rule wins, in the order written. On the nico fabric,
+# traffic that no rule permits is denied, so the group needs no final deny.
+# One would also block what the VPC's default group, checked after this one,
+# permits between the VPC's subnets.
 resource "k0rdent_security_group" "office_access" {
   id           = "office-access"
   display_name = "Office access"
@@ -75,14 +78,6 @@ resource "k0rdent_security_group" "office_access" {
     destination_prefix = "0.0.0.0/0"
 
     destination_port_range = "22"
-  }
-
-  ingress {
-    name               = "deny-everything-else"
-    action             = "deny"
-    protocol           = "any"
-    source_prefix      = "0.0.0.0/0"
-    destination_prefix = "0.0.0.0/0"
   }
 
   # On the nico fabric, return traffic for this rule is allowed back in
