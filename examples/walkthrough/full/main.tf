@@ -213,8 +213,11 @@ locals {
     ]
   ])
 
-  # One deny per service, after the permits. Not 6443, because the cluster's
-  # own API traffic may come from outside allowed_cidrs.
+  # One deny per service, after the permits. The nico fabric denies what no
+  # rule permits, but the VPC's default group is checked after this group and
+  # permits traffic between the VPC's subnets, so these keep each service
+  # closed between nodes too. Not 6443, so nodes can still reach each other's
+  # Kubernetes API.
   ingress_denies = [
     for service, s in var.ingress_services : {
       name     = "${service} from anywhere else"
@@ -275,8 +278,7 @@ resource "k0rdent_security_group" "this" {
     }
   }
 
-  # The platform adds a permit-all ingress rule after these, so without the
-  # denies nothing is filtered.
+  # After the permits. local.ingress_denies says what they're for.
   dynamic "ingress" {
     for_each = local.ingress_denies
 
