@@ -166,7 +166,7 @@ PY
   fi
 
   # full/ only: one security group rule edited, an egress rule's port.
-  if [ "$example" = full ]; then
+  if [ "$2" = full ]; then
     python3 - "$DIR/main.tf" <<'PY' || fail "$scenario: no egress rule to edit"
 import sys
 path = sys.argv[1]
