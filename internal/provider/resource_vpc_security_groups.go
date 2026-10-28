@@ -95,11 +95,17 @@ func (r *vpcSecurityGroupsResource) Schema(ctx context.Context, _ resource.Schem
 			"**Destroying this resource does not leave the VPC unfiltered.** It reinstates the " +
 			"VPC's platform-managed DEFAULT group. From the k0rdent API v1.3.0-rc.3, a new VPC's " +
 			"default group permits traffic between the VPC's own subnet prefixes and nothing " +
-			"else, and has no rules on a VPC with no subnet prefixes. Traffic leaving the VPC " +
-			"needs a group of your own. A default group from an earlier release also carries an " +
-			"allow-all egress rule, which never took effect on the `nico` fabric. A VPC always " +
-			"carries at least one group. A " +
-			"replacement does the same to the old VPC, because it destroys the old binding. The " +
+			"else. Traffic leaving the VPC needs a group of your own. A default group from an " +
+			"earlier release also carries an allow-all egress rule, which never took effect on " +
+			"the `nico` fabric.\n\n" +
+			"From the API v1.3.0-rc.4, a VPC with no subnet prefixes, or more than 16, has no " +
+			"default group, and its binding starts empty. The platform won't take the groups off " +
+			"such a VPC once any are bound. A destroy leaves them on, warns and drops the resource " +
+			"from state, and they stay until the VPC is deleted with its cluster or instance " +
+			"group. A delete of one of those groups in the same run waits for that. The plan warns " +
+			"when a binding is created on such a VPC, if the VPC is known by then, and the apply " +
+			"warns again.\n\n" +
+			"A replacement destroys the old binding, so it does either of these to the old VPC. The " +
 			"plan warns about a destroy, and about a replacement that a change to `vpc`, `region` " +
 			"or `project` causes. It can't warn about one forced by `-replace` or " +
 			"`replace_triggered_by`, because Terraform decides those without asking the " +
@@ -150,7 +156,7 @@ func (r *vpcSecurityGroupsResource) Schema(ctx context.Context, _ resource.Schem
 					"apply them. Order is significant: it reaches the fabric as written, and rule " +
 					"evaluation is first-match.\n\n" +
 					"An empty list is accepted and means *reinstate the default group*, not " +
-					"*attach nothing*.",
+					"*attach nothing*. A VPC with no default group refuses it with `409`.",
 				Validators: []validator.List{
 					listvalidator.SizeAtMost(k0rdent.VPCSecurityGroupsRequestSecurityGroupsMaxItems),
 					idList("security group id"),
@@ -185,15 +191,60 @@ func (r *vpcSecurityGroupsResource) Configure(_ context.Context, req resource.Co
 
 // What the DEFAULT group lets through, for the destroy and replace warnings.
 const defaultGroupFilters = "From the k0rdent API v1.3.0-rc.3, a new VPC's default group " +
-	"permits traffic between the VPC's own subnet prefixes and nothing else. So traffic the " +
-	"tenant groups kept out is let in, and traffic they let out of the VPC stops unless the " +
+	"permits traffic between the VPC's own subnet prefixes and nothing else. So traffic between " +
+	"those prefixes is permitted, and all other traffic, in or out, is denied unless the " +
 	"cluster or instance group's own groups permit it. A default group from an earlier " +
 	"release also carries an allow-all egress rule, which never took effect on the nico fabric."
+
+// What a destroy does when a read before the plan couldn't tell whether the
+// VPC has a default group.
+const ifNoDefaultGroup = " If the VPC turns out to have no default group, as a VPC with no " +
+	"subnet prefixes or more than 16 doesn't from the k0rdent API v1.3.0-rc.4, the groups stay " +
+	"on it until it's deleted, and the resource is only dropped from state."
+
+// warnNoDefaultOnCreate is the warning for a binding written to a VPC with
+// no default group, which nothing can take off again.
+func warnNoDefaultOnCreate(diags *diag.Diagnostics, vpc string) {
+	diags.AddWarning(
+		"This binding can't be taken off the VPC later",
+		fmt.Sprintf("%q has no default security group to fall back to. %s Once this binding is "+
+			"written, a destroy leaves its groups on %q, warns and drops the resource from state. "+
+			"They stay until the VPC is deleted with its cluster or instance group.",
+			vpc, noDefaultGroupWhy, vpc),
+	)
+}
+
+// scopedDefaultGroup looks up the default group of the VPC an object of this
+// resource names, when its vpc, region and project are all known.
+func (r *vpcSecurityGroupsResource) scopedDefaultGroup(ctx context.Context, vpc, region, project types.String) defaultGroupState {
+	if _, ok := known(vpc); !ok || region.IsUnknown() || project.IsUnknown() {
+		return defaultGroupUnknown
+	}
+	var diags diag.Diagnostics
+	target, ok := resolveScope(r.meta, region, project, &diags)
+	if !ok {
+		return defaultGroupUnknown
+	}
+	return vpcDefaultGroup(ctx, r.meta, target, vpc.ValueString())
+}
 
 func (r *vpcSecurityGroupsResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
 	modifyScopePlan(ctx, r.meta, req, resp)
 	if resp.Diagnostics.HasError() {
 		return
+	}
+
+	// A binding created on a VPC with no default group stays until the VPC
+	// goes, which is worth knowing before it's written.
+	if req.State.Raw.IsNull() && !req.Plan.Raw.IsNull() {
+		var planned vpcSecurityGroupsModel
+		resp.Diagnostics.Append(resp.Plan.Get(ctx, &planned)...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+		if r.scopedDefaultGroup(ctx, planned.VPC, planned.Region, planned.Project) == defaultGroupMissing {
+			warnNoDefaultOnCreate(&resp.Diagnostics, planned.VPC.ValueString())
+		}
 	}
 
 	// Taking the binding off reinstates the VPC's platform-managed DEFAULT
@@ -209,21 +260,45 @@ func (r *vpcSecurityGroupsResource) ModifyPlan(ctx context.Context, req resource
 	// never reaches this: Terraform decides it after ModifyPlan answers, and
 	// the plan it hands over looks like any other.
 	var prior types.String
+	replacing, ok := plannedReplacements(ctx, req, resp)
+	oldDefault := defaultGroupUnknown
 	if !req.State.Raw.IsNull() {
-		resp.Diagnostics.Append(req.State.GetAttribute(ctx, path.Root("vpc"), &prior)...)
+		var priorState vpcSecurityGroupsModel
+		resp.Diagnostics.Append(req.State.Get(ctx, &priorState)...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+		prior = priorState.VPC
+		// Read only for the two plans that take the binding off.
+		if req.Plan.Raw.IsNull() || !ok || len(replacing) > 0 {
+			oldDefault = r.scopedDefaultGroup(ctx, priorState.VPC, priorState.Region, priorState.Project)
+		}
 	}
 	if !req.State.Raw.IsNull() && req.Plan.Raw.IsNull() {
+		if oldDefault == defaultGroupMissing {
+			resp.Diagnostics.AddWarning(
+				"Destroying this resource leaves the groups on the VPC",
+				fmt.Sprintf("%q has no default security group to fall back to. %s So the destroy "+
+					"leaves the tenant security groups on %q, warns and drops this resource from "+
+					"state. They keep filtering the VPC until it's deleted with its cluster or "+
+					"instance group.", prior.ValueString(), noDefaultGroupWhy, prior.ValueString()),
+			)
+			return
+		}
+		unsure := ""
+		if oldDefault == defaultGroupUnknown {
+			unsure = ifNoDefaultGroup
+		}
 		resp.Diagnostics.AddWarning(
 			"Destroying this resource changes the VPC's filter",
 			fmt.Sprintf("The tenant security groups come off %q and the VPC's platform-managed "+
 				"DEFAULT group goes back on. "+defaultGroupFilters+" If the VPC holds anything "+
 				"but what this resource last read by the time the destroy runs, it's left as it "+
-				"is and the resource is only dropped from state.",
+				"is and the resource is only dropped from state."+unsure,
 				prior.ValueString()),
 		)
 		return
 	}
-	replacing, ok := plannedReplacements(ctx, req, resp)
 	if !ok || len(replacing) > 0 {
 		// Local: decided from configuration and prior state. A schema that
 		// can't be read is taken as a replacement, since the warning is the
@@ -232,18 +307,33 @@ func (r *vpcSecurityGroupsResource) ModifyPlan(ctx context.Context, req resource
 		if len(replacing) > 0 {
 			changed = "`" + replacing[0].path.String() + "` changing"
 		}
-		resp.Diagnostics.AddWarning(
-			"Replacing this resource changes the VPC's filter",
-			fmt.Sprintf("This plan replaces the binding on %q, because of %s. Terraform destroys "+
-				"the old binding as part of that, which takes the tenant security groups off %q and "+
-				"puts its platform-managed DEFAULT group back on. "+defaultGroupFilters+
-				" If the new binding names another VPC, %q stays on DEFAULT after the apply. If "+
-				"it names the same VPC, it's on DEFAULT between the destroy and the create. With "+
-				"`create_before_destroy` it "+
-				"isn't, because the new binding is written first and the destroy that runs after "+
-				"finds it and leaves it.", prior.ValueString(), changed,
-				prior.ValueString(), prior.ValueString()),
-		)
+		if oldDefault == defaultGroupMissing {
+			resp.Diagnostics.AddWarning(
+				"Replacing this resource leaves the old groups on the VPC",
+				fmt.Sprintf("This plan replaces the binding on %q, because of %s. Terraform destroys "+
+					"the old binding as part of that, and %q has no default security group to fall "+
+					"back to. %s So its tenant security groups stay on it until it's deleted with "+
+					"its cluster or instance group, unless the new binding names the same VPC and "+
+					"replaces them.", prior.ValueString(), changed, prior.ValueString(), noDefaultGroupWhy),
+			)
+		} else {
+			unsure := ""
+			if oldDefault == defaultGroupUnknown {
+				unsure = ifNoDefaultGroup
+			}
+			resp.Diagnostics.AddWarning(
+				"Replacing this resource changes the VPC's filter",
+				fmt.Sprintf("This plan replaces the binding on %q, because of %s. Terraform destroys "+
+					"the old binding as part of that, which takes the tenant security groups off %q and "+
+					"puts its platform-managed DEFAULT group back on. "+defaultGroupFilters+
+					" If the new binding names another VPC, %q stays on DEFAULT after the apply. If "+
+					"it names the same VPC, it's on DEFAULT between the destroy and the create. With "+
+					"`create_before_destroy` it "+
+					"isn't, because the new binding is written first and the destroy that runs after "+
+					"finds it and leaves it."+unsure, prior.ValueString(), changed,
+					prior.ValueString(), prior.ValueString()),
+			)
+		}
 	}
 
 	planSettledState(ctx, vpcStates.settle, req, resp)
@@ -278,6 +368,10 @@ func (r *vpcSecurityGroupsResource) Create(ctx context.Context, req resource.Cre
 	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 	resp.Diagnostics.Append(recordUID(ctx, resp.Private, state.uid)...)
+	// Again here, for a VPC the plan couldn't read because it wasn't known yet.
+	if r.scopedDefaultGroup(ctx, state.VPC, state.Region, state.Project) == defaultGroupMissing {
+		warnNoDefaultOnCreate(&resp.Diagnostics, state.VPC.ValueString())
+	}
 }
 
 func (r *vpcSecurityGroupsResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
@@ -477,6 +571,13 @@ func (r *vpcSecurityGroupsResource) Read(ctx context.Context, req resource.ReadR
 // over. Writes from this run wait out the gap between the read and the write.
 // There's no conditional write to close it to anything else, so a change from
 // outside landing in that gap is still overwritten.
+//
+// A VPC with no default group, which API v1.3.0-rc.4 makes for no subnet
+// prefixes or more than 16, refuses the empty list. Its groups are left on,
+// recorded for the run so a delete of one of them waits for the VPC to go,
+// and the resource leaves state with a warning. The VPC's groups are read
+// first so the refused write isn't sent, and the refusal is handled too, for
+// a read that couldn't tell.
 func (r *vpcSecurityGroupsResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
 	var state vpcSecurityGroupsModel
 	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
@@ -562,6 +663,14 @@ func (r *vpcSecurityGroupsResource) Delete(ctx context.Context, req resource.Del
 		return
 	}
 
+	// Read before the write, so a VPC with no default group isn't sent a
+	// write it refuses. The refusal is still handled below, for a read that
+	// couldn't tell.
+	if defaultGroupOf(ctx, r.meta, target, *got.JSON200) == defaultGroupMissing {
+		r.leaveBound(target, vpc, live, &resp.Diagnostics)
+		return
+	}
+
 	if r.beforeClear != nil {
 		r.beforeClear()
 	}
@@ -578,6 +687,9 @@ func (r *vpcSecurityGroupsResource) Delete(ctx context.Context, req resource.Del
 		return set.HTTPResponse, set.Body, nil
 	})
 	switch {
+	case set != nil && refusedForNoDefault(set.HTTPResponse, set.Body):
+		r.leaveBound(target, vpc, live, &resp.Diagnostics)
+		return
 	case waitErr != nil:
 		busy.report(&resp.Diagnostics, "return the VPC to its default security group", set.HTTPResponse, set.Body, waitErr)
 		return
@@ -597,6 +709,15 @@ func (r *vpcSecurityGroupsResource) Delete(ctx context.Context, req resource.Del
 	if err := r.waitForSettled(ctx, target, vpc); err != nil {
 		addWaitError(&resp.Diagnostics, "The VPC did not settle after its groups were detached", err)
 	}
+}
+
+// leaveBound ends a destroy on a VPC with no default group: the platform
+// won't take its groups off, so they stay and the resource leaves state.
+// Failing instead would leave a destroy nothing could get past but
+// `terraform state rm`.
+func (r *vpcSecurityGroupsResource) leaveBound(target clusterTarget, vpc string, groups []string, diags *diag.Diagnostics) {
+	r.meta.vpcBindings.leftOnVPC(target, vpc, groups)
+	warnLeftBound(diags, vpc, groups)
 }
 
 // bindingVerdict is what a destroy makes of the binding it finds on the VPC.
@@ -672,6 +793,9 @@ type bindingLedger struct {
 	mu    sync.Mutex
 	byVPC map[string]bindingWrite
 	held  map[string]*sync.Mutex
+	// left is, per group, the VPCs with no default group that a destroy in
+	// this run left the group bound to. See leftOnVPC.
+	left map[string][]string
 }
 
 // bindingWrite is one recorded write: the groups the platform reported, and

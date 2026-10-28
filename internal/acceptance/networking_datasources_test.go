@@ -134,25 +134,26 @@ data %q "read" {
 	})
 }
 
-// A VPC with no subnet prefixes has a default group with no rules. Both lists
-// are read as empty, not null, so length() works on them.
-func TestAccSecurityGroupDataSourceReadsAnEmptyDefaultGroup(t *testing.T) {
+// From API v1.3.0-rc.4 a VPC with no subnet prefixes has no default group,
+// so its binding reads as an empty list, not null.
+func TestAccAVPCWithNoSubnetsReadsWithNoGroups(t *testing.T) {
 	const cluster = "acc-sg-read-no-subnets"
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: protoV6,
 		CheckDestroy:             checkGone(clusterType, clusterPath),
 		Steps: []resource.TestStep{{
-			Config: vpcOwnerConfig(cluster) + vpcDefaultGroupConfig() + fmt.Sprintf(`
-output "rules" {
-  value = length(data.%s.vpc_default.ingress) + length(data.%s.vpc_default.egress)
+			Config: vpcOwnerConfig(cluster) + fmt.Sprintf(`
+data %q "owned" {
+  id = %s.test.vpc
 }
-`, securityGroupType, securityGroupType),
+
+output "groups" {
+  value = length(data.%s.owned.security_groups)
+}
+`, vpcType, clusterType, vpcType),
 			Check: resource.ComposeAggregateTestCheckFunc(
-				resource.TestCheckResourceAttr(defaultGroupDataAddr, "owner_kind", "vpc"),
-				resource.TestCheckResourceAttr(defaultGroupDataAddr, "rule_count", "0"),
-				resource.TestCheckResourceAttr(defaultGroupDataAddr, "ingress.#", "0"),
-				resource.TestCheckResourceAttr(defaultGroupDataAddr, "egress.#", "0"),
-				resource.TestCheckOutput("rules", "0"),
+				resource.TestCheckResourceAttr("data."+vpcType+".owned", "security_groups.#", "0"),
+				resource.TestCheckOutput("groups", "0"),
 			),
 		}},
 	})

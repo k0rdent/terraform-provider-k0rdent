@@ -499,7 +499,7 @@ resource "k0rdent_vpc_security_groups" "this" {
     # Fail rather than drop the default group from the VPC.
     precondition {
       condition     = data.k0rdent_vpc.owned[each.key].backend != "nico" || length(local.vpc_default_group[each.key]) == 1
-      error_message = "Found ${length(local.vpc_default_group[each.key])} default groups for the ${each.key} VPC, ${each.value.vpc}, not 1: no single group with owner_kind = \"vpc\" is named \"Default (${each.value.vpc})\". Without it, this binding would replace the VPC's rules for traffic between its subnets. Set build.vpc_security_groups = false, or check the VPC's groups with the k0rdent_security_groups data source."
+      error_message = "Found ${length(local.vpc_default_group[each.key])} default groups for the ${each.key} VPC, ${each.value.vpc}, not 1. Either the VPC has none, as from API v1.3.0-rc.4 a VPC with no subnet prefixes or more than 16 doesn't, or no single group with owner_kind = \"vpc\" is named \"Default (${each.value.vpc})\". Without one, this binding would replace the VPC's rules for traffic between its subnets, and on a VPC with none it couldn't be taken off again. Set build.vpc_security_groups = false, or check the VPC's groups with the k0rdent_security_groups data source."
     }
   }
 }
