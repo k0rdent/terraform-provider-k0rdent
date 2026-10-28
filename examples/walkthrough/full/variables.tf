@@ -86,7 +86,7 @@ variable "organization" {
 
 variable "quota_checks" {
   type        = bool
-  description = "Read the project's and the organization's quota, and warn when either is over. Set false for a credential that can't read quota."
+  description = "Read the organization's status, and the project's and the organization's quota, and warn when either is over. These need an organizations role on the organization, so set false for a credential scoped to a project."
   default     = true
 }
 
