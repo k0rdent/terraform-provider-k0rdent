@@ -98,18 +98,9 @@ func (s *state) createSecurityGroup(w http.ResponseWriter, r *http.Request) {
 func (s *state) getSecurityGroup(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	o := s.in(r)
-
-	if _, held := o.groupsSec[at{id: "default"}]; !held && r.PathValue("id") == "default" {
-		// Every VPC starts with its own default group, marked `ownerKind: vpc`.
-		writeJSON(w, http.StatusOK, map[string]any{
-			"id": "default", "ownerKind": "vpc", "state": "active", "ruleCount": 0,
-			"selfLink": "/v1/networking/security-groups/default",
-			"rules":    map[string]any{"ingress": []any{}, "egress": []any{}},
-		})
-		return
-	}
-	if g, ok := securityGroupKind.read(w, r, o); ok {
+	// A VPC's default group is an ordinary row, made with the VPC. See
+	// defaultGroup.
+	if g, ok := securityGroupKind.read(w, r, s.in(r)); ok {
 		writeJSON(w, http.StatusOK, securityGroupJSON(g))
 	}
 }
@@ -132,6 +123,12 @@ func (s *state) updateSecurityGroup(w http.ResponseWriter, r *http.Request) {
 	defer s.mu.Unlock()
 	g, _, ok := securityGroupKind.find(w, r, s.in(r))
 	if !ok {
+		return
+	}
+	// Recorded on v1.3.0-rc.3.
+	if g.ownerKind == "vpc" {
+		recordedConflict(w, fmt.Sprintf("immutable field: security group %q is the platform-managed default "+
+			"for its VPC and cannot be modified; attach your own group to the VPC instead", g.id), "CONFLICT_IMMUTABLE")
 		return
 	}
 	// "Only the fields present in the body are changed." An empty string clears
@@ -170,6 +167,14 @@ func (s *state) deleteSecurityGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := g.id
+	// Recorded on v1.3.0-rc.3, and refused before the holders: the default's
+	// own VPC always holds it.
+	if g.ownerKind == "vpc" {
+		recordedConflict(w, fmt.Sprintf("immutable field: security group %q is the platform-managed default "+
+			"for its VPC and cannot be deleted or modified; attach your own security group to the VPC "+
+			"instead, which replaces the default in its binding", id), "CONFLICT_IMMUTABLE")
+		return
+	}
 	// Measured on the k0rdent API v1.3.0-dev.3: a group a cluster holds is not
 	// deleted out from under it. The contract's "a group deleted out from
 	// under the binding is omitted rather than echoed" never happens through
