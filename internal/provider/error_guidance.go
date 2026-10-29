@@ -44,13 +44,11 @@ var reasonGuidance = map[string]string{
 }
 
 // forbiddenGuidance is the next step for a 403 on each read, and each project
-// create or delete, that only a role bound to an organization, or to the whole
-// platform, can make. The platform checks these routes against the
+// create, update or delete, that only a role bound to an organization, or to
+// the whole platform, can make. The platform checks these routes against the
 // organization, and a role bound to a project never counts there, so a
 // credential scoped to a project is refused all of them. Its 403 says only
-// "forbidden". The roles are the platform's built-in ones that hold each
-// route's permission, as the k0rdent API v1.3.0-rc.3 binds them, and as
-// v1.3.0-rc.4 binds a project's create and delete.
+// "forbidden". The roles are the platform's built-in ones at v1.3.0-rc.4.
 var forbiddenGuidance = func() map[string]string {
 	// The gateway answers the same bare 403 for an organization that doesn't
 	// exist, so each message names that too.
@@ -71,10 +69,14 @@ var forbiddenGuidance = func() map[string]string {
 		accounts = "Reading service accounts needs iam-admin on the organization, not iam-viewer, " +
 			noSuchOrg + " A credential scoped to a project can't have it, so use one scoped to the " +
 			"organization or leave this read out."
-		// organizations-member can create a project and can't delete one.
+		// organizations-member can create and update a project, and can't delete one.
 		createProject = "Creating a project needs organizations-member or organizations-admin on the " +
-			"organization, " + noSuchOrg + " Only organizations-admin can delete it again, so a destroy " +
-			"needs that role, on a credential scoped to the organization."
+			"organization, " + noSuchOrg + " A credential scoped to a project can't have either. Ask for " +
+			"organizations-admin: organizations-member can create a project but can't delete it, so a " +
+			"destroy fails."
+		updateProject = "Changing a project needs organizations-member or organizations-admin on the " +
+			"organization, " + noSuchOrg + " A credential scoped to a project can't have either, so use " +
+			"one scoped to the organization."
 		deleteProject = "Deleting a project needs organizations-admin on the organization, not " +
 			"organizations-member, " + noSuchOrg + " A credential scoped to a project can't have it, so " +
 			"delete the project with one scoped to the organization."
@@ -89,6 +91,7 @@ var forbiddenGuidance = func() map[string]string {
 		"listServiceAccounts":           accounts,
 		"listServiceAccountCredentials": accounts,
 		"createProjectInOrg":            createProject,
+		"updateProjectInOrg":            updateProject,
 		"deleteProjectInOrg":            deleteProject,
 	}
 }()

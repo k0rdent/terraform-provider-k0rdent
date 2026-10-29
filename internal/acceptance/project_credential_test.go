@@ -222,8 +222,8 @@ func TestAccOrganizationReadsWithAProjectCredentialSayWhatTheyNeed(t *testing.T)
 	}
 }
 
-// Creating a project is refused a project credential with the role it needs,
-// and the role a destroy needs to delete the project again.
+// A project credential's 403 creating a project names the role the create
+// needs and the one a destroy needs.
 func TestAccProjectCreateWithAProjectCredentialSaysWhatItNeeds(t *testing.T) {
 	useProjectCredential(t)
 	resource.Test(t, resource.TestCase{
@@ -233,7 +233,7 @@ func TestAccProjectCreateWithAProjectCredentialSaysWhatItNeeds(t *testing.T) {
 				Config: fmt.Sprintf("resource %q \"test\" {\n  id              = \"acc-project-credential\"\n"+
 					"  organization_id = %q\n}\n", projectType, accOrg),
 				ExpectError: saying("Creating a project needs organizations-member or organizations-admin",
-					"Only organizations-admin can delete it"),
+					"Ask for organizations-admin"),
 			},
 		},
 	})
