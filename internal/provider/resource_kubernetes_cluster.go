@@ -166,7 +166,13 @@ func (r *clusterResource) Schema(ctx context.Context, _ resource.SchemaRequest, 
 			"token passes, since only an apply can tell whether this state holds it: if another state " +
 			"does, the create fails with \"already exists\" and nothing is deleted. " +
 			"A destroy that stops waiting leaves the cluster in state, and the next `terraform destroy` " +
-			"waits for the same delete without sending another.\n\n" +
+			"waits for the same delete without sending another. " +
+			"A tainted cluster without the token, such as an imported one, refuses `terraform destroy` too, " +
+			"since destroy runs that plan first: run `terraform untaint` on it, then `terraform destroy`. " +
+			"A run killed before the create returns, such as by `kill -9` or a lost CI runner, saves nothing, " +
+			"so the cluster keeps being built with nothing in state: `terraform destroy` finds nothing to " +
+			"destroy, and the next apply fails with \"already exists\" and gives the `terraform import` " +
+			"that takes it back.\n\n" +
 			"The platform deletes a cluster only once nothing is running on it, so destroying one that " +
 			"is still `creating` or `updating` " +
 			"cancels that operation first and warns that it did, all within the delete timeout. A plan " +

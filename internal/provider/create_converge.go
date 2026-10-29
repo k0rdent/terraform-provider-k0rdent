@@ -447,7 +447,7 @@ func (c convergingCreate) addNamedAnother(diags *diag.Diagnostics, status int, n
 func (c convergingCreate) claim(diags *diag.Diagnostics, id string, l createLookup, why string, a createAnswer) (createOutcome, createdAs, diag.Diagnostics) {
 	proof := c.proof(id, l)
 	if proof == "" {
-		c.addNotOurs(diags, id, why, a)
+		c.addNotOurs(diags, id, l, why, a)
 		return createFailed, createdAs{}, *diags
 	}
 	diags.AddWarning(
@@ -473,19 +473,27 @@ func (c convergingCreate) proof(id string, l createLookup) string {
 }
 
 // addNotOurs refuses a resource this call cannot show it made, quoting what
-// the platform answered when it answered.
-func (c convergingCreate) addNotOurs(diags *diag.Diagnostics, id, why string, a createAnswer) {
+// the platform answered when it answered. l is the read that found it.
+func (c convergingCreate) addNotOurs(diags *diag.Diagnostics, id string, l createLookup, why string, a createAnswer) {
 	cannot := "it carries no create token from this apply"
 	if c.key.token == "" {
 		cannot = fmt.Sprintf("a %s has no tags to carry a create token, and its id was set in configuration", c.kind)
 	}
+	// Another apply's token. Terraform saves nothing for a run killed before
+	// its create returned, so the next apply meets the object that run left.
+	likely := ""
+	if c.key.token != "" && l.token != "" {
+		likely = " It carries this provider's create token from another apply, so a Terraform apply made it. " +
+			"Most often that's an apply stopped before it could save state, such as a killed process or a lost " +
+			"CI runner. Another configuration that uses the same `id` leaves one too."
+	}
 	detail := fmt.Sprintf("The create for %s %q %s. Reading it back found one this apply cannot "+
-		"show it created, since %s, so it is not taken over.\n\n"+
+		"show it created, since %s, so it is not taken over.%s\n\n"+
 		"If it is the one this configuration describes, import it, replacing <address> with this "+
 		"resource's address, such as %s.example:\n\n"+
 		"    terraform import <address> %s\n\n"+
 		"Otherwise choose another `id`.",
-		c.kind, id, why, cannot, c.resourceName, c.importID(id))
+		c.kind, id, why, cannot, likely, c.resourceName, c.importID(id))
 	var apiErr *k0rdent.APIError
 	if a.resp != nil && errors.As(k0rdent.CheckResponse(a.resp, a.body), &apiErr) {
 		detail += "\n\n" + apiErrorDetail(apiErr)

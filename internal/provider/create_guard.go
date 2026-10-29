@@ -84,8 +84,12 @@ func (e existing) refuse(diags *diag.Diagnostics) {
 			"    terraform apply\n\n"+
 			"If this state should manage it and doesn't yet, import it with `terraform import <address> %s`. "+
 			"Otherwise choose another `id`. To replace it on purpose, set `allow_replace = true` on this "+
-			"resource. Nothing was sent: the plan was refused.",
-		e.kind, e.id, e.state, e.kind, e.resourceName, scopedImportID(e.target)(e.id))))
+			"resource. Nothing was sent: the plan was refused.\n\n"+
+			"`terraform destroy` runs this plan first to refresh state, so it's refused too while this state "+
+			"holds the %s tainted. To destroy it, untaint it first:\n\n"+
+			"    terraform untaint <address>\n"+
+			"    terraform destroy",
+		e.kind, e.id, e.state, e.kind, e.resourceName, scopedImportID(e.target)(e.id), e.kind)))
 }
 
 // warnReplacing passes a plan to create over an object the provider can
