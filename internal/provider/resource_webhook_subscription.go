@@ -553,7 +553,7 @@ func (r *webhookSubscriptionResource) ModifyPlan(ctx context.Context, req resour
 // the replacement couldn't be made.
 func (r *webhookSubscriptionResource) replaceDisabled(ctx context.Context, state webhookSubscriptionModel, secret types.String, resp *resource.ModifyPlanResponse) bool {
 	id := state.ID.ValueString()
-	const history = "Its delivery history goes with it."
+	const history = "Deleting the old subscription deletes its delivery history too."
 	if secret.IsNull() {
 		resp.Diagnostics.AddAttributeWarning(path.Root("is_active"), "The platform turned this subscription off",
 			fmt.Sprintf("Subscription %s gets no more events. The platform turned it off because "+
