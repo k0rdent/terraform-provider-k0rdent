@@ -1,0 +1,3 @@
+```release-note:enhancement
+provider: A 429 on the token request now says how long the platform asked to wait, and which limit it met: a credential's tokens a minute, shared by every run that uses it, or the gateway's limit for one client address
+```
