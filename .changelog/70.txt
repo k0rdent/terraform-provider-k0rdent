@@ -1,0 +1,3 @@
+```release-note:enhancement
+resource/k0rdent_project: Name `organizations-admin` in a 403 on create or delete
+```
