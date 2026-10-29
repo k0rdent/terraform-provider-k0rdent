@@ -1,10 +1,12 @@
 package provider
 
 import (
+	"context"
 	"fmt"
 	"go/ast"
 	"go/token"
 	"go/types"
+	"reflect"
 	"sort"
 	"strings"
 	"testing"
@@ -20,12 +22,14 @@ import (
 //     are region and project, which ReplacingAttributes already counts;
 //   - the guard's own, which passes the resource's answer through;
 //   - code that only a guarded resource's ModifyPlan reaches, where the guard
-//     reads the path back and refuses it.
+//     reads the path back and refuses it;
+//   - code that only the ModifyPlan of a resource in replacedWithoutAsking
+//     reaches, which holds no tenant state and says why.
 //
 // So an unguarded resource can't plan a replacement of anything else without
-// failing here, and being told to guard it.
+// failing here, and being told to guard it or say why it needn't be.
 func TestEveryReplacementPlannedInCodeIsGuarded(t *testing.T) {
-	sites, offenders := codedReplacements(checkedProvider(t))
+	sites, offenders := codedReplacements(checkedProvider(t), exemptResourceTypes())
 	t.Logf("writes to RequiresReplace checked: %d", sites)
 	if sites == 0 {
 		t.Fatal("found no write to RequiresReplace at all, so this test is reading the wrong source")
@@ -40,7 +44,24 @@ func TestEveryReplacementPlannedInCodeIsGuarded(t *testing.T) {
 // resource, because the paths they add are region and project.
 var scopeReplacements = map[string]bool{"modifyScopePlan": true, "*projectResource.planRegion": true}
 
-func codedReplacements(c checkedPackage) (int, []string) {
+// exemptResourceTypes is the Go type name of each registered resource listed in
+// replacedWithoutAsking.
+func exemptResourceTypes() map[string]bool {
+	out := map[string]bool{}
+	for _, newResource := range New("test")().Resources(context.Background()) {
+		r := newResource()
+		if _, exempt := replacedWithoutAsking[suffixOf(r)]; exempt {
+			t := reflect.TypeOf(r)
+			if t.Kind() == reflect.Pointer {
+				t = t.Elem()
+			}
+			out[t.Name()] = true
+		}
+	}
+	return out
+}
+
+func codedReplacements(c checkedPackage, exempt map[string]bool) (int, []string) {
 	// The types handed to guardReplacements as &T{...}.
 	guarded := map[*types.TypeName]bool{}
 	// Who mentions each function in this package.
@@ -97,7 +118,7 @@ func codedReplacements(c checkedPackage) (int, []string) {
 	var reachedOnlyFromGuarded func(obj types.Object, seen map[types.Object]bool) bool
 	reachedOnlyFromGuarded = func(obj types.Object, seen map[types.Object]bool) bool {
 		if recv := receiverOf(obj); recv != nil && (recv.Name() == "guardedResource" ||
-			(guarded[recv] && obj.Name() == "ModifyPlan")) {
+			((guarded[recv] || exempt[recv.Name()]) && obj.Name() == "ModifyPlan")) {
 			return true
 		}
 		if seen[obj] || len(mentions[obj]) == 0 {

@@ -33,6 +33,11 @@ import (
 //   - A delete is synchronous: 204, and the next list doesn't have it.
 //   - A subscription's delivery history is read by its id, and an id the
 //     caller's organization doesn't have answers an empty page, not a 404.
+//   - The platform turns a subscription off after sustained delivery failure,
+//     and nothing turns it back on. The list still has it, with `is_active`
+//     false and `disabled_at` set, and a rotate or a delete still works on it.
+//     The fake sends no events, so the harness turns one off by hand, at
+//     POST /_harness/webhooks/{id}/disable.
 type fakeWebhook struct {
 	id             string
 	url            string
@@ -45,10 +50,13 @@ type fakeWebhook struct {
 	previousUntil  *time.Time
 	// deliveries is the delivery history, newest first.
 	deliveries []map[string]any
+	// disabledAt is when the platform turned the subscription off, nil while
+	// it's on.
+	disabledAt *time.Time
 
 	// state and reads are what the object table needs from every row. A
 	// subscription has no lifecycle state of its own, so it's always
-	// `active` and nothing moves it.
+	// `active` and nothing moves it. Being turned off is `disabledAt`.
 	state string
 	reads int
 }
@@ -61,6 +69,14 @@ const webhookOverlap = 24 * time.Hour
 
 // webhookSecretMinLength is the contract's minLength on a caller's secret.
 const webhookSecretMinLength = 32
+
+// The contract's defaults for turning a subscription off: at least 10
+// dead-lettered deliveries in a row, in a run that began at least 72 hours
+// ago.
+const (
+	webhookDisableAfterFailures = 10
+	webhookDisableAfter         = 72 * time.Hour
+)
 
 // listWebhooks answers every subscription, newest first.
 //
@@ -115,6 +131,13 @@ func (h *fakeWebhook) listed(now time.Time) map[string]any {
 		"last_success_at":            nil,
 		"consecutive_failures":       0,
 		"failing_since":              nil,
+		"disabled_at":                nil,
+	}
+	if h.disabledAt != nil {
+		out["is_active"] = false
+		out["disabled_at"] = h.disabledAt.Format(time.RFC3339)
+		out["consecutive_failures"] = webhookDisableAfterFailures
+		out["failing_since"] = h.disabledAt.Add(-webhookDisableAfter).Format(time.RFC3339)
 	}
 	if h.rotatedAt != nil {
 		out["rotated_at"] = h.rotatedAt.Format(time.RFC3339)
@@ -359,6 +382,24 @@ func (s *state) storedWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, h.stored())
+}
+
+// disableWebhook turns a subscription off as the platform's delivery worker
+// does after sustained failure: `is_active` false and `disabled_at` now. One
+// already off keeps the time it was turned off. It's the harness's alone,
+// behind the owner token, since no API route turns a subscription off.
+func (s *state) disableWebhook(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	h, _, ok := webhookKind.find(w, r, s.global())
+	if !ok {
+		return
+	}
+	if h.disabledAt == nil {
+		now := time.Now().UTC().Truncate(time.Second)
+		h.disabledAt = &now
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // webhookURLAccepted is the contract's "absolute http(s) endpoint".
