@@ -1,0 +1,17 @@
+{
+  "about": [
+    "What make upgrade-test lets through when state from a published release meets this tree.",
+    "changes: a finding in one walkthrough directory, accepted for one previous release only, so it goes stale when that release is no longer the one upgraded from. An entry for that release that no finding matches fails the run.",
+    "not_covered: a resource type no walkthrough directory puts in state, so its upgrade is never tried. An entry for a type that is covered fails the run.",
+    "Every entry needs a reason. TESTING.md has the rest."
+  ],
+  "changes": [
+    {
+      "from": "0.1.0-rc.1",
+      "directory": "look",
+      "change": "output.cluster_types update",
+      "reason": "k0rdent_cluster_types now reads every page of the list (#28), so the output lists more types. In the upgrade notes."
+    }
+  ],
+  "not_covered": []
+}

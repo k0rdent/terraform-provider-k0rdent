@@ -183,6 +183,13 @@ unknown-budget-update: ## Rewrite ci/unknown-budget.json from the walkthrough pl
 walkthrough-api-test: ## Follow docs/walkthrough-api.md against the fake, from the commands the page shows
 	./ci/walkthrough-api-against-fake.sh
 
+# State the previous release wrote, under this tree's build, for terraform
+# and tofu. The previous release comes from the public registries, so this
+# needs the network. TESTING.md has how to accept a change.
+.PHONY: upgrade-test
+upgrade-test: ## State from the previous release plans empty under this tree, but for ci/upgrade-accepted.json, under terraform and tofu
+	./ci/upgrade-against-fake.sh
+
 .PHONY: doctor
 doctor: ## Check this machine can run the tests, before anything long fails halfway
 	./scripts/doctor.sh
