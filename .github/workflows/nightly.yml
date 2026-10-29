@@ -46,7 +46,7 @@ jobs:
       # red is the provider's change or the fake's and not a CLI that shipped
       # that day. scripts/check-workflow-actions.sh holds every job to one
       # version of each. Raise them deliberately, in every workflow at once.
-      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd  # v3.1.2
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e  # v4.0.1
         id: setup-terraform
         if: matrix.cli == 'terraform'
         with:
