@@ -218,7 +218,7 @@ data %q "org" {
 
 data %q "team" {
   organization_id = "org-demo"
-  project_id      = "team-a"
+  project_id      = "demo"
 }
 `, quotaType, projectQuotaType)
 

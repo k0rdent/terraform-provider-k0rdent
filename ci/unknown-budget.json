@@ -379,6 +379,13 @@
             "region": "read during the apply, because it waits for terraform_data.made, which this plan creates"
           }
         },
+        "data.k0rdent_project_quota": {
+          "count": 2,
+          "unknown": {
+            "dimensions": "read during the apply, after build.own_project creates the project it reports on",
+            "profile": "read during the apply, after build.own_project creates the project it reports on"
+          }
+        },
         "data.k0rdent_security_groups": {
           "count": 11,
           "unknown": {
