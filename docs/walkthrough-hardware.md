@@ -58,11 +58,11 @@ Ask whoever runs the platform for:
   create a project. Without `iam-viewer`, run `look/` with
   `read_roles = false`.
 - A member role isn't enough to clean up. `compute-member` can't delete, so
-  every destroy fails, and `organizations-member` can create a project but
-  not delete it.
-- A service account scoped to a project can hold only the compute roles. The
-  organizations and IAM roles bind to the organization, so it can't read the
-  organization or create a project.
+  destroying `network/`, `cluster/` or `full/` fails, and
+  `organizations-member` can create a project but not delete it.
+- A service account scoped to a project can't hold the organizations or IAM
+  roles, which bind to the organization, so it can't read the organization or
+  create a project.
 - These are the built-in roles of the k0rdent API at v1.3.0-rc.4.
 - An API key also works, but prefer a service account. `setup.sh` only asks
   for a client id and secret, so with a key, export `K0RDENT_ENDPOINT`,
@@ -181,7 +181,7 @@ If it fails here, it's the endpoint or the credential:
 | A 401 | Wrong client id or secret |
 | A 403 reading the organization or its quota | The credential has no `organizations-viewer` on the organization, which a credential scoped to a project can't have. Ask for it, or run `terraform apply -var read_organization=false` |
 | A 403 listing the roles | The credential has no `iam-viewer` on the organization. Ask for it, or run `terraform apply -var read_roles=false` |
-| A 403 listing instances, networks, security groups or VPCs | The credential has no `compute-viewer` on the project or its organization |
+| A 403 listing instances, networks, security groups or VPCs | The credential has no compute role on the project or its organization |
 | A 429 | Too many token requests. Wait a minute |
 | A connection error | Wrong URL, or you need the VPN |
 
@@ -416,7 +416,7 @@ The `build` block in `terraform.tfvars` turns each part on or off:
 | 404 that reads like a missing project | Copy the region and project ids from `look` |
 | 429 | Too many token requests. Wait a minute between commands |
 | `No such project` at plan | This credential can't see that project |
-| 403 creating or deleting the project | The credential has no `organizations-admin` on the organization. `organizations-member` creates a project but can't delete it. Use `cluster/` without it |
+| 403 creating or deleting the project | The credential has no `organizations-admin` on the organization. `organizations-member` creates a project but can't delete it. Without it, use `cluster/` |
 | 409 creating the project | The project already exists. Change `prefix`, or use `cluster/` |
 | 403 reading the organization or quota in `full/` | The credential has no `organizations-viewer` on the organization, which a credential scoped to a project can't have. Ask for it, or set `quota_checks = false` |
 | 403 creating, changing or deleting a network, subnet, security group or cluster | The credential has no `compute-admin` on the project or its organization. `compute-member` can't delete, and `compute-viewer` only reads |
