@@ -115,11 +115,11 @@ func (d *projectDataSource) Schema(_ context.Context, _ datasource.SchemaRequest
 			},
 			"display_name": schema.StringAttribute{
 				Computed:            true,
-				MarkdownDescription: "Human-friendly name, if the project has one.",
+				MarkdownDescription: "Human-friendly name. Null when the project has none.",
 			},
 			"description": schema.StringAttribute{
 				Computed:            true,
-				MarkdownDescription: "Free-form text describing it, for people to read.",
+				MarkdownDescription: "Free-form text describing it, for people to read. Null when the project has none.",
 			},
 			"status": schema.StringAttribute{
 				Computed: true,
@@ -176,8 +176,8 @@ func (d *projectDataSource) Read(ctx context.Context, req datasource.ReadRequest
 		p = row
 	}
 
-	data.DisplayName = stringOrNull(p.DisplayName)
-	data.Description = stringOrNull(p.Description)
+	data.DisplayName = textOrNull(p.DisplayName)
+	data.Description = textOrNull(p.Description)
 	data.SelfLink = stringOrNull(p.SelfLink)
 
 	// `organizationId` is taken from the request where the response omits it,

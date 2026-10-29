@@ -62,8 +62,8 @@ provider "k0rdent" {
 ### Read-Only
 
 - `created_at` (String) When the project was created, as RFC 3339. The resource does not carry this and does not need to: it is read every run here and compared against nothing.
-- `description` (String) Free-form text describing it, for people to read.
-- `display_name` (String) Human-friendly name, if the project has one.
+- `description` (String) Free-form text describing it, for people to read. Null when the project has none.
+- `display_name` (String) Human-friendly name. Null when the project has none.
 - `region` (String) The region the project is locked to. Every regional resource in the project has to be in it, so it's the value their `region`, or the provider's, takes. Null for a project made before regions were required.
 - `self_link` (String) Platform-defined reference to this project.
 - `status` (String) Lifecycle status. `active` is usable. `suspended` and `disabled` are steady states the platform can hold a project in. `deleting` means a teardown has been accepted and the project takes no new work, so a configuration that is about to build inside it should check for it rather than discover it as a 409 part way through an apply.

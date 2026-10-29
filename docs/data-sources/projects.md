@@ -49,8 +49,8 @@ data "k0rdent_projects" "ml" {
 
 Read-Only:
 
-- `description` (String) Free-form text describing it, for people to read, when one was set.
-- `display_name` (String) Human-readable name, if the project has one.
+- `description` (String) Free-form text describing it, for people to read. Null when the project has none.
+- `display_name` (String) Human-readable name. Null when the project has none.
 - `id` (String) The id that goes in the provider's `project`.
 - `organization_id` (String) The organization this project belongs to.
 - `region` (String) The region the project is locked to, which every regional resource in it has to use. Null for a project made before regions were required.

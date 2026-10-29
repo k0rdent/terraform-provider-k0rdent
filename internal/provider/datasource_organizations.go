@@ -88,11 +88,18 @@ func (d *organizationsDataSource) Schema(_ context.Context, _ datasource.SchemaR
 						},
 						"display_name": schema.StringAttribute{
 							Computed:            true,
-							MarkdownDescription: "Human-readable name, if the organization has one.",
+							MarkdownDescription: "Human-readable name. Null for an organization created before the platform required one.",
 						},
+						// The list blanks it, with labels, contact and counts, for a caller
+						// whose role there doesn't grant org.settings.read.
 						"description": schema.StringAttribute{
-							Computed:            true,
-							MarkdownDescription: "Free-form text describing it, for people to read, when one was set.",
+							Computed: true,
+							MarkdownDescription: "Free-form text describing it, for people to read. Null when " +
+								"the credential holds no role on the organization that reads its settings, " +
+								"such as `organizations-viewer`: a project-scoped credential, or " +
+								"`compute-admin` alone on the organization, gets only the id, name, status " +
+								"and link. Also null for an organization created before the platform " +
+								"required a description.",
 						},
 						"status": schema.StringAttribute{
 							Computed: true,
@@ -168,8 +175,8 @@ func (d *organizationsDataSource) Read(ctx context.Context, req datasource.ReadR
 		}
 		data.Organizations = append(data.Organizations, organizationEntryModel{
 			ID:          stringOrNull(o.Id),
-			DisplayName: stringOrNull(o.DisplayName),
-			Description: stringOrNull(o.Description),
+			DisplayName: textOrNull(o.DisplayName),
+			Description: textOrNull(o.Description),
 			Status:      enumOrNull(o.Status),
 			SelfLink:    stringOrNull(o.SelfLink),
 		})

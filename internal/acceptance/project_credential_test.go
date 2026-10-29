@@ -79,7 +79,7 @@ func TestAccProjectDataSourceWithAProjectCredential(t *testing.T) {
 					resource.TestCheckResourceAttr(projectDataAddr, "id", "demo"),
 					resource.TestCheckResourceAttr(projectDataAddr, "organization_id", accOrg),
 					resource.TestCheckResourceAttr(projectDataAddr, "display_name", "Demo"),
-					resource.TestCheckResourceAttr(projectDataAddr, "description", ""),
+					resource.TestCheckNoResourceAttr(projectDataAddr, "description"),
 					resource.TestCheckResourceAttr(projectDataAddr, "status", "active"),
 					resource.TestCheckResourceAttr(projectDataAddr, "region", "us-texas-1"),
 					resource.TestCheckResourceAttr(projectDataAddr, "created_at", "2026-01-01T00:00:00Z"),

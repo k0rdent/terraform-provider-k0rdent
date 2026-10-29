@@ -263,8 +263,8 @@ data %q "read" {
 					resource.TestCheckResourceAttr(projectDataAddr, "region", "us-texas-1"),
 					resource.TestCheckResourceAttrSet(projectDataAddr, "created_at"),
 					resource.TestCheckResourceAttrSet(projectDataAddr, "self_link"),
-					// The platform answers an unset description as "".
-					resource.TestCheckResourceAttr(projectDataAddr, "description", ""),
+					// The platform answers an unset description as "", which reads as null.
+					resource.TestCheckNoResourceAttr(projectDataAddr, "description"),
 				),
 			},
 		},
