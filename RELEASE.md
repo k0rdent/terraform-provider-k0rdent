@@ -36,6 +36,7 @@ Each needs a repository admin. Check them before a release.
 | Deploys from `main` only | `release-signing`, Deployment branches, "Selected branches and tags" | `gh api $R/environments/release-signing/deployment-branch-policies --jq '[.branch_policies[] \| {name, type}]'` | `[{"name":"main","type":"branch"}]`, and `.deployment_branch_policy` shows `custom_branch_policies: true` |
 | Fork runs get no secrets | Settings, Actions, General | `gh api $R/actions/permissions/fork-pr-workflows-private-repos` | `send_secrets_and_variables: false`, or approval required |
 | Old tag workflow disabled | Actions, "Retired tag release workflow" | `gh api $R/actions/workflows/release.yml --jq .state` | `disabled_manually` |
+| Releases are immutable | Settings, General, Releases, "Enable release immutability" | `gh api $R/immutable-releases --jq .enabled` | `true` |
 | Release tags can't change | Settings, Rules, Rulesets, the `refs/tags/v*` ruleset | `gh api $R/rulesets --jq '.[].name'`, then that ruleset's `[.rules[].type]` | `deletion`, `non_fast_forward` and `update` |
 | `main` protected | Settings, Rules | `gh api $R/rules/branches/main --jq '[.[].type]'` | A pull request with one approval, signed commits, the `CI` check, no force push |
 | Release branches protected | Settings, Rules, a ruleset on `refs/heads/release-v*` | `gh api $R/rules/branches/release-v0.1.x --jq '[.[].type]'` | The same as `main`, plus `deletion`. The dispatch refuses a branch without `pull_request` with one approval or more, `required_signatures`, `required_status_checks` including `CI`, `non_fast_forward` and `deletion` |
@@ -46,6 +47,12 @@ Each needs a repository admin. Check them before a release.
 - The fork-run setting matters only while the repository is private.
 - The tag ruleset needs `update` too, since moving a tag forward counts as a
   fast-forward.
+- Immutability locks a release's files and tag once it's published, and
+  GitHub signs an attestation of them. It applies only to releases published
+  after it was turned on (2026-10-28), so `v0.1.0-rc.1` and `v0.1.0-rc.2`
+  aren't immutable. The release job can't check the setting before it
+  publishes: reading it needs admin access, which no `GITHUB_TOKEN` has. Step
+  8 checks the published release instead.
 
 ### The signing key
 
@@ -303,6 +310,13 @@ branch, `release-vMAJOR.MINOR.x`, so `main` can take new work meanwhile.
 
    ```sh
    EXPECTED_VERSION="$VERSION" GPG_KEY_FINGERPRINT=<fingerprint> ./scripts/validate-release-artifacts.sh "release-v$VERSION"
+   ```
+
+   Then check GitHub's attestation. It exits 1 with "No attestations for
+   tag" if the release isn't immutable:
+
+   ```sh
+   gh release verify "v$VERSION" -R k0rdent/terraform-provider-k0rdent
    ```
 
 9. **Check the registries took it.** Each lists its versions:
