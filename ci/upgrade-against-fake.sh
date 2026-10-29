@@ -50,7 +50,7 @@ readonly REPO="$PWD"
 # shellcheck source=../scripts/lib/walkthrough.sh
 . "$REPO/scripts/lib/walkthrough.sh"
 
-CLIS="${CLIS:-terraform tofu}"
+CLIS="${CLIS-terraform tofu}"
 readonly CANDIDATE=0.0.0-upgrade-candidate
 readonly ACCEPTED="$REPO/ci/upgrade-accepted.json"
 # Each init downloads, so each try gets this long, and an outage fails the
@@ -406,11 +406,11 @@ run_dir() {
   if [[ -s "$dir/terraform.tfvars.new" ]]; then
     mv "$dir/terraform.tfvars.new" "$dir/terraform.tfvars"
   fi
-  # Up to 0.1.0-rc.2, full/ with own_project reads the project quota before
-  # the project exists (fixed in #58), and the fake now answers that read 404
-  # as the API does. Quota reads are data sources, so skipping them loses no
-  # state to upgrade.
-  if [[ "$name" == full-everything ]]; then
+  # 0.1.0-rc.1 and rc.2's full/ with own_project read the project quota
+  # before the project exists (fixed in #58), and the fake now answers that
+  # read 404 as the API does. Quota reads are data sources, so skipping them
+  # loses no state to upgrade.
+  if [[ "$name" == full-everything && "$PREVIOUS" =~ ^0\.1\.0-rc\.[12]$ ]]; then
     echo 'quota_checks = false' >> "$dir/terraform.tfvars"
   fi
 
@@ -555,7 +555,7 @@ main() {
   # without a change here.
   read -r -a ALL_DIRS <<< "$(walkthrough_dirs "$PREV_EXAMPLES" | tr '\n' ' ')"
   [[ "${#ALL_DIRS[@]}" -gt 0 ]] || fail "v$PREVIOUS's examples/walkthrough has no directory the fake can apply"
-  read -r -a DIRS <<< "${DIRS:-${ALL_DIRS[*]}}"
+  read -r -a DIRS <<< "${DIRS-${ALL_DIRS[*]}}"
   [[ "${#DIRS[@]}" -gt 0 ]] || fail "DIRS is empty. Leave it unset for every directory: ${ALL_DIRS[*]}"
   for d in "${DIRS[@]}"; do
     [[ " ${ALL_DIRS[*]} " == *" $d "* ]] \

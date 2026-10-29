@@ -118,13 +118,13 @@ values = {
     "allowed_cidrs": ["203.0.113.0/24", "198.51.100.0/25"],
     "webhook_url": "https://hooks.example.com/k0rdent",
 }
-out, missing, in_build = [], [], False
+out, missing, empty, in_build = [], [], [], False
 for line in open(sys.argv[1]).read().splitlines():
     m = re.match(r'^([a-z_]+)\s*=\s*(.*?)\s*(#.*)?$', line)
     if m and m.group(1) in values:
         v = values[m.group(1)]
         if v == "":
-            missing.append(m.group(1) + " (look gave no value)")
+            empty.append(m.group(1))
         line = "%s = %s" % (m.group(1), json.dumps(v))
     elif m and m.group(2) in ('""', "[]", "{}"):
         missing.append(m.group(1))
@@ -135,6 +135,8 @@ for line in open(sys.argv[1]).read().splitlines():
     elif in_build and name == "full-everything":
         line = re.sub(r"=(\s*)false\b", r"=\1true ", line)
     out.append(line)
+if empty:
+    sys.exit("walkthrough: look gave no value for %s in %s/terraform.tfvars" % (", ".join(empty), name))
 if missing:
     sys.exit("walkthrough: %s/terraform.tfvars needs %s, which walkthrough_tfvars in scripts/lib/walkthrough.sh doesn't fill in"
              % (name, ", ".join(missing)))

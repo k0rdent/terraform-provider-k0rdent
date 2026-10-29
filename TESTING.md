@@ -153,7 +153,7 @@ network.
   `show -json` of the old state, or a plan that fails. Drift is an attribute
   the new build reads back differently, such as a renamed one. Drift the
   previous release sees on its own state too is the fake's, and isn't one.
-- The directories are the previous release's, but for `nodes/`. A variable
+- The directories are the previous release's, except `nodes/`. A variable
   in a `terraform.tfvars` that `scripts/lib/walkthrough.sh` doesn't fill in
   fails the run.
 - Every resource type the previous release registers has to end up in some
