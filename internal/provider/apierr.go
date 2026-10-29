@@ -168,10 +168,39 @@ func addMintError(diags *diag.Diagnostics, summary string, err error) bool {
 			apiErrorDetail(apiErr)+"\n\n"+redactDiagnosticText(
 				"The token endpoint accepted the credential and won't issue it a token. "+
 					"The platform's answer above says why."))
+	case http.StatusTooManyRequests:
+		diags.AddError(summary+" because the provider couldn't get an access token",
+			apiErrorDetailNext(apiErr, mintThrottledAdvice(err, apiErr)))
 	default:
 		diags.AddError(summary+" because the provider couldn't get an access token", apiErrorDetail(apiErr))
 	}
 	return true
+}
+
+// mintsPerMinute is how many token requests the platform allows one
+// credential in a minute by default, refused ones included.
+const mintsPerMinute = 10
+
+// mintThrottledAdvice is the next step for a 429 on the token request, after
+// the transport's retries, with the wait it refused if it refused one. The
+// platform's per-credential limit sends Retry-After, and the gateway's limit
+// on one client address never does.
+func mintThrottledAdvice(err error, apiErr *k0rdent.APIError) string {
+	var waits string
+	var refused *refusedWaitError
+	if errors.As(err, &refused) {
+		w := refused.waits()
+		waits = strings.ToUpper(w[:1]) + w[1:] + ".\n\n"
+	}
+	if apiErr.Header.Get("Retry-After") == "" {
+		return waits + "This 429 came without a Retry-After, so it's the gateway's limit on requests from " +
+			"one client address. Every run from that address shares it. Run fewer at once from one " +
+			"address, or apply again in a minute."
+	}
+	return waits + fmt.Sprintf("The platform gives a credential a limited number of access tokens a minute, "+
+		"%d by default, and every run using the credential at the same time shares them. A plan takes "+
+		"one token, and an apply or a destroy up to two. Give each pipeline that runs at the same time "+
+		"its own credential.", mintsPerMinute)
 }
 
 func apiErrorDetail(apiErr *k0rdent.APIError) string {
@@ -182,6 +211,16 @@ func apiErrorDetail(apiErr *k0rdent.APIError) string {
 // guidanceFor when guided is set. A caller with advice of its own for this
 // operation leaves it out, so a diagnostic never gives two next steps.
 func apiErrorDetailGuided(apiErr *k0rdent.APIError, guided bool) string {
+	var next string
+	if guided {
+		next = guidanceFor(apiErr)
+	}
+	return apiErrorDetailNext(apiErr, next)
+}
+
+// apiErrorDetailNext is apiErrorDetail with next as its next step, which
+// can be empty.
+func apiErrorDetailNext(apiErr *k0rdent.APIError, next string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "The platform answered %s.", apiErr.Status)
 	if apiErr.Message != "" {
@@ -197,7 +236,7 @@ func apiErrorDetailGuided(apiErr *k0rdent.APIError, guided bool) string {
 	if advice := regionMismatchAdvice(apiErr); advice != "" {
 		fmt.Fprintf(&b, "\n\n%s", advice)
 	}
-	if next := guidanceFor(apiErr); guided && next != "" {
+	if next != "" {
 		fmt.Fprintf(&b, "\n\n%s", next)
 	}
 	if apiErr.RequestID != "" {
