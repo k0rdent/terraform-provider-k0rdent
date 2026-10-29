@@ -94,8 +94,9 @@ func TestEveryGuidanceEntryIsTested(t *testing.T) {
 	}
 }
 
-// A bare 403 on a read only an organization role can make says which role it
-// needs, and that a credential scoped to a project can't have it. The same
+// A bare 403 on a read or a project write only an organization role can make
+// says which role it needs, and that a credential scoped to a project can't
+// have it. The same
 // 403 on another operation, or with a reason, isn't given that guidance.
 func TestAForbiddenOrganizationReadSaysWhichRoleItNeeds(t *testing.T) {
 	forbidden := func(operation, reason string) *k0rdent.APIError {
@@ -118,6 +119,12 @@ func TestAForbiddenOrganizationReadSaysWhichRoleItNeeds(t *testing.T) {
 		{"getServiceAccount", []string{"iam-admin", "not iam-viewer", "scoped to a project"}},
 		{"listServiceAccounts", []string{"iam-admin", "not iam-viewer", "scoped to a project"}},
 		{"listServiceAccountCredentials", []string{"iam-admin", "not iam-viewer", "scoped to a project"}},
+		// A destroy has to delete the project too, so a create names the
+		// role a delete needs.
+		{"createProjectInOrg", []string{"Creating a project needs organizations-member or organizations-admin",
+			"Only organizations-admin can delete it", "scoped to the organization"}},
+		{"deleteProjectInOrg", []string{"Deleting a project needs organizations-admin", "not organizations-member",
+			"scoped to a project"}},
 	}
 	tested := map[string]bool{}
 	for _, tt := range tests {
