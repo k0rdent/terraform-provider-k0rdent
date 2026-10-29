@@ -40,13 +40,30 @@ Ask whoever runs the platform for:
 
 - You don't need the region, organization or project ids up front. Step 4
   lists them.
-- **Ask for a service account scoped to the organization.** It can run every
-  step, including the ones that create a project.
-- A service account scoped to a project, with `compute-admin` on it, runs
-  `look/`, `cluster/`, `nodes/` and `network/` in that project. It runs
-  `full/` with `quota_checks = false`, because reading the organization and
-  its quota needs an organizations role on the organization. It can't run
-  `cluster-own-project/` or `full/`'s `own_project`, which create a project.
+- **Ask for a service account scoped to the organization**, with the roles
+  below on it.
+
+| Step | Scoped to the organization | Scoped to a project |
+| --- | --- | --- |
+| `look/` | `compute-viewer`, `organizations-viewer` and `iam-viewer` | `compute-viewer`, with `read_organization = false` |
+| `network/` and `cluster/` | `compute-admin` | `compute-admin` |
+| `nodes/` | `compute-viewer` | `compute-viewer` |
+| `cluster-own-project/` | `compute-admin` and `organizations-admin` | Can't run it |
+| `full/` | `compute-admin` and `organizations-viewer` | `compute-admin`, with `quota_checks = false` |
+| `full/` with `own_project` | `compute-admin` and `organizations-admin` | Can't run it |
+
+- An admin role covers the viewer role of its family, so `compute-admin`,
+  `organizations-admin` and `iam-viewer` on the organization run every step.
+- `compute-admin` and `organizations-viewer` run every step that doesn't
+  create a project. Without `iam-viewer`, run `look/` with
+  `read_roles = false`.
+- A member role isn't enough to clean up. `compute-member` can't delete, so
+  every destroy fails, and `organizations-member` can create a project but
+  not delete it.
+- A service account scoped to a project can hold only the compute roles. The
+  organizations and IAM roles bind to the organization, so it can't read the
+  organization or create a project.
+- These are the built-in roles of the k0rdent API at v1.3.0-rc.4.
 - An API key also works, but prefer a service account. `setup.sh` only asks
   for a client id and secret, so with a key, export `K0RDENT_ENDPOINT`,
   `K0RDENT_API_KEY` and `TF_CLI_CONFIG_FILE` yourself.
@@ -162,10 +179,15 @@ If it fails here, it's the endpoint or the credential:
 | What you see | What it means |
 | --- | --- |
 | A 401 | Wrong client id or secret |
-| A 403 or 404 on an organization read | The credential is scoped to one project. Run `terraform apply -var read_organization=false` |
-| Another 403 | The credential can't make one of the reads. The error names it |
+| A 403 reading the organization or its quota | The credential has no `organizations-viewer` on the organization, which a credential scoped to a project can't have. Ask for it, or run `terraform apply -var read_organization=false` |
+| A 403 listing the roles | The credential has no `iam-viewer` on the organization. Ask for it, or run `terraform apply -var read_roles=false` |
+| A 403 listing instances, networks, security groups or VPCs | The credential has no `compute-viewer` on the project or its organization |
 | A 429 | Too many token requests. Wait a minute |
 | A connection error | Wrong URL, or you need the VPN |
+
+`walkthrough.sh` runs a `plan` before the apply, and passes no arguments to
+it. With the script, set the variable in your shell instead, such as
+`export TF_VAR_read_roles=false`.
 
 Note a region, a cluster type listed under it, and a project or organization.
 An empty list of cluster types means the region has nothing to build from
@@ -180,7 +202,7 @@ Pick one of the two cluster directories:
   created.
 - **[`cluster-own-project/`](../examples/walkthrough/cluster-own-project/main.tf)**
   creates a project, builds in it, and deletes it last. Needs a credential
-  scoped to the organization.
+  scoped to the organization, with `organizations-admin`.
 
 ```sh
 cd ../cluster
@@ -354,7 +376,7 @@ The `build` block in `terraform.tfvars` turns each part on or off:
 | `instance_group` | off | One bare host, with your users on it | A free host |
 | `file_store` | off | 100 GiB of shared storage the host can mount | A share type in the region |
 | `vpc_peering` | off | The cluster's VPC peered with the host's | `instance_group` |
-| `own_project` | off | A new project, deleted last | `organization`, and a credential scoped to it |
+| `own_project` | off | A new project, deleted last | `organization`, and `organizations-admin` on it |
 
 - `terraform output scorecard` shows a line for each: what it made, or the
   switch that turns it on. It also shows what the platform reports back, such
@@ -394,8 +416,10 @@ The `build` block in `terraform.tfvars` turns each part on or off:
 | 404 that reads like a missing project | Copy the region and project ids from `look` |
 | 429 | Too many token requests. Wait a minute between commands |
 | `No such project` at plan | This credential can't see that project |
-| 403 or 409 creating the project | The credential is project-scoped, or the project already exists. Change `prefix`, or use `cluster/` |
-| 403 reading the organization or quota in `full/` | The credential is project-scoped. Set `quota_checks = false` |
+| 403 creating or deleting the project | The credential has no `organizations-admin` on the organization. `organizations-member` creates a project but can't delete it. Use `cluster/` without it |
+| 409 creating the project | The project already exists. Change `prefix`, or use `cluster/` |
+| 403 reading the organization or quota in `full/` | The credential has no `organizations-viewer` on the organization, which a credential scoped to a project can't have. Ask for it, or set `quota_checks = false` |
+| 403 creating, changing or deleting a network, subnet, security group or cluster | The credential has no `compute-admin` on the project or its organization. `compute-member` can't delete, and `compute-viewer` only reads |
 | `The cluster did not become active` | The create timed out, but the cluster is still building. Don't apply again, which would replace it. Wait until it's `active`, run `terraform untaint k0rdent_kubernetes_cluster.walkthrough`, then go to step 6 |
 | `The cluster did not finish deleting`, with `timed out` | Freeing hardware can take hours. Wait until the cluster is gone from the UI, then run `terraform destroy` again |
 | `The cluster did not finish deleting`, with `failed` | Try the delete once [with curl](walkthrough-api.md#6-delete-it). If that fails too, send the platform operator the execution id from the error |

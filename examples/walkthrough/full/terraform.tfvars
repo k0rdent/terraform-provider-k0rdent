@@ -39,5 +39,5 @@ build = {
   instance_group      = false # one bare host. Needs real hardware
   file_store          = false # 100 GiB of shared storage. Needs a share type in the region
   vpc_peering         = false # the cluster's VPC to the hosts' and back. Needs instance_group
-  own_project         = false # a project of its own. Needs a credential scoped to the organization
+  own_project         = false # a project of its own. Needs organizations-admin on the organization
 }

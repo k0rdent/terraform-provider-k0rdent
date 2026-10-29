@@ -26,6 +26,14 @@ variable "read_organization" {
   description = "Read the organization's roles, quotas and webhooks."
 }
 
+# Listing roles needs iam-viewer on the organization, which nothing else in the
+# walkthrough needs. Without it, run `terraform apply -var read_roles=false`.
+variable "read_roles" {
+  type        = bool
+  default     = true
+  description = "List the organization's roles. Needs iam-viewer or iam-admin on it."
+}
+
 data "k0rdent_regions" "all" {}
 data "k0rdent_organizations" "all" {}
 data "k0rdent_projects" "all" {}
@@ -83,7 +91,7 @@ data "k0rdent_organization" "this" {
 }
 
 data "k0rdent_roles" "all" {
-  count           = local.in_org
+  count           = var.read_roles ? local.in_org : 0
   organization_id = local.organization.id
 }
 
@@ -347,10 +355,11 @@ output "share_types" {
   value = { for r in local.regions : r => local.ten["share_types/${r}"] }
 }
 
+# roles is null when read_roles is off, so it doesn't read as an empty list.
 output "in_organization" {
   value = local.in_org == 0 ? null : {
     id    = local.organization.id
-    roles = local.ten.roles
+    roles = var.read_roles ? local.ten.roles : null
     quota = local.quota.organization
   }
 }

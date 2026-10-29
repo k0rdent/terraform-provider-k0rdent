@@ -104,7 +104,9 @@ export TF_VAR_capabilities='{vpc_and_subnets=true,security_groups=true,kubeconfi
 Then pick one of these two, not both.
 
 **A new project.** The run creates one, builds in it, and deletes it last.
-The credential has to be scoped to the organization.
+The credential has to be scoped to the organization, with
+`organizations-admin` on it: `organizations-member` can create a project but
+not delete it.
 
 ```sh
 export TF_VAR_organization_id=org-demo

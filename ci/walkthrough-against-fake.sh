@@ -223,6 +223,17 @@ print(region, types[0], filtered,
 PY
   read -r region cluster_type filtered_type organization project < "$WORK/picked"
   good "picked $cluster_type in $region, organization $organization, project $project, and $filtered_type for full/"
+
+  # Listing roles needs iam-viewer, so read_roles = false has to skip the read
+  # itself, not only hide it from the output.
+  output_is look in_organization 'v["roles"]'
+  tf look apply -auto-approve -input=false -var read_roles=false || fail "the look apply with read_roles=false failed"
+  output_is look in_organization 'v["id"] and v["roles"] is None'
+  tf look state list || fail "look: no state list"
+  if grep -q '^data.k0rdent_roles' "$dir/last.log"; then
+    fail "look read the roles with read_roles=false"
+  fi
+  good "look lists the roles, and skips them with read_roles=false"
 }
 
 # cluster/ and cluster-own-project/
