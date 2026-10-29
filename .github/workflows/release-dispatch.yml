@@ -317,6 +317,8 @@ jobs:
       # older minor published after a newer one, would become what
       # /releases/latest and the repository page point people to. Only a
       # final version at least as new as every published final one is Latest.
+      # prerelease=false whatever the tag's .goreleaser.yaml says, since
+      # registry.terraform.io ignores a release marked pre-release.
       - name: Publish the GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -332,4 +334,4 @@ jobs:
             newest="$(printf '%s\n' "$published" "$RELEASE_TAG" | grep -v -e '-' | sort -V | tail -n 1)"
             if [[ "$newest" == "$RELEASE_TAG" ]]; then latest=true; fi
           fi
-          gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" -F draft=false -f make_latest="$latest" --jq .html_url
+          gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" -F draft=false -F prerelease=false -f make_latest="$latest" --jq .html_url
