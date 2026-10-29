@@ -90,10 +90,11 @@ gh secret set TERRAFORM_PROVIDER_GPG_PRIVATE_KEY --env release-signing < private
 - **Only the newest final version is Latest.** GitHub marks a release Latest
   by date unless told otherwise, and `/releases/latest` and the repository
   page point people to it. The release job publishes a candidate, and a
-  patch to an older minor, with `make_latest=false`. Before the first final
-  version, GitHub can still show a candidate as Latest: `v0.1.0-rc.1` is. The
-  version's `-rc.N`, not any GitHub setting, is what Terraform and OpenTofu
-  read.
+  patch to an older minor, with `make_latest=false`. Any later update to a
+  release that doesn't pass `make_latest` makes it Latest, which is how
+  editing `v0.1.0-rc.2`'s notes made it Latest. Before the first final
+  version, a candidate can still be Latest. The version's `-rc.N`, not any
+  GitHub setting, is what Terraform and OpenTofu read.
 - **A tag push starts nothing.** A release is built only when someone
   dispatches the release workflow from `main` and a second maintainer
   approves it.
@@ -325,6 +326,12 @@ branch, `release-vMAJOR.MINOR.x`, so `main` can take new work meanwhile.
    gh api "$R/hooks/$HOOK/deliveries/<id>" --jq '.response.payload'
    ```
 
+   registry.opentofu.org can take up to four hours more. Its own repository
+   picks up the release within minutes, but its CDN keeps serving the old
+   versions list for up to `max-age=14400`. `curl -sI` on the versions URL
+   skips that cache: a larger `content-length` there means the version is in
+   and only the cache is behind.
+
 10. **Check it installs.** Never replace a published file. Check
     `terraform init` and `tofu init` install it on a clean machine, a
     candidate with an exact `version`. See
@@ -341,8 +348,13 @@ branch, `release-vMAJOR.MINOR.x`, so `main` can take new work meanwhile.
       previous release, or that nothing does
     - known issues, each with its workaround
 
+    Pass `--latest` with the choice the job made, or the edit makes this
+    release Latest:
+
     ```sh
-    gh release edit "v$VERSION" --notes-file notes.md
+    LATEST=false
+    if [[ "$(gh api $R/releases/latest --jq .tag_name)" == "v$VERSION" ]]; then LATEST=true; fi
+    gh release edit "v$VERSION" --notes-file notes.md --latest="$LATEST"
     ```
 
 The release is built with the Go version in `.go-release-version`. To change
