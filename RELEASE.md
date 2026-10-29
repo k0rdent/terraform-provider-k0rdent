@@ -326,9 +326,10 @@ branch, `release-vMAJOR.MINOR.x`, so `main` can take new work meanwhile.
    gh api "$R/hooks/$HOOK/deliveries/<id>" --jq '.response.payload'
    ```
 
-   registry.opentofu.org can take up to four hours more. Its own repository
-   picks up the release within minutes, but its CDN keeps serving the old
-   versions list for up to `max-age=14400`. `curl -sI` on the versions URL
+   registry.opentofu.org lags behind its own repository. For `v0.1.0-rc.2`
+   the repository had the version 1 minute after the publish and the API
+   listed it 21 minutes after, because its CDN caches the versions list
+   (`max-age=14400`, so up to four hours). `curl -sI` on the versions URL
    skips that cache: a larger `content-length` there means the version is in
    and only the cache is behind.
 
