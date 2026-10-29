@@ -74,11 +74,11 @@ func (d *projectsDataSource) Schema(_ context.Context, _ datasource.SchemaReques
 						},
 						"display_name": schema.StringAttribute{
 							Computed:            true,
-							MarkdownDescription: "Human-readable name, if the project has one.",
+							MarkdownDescription: "Human-readable name. Null when the project has none.",
 						},
 						"description": schema.StringAttribute{
 							Computed:            true,
-							MarkdownDescription: "Free-form text describing it, for people to read, when one was set.",
+							MarkdownDescription: "Free-form text describing it, for people to read. Null when the project has none.",
 						},
 						"status": schema.StringAttribute{
 							Computed:            true,
@@ -156,8 +156,8 @@ func (d *projectsDataSource) Read(ctx context.Context, req datasource.ReadReques
 		}
 		entry := projectEntryModel{
 			ID:             stringOrNull(p.Id),
-			DisplayName:    stringOrNull(p.DisplayName),
-			Description:    stringOrNull(p.Description),
+			DisplayName:    textOrNull(p.DisplayName),
+			Description:    textOrNull(p.Description),
 			Status:         types.StringNull(),
 			OrganizationID: stringOrNull(p.OrganizationId),
 			Region:         stringOrNull(p.Region),

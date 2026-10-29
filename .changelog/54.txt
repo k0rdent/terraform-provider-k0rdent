@@ -1,0 +1,15 @@
+```release-note:bug
+data-source/k0rdent_organizations: Fix `description` reading as `""` for an organization the credential can't read the settings of, such as with `compute-admin` alone or a project-scoped credential. It's now null, as are `description` and `display_name` for an organization created before the platform required them
+```
+
+```release-note:bug
+data-source/k0rdent_organization: Fix `description` and `display_name` reading as `""` for an organization created before the platform required them. They're now null
+```
+
+```release-note:bug
+data-source/k0rdent_projects: Fix `description` and `display_name` reading as `""` for a project created without them. They're now null
+```
+
+```release-note:bug
+data-source/k0rdent_project: Fix `description` and `display_name` reading as `""` for a project created without them. They're now null
+```
