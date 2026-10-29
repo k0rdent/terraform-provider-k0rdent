@@ -1,0 +1,11 @@
+```release-note:enhancement
+resource/k0rdent_webhook_subscription: Plan a replacement, with a warning, when a refresh reads `is_active` as `false`. The platform turns a subscription off after sustained delivery failure and never turns it back on, so the plan used to report no changes for a subscription nothing is delivered to. The replacement gets a new id. Without `secret_wo` the plan only warns
+```
+
+```release-note:enhancement
+data-source/k0rdent_webhook_subscription: Describe what `is_active` = `false` means
+```
+
+```release-note:enhancement
+data-source/k0rdent_webhook_subscriptions: Describe what `is_active` = `false` means
+```

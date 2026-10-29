@@ -116,7 +116,9 @@ type runSecrets struct {
 	// script that started the fake can tell it's still its own, and stop it.
 	// It also opens /_harness/store, the read past the gateway that lets a
 	// destroy check see an object whose project is gone, which every API
-	// route answers with the gateway's 403.
+	// route answers with the gateway's 403. And it opens
+	// /_harness/webhooks/{id}/disable, which turns a subscription off as the
+	// platform does after failed deliveries.
 	OwnerToken string
 }
 

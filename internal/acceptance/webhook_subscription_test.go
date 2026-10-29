@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -643,6 +644,148 @@ func deleteWebhookOutOfBand(t *testing.T) error {
 		}
 	}
 	return nil
+}
+
+// disableWebhookOutOfBand turns a subscription off the way the platform's
+// delivery worker does after sustained failure. No API route does that, so
+// it's the fake's harness route, behind the owner token.
+func disableWebhookOutOfBand(id string) error {
+	req, err := http.NewRequest(http.MethodPost, endpoint+"/_harness/webhooks/"+id+"/disable", nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+fakeOwnerToken)
+	resp, err := harnessHTTP.Do(req)
+	if err != nil {
+		return err
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		return fmt.Errorf("turning %s off answered %s", id, resp.Status)
+	}
+	return nil
+}
+
+// A subscription the platform turned off is never delivered to again, and the
+// contract's only way back is a delete and a create. So the plan after the
+// refresh that reads it off replaces it, and the plan before, while it's on,
+// is empty. The apply leaves a new subscription, on, and nothing to plan.
+func TestAccWebhookSubscriptionTurnedOffIsReplaced(t *testing.T) {
+	config := webhookConfig(webhookURL("turned-off"), nil, 1, "")
+	vars := webhookVars(webhookSecret("turned-off"))
+	var id string
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: protoV6,
+		CheckDestroy:             checkWebhookGone,
+		Steps: []resource.TestStep{
+			{
+				Config:          config,
+				ConfigVariables: vars,
+				Check: func(s *terraform.State) error {
+					id = s.RootModule().Resources[webhookAddr].Primary.ID
+					return nil
+				},
+			},
+			{Config: config, ConfigVariables: vars, PlanOnly: true},
+			{
+				PreConfig: func() {
+					if err := disableWebhookOutOfBand(id); err != nil {
+						t.Fatal(err)
+					}
+				},
+				Config:          config,
+				ConfigVariables: vars,
+				ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{
+					plancheck.ExpectResourceAction(webhookAddr, plancheck.ResourceActionDestroyBeforeCreate),
+				}},
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrWith(webhookAddr, "id", differentFrom(&id)),
+					resource.TestCheckResourceAttr(webhookAddr, "is_active", "true"),
+					resource.TestCheckResourceAttr(webhookAddr, "secret_version", "1"),
+				),
+			},
+			{Config: config, ConfigVariables: vars, PlanOnly: true},
+		},
+	})
+}
+
+// The same through the CLI, which is the only place the plan's warning shows:
+// a test step can't see warnings. The plan says the platform turned the
+// subscription off and that the replacement gets a new id, the apply replaces
+// it, and the plan after is empty. A subscription whose configuration has no
+// secret can't be replaced into a working one, so its plan only warns.
+func TestAccWebhookSubscriptionTurnedOffPlanWarns(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the CLI sequence runs on unix")
+	}
+	c := newCLIRun(t)
+	addr := webhookType + ".test"
+	url := webhookURL("turned-off-cli")
+	stateID := func() string {
+		t.Helper()
+		shown, ok := c.run("state", "show", addr)
+		m := regexp.MustCompile(`(?m)^\s+id\s+=\s+"([0-9a-f-]{36})"`).FindStringSubmatch(shown)
+		if !ok || m == nil {
+			t.Fatalf("no id in state:\n%s", shown)
+		}
+		return m[1]
+	}
+
+	c.write(webhookConfigFixedSecret(url, nil, "turned-off-cli"))
+	if out, ok := c.run("apply", "-auto-approve"); !ok {
+		t.Fatalf("the create failed:\n%s", out)
+	}
+	t.Cleanup(func() {
+		if gone, destroyed := c.run("destroy", "-auto-approve"); !destroyed {
+			t.Errorf("cleanup destroy failed:\n%s", gone)
+		}
+	})
+	out, _ := c.run("plan", "-detailed-exitcode")
+	mustSay(t, "the plan while it's on", out, "No changes.")
+
+	first := stateID()
+	if err := disableWebhookOutOfBand(first); err != nil {
+		t.Fatal(err)
+	}
+	out, ok := c.run("plan")
+	if !ok {
+		t.Fatalf("the plan after the platform turned it off failed:\n%s", out)
+	}
+	mustSay(t, "the plan after it's off", out, "must be replaced",
+		"is_active = false -> (known after apply) # forces replacement",
+		"1 to add, 0 to change, 1 to destroy",
+		"Warning: The platform turned this subscription off, so it's replaced",
+		"Subscription "+first+" gets no more events", "deliveries to your `url` kept failing",
+		"can only be deleted and created again", "the subscription gets a new id",
+		"Fix the server that receives the events first, or the new subscription gets turned off too")
+	out, ok = c.run("apply", "-auto-approve")
+	if !ok {
+		t.Fatalf("the replacing apply failed:\n%s", out)
+	}
+	mustSay(t, "the replacing apply", out, "1 added, 0 changed, 1 destroyed")
+	if shown, _ := c.run("state", "show", addr); !regexp.MustCompile(`is_active\s+=\s+true`).MatchString(shown) {
+		t.Errorf("the new subscription isn't on in state:\n%s", shown)
+	}
+	second := stateID()
+	if second == first {
+		t.Errorf("the replacement kept id %s", first)
+	}
+	out, _ = c.run("plan", "-detailed-exitcode")
+	mustSay(t, "the plan after the replacement", out, "No changes.")
+
+	// Letting go of the secret sends nothing. Turned off then, there's nothing
+	// to replace it with, so the plan stays empty and says what's missing.
+	c.write(webhookConfig(url, nil, 0, ""))
+	if out, ok = c.run("apply", "-auto-approve"); !ok {
+		t.Fatalf("letting go of the secret failed:\n%s", out)
+	}
+	if err := disableWebhookOutOfBand(second); err != nil {
+		t.Fatal(err)
+	}
+	out, _ = c.run("plan", "-detailed-exitcode")
+	mustSay(t, "the plan with no secret", out, "No changes.", "Warning: The platform turned this subscription off",
+		"deliveries to your `url` kept failing", "this configuration sets no `secret_wo`, so nothing is planned")
 }
 
 var uuidPattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
