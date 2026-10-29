@@ -406,6 +406,13 @@ run_dir() {
   if [[ -s "$dir/terraform.tfvars.new" ]]; then
     mv "$dir/terraform.tfvars.new" "$dir/terraform.tfvars"
   fi
+  # Up to 0.1.0-rc.2, full/ with own_project reads the project quota before
+  # the project exists (fixed in #58), and the fake now answers that read 404
+  # as the API does. Quota reads are data sources, so skipping them loses no
+  # state to upgrade.
+  if [[ "$name" == full-everything ]]; then
+    echo 'quota_checks = false' >> "$dir/terraform.tfvars"
+  fi
 
   init_previous "$dir"
   tf "$dir" "$WORK/registry.tfrc" apply -auto-approve -input=false -no-color || fail "$CLI $name: apply with $PREVIOUS failed"
