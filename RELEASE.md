@@ -214,7 +214,8 @@ branch, `release-vMAJOR.MINOR.x`, so `main` can take new work meanwhile.
    gives, against a deployment you can create test objects on or the fake from
    `make demo-up`:
 
-   1. Pin the previous release: add `version = "0.1.0-rc.1"` under
+   1. Pin the previous release: add `version = "<PREVIOUS>"`, such as
+      `version = "0.1.0-rc.1"`, under
       `source = "k0rdent/k0rdent"` in `main.tf`. Create its objects:
 
       ```sh
@@ -317,8 +318,8 @@ branch, `release-vMAJOR.MINOR.x`, so `main` can take new work meanwhile.
    the registry answered with "Ignored draft release event" means the release
    was marked pre-release or still a draft. Reading deliveries needs the
    `admin:repo_hook` scope (`gh auth refresh -s admin:repo_hook`). Delivery ids
-   are above 2^53, past what a float64 holds exactly, so the second command
-   prints the list with Python, not `--jq`:
+   are above 2^53, where a float64 no longer holds every integer, so as a
+   precaution the second command prints the list with Python, not `--jq`:
 
    ```sh
    HOOK="$(gh api $R/hooks --jq '.[] | select(.config.url | startswith("https://registry.terraform.io/")) | .id')"
@@ -330,8 +331,8 @@ branch, `release-vMAJOR.MINOR.x`, so `main` can take new work meanwhile.
    the repository had the version 1 minute after the publish and the API
    listed it 21 minutes after, because its CDN caches the versions list
    (`max-age=14400`, so up to four hours). `curl -sI` on the versions URL
-   skips that cache: a larger `content-length` there means the version is in
-   and only the cache is behind.
+   skips that cache: a `content-length` there larger than a plain GET's means
+   the version is in and only the cache is behind.
 
 10. **Check it installs.** Never replace a published file. Check
     `terraform init` and `tofu init` install it on a clean machine, a
@@ -349,12 +350,17 @@ branch, `release-vMAJOR.MINOR.x`, so `main` can take new work meanwhile.
       previous release, or that nothing does
     - known issues, each with its workaround
 
-    Pass `--latest` with the choice the job made, or the edit makes this
-    release Latest:
+    Pass `--latest`, or the edit makes this release Latest. Work it out as
+    the job does: true only for a final version at least as new as every
+    published final one.
 
     ```sh
     LATEST=false
-    if [[ "$(gh api $R/releases/latest --jq .tag_name)" == "v$VERSION" ]]; then LATEST=true; fi
+    if [[ "$VERSION" != *-* ]]; then
+      PUBLISHED="$(gh api --paginate "$R/releases?per_page=100" --jq '.[] | select((.draft or .prerelease) | not) | .tag_name')"
+      NEWEST="$(printf '%s\n' "$PUBLISHED" "v$VERSION" | grep -v -e '-' | sort -V | tail -n 1)"
+      if [[ "$NEWEST" == "v$VERSION" ]]; then LATEST=true; fi
+    fi
     gh release edit "v$VERSION" --notes-file notes.md --latest="$LATEST"
     ```
 
