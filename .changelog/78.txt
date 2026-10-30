@@ -1,0 +1,3 @@
+```release-note:bug
+resource/k0rdent_kubernetes_cluster: Fix `terraform destroy` being refused at plan after its refresh removed a cluster from state because another cluster has taken its name. The create guard warns instead for that cluster within the same command. `terraform apply` is still refused when it plans again, and sends nothing
+```
