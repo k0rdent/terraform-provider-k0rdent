@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"sync"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -108,10 +109,25 @@ func refreshedOwnObject(ctx context.Context, held privateState, resp *resource.R
 	if was, same := heldObject(ctx, held, uid); !same {
 		addAnotherObject(&resp.Diagnostics, kind, id, was, uid)
 		resp.State.RemoveResource(ctx)
+		droppedFor.Store(id, uid)
 		return false
 	}
 	resp.Diagnostics.Append(recordUID(ctx, resp.Private, uid)...)
 	return true
+}
+
+// droppedFor is each id a refresh in this provider process removed from
+// state because another object held it, mapped to that object's uid. The
+// cluster's create guard warns rather than refuses for that pair, since
+// `terraform destroy` runs the same plan first. Terraform runs a resource's
+// refresh and plan in one process.
+var droppedFor sync.Map
+
+// wasDropped reports whether a refresh in this process removed id from state
+// because the object with uid held it.
+func wasDropped(id, uid string) bool {
+	held, ok := droppedFor.Load(id)
+	return ok && held == uid
 }
 
 // uidOf is a uid the platform answered, or "" for none.

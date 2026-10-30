@@ -63,6 +63,22 @@ type existing struct {
 	busyNote string
 }
 
+// warnDropped warns instead of refusing for an object this command's
+// refresh just removed from state, because it holds the id. Refused, the
+// plan would stop `terraform destroy`, which runs it first. An apply plans
+// again in a new process, where the guard refuses, so nothing is sent.
+func (e existing) warnDropped(diags *diag.Diagnostics) {
+	diags.AddAttributeWarning(path.Root("id"),
+		fmt.Sprintf("Another %s has the name %q", e.kind, e.id),
+		redactDiagnosticText(fmt.Sprintf("The refresh removed this state's %s %q, because the platform's %s "+
+			"with that name is another one, now `%s`. The configuration still has the name, so this plan "+
+			"creates it. `terraform destroy` finishes. `terraform apply` is refused when it plans again, and "+
+			"sends nothing. To manage the %s that's there, import it with `terraform import <address> %s`, "+
+			"replacing <address> with this resource's address, such as %s.example. Otherwise choose another "+
+			"`id`, or remove the resource from the configuration.",
+			e.kind, e.id, e.kind, e.state, e.kind, scopedImportID(e.target)(e.id), e.resourceName)))
+}
+
 // refuse fails the plan for an object the platform already holds under the
 // configured id that carries no create token from this provider, and says how
 // to keep it, replace it, or leave it alone. No token doesn't mean no
@@ -179,6 +195,10 @@ func (r *clusterResource) refuseExisting(ctx context.Context, plan tfsdk.Plan, d
 	}
 	if token {
 		found.warnReplacing(diags)
+		return
+	}
+	if got.JSON200.Uid != nil && wasDropped(id, got.JSON200.Uid.String()) {
+		found.warnDropped(diags)
 		return
 	}
 	found.refuse(diags)
