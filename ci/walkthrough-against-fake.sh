@@ -22,6 +22,8 @@ cd "$(dirname "$0")/.."
 readonly REPO="$PWD"
 # shellcheck source=../scripts/lib/common.sh
 . "$REPO/scripts/lib/common.sh"
+# shellcheck source=../scripts/lib/walkthrough.sh
+. "$REPO/scripts/lib/walkthrough.sh"
 
 readonly EXAMPLES="$REPO/examples/walkthrough"
 readonly DOC="$REPO/docs/walkthrough-hardware.md"
@@ -31,13 +33,6 @@ fake_pid=""
 
 # Set by run_quick_path to the run folder walkthrough.sh setup made.
 quick_run=""
-
-# Set by run_look from what look/ reports, read by the directories after it.
-region=""
-cluster_type=""
-filtered_type=""
-organization=""
-project=""
 
 # Helpers
 
@@ -208,49 +203,32 @@ run_look() {
   fi
 
   tf look output -json
-  python3 - "$dir/last.log" > "$WORK/picked" <<'PY'
-import json, sys
-out = json.load(open(sys.argv[1]))
-region = next(r for r, types in sorted(out["cluster_types"]["value"].items()) if types)
-projects = out["projects"]["value"]
-project = next((p for p in projects if (", region %s " % region) in p), projects[0])
-types = out["cluster_types"]["value"][region]
-# full/ puts a security group on its cluster. The fake's cpu-general is the
-# one type whose nodes have no interface to put it on, as on a landscape.
-filtered = next((t for t in types if t != "cpu-general"), types[0])
-print(region, types[0], filtered,
-      out["organizations"]["value"][0].split(" ")[0], project.split(" ")[0])
-PY
-  read -r region cluster_type filtered_type organization project < "$WORK/picked"
+  walkthrough_pick "$dir/last.log"
   good "picked $cluster_type in $region, organization $organization, project $project, and $filtered_type for full/"
 }
 
 # cluster/ and cluster-own-project/
 
-# A runner has no SSH key of its own, so make a throwaway one for the nodes.
-make_ssh_key() {
-  ssh-keygen -q -t ed25519 -N '' -C walkthrough@ci -f "$WORK/id_ed25519"
+# fill_tfvars <name> fills in the copy's terraform.tfvars as a reader does.
+fill_tfvars() {
+  walkthrough_tfvars "$1" "$EXAMPLES" ci > "$WORK/$1/terraform.tfvars.new" || fail "$1: no terraform.tfvars"
+  mv "$WORK/$1/terraform.tfvars.new" "$WORK/$1/terraform.tfvars"
 }
 
-# run_cluster <directory> <the variable naming where it builds> <its value> [more tfvars]
+# run_cluster <directory>
 run_cluster() {
-  local name="$1" where_var="$2" where="$3" more="${4:-}"
+  local name="$1"
   local dir="$WORK/$name"
 
   step "$name"
   cp -R "$EXAMPLES/$name" "$dir"
   refuses_until_filled "$name"
 
-  cat > "$dir/terraform.tfvars" <<EOF
-prefix       = "ci"
-region       = "$region"
-$where_var = "$where"
-cluster_type = "$cluster_type"
-$more
-EOF
+  fill_tfvars "$name"
   tf "$name" plan -input=false || fail "$name: the plan failed"
   tf "$name" apply -auto-approve -input=false || fail "$name: the apply failed"
-  if [[ -n "$more" ]]; then
+  # Only cluster/ takes an SSH key.
+  if [[ "$name" == cluster ]]; then
     tf "$name" show
     if ! grep -q 'username *= "ops"' "$dir/last.log"; then
       fail "$name: the cluster has no ssh_access in state"
@@ -302,12 +280,7 @@ run_network() {
   cp -R "$EXAMPLES/network" "$dir"
   refuses_until_filled network
 
-  cat > "$dir/terraform.tfvars" <<EOF
-prefix       = "ci"
-region       = "$region"
-project      = "$project"
-allowed_cidr = "203.0.113.0/24"
-EOF
+  fill_tfvars network
   tf network plan -input=false || fail "network: the plan failed"
   if ! grep -q '3 to add, 0 to change, 0 to destroy' "$dir/last.log"; then
     cat "$dir/last.log" >&2
@@ -355,12 +328,8 @@ run_quick_path() {
   ref="$(cd "$REPO" && GIT_AUTHOR_NAME=ci GIT_AUTHOR_EMAIL=ci@localhost \
     GIT_COMMITTER_NAME=ci GIT_COMMITTER_EMAIL=ci@localhost git stash create)"
   mkdir -p "$WORK/config/k0rdent-walkthrough"
-  cat > "$WORK/config/k0rdent-walkthrough/network.tfvars" <<EOF
-prefix       = "quick"
-region       = "$region"
-project      = "$project"
-allowed_cidr = "203.0.113.0/24"
-EOF
+  walkthrough_tfvars network "$EXAMPLES" quick > "$WORK/config/k0rdent-walkthrough/network.tfvars" \
+    || fail "walkthrough.sh: no network.tfvars"
   XDG_CONFIG_HOME="$WORK/config" WALKTHROUGH_RUNS="$WORK/runs" \
     "$EXAMPLES/walkthrough.sh" setup "${ref:-HEAD}" > "$log" 2>&1 || quick_fails "setup failed"
   quick_run="$(echo "$WORK/runs/"*)"
@@ -402,33 +371,17 @@ EOF
 
 # full/
 
-# full/'s webhook signs with a secret from the shell, never from a file.
-make_webhook_secret() {
-  TF_VAR_webhook_secret="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
-  export TF_VAR_webhook_secret
-}
-
-# run_full <name> <the build block> <a Python expression on the scorecard, v>
+# run_full <name> <a Python expression on the scorecard, v>. full-everything
+# is full/ with every switch in its build block on.
 run_full() {
-  local name="$1" build="$2" scorecard="$3"
+  local name="$1" scorecard="$2"
   local dir="$WORK/$name"
 
   step "$name"
   cp -R "$EXAMPLES/full" "$dir"
   refuses_until_filled "$name"
 
-  cat > "$dir/terraform.tfvars" <<EOF
-prefix              = "ci"
-region              = "$region"
-project             = "$project"
-organization        = "$organization"
-cluster_type        = "$filtered_type"
-ssh_public_key_file = "$WORK/id_ed25519.pub"
-allowed_cidrs       = ["203.0.113.0/24", "198.51.100.0/25"]
-webhook_url         = "https://hooks.example.com/k0rdent"
-
-$build
-EOF
+  fill_tfvars "$name"
   tf "$name" plan -input=false || fail "$name: the plan failed"
 
   # A first plan that warns teaches people to skim past warnings. The
@@ -478,21 +431,12 @@ EOF
 
 # As shipped: the switches terraform.tfvars ships with.
 run_full_as_shipped() {
-  run_full full "$(sed -n '/^build = {/,/^}/p' "$EXAMPLES/full/terraform.tfvars")" \
+  run_full full \
     'v["webhook"].startswith("made ") and v["instance group"].startswith("off.")'
 }
 
 run_full_everything() {
-  run_full full-everything 'build = {
-  network             = true
-  security_group      = true
-  vpc_security_groups = true
-  webhook             = true
-  instance_group      = true
-  file_store          = true
-  vpc_peering         = true
-  own_project         = true
-}' 'not any(s.startswith("off.") for s in v.values()) and v["instance group"].endswith("1 of 1 hosts ready") and v["file store"].endswith(", settled") and v["vpc peering"].endswith("the cluster'"'"'s side active")'
+  run_full full-everything 'not any(s.startswith("off.") for s in v.values()) and v["instance group"].endswith("1 of 1 hosts ready") and v["file store"].endswith(", settled") and v["vpc peering"].endswith("the cluster'"'"'s side active")'
 }
 
 main() {
@@ -507,13 +451,13 @@ main() {
   start_fake
   run_setup
   run_look
-  make_ssh_key
-  run_cluster cluster project "$project" "ssh_public_key_file = \"$WORK/id_ed25519.pub\""
-  run_cluster cluster-own-project organization "$organization"
+  # full/'s webhook signs with a secret from the shell, never from a file.
+  walkthrough_secrets "$WORK"
+  run_cluster cluster
+  run_cluster cluster-own-project
   run_nodes
   run_network
   run_quick_path
-  make_webhook_secret
   run_full_as_shipped
   run_full_everything
 

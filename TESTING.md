@@ -45,6 +45,7 @@ Fastest first:
 | `make testacc` | Each resource's lifecycle works through real Terraform |
 | `make plan-quality` | Refresh-only plans find nothing, and plans stay within the unknown budget |
 | `make walkthrough-test` | The hardware walkthrough's directories work as the page says |
+| `make upgrade-test` | State from the previous release plans empty under this tree, but for accepted changes |
 | `make bench` | Plan, refresh and apply stay within the performance budget at 10 to 1,000 resources |
 
 CI also runs `make docs-check`, `make doc-commands`, `make client-check`,
@@ -135,6 +136,42 @@ pull request.
 Follow [docs/walkthrough-hardware.md](docs/walkthrough-hardware.md) and
 [docs/walkthrough-api.md](docs/walkthrough-api.md) against the fake. A page
 that no longer matches its directories or commands fails here.
+
+### `make upgrade-test`
+
+Applies each walkthrough directory, as the previous release shipped it, with
+the previous release from the public registry. Then it switches to this
+tree's build and plans again. Runs under `terraform` and `tofu`, and needs the
+network.
+
+- The previous release is the newest one both registries serve, leaving out
+  a tag on `HEAD`. For a pull request into, or a push to, a `release-vX.Y.x`
+  branch it's the newest up to X.Y. Locally, a branch with commits from a
+  release branch counts as that branch. A tag either registry doesn't serve
+  yet is skipped, with a warning on the run.
+- A finding is a planned change, a changed output, drift, a failing
+  `show -json` of the old state, or a plan that fails. Drift is an attribute
+  the new build reads back differently, such as a renamed one. Drift the
+  previous release sees on its own state too is the fake's, and isn't one.
+- The directories are the previous release's, except `nodes/`. A variable
+  in a `terraform.tfvars` that `scripts/lib/walkthrough.sh` doesn't fill in
+  fails the run.
+- Every resource type the previous release registers has to end up in some
+  directory's state.
+- `DIRS="look cluster"` runs only those directories, and skips the coverage
+  check. `UPGRADE_KEEP=1` keeps the run directory.
+
+**Accepting a change**, when it's meant and the upgrade notes say so: add it
+to `changes` in `ci/upgrade-accepted.json`, with the release it's from, the
+directory, the change as the run prints it and a reason. The release has to
+be the one the check upgrades from by default: an entry for any other fails
+the run, as does one nothing matches. So once a new release ships, its
+entries go. A resource type no directory can create goes under
+`not_covered`, with a reason.
+
+`PREVIOUS=0.1.0-rc.1` upgrades from another release. The file only holds
+changes from the default, so such a run reports every change from that
+release, accepted or not. Read it, don't gate on it.
 
 ### `make bench`
 

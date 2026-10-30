@@ -111,6 +111,39 @@ provider_installation {
 EOF
 }
 
+# build_provider_mirror <run dir> <version> builds the provider into a
+# filesystem mirror under <run dir>/mirror, for both registry hosts, and writes
+# <run dir>/terraform.rc to install it from there. Unlike dev_overrides, init
+# installs it and the lock file records it, as with a published release, so
+# a configuration can pin it and switch to it with init -upgrade.
+build_provider_mirror() {
+  local run_dir="$1" version="$2" arch host dir
+  arch="$(go env GOOS)_$(go env GOARCH)"
+
+  mkdir -p "$run_dir/mirror-build"
+  (cd "$REPO" && go build -ldflags "-X main.version=$version" \
+    -o "$run_dir/mirror-build/terraform-provider-${PROVIDER_NAME}_v$version" .) \
+    || die "could not build the provider"
+  for host in registry.terraform.io registry.opentofu.org; do
+    dir="$run_dir/mirror/$host/$NAMESPACE/$PROVIDER_NAME/$version/$arch"
+    mkdir -p "$dir"
+    cp "$run_dir/mirror-build/terraform-provider-${PROVIDER_NAME}_v$version" "$dir/"
+  done
+  good "built terraform-provider-$PROVIDER_NAME $version into a mirror"
+
+  cat > "$run_dir/terraform.rc" <<EOF
+provider_installation {
+  filesystem_mirror {
+    path    = "$run_dir/mirror"
+    include = ["registry.terraform.io/$NAMESPACE/$PROVIDER_NAME", "registry.opentofu.org/$NAMESPACE/$PROVIDER_NAME"]
+  }
+  direct {
+    exclude = ["registry.terraform.io/$NAMESPACE/$PROVIDER_NAME", "registry.opentofu.org/$NAMESPACE/$PROVIDER_NAME"]
+  }
+}
+EOF
+}
+
 # start_loopback_server <binary> <flag> <secrets file> <url file> <log file>
 # starts fakeapi or statebackend from internal/tools and waits for it to print
 # its URL. It sets SERVER_PID and SERVER_URL, and fails if the server didn't

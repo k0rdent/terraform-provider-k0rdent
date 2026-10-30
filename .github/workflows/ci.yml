@@ -288,6 +288,35 @@ jobs:
       - name: refresh-only plans find nothing, and plans stay within the unknown budget
         run: make plan-quality
 
+  # State the previous release wrote must plan empty under this tree. The
+  # previous release is installed from the public registries, under the CLI
+  # versions the nightly pins.
+  upgrade:
+    name: upgrade from the previous release
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          # The previous release is worked out from the tags, and its
+          # walkthrough is read from its tag.
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e  # v4.0.1
+        with:
+          terraform_version: "1.16.3"
+          terraform_wrapper: false
+      - uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4  # v2.0.2
+        with:
+          tofu_version: "1.12.6"
+          tofu_wrapper: false
+      - name: state from the previous release plans empty under this tree
+        run: make upgrade-test
+
   release-validation:
     name: release artifact validation
     runs-on: ubuntu-latest
@@ -422,6 +451,7 @@ jobs:
       - docs
       - against-fake
       - plan-quality
+      - upgrade
       - release-validation
       - release-checkout
     steps:

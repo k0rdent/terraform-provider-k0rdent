@@ -29,6 +29,8 @@ REPO="$PWD"
 
 # shellcheck source=../scripts/lib/common.sh
 . "$REPO/scripts/lib/common.sh"
+# shellcheck source=../scripts/lib/walkthrough.sh
+. "$REPO/scripts/lib/walkthrough.sh"
 
 read_names
 find_terraform
@@ -72,23 +74,10 @@ cp -R "$EXAMPLES/look" "$DIR"
 tf apply -auto-approve -input=false || fail "the look apply failed"
 
 tf output -json
-python3 - "$DIR/last.log" > "$WORK/picked" <<'PY'
-import json, sys
-out = json.load(open(sys.argv[1]))
-region = next(r for r, types in sorted(out["cluster_types"]["value"].items()) if types)
-projects = out["projects"]["value"]
-project = next((p for p in projects if (", region %s " % region) in p), projects[0])
-types = out["cluster_types"]["value"][region]
-filtered = next((t for t in types if t != "cpu-general"), types[0])
-print(region, types[0], filtered,
-      out["organizations"]["value"][0].split(" ")[0], project.split(" ")[0])
-PY
-read -r region cluster_type filtered_type organization project < "$WORK/picked"
+walkthrough_pick "$DIR/last.log"
 good "picked $cluster_type in $region, organization $organization, project $project"
 
-ssh-keygen -q -t ed25519 -N '' -C plan-quality@ci -f "$WORK/id_ed25519"
-TF_VAR_webhook_secret="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
-export TF_VAR_webhook_secret
+walkthrough_secrets "$WORK"
 
 # plan_saved <scenario>: plan to a file and keep its JSON for the budget.
 plan_saved() {
@@ -133,15 +122,18 @@ sys.exit(1 if found else 0)
   good "refresh-only plan $when: no drift, no output moved"
 }
 
-# run_dir <scenario> <directory> <terraform.tfvars> [<address whose display_name changes>
+# run_dir <scenario> [<address whose display_name changes>
 #         [<the change plan's summary line, when it isn't one update in place>]]
+# The scenario is a walkthrough directory, or full-everything.
 run_dir() {
-  local scenario="$1" example="$2" tfvars="$3" display_name_address="${4:-}" change_summary="${5:-}"
+  local scenario="$1" example="$1" display_name_address="${2:-}" change_summary="${3:-}"
+  [ "$scenario" = full-everything ] && example=full
 
   DIR="$WORK/$scenario"
   step "$scenario"
   cp -R "$EXAMPLES/$example" "$DIR"
-  printf '%s\n' "$tfvars" > "$DIR/terraform.tfvars"
+  walkthrough_tfvars "$scenario" "$EXAMPLES" ci > "$DIR/terraform.tfvars.new" || fail "$scenario: no terraform.tfvars"
+  mv "$DIR/terraform.tfvars.new" "$DIR/terraform.tfvars"
   plan_saved "$scenario"
   tf apply -auto-approve -input=false plan.bin || fail "$scenario: the apply failed"
   refresh_clean "$scenario" "after the apply"
@@ -166,7 +158,7 @@ PY
   fi
 
   # full/ only: one security group rule edited, an egress rule's port.
-  if [ "$2" = full ]; then
+  if [ "$example" = full ]; then
     python3 - "$DIR/main.tf" <<'PY' || fail "$scenario: no egress rule to edit"
 import sys
 path = sys.argv[1]
@@ -187,49 +179,16 @@ PY
   good "planned, applied, refreshed and destroyed"
 }
 
-run_dir cluster cluster "prefix = \"ci\"
-region = \"$region\"
-project = \"$project\"
-cluster_type = \"$cluster_type\"
-ssh_public_key_file = \"$WORK/id_ed25519.pub\""
-
-run_dir cluster-own-project cluster-own-project "prefix = \"ci\"
-region = \"$region\"
-organization = \"$organization\"
-cluster_type = \"$cluster_type\""
-
-run_dir network network "prefix = \"ci\"
-region = \"$region\"
-project = \"$project\"
-allowed_cidr = \"203.0.113.0/24\""
-
-full_vars="prefix = \"ci\"
-region = \"$region\"
-project = \"$project\"
-organization = \"$organization\"
-cluster_type = \"$filtered_type\"
-ssh_public_key_file = \"$WORK/id_ed25519.pub\"
-allowed_cidrs = [\"203.0.113.0/24\", \"198.51.100.0/25\"]
-webhook_url = \"https://hooks.example.com/k0rdent\""
-
-run_dir full full "$full_vars
-$(sed -n '/^build = {/,/^}/p' "$EXAMPLES/full/terraform.tfvars")" k0rdent_kubernetes_cluster.this
+run_dir cluster
+run_dir cluster-own-project
+run_dir network
+run_dir full k0rdent_kubernetes_cluster.this
 
 # Renaming the cluster here replaces no VPC peering. The cluster's pending
 # change defers every data source that depends on it to the apply, so
 # remote_vpc takes the hosts' VPC id from the instance group, which stays
 # known, rather than a self_link from data.k0rdent_vpc.owned.
-run_dir full-everything full "$full_vars
-build = {
-  network             = true
-  security_group      = true
-  vpc_security_groups = true
-  webhook             = true
-  instance_group      = true
-  file_store          = true
-  vpc_peering         = true
-  own_project         = true
-}" k0rdent_kubernetes_cluster.this
+run_dir full-everything k0rdent_kubernetes_cluster.this
 
 step "Unknowns against ci/unknown-budget.json"
 
