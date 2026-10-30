@@ -86,6 +86,7 @@ func keepDestroySettings(ctx context.Context, plan clusterModel, st *tfsdk.State
 		return
 	}
 	diags.Append(st.SetAttribute(ctx, path.Root(onDestroyBusyAttribute), plan.OnDestroyBusy)...)
+	diags.Append(st.SetAttribute(ctx, path.Root(onFailedAttribute), plan.OnFailed)...)
 	diags.Append(st.SetAttribute(ctx, path.Root("timeouts"), plan.Timeouts)...)
 }
 

@@ -129,10 +129,14 @@ func TestAccClusterUpgradeThatBringsAPoolMovesTheNodeTotal(t *testing.T) {
 }
 
 // v2 to v5 passes v4 and then fails. State records v4, the version the cluster
-// reached, so a configuration pinned to v4 plans clean, and the cluster is
-// still there to destroy.
+// reached. A configuration pinned to v4 plans the wait for the `failed`
+// cluster, and with `on_failed = "keep"` plans clean, and the cluster is still
+// there to destroy.
 func TestAccClusterUpgradeStopsAtAFailedStep(t *testing.T) {
 	const name = "acc-upgrade-fails"
+	kept := func(version int) string {
+		return strings.Replace(inferenceConfig(name, version, 2), "  }\n}\n", "  }\n  on_failed = \"keep\"\n}\n", 1)
+	}
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: protoV6,
 		CheckDestroy:             checkGone(clusterType, clusterPath),
@@ -152,12 +156,21 @@ func TestAccClusterUpgradeStopsAtAFailedStep(t *testing.T) {
 				}, ".*"), " ", `\s+`)),
 			},
 			{
-				Config:   inferenceConfig(name, 4, 2),
-				PlanOnly: true,
+				Config:             inferenceConfig(name, 4, 2),
+				PlanOnly:           true,
+				ExpectNonEmptyPlan: true,
+				ConfigPlanChecks: resource.ConfigPlanChecks{PostApplyPostRefresh: []plancheck.PlanCheck{
+					plancheck.ExpectResourceAction(clusterAddr, plancheck.ResourceActionUpdate),
+				}},
+			},
+			{
+				Config:             kept(4),
+				PlanOnly:           true,
+				ExpectNonEmptyPlan: true, // records on_failed
 			},
 			{
 				// The cluster data source reads the same failure afterwards.
-				Config: inferenceConfig(name, 4, 2) + fmt.Sprintf(`
+				Config: kept(4) + fmt.Sprintf(`
 data %q "read" {
   id = %q
 }

@@ -61,6 +61,9 @@ type clusterModel struct {
 	// OnDestroyBusy is what a destroy does with a cluster mid-operation. It is
 	// never sent to the platform: see cluster_destroy_busy.go.
 	OnDestroyBusy types.String `tfsdk:"on_destroy_busy"`
+	// OnFailed is what a plan does with a cluster read `failed`. It is never
+	// sent to the platform: see cluster_failed.go.
+	OnFailed types.String `tfsdk:"on_failed"`
 
 	ID                  types.String   `tfsdk:"id"`
 	Region              types.String   `tfsdk:"region"`
@@ -85,6 +88,10 @@ type clusterModel struct {
 	// uid is the platform's uid for the cluster read, which own_object.go
 	// keeps in private state. Not an attribute.
 	uid string
+	// failed is what the platform said about a cluster read `failed`, which
+	// cluster_failed.go keeps in private state. Not an attribute: it moves
+	// without a write.
+	failed failedRead
 }
 
 func (m clusterModel) metadata() tenantMetadata {
@@ -295,7 +302,9 @@ func (r *clusterResource) Schema(ctx context.Context, _ resource.SchemaRequest, 
 			"state": schema.StringAttribute{
 				Computed: true,
 				MarkdownDescription: "Lifecycle state as last read. This resource waits for a settled state, " +
-					"so it is normally `active`.",
+					"so it is normally `active`. A plan on a cluster the platform reports `failed` warns with " +
+					"the platform's reason, and plans an update that waits for the cluster to come back " +
+					"unless `on_failed` is `keep`.",
 				PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 			"self_link": schema.StringAttribute{
@@ -335,6 +344,7 @@ func (r *clusterResource) Schema(ctx context.Context, _ resource.SchemaRequest, 
 				NestedObject: sshUserNestedObject(),
 			},
 			onDestroyBusyAttribute: onDestroyBusySchemaAttribute(),
+			onFailedAttribute:      onFailedSchemaAttribute(),
 		},
 	}
 }
@@ -445,6 +455,13 @@ func (r *clusterResource) ModifyPlan(ctx context.Context, req resource.ModifyPla
 	// A create an earlier apply stopped waiting for plans an update that
 	// waits for it, though nothing in the configuration moved.
 	planResume(ctx, req, resp)
+	// So does a cluster the last read found `failed`, unless it's kept or a
+	// cancel left it so (cluster_failed.go).
+	window := DefaultProvisionalFailureWindow
+	if r.meta != nil {
+		window = r.meta.Wait.ProvisionalFailureWindow
+	}
+	planFailed(ctx, req, resp, window)
 	// resp.Plan, not req.Plan: the scope has just been resolved into it.
 	if resp.Plan.Raw.Equal(req.State.Raw) {
 		return // no-op
@@ -630,6 +647,7 @@ func (r *clusterResource) Read(ctx context.Context, req resource.ReadRequest, re
 		if reported {
 			resp.Diagnostics.Append(recordSSHAccess(ctx, resp.Private)...)
 		}
+		resp.Diagnostics.Append(recordFailed(ctx, resp.Private, state.State.ValueString(), state.failed)...)
 	}
 	if !found {
 		// Gone. Dropping it from state is the provider's call, not the
@@ -659,11 +677,16 @@ func (r *clusterResource) Update(ctx context.Context, req resource.UpdateRequest
 		kind: "cluster", resourceName: ResourceName(clusterResourceSuffix),
 		timeout: plan.Timeouts.Create, fallback: clusterStates.timeout(r.meta.Wait),
 		wait: func(ctx context.Context) error {
-			return r.waitForSettled(ctx, target, id, "the cluster to finish creating")
+			what := "the cluster to finish creating"
+			if state.State.ValueString() == failedState {
+				what = "the cluster to come back from `failed`"
+			}
+			return r.waitForSettled(ctx, target, id, what)
 		},
 		read: func(ctx context.Context) (clusterModel, bool, diag.Diagnostics) {
 			return r.read(ctx, target, id, plan)
 		},
+		waitsOutFailed: plan.OnFailed.ValueString() != failedKept,
 	}).resume(ctx, req, resp) {
 		return
 	}
@@ -1036,6 +1059,7 @@ func (r *clusterResource) read(ctx context.Context, target clusterTarget, id str
 	} else {
 		out.KubernetesVersion = r.meta.boundKubernetesVersion(ctx, target.region, resolved, &diags)
 	}
+	out.failed.Reason, out.failed.Detail = reasonString(got.JSON200.StateReason), clusterStates.detail(*got.JSON200)
 	out.VPC = types.StringNull()
 	if got.JSON200.Uid != nil {
 		uid := got.JSON200.Uid.String()
@@ -1061,6 +1085,7 @@ func clusterStateFrom(ctx context.Context, c k0rdent.Cluster, prior clusterModel
 
 	out := clusterModel{
 		OnDestroyBusy: prior.OnDestroyBusy,
+		OnFailed:      prior.OnFailed,
 
 		ID: types.StringValue(c.Id),
 		// From prior state: the response does not echo them.

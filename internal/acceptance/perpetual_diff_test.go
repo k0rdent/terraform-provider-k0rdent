@@ -184,8 +184,6 @@ type refreshOnly struct {
 // fails, so a churned value that leaks into state can't join this list
 // unnoticed.
 var refreshMayMove = map[string]string{
-	clusterType + ".state": "the fake takes a settled cluster to failed and back, as the watchdog can. " +
-		"A live state change is drift worth seeing",
 	fileStoreType + ".etag": "the fake moves the revision on every read, standing in for a server-driven " +
 		"transition. A settled store keeps its etag, and the provider needs the latest one for If-Match",
 }

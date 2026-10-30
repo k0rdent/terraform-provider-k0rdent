@@ -182,6 +182,10 @@ var stateHistories = map[string]stateHistory{
 				"reads null there. Nothing records what such a cluster was created with, so a value added " +
 				"later is recorded in place, without a replacement, and the plan warns that the nodes keep " +
 				"their users.",
+			// What a plan does with a cluster the platform reports `failed`.
+			// A state the last release wrote reads null there, which means
+			// `wait`.
+			addedLater: map[string]string{"on_failed": `"string"`},
 		}},
 		formerNames: []formerName{preReleaseName(clusterResourceSuffix)},
 	},

@@ -52,14 +52,13 @@ const creatingState = "creating"
 // one would plan to replace itself over a value that can't change.
 var keptThroughResume = map[string]bool{"id": true, "region": true, "project": true}
 
-// stillCreating reports whether prior state's `state` says the platform is
-// still building the object.
-func stillCreating(ctx context.Context, state tfsdk.State) bool {
+// priorState is prior state's `state`, or "" when it holds none.
+func priorState(ctx context.Context, state tfsdk.State) string {
 	var prior types.String
 	if state.Raw.IsNull() || state.GetAttribute(ctx, path.Root("state"), &prior).HasError() {
-		return false
+		return ""
 	}
-	return prior.ValueString() == creatingState
+	return prior.ValueString()
 }
 
 // planResume plans an update for an object the last read found still
@@ -73,7 +72,13 @@ func stillCreating(ctx context.Context, state tfsdk.State) bool {
 // in as the object settles. The rest keep what the last read found, and the
 // update keeps them: the next refresh brings any that moved up to date.
 func planResume(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
-	if req.State.Raw.IsNull() || resp.Plan.Raw.IsNull() || !stillCreating(ctx, req.State) {
+	planWaitOn(ctx, req, resp, creatingState)
+}
+
+// planWaitOn plans the update planResume describes for an object the last
+// read found in waitOn.
+func planWaitOn(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse, waitOn string) {
+	if req.State.Raw.IsNull() || resp.Plan.Raw.IsNull() || priorState(ctx, req.State) != waitOn {
 		return
 	}
 	var plan, config map[string]tftypes.Value
@@ -104,8 +109,10 @@ func planResume(ctx context.Context, req resource.ModifyPlanRequest, resp *resou
 // create takes a change to with it: raising `timeouts.create` is what the
 // advice to a create that stopped waiting suggests. `on_destroy_busy` isn't
 // one: an apply that changes it alone mustn't wait, since it's how a destroy
-// is told to stop waiting (cluster_destroy_busy.go).
-var providerOnly = map[string]bool{"timeouts": true, allowReplaceAttribute: true}
+// is told to stop waiting (cluster_destroy_busy.go). `on_failed` is: setting
+// it back to `wait` on a `failed` cluster asks the apply to wait for it
+// (cluster_failed.go).
+var providerOnly = map[string]bool{"timeouts": true, allowReplaceAttribute: true, onFailedAttribute: true}
 
 // onlyResume reports whether an update's plan changes nothing the platform
 // holds beyond what planResume marked unknown.
@@ -160,6 +167,10 @@ type resumable[M any] struct {
 	wait func(ctx context.Context) error
 	// read reads the settled object, reconciled against the plan.
 	read func(ctx context.Context) (M, bool, diag.Diagnostics)
+	// waitsOutFailed is a kind whose `failed` the platform can still take
+	// back, and whose configuration doesn't keep it, so an object last read
+	// `failed` is waited on too (cluster_failed.go).
+	waitsOutFailed bool
 }
 
 // resume runs first in an Update. When the last read found the object still
@@ -169,8 +180,14 @@ type resumable[M any] struct {
 //
 // An update's error doesn't taint, so a wait that stops again here is an
 // error, and the object stays in state, still `creating`, for the next apply.
+//
+// For a kind that waitsOutFailed, an object last read `failed` is waited on
+// the same way, and one that's still `failed` after the provisional window is
+// an error that says how to replace it.
 func (p resumable[M]) resume(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) bool {
-	if !stillCreating(ctx, req.State) || !onlyResume(req.Plan.Raw, req.State.Raw) {
+	was := priorState(ctx, req.State)
+	failed := p.waitsOutFailed && was == failedState && lastFailed(ctx, req.Private).waits()
+	if (was != creatingState && !failed) || !onlyResume(req.Plan.Raw, req.State.Raw) {
 		return false
 	}
 	ctx, cancel := withTimeout(ctx, p.timeout, p.fallback, &resp.Diagnostics)
@@ -179,9 +196,14 @@ func (p resumable[M]) resume(ctx context.Context, req resource.UpdateRequest, re
 		return true
 	}
 	if err := p.wait(ctx); err != nil {
-		if stillRunning(err) {
+		switch {
+		case stillRunning(err):
 			addCreateStillRunning(&resp.Diagnostics, p.kind, p.resourceName, err, false)
-		} else {
+		case failed:
+			addAdvisedError(&resp.Diagnostics, fmt.Sprintf("The %s is still failed", p.kind),
+				fmt.Sprintf("The platform reported this %s `failed`, and it didn't return to `active` while "+
+					"the apply waited. Nothing was deleted. %s", p.kind, replaceAdvice(p.kind, p.resourceName)), err)
+		default:
 			addAdvisedError(&resp.Diagnostics, fmt.Sprintf("The %s's create failed", p.kind),
 				fmt.Sprintf("An earlier apply stopped waiting for this %s's create, and the platform has since "+
 					"reported it failed. Nothing was deleted. To create it again, run "+
