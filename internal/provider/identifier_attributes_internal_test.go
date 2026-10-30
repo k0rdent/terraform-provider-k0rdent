@@ -74,6 +74,7 @@ var notAnIdentifier = map[string]string{
 	"event_types":            "event type names, held to the catalog's pattern, sent in a request body",
 	"secret_wo":              "a signing secret, write-only, sent in a request body",
 	"on_destroy_busy":        "a value from a fixed list, sent nowhere: it decides what a destroy does",
+	"on_failed":              "a value from a fixed list, sent nowhere: it decides what a plan does with a failed cluster",
 }
 
 // identifierSurface is one registered schema, walked through its methods so

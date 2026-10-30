@@ -102,8 +102,8 @@ Applies every resource, then plans, refreshes and plans twice more. Any
 planned change fails the run.
 
 - A refresh also has to leave state unchanged. `refreshMayMove` in
-  `internal/acceptance/perpetual_diff_test.go` names the two attributes
-  allowed to move.
+  `internal/acceptance/perpetual_diff_test.go` names the attribute allowed
+  to move.
 - Objects with `fake-churns` in their id change on every read, in the fields
   the platform moves. `internal/tools/fakeapi/churn.go` has the rules.
 - `TestPerpetualDiffCoversEveryResource` fails when a resource has no case.

@@ -148,6 +148,7 @@ var inputClasses = map[attrRef]inputClass{
 	{"resource", "", "allow_replace"}: free,
 	// The configuration's own choice of what a destroy does with a cluster mid-operation.
 	{"resource", "kubernetes_cluster", "on_destroy_busy"}: free,
+	{"resource", "kubernetes_cluster", "on_failed"}:       free,
 
 	// Resources. An id of something the tenant made itself is free: the
 	// configuration that made it, or the person who did, already has it.
