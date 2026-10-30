@@ -415,8 +415,18 @@ func (s *state) getTenantQuota(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, quotaView(""))
 }
 
+// getProjectQuota answers 404 for a project the organization doesn't have, as
+// API v1.3.0-rc.4 does, so a read before the project's create fails here too.
 func (s *state) getProjectQuota(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, quotaView(r.PathValue("id")))
+	id := r.PathValue("id")
+	s.mu.Lock()
+	p, found := projectKind.rows(s.global())[at{id: id}]
+	s.mu.Unlock()
+	if !found || p.org != r.PathValue("orgId") {
+		projectKind.notFound(w, id)
+		return
+	}
+	writeJSON(w, http.StatusOK, quotaView(id))
 }
 
 // normalizePorts stores "80-80" as "80": the contract says the two are
