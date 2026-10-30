@@ -166,7 +166,7 @@ locals {
 # that turns it on and what that needs.
 output "scorecard" {
   value = {
-    "project"                       = var.build.own_project ? "made ${local.project}" : "used ${local.project}. build.own_project makes one, with a credential scoped to the organization"
+    "project"                       = var.build.own_project ? "made ${local.project}" : "used ${local.project}. build.own_project makes one, with organizations-admin on the organization"
     "quota"                         = !var.quota_checks ? "not read. quota_checks is false" : length(local.over_quota) == 0 ? "within every limit" : "over on ${join(", ", local.over_quota)}"
     "cluster"                       = "made ${k0rdent_kubernetes_cluster.this.id}, ${k0rdent_kubernetes_cluster.this.state}, with ${join(", ", keys(var.ssh_users))} on every node"
     "control plane"                 = coalesce(data.k0rdent_kubernetes_cluster.this.control_plane_state, "not reported")

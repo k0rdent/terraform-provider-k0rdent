@@ -1,6 +1,7 @@
 # One Kubernetes cluster, in a project of its own. Terraform creates the
 # project, and deletes it last on destroy. This needs a credential scoped to
-# the organization. Set the values in terraform.tfvars, next to this file.
+# the organization, with compute-admin and organizations-admin on it. Set the
+# values in terraform.tfvars, next to this file.
 
 variable "prefix" {
   type        = string
