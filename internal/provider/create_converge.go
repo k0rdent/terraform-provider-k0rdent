@@ -202,7 +202,9 @@ func createTokenOfFreeform(tags *map[string]any) string {
 type createAnswer struct {
 	// id is the id a 2xx answer named, empty when it named none. It is
 	// compared with the id sent, never adopted in its place.
-	id   string
+	id string
+	// uid is the uid a 2xx answer named, empty when it named none.
+	uid  string
 	resp *http.Response
 	body []byte
 	err  error
@@ -212,6 +214,8 @@ type createAnswer struct {
 type createLookup struct {
 	found bool
 	token string
+	// uid is the uid of what was found, empty when it named none.
+	uid string
 	// resp, body and err describe a read that failed. The service's 404 is not
 	// a failure: it is found == false with all three empty.
 	resp *http.Response
@@ -234,6 +238,14 @@ const (
 	// rather than creating again, and fail.
 	createUnconfirmed
 )
+
+// createdAs is the object a converging create ended on.
+type createdAs struct {
+	id string
+	// uid is the platform's uid for it, empty when no answer or read named
+	// one.
+	uid string
+}
 
 // convergingCreate is one Create's create request, with what it needs to
 // recover from a lost answer or a 409.
@@ -261,8 +273,8 @@ type convergingCreate struct {
 
 // run sends the create until it has an answer it can act on.
 //
-//   - 2xx: done, with the id the create sent. An answer naming another id is
-//     refused.
+//   - 2xx: done, with the id the create sent and the uid the answer named. An
+//     answer naming another id is refused.
 //   - No answer at all: read the id back. Found and provably this call's:
 //     done. Found and not provable: refused. Not found: send again, up to
 //     createAttempts. The read failing too: unconfirmed, for a generated id.
@@ -273,13 +285,15 @@ type convergingCreate struct {
 //     exists.
 //   - 504 naming an id in its metadata: the service persisted that resource
 //     for this request and timed out starting its workflow. Done, with that id
-//     when it is the one sent, and refused when it isn't.
+//     when it is the one sent, and refused when it isn't. Its uid is read back.
 //   - Any other 502 or 504: the request may have been carried out behind the
 //     gateway. Read the id back. Found and provably this call's: done. Not
 //     found: the error is reported. The read failing: unconfirmed, for a
 //     generated id.
 //   - Anything else: reported as the platform answered it.
-func (c convergingCreate) run(ctx context.Context) (createOutcome, string, diag.Diagnostics) {
+//
+// A resource found by reading it back is done with the uid that read named.
+func (c convergingCreate) run(ctx context.Context) (createOutcome, createdAs, diag.Diagnostics) {
 	var diags diag.Diagnostics
 	lost := 0
 	for {
@@ -290,9 +304,9 @@ func (c convergingCreate) run(ctx context.Context) (createOutcome, string, diag.
 			// one that names another is refused rather than believed.
 			if a.id != "" && a.id != c.key.id {
 				c.addNamedAnother(&diags, statusOf(a.resp), a.id)
-				return createFailed, "", diags
+				return createFailed, createdAs{}, diags
 			}
-			return createDone, c.key.id, diags
+			return createDone, createdAs{id: c.key.id, uid: a.uid}, diags
 		}
 
 		switch status := statusOf(a.resp); {
@@ -312,7 +326,7 @@ func (c convergingCreate) run(ctx context.Context) (createOutcome, string, diag.
 			lost++
 			if lost >= createAttempts {
 				addAPIError(&diags, c.what, nil, nil, a.err)
-				return createFailed, "", diags
+				return createFailed, createdAs{}, diags
 			}
 			tflog.Info(ctx, "the create's answer was lost and the id reads as absent, so sending it again",
 				map[string]any{"id": c.key.id, "attempt": lost + 1, "error": redactDiagnosticText(a.err.Error())})
@@ -332,7 +346,7 @@ func (c convergingCreate) run(ctx context.Context) (createOutcome, string, diag.
 				}
 				if waitErr != nil {
 					c.busy.report(&diags, c.what, a.resp, a.body, waitErr)
-					return createFailed, "", diags
+					return createFailed, createdAs{}, diags
 				}
 			}
 			if l.found {
@@ -342,13 +356,13 @@ func (c convergingCreate) run(ctx context.Context) (createOutcome, string, diag.
 			if l.failed() {
 				addLookupError(&diags, c.kind, c.key.id, l)
 			}
-			return createFailed, "", diags
+			return createFailed, createdAs{}, diags
 
 		case status == http.StatusBadGateway || status == http.StatusGatewayTimeout:
 			if named := c.namedOnTimeout(a); named != "" {
 				if named != c.key.id {
 					c.addNamedAnother(&diags, status, named)
-					return createFailed, "", diags
+					return createFailed, createdAs{}, diags
 				}
 				// The service's own answer to this request: it persisted the
 				// resource and timed out starting its workflow. That is proof
@@ -358,7 +372,13 @@ func (c convergingCreate) run(ctx context.Context) (createOutcome, string, diag.
 					fmt.Sprintf("The platform answered %d and named %s %q as created, so this apply "+
 						"waits for it to settle rather than sending the create again.", status, c.kind, named),
 				)
-				return createDone, named, diags
+				// A 504 carries no uid, so it's read back now rather than on
+				// the first read after the wait, which may come too late.
+				made := createdAs{id: named}
+				if l := c.lookup(ctx, named); l.found {
+					made.uid = l.uid
+				}
+				return createDone, made, diags
 			}
 			l := c.lookup(ctx, c.key.id)
 			if l.found {
@@ -369,11 +389,11 @@ func (c convergingCreate) run(ctx context.Context) (createOutcome, string, diag.
 				addLookupError(&diags, c.kind, c.key.id, l)
 				return c.unconfirmed(diags)
 			}
-			return createFailed, "", diags
+			return createFailed, createdAs{}, diags
 
 		default:
 			addAPIError(&diags, c.what, a.resp, a.body, nil)
-			return createFailed, "", diags
+			return createFailed, createdAs{}, diags
 		}
 	}
 }
@@ -382,11 +402,11 @@ func (c convergingCreate) run(ctx context.Context) (createOutcome, string, diag.
 // returned to be recorded: it was made in this call, so whatever it names is
 // this call's. A configured id is not, since it may name something this state
 // has never managed.
-func (c convergingCreate) unconfirmed(diags diag.Diagnostics) (createOutcome, string, diag.Diagnostics) {
+func (c convergingCreate) unconfirmed(diags diag.Diagnostics) (createOutcome, createdAs, diag.Diagnostics) {
 	if !c.key.generated {
-		return createFailed, "", diags
+		return createFailed, createdAs{}, diags
 	}
-	return createUnconfirmed, c.key.id, diags
+	return createUnconfirmed, createdAs{id: c.key.id}, diags
 }
 
 // namedOnTimeout is the id a 504 from the service names, if any. Only a 504
@@ -424,18 +444,18 @@ func (c convergingCreate) addNamedAnother(diags *diag.Diagnostics, status int, n
 // claim decides whether a resource found under id is this call's. why says
 // what the create did, as in "the create %s", and a is its answer, quoted on a
 // refusal.
-func (c convergingCreate) claim(diags *diag.Diagnostics, id string, l createLookup, why string, a createAnswer) (createOutcome, string, diag.Diagnostics) {
+func (c convergingCreate) claim(diags *diag.Diagnostics, id string, l createLookup, why string, a createAnswer) (createOutcome, createdAs, diag.Diagnostics) {
 	proof := c.proof(id, l)
 	if proof == "" {
 		c.addNotOurs(diags, id, why, a)
-		return createFailed, "", *diags
+		return createFailed, createdAs{}, *diags
 	}
 	diags.AddWarning(
 		fmt.Sprintf("The %s was created, though the create did not say so", c.kind),
 		fmt.Sprintf("The create for %s %q %s. Reading it back found it, and %s, so this apply "+
 			"carries on with it rather than creating another.", c.kind, id, why, proof),
 	)
-	return createDone, id, *diags
+	return createDone, createdAs{id: id, uid: l.uid}, *diags
 }
 
 // proof says how a resource found under id is shown to be this call's, or ""
@@ -559,15 +579,16 @@ func statusOf(resp *http.Response) int {
 }
 
 // lookupFrom turns a generated GET that answered into a createLookup. ok says
-// the body decoded, and token is read from it only then.
-func lookupFrom(resp *http.Response, body []byte, ok bool, token func() string) createLookup {
+// the body decoded, and the token and the uid are read from it only then.
+func lookupFrom(resp *http.Response, body []byte, ok bool, found func() (token, uid string)) createLookup {
 	switch {
 	case isNotFound(resp, body):
 		return createLookup{}
 	case !ok:
 		return createLookup{resp: resp, body: body}
 	default:
-		return createLookup{found: true, token: token()}
+		token, uid := found()
+		return createLookup{found: true, token: token, uid: uid}
 	}
 }
 
@@ -605,8 +626,10 @@ func nestedScopedImportID(target clusterTarget, parent string) func(string) stri
 // settle, and read it back.
 //
 // The plan goes to state under the id before the wait, with the scope and any
-// parent it lives under. If the wait or the read back fails, the resource
-// exists on the platform and that row is what keeps it from being orphaned:
+// parent it lives under, and so does the uid the create's answer or read
+// named, so the row stays bound to this object if the wait fails. If the wait
+// or the read back fails, the resource exists on the platform and that row is
+// what keeps it from being orphaned:
 // Terraform keeps it tainted, and a later apply can finish it or destroy it.
 // Nothing is ever deleted on a failed wait. The row holds the plan, not the id
 // alone, for the reason recordUnconfirmed gives: with node_pool null, the
@@ -635,23 +658,25 @@ type createFinish[M any] struct {
 	read func(ctx context.Context, id string) (state M, found bool, diags diag.Diagnostics)
 }
 
-// run runs create and finishes it, writing state as it goes. It returns the
-// read back state, already set, and true once the read back found the
-// resource, so a kind can add what it says about a new one. A failed create
-// writes nothing. An unconfirmed one writes the plan under its id, as
+// run runs create and finishes it, writing state and private as it goes. It
+// returns the read back state, already set, and true once the read back found
+// the resource, so a kind can add what it says about a new one. A failed
+// create writes nothing. An unconfirmed one writes the plan under its id, as
 // recordUnconfirmed says, and stops there. So does one whose wait fails.
-func (f createFinish[M]) run(ctx context.Context, create convergingCreate, plan tfsdk.Plan, state *tfsdk.State, diags *diag.Diagnostics) (M, bool) {
+func (f createFinish[M]) run(ctx context.Context, create convergingCreate, plan tfsdk.Plan, state *tfsdk.State, private privateWriter, diags *diag.Diagnostics) (M, bool) {
 	var none M
-	outcome, id, createDiags := create.run(ctx)
+	outcome, made, createDiags := create.run(ctx)
 	diags.Append(createDiags...)
 	if outcome == createFailed {
 		return none, false
 	}
+	id := made.id
 	diags.Append(recordUnconfirmed(ctx, plan, state, id)...)
 	if f.parentAttr != "" {
 		diags.Append(state.SetAttribute(ctx, path.Root(f.parentAttr), f.parentID)...)
 	}
 	setCreatedScope(ctx, f.target, state, diags)
+	diags.Append(recordUID(ctx, private, made.uid)...)
 	if outcome == createUnconfirmed {
 		return none, false
 	}

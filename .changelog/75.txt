@@ -1,0 +1,31 @@
+```release-note:bug
+resource/k0rdent_file_store: Fix a create whose wait timed out, was interrupted or failed leaving no `uid` in state for it, so the next refresh took whatever object it found under the name. After the object was deleted outside Terraform and another made with the same name, `terraform untaint` then `terraform destroy` deleted the other one. The create now records the `uid` from its answer, or from the read that claims the object, before it waits
+```
+
+```release-note:bug
+resource/k0rdent_instance_group: Fix a create whose wait timed out, was interrupted or failed leaving no `uid` in state for it, so the next refresh took whatever object it found under the name. After the object was deleted outside Terraform and another made with the same name, `terraform untaint` then `terraform destroy` deleted the other one. The create now records the `uid` from its answer, or from the read that claims the object, before it waits
+```
+
+```release-note:bug
+resource/k0rdent_kubernetes_cluster: Fix a create whose wait timed out, was interrupted or failed leaving no `uid` in state for it, so the next refresh took whatever object it found under the name. After the object was deleted outside Terraform and another made with the same name, `terraform untaint` then `terraform destroy` deleted the other one. The create now records the `uid` from its answer, or from the read that claims the object, before it waits
+```
+
+```release-note:bug
+resource/k0rdent_network: Fix a create whose wait timed out, was interrupted or failed leaving no `uid` in state for it, so the next refresh took whatever object it found under the name. After the object was deleted outside Terraform and another made with the same name, `terraform untaint` then `terraform destroy` deleted the other one. The create now records the `uid` from its answer, or from the read that claims the object, before it waits
+```
+
+```release-note:bug
+resource/k0rdent_security_group: Fix a create whose wait timed out, was interrupted or failed leaving no `uid` in state for it, so the next refresh took whatever object it found under the name. After the object was deleted outside Terraform and another made with the same name, `terraform untaint` then `terraform destroy` deleted the other one. The create now records the `uid` from its answer, or from the read that claims the object, before it waits
+```
+
+```release-note:bug
+resource/k0rdent_subnet: Fix a create whose wait timed out, was interrupted or failed leaving no `uid` in state for it, so the next refresh took whatever object it found under the name. After the object was deleted outside Terraform and another made with the same name, `terraform untaint` then `terraform destroy` deleted the other one. The create now records the `uid` from its answer, or from the read that claims the object, before it waits
+```
+
+```release-note:bug
+resource/k0rdent_vpc_peering: Fix a create whose wait timed out, was interrupted or failed leaving no `uid` in state for it, so the next refresh took whatever object it found under the name. After the object was deleted outside Terraform and another made with the same name, `terraform untaint` then `terraform destroy` deleted the other one. The create now records the `uid` from its answer, or from the read that claims the object, before it waits
+```
+
+```release-note:bug
+resource/k0rdent_kubernetes_cluster: Fix a destroy cancelling or deleting a cluster created with the same name while the destroy ran, after the one in state was deleted outside Terraform. Every read before a cancel or a delete now checks the cluster's `uid`, and when another cluster has the name, the destroy sends nothing, removes it from state and warns with both `uid`s. A destroy that can't read the cluster sends no delete when state holds its `uid`
+```

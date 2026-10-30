@@ -104,14 +104,39 @@ func warnOnBusyDestroy(ctx context.Context, st tfsdk.State, diags *diag.Diagnost
 // waiting for as long as the delete timeout allows, pausing longer before
 // each wait after the first so that it doesn't spin against a cluster that
 // keeps changing.
-func (r *clusterResource) startDelete(ctx context.Context, target clusterTarget, id, onBusy string, diags *diag.Diagnostics) bool {
+//
+// held is the uid the row holds, "" for none. A cancel and a delete go by id,
+// so every read before one checks the uid: a cluster under the id with
+// another uid reads as gone, and nothing more is sent. See own_object.go.
+func (r *clusterResource) startDelete(ctx context.Context, target clusterTarget, id, held, onBusy string, diags *diag.Diagnostics) bool {
 	var refused *k0rdent.DeleteClusterResponse
 	cancelled := false
 	waits := 0
+	another := ""
+	read := func(ctx context.Context) (clusterNow, error) {
+		now, err := r.clusterNow(ctx, target, id)
+		if err == nil && now.found && held != "" && now.uid != "" && now.uid != held {
+			another = now.uid
+			return clusterNow{another: now.uid}, nil
+		}
+		return now, err
+	}
+	defer func() {
+		if another != "" {
+			addAnotherObjectAtDestroy(diags, "cluster", id, held, another)
+		}
+	}()
 	// A destroy that stopped waiting left the cluster `deleting`, and this one
 	// waits for that delete rather than send another, which the platform
-	// answers 409. A failed read leaves it to the DELETE, as before.
-	if now, err := r.clusterNow(ctx, target, id); err == nil {
+	// answers 409. A failed read leaves it to the DELETE, as before, unless
+	// the row holds a uid: then the read is what tells this cluster from
+	// another made under the id, and no DELETE goes out unchecked.
+	now, err := read(ctx)
+	if err != nil && held != "" {
+		addWaitError(diags, "Could not read the cluster before deleting it", err)
+		return false
+	}
+	if err == nil {
 		switch {
 		case !now.found:
 			return false // already gone
@@ -122,6 +147,9 @@ func (r *clusterResource) startDelete(ctx context.Context, target clusterTarget,
 		}
 	}
 	for asked := 0; asked < maxDeleteAsks; {
+		if another != "" {
+			return false
+		}
 		deleted, err := r.meta.Client.DeleteClusterWithResponse(ctx, target.region, target.project, id)
 		switch {
 		case err != nil:
@@ -137,7 +165,7 @@ func (r *clusterResource) startDelete(ctx context.Context, target clusterTarget,
 		}
 		refused = deleted
 
-		current, err := r.clusterNow(ctx, target, id)
+		current, err := read(ctx)
 		if err != nil {
 			addWaitError(diags, "Could not read the cluster after the platform refused to delete it", err)
 			return false
@@ -154,13 +182,13 @@ func (r *clusterResource) startDelete(ctx context.Context, target clusterTarget,
 			addAPIError(diags, "delete the cluster", refused.HTTPResponse, refused.Body, nil)
 			return false
 		case deleteCancelsFirst:
-			if !r.cancelOperation(ctx, target, id, current, diags) {
+			if !r.cancelOperation(ctx, target, id, read, current, diags) {
 				return false
 			}
 			cancelled = true
 			asked++
 		case deleteAwaitsOperation:
-			if !r.awaitOperation(ctx, target, id, current, waits, diags) {
+			if !r.awaitOperation(ctx, id, read, current, waits, diags) {
 				return false
 			}
 			waits++
@@ -185,8 +213,9 @@ const maxDeleteAsks = 3
 //
 // Where the operation lands isn't judged here. `active` and `failed` are both
 // states the platform deletes from, and a delete another run started is
-// waited for by the delete that follows.
-func (r *clusterResource) awaitOperation(ctx context.Context, target clusterTarget, id string, now clusterNow, waited int, diags *diag.Diagnostics) bool {
+// waited for by the delete that follows. read is startDelete's read of the
+// cluster.
+func (r *clusterResource) awaitOperation(ctx context.Context, id string, read func(context.Context) (clusterNow, error), now clusterNow, waited int, diags *diag.Diagnostics) bool {
 	const summary = "The cluster's operation did not finish before the destroy timed out"
 	advice := awaitTimedOutAdvice(string(now.state))
 	if waited > 0 {
@@ -198,7 +227,7 @@ func (r *clusterResource) awaitOperation(ctx context.Context, target clusterTarg
 	tflog.Info(ctx, "waiting for the cluster's in-flight operation to finish so that it can be deleted",
 		map[string]any{"cluster": id, "state": string(now.state), "execution": now.execution, "waited": waited})
 	err := waitFor(ctx, r.meta.Wait, "the cluster's operation to finish", func(ctx context.Context) (bool, error) {
-		after, readErr := r.clusterNow(ctx, target, id)
+		after, readErr := read(ctx)
 		if readErr != nil || !after.found {
 			return !after.found, readErr
 		}
@@ -221,6 +250,10 @@ type clusterNow struct {
 	// status is `operation.status`, which reads `cancelled` once a cancel
 	// has settled the cluster.
 	status k0rdent.OperationStatus
+	uid    string
+	// another is the uid of a cluster under the id that isn't the row's,
+	// which a destroy reads as its own being gone.
+	another string
 }
 
 // cancelOperation cancels the operation a `creating` or `updating` cluster is
@@ -231,8 +264,9 @@ type clusterNow struct {
 // execution id read from the cluster just before. A cluster that began
 // another operation since then refuses the stale id with a 409, so a destroy
 // reads it again and cancels the operation now running, once. An operation
-// that moves on a second time is left to the user rather than chased.
-func (r *clusterResource) cancelOperation(ctx context.Context, target clusterTarget, id string, now clusterNow, diags *diag.Diagnostics) bool {
+// that moves on a second time is left to the user rather than chased. read is
+// startDelete's read of the cluster.
+func (r *clusterResource) cancelOperation(ctx context.Context, target clusterTarget, id string, read func(context.Context) (clusterNow, error), now clusterNow, diags *diag.Diagnostics) bool {
 	from := now.state
 	fields := map[string]any{"cluster": id, "state": string(from), "execution": now.execution}
 	tflog.Info(ctx, "cancelling the cluster's in-flight operation so that it can be deleted", fields)
@@ -272,7 +306,10 @@ func (r *clusterResource) cancelOperation(ctx context.Context, target clusterTar
 			// The operation may have finished on its own since the delete was
 			// refused, another delete may have started, or the cluster may
 			// have begun another operation, which the stale id can't name.
-			again, readErr := r.clusterNow(ctx, target, id)
+			again, readErr := read(ctx)
+			if readErr == nil && again.another != "" {
+				return true // another cluster holds the id: the caller stops
+			}
 			if readErr == nil && (!again.found || !cancellable(again.state)) {
 				tflog.Info(ctx, "the operation ended before it could be cancelled", fields)
 				return true
@@ -306,7 +343,7 @@ func (r *clusterResource) cancelOperation(ctx context.Context, target clusterTar
 	var after clusterNow
 	err := waitFor(ctx, r.meta.Wait, "the cancelled cluster to settle", func(ctx context.Context) (bool, error) {
 		var readErr error
-		after, readErr = r.clusterNow(ctx, target, id)
+		after, readErr = read(ctx)
 		if readErr != nil || !after.found {
 			return !after.found, readErr
 		}
@@ -319,7 +356,9 @@ func (r *clusterResource) cancelOperation(ctx context.Context, target clusterTar
 				"deletes it once it settles.", now.execution), err)
 		return false
 	}
-	warnCancelEnded(diags, from, now, after)
+	if after.another == "" {
+		warnCancelEnded(diags, from, now, after)
+	}
 	return true
 }
 
@@ -426,7 +465,7 @@ func readClusterNow(ctx context.Context, client *k0rdent.ClientWithResponses, ta
 		}
 		return clusterNow{}, answeredWithout(got.HTTPResponse, "cluster")
 	}
-	out := clusterNow{found: true}
+	out := clusterNow{found: true, uid: uidOf(got.JSON200.Uid)}
 	if got.JSON200.State != nil {
 		out.state = *got.JSON200.State
 	}

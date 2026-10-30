@@ -67,7 +67,23 @@ type cancelAPI struct {
 	cancelDelay time.Duration
 	// onRefused, when set, runs each time a request is refused as busy.
 	onRefused func()
+
+	// uid is the cluster's uid as a read names it, none when empty.
+	uid string
+	// held is the uid the row holds, none when empty.
+	held string
+	// replacedOnRead is the read on which the cluster is found to be another,
+	// counting from 1: the row's cluster was deleted and another tool made
+	// a new one under the id, with uid newcomer, `creating` and settling
+	// `active` two reads later. Zero never.
+	replacedOnRead int
+	reads          int
+	// readsFail answers every read 500.
+	readsFail bool
 }
+
+// newcomer is the uid of the cluster another tool makes under the id.
+const newcomer = "00000000-0000-4000-8000-0000000000bb"
 
 func (a *cancelAPI) status() string {
 	if a.opStatus != "" {
@@ -102,6 +118,13 @@ func (a *cancelAPI) serve(t *testing.T) *httptest.Server {
 	mux.HandleFunc("GET "+clusterPath, func(w http.ResponseWriter, r *http.Request) {
 		a.mu.Lock()
 		defer a.mu.Unlock()
+		if a.reads++; a.reads == a.replacedOnRead {
+			a.state, a.uid, a.execution, a.opStatus, a.busyReads, a.settlesAfter = "creating", newcomer, "theirs", "", 0, 2
+		}
+		if a.readsFail {
+			writeTestError(t, w, http.StatusInternalServerError, "unavailable")
+			return
+		}
 		switch a.state {
 		case "":
 			writeTestError(t, w, http.StatusNotFound, "not found")
@@ -118,6 +141,9 @@ func (a *cancelAPI) serve(t *testing.T) *httptest.Server {
 			}
 		}
 		body := map[string]any{"id": "c1", "state": a.state}
+		if a.uid != "" {
+			body["uid"] = a.uid
+		}
 		if !a.noExecution {
 			body["operation"] = map[string]any{"executionId": a.running(), "status": a.status()}
 		}
@@ -231,8 +257,13 @@ func (a *cancelAPI) destroy(t *testing.T) resource.DeleteResponse {
 	}
 	raw, s := testValue(t, r, values)
 	st := tfsdk.State{Raw: raw, Schema: s.Schema}
+	req := resource.DeleteRequest{State: st}
+	freshPrivate(t, &req.Private, nil)
+	if d := recordUID(context.Background(), req.Private, a.held); d.HasError() {
+		t.Fatal(d)
+	}
 	resp := resource.DeleteResponse{State: st}
-	r.Delete(context.Background(), resource.DeleteRequest{State: st}, &resp)
+	r.Delete(context.Background(), req, &resp)
 	return resp
 }
 
@@ -902,6 +933,100 @@ func TestADestroySaysHowItsCancelEnded(t *testing.T) {
 			}
 			if strings.Contains(said, tc.never) {
 				t.Errorf("the warning says %q: %s", tc.never, said)
+			}
+		})
+	}
+}
+
+// A cancel and a delete go by id. If the row's cluster is deleted outside
+// Terraform and another tool makes one under the id while a destroy runs, the
+// destroy must not cancel or delete that one. Every read before a cancel or a
+// delete checks the uid: another one there means the row's cluster is gone,
+// so nothing more is sent, the destroy succeeds so Terraform drops the row,
+// and a warning names both uids.
+func TestDestroySendsNothingToAnotherClusterUnderTheID(t *testing.T) {
+	const ours = "00000000-0000-4000-8000-0000000000aa"
+	for _, tc := range []struct {
+		name string
+		api  *cancelAPI
+		// calls is every cancel and delete sent, all to the row's cluster.
+		calls string
+	}{
+		{"at the first read", &cancelAPI{state: "active", replacedOnRead: 1}, ""},
+		{"after a refused delete, before the cancel", &cancelAPI{state: "creating", replacedOnRead: 2}, "delete"},
+		{"after a cancel refused for a stale operation", &cancelAPI{state: "creating", moves: 1, replacedOnRead: 3}, "delete cancel"},
+		{"while waiting for the cancel to settle", &cancelAPI{state: "creating", replacedOnRead: 3}, "delete cancel"},
+		{"while waiting for the operation to finish", &cancelAPI{state: "updating", onBusy: destroyWaits, replacedOnRead: 3}, "delete"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			api := tc.api
+			api.uid, api.held = ours, ours
+			resp := api.destroy(t)
+			if resp.Diagnostics.HasError() {
+				t.Fatalf("destroy: %v", resp.Diagnostics.Errors())
+			}
+			if got := api.callList(); got != tc.calls {
+				t.Errorf("calls = %q, want %q", got, tc.calls)
+			}
+			if api.state != "creating" || api.uid != newcomer {
+				t.Errorf("the other tool's cluster is %q with uid %q, want it untouched", api.state, api.uid)
+			}
+			var warned bool
+			for _, w := range resp.Diagnostics.Warnings() {
+				if strings.Contains(w.Summary(), `"c1" is another cluster now`) {
+					warned = strings.Contains(w.Detail(), ours) && strings.Contains(w.Detail(), newcomer) &&
+						strings.Contains(w.Detail(), "sent nothing to it")
+				}
+				if strings.Contains(w.Summary(), "cancel") {
+					t.Errorf("warned about a cancel ending: %s", w.Summary())
+				}
+			}
+			if !warned {
+				t.Errorf("no warning naming both uids: %v", resp.Diagnostics)
+			}
+		})
+	}
+}
+
+// A destroy whose first read fails sends no DELETE when the row holds a uid,
+// since only the read tells its cluster from another made under the id. A
+// row holding none can't tell them apart anyway, and sends the DELETE as
+// before.
+func TestDestroySendsNothingUncheckedWhenTheReadFails(t *testing.T) {
+	const ours = "00000000-0000-4000-8000-0000000000aa"
+	for _, tc := range []struct{ name, held, calls string }{
+		{"uid recorded", ours, ""},
+		{"none recorded", "", "delete"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			api := &cancelAPI{state: "active", uid: ours, held: tc.held, readsFail: true}
+			resp := api.destroy(t)
+			if got := api.callList(); got != tc.calls {
+				t.Errorf("calls = %q, want %q", got, tc.calls)
+			}
+			if tc.held != "" && !resp.Diagnostics.HasError() {
+				t.Error("the destroy passed without reading the cluster")
+			}
+		})
+	}
+}
+
+// A row holding the uid of the cluster it reads is destroyed as before, and
+// so is a row holding none, which can't tell the clusters apart.
+func TestDestroyDeletesTheClusterItHolds(t *testing.T) {
+	const ours = "00000000-0000-4000-8000-0000000000aa"
+	for _, tc := range []struct{ name, held string }{{"same uid", ours}, {"none recorded", ""}} {
+		t.Run(tc.name, func(t *testing.T) {
+			api := &cancelAPI{state: "creating", uid: ours, held: tc.held}
+			resp := api.destroy(t)
+			if resp.Diagnostics.HasError() {
+				t.Fatalf("destroy: %v", resp.Diagnostics.Errors())
+			}
+			if got := api.callList(); got != "delete cancel delete" {
+				t.Errorf("calls = %q", got)
+			}
+			if api.state != "" {
+				t.Errorf("the cluster is still %s", api.state)
 			}
 		})
 	}
