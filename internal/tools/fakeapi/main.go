@@ -365,8 +365,12 @@ type cluster struct {
 	stateMessage   string
 	stateReason    string
 	reads          int // reads since the last transition
-	op             *fakeOperation
-	opSeq          int
+	// watchdogDone and failedReads are a watchdogFails cluster's: whether
+	// the watchdog has failed it, and the settle steps it has stayed failed.
+	watchdogDone bool
+	failedReads  int
+	op           *fakeOperation
+	opSeq        int
 	// events is the runtime event log of the current or last operation.
 	events []fakeEvent
 
@@ -1657,6 +1661,23 @@ func (o *objects) advance(c *cluster) bool {
 		c.finish("failed")
 		return false
 	}
+	if c.state == "creating" && nameCarries(c.displayName, watchdogFails) && !c.watchdogDone {
+		c.state = "failed"
+		c.stateReason, c.stateMessage = "TIMEOUT", "the platform watchdog stopped the create"
+		c.watchdogDone = true
+		return false
+	}
+	if c.state == "failed" && c.watchdogDone && c.failedReads < watchdogReads {
+		c.failedReads++
+		return false
+	}
+	if c.state == "failed" && c.watchdogDone {
+		// "A watchdog-force-failed cluster may still return to `active`
+		// with no user action": the run it stopped converges.
+		c.stateReason, c.stateMessage = "", ""
+		c.complete()
+		return false
+	}
 	switch c.state {
 	case "creating", "updating":
 		c.complete()
@@ -2157,7 +2178,16 @@ const (
 	// create the platform can't reserve hosts for does. A cluster's operation
 	// finishes `failed` with reason RESERVATION_FAILED.
 	createFails = "fake-create-fails"
+	// A cluster's create settles `failed` with reason TIMEOUT, the way a run
+	// the platform watchdog stops does, and after watchdogReads more reads
+	// turns `active` on its own, as the contract says such a cluster may.
+	watchdogFails = "fake-watchdog-fails"
 )
+
+// watchdogReads is how many settle steps a cluster marked watchdogFails
+// stays `failed` for: more than an import and a plan's refreshes, fewer than
+// an apply's wait through the acceptance suite's provisional window.
+const watchdogReads = 6
 
 // slowTeardownReads is how many reads a group marked deletesSlowly answers
 // `deleting` for: more than a plan step's refreshes, few enough that the

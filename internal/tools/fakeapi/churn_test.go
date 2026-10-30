@@ -187,14 +187,13 @@ func TestChurnMovesNestedTimestamps(t *testing.T) {
 	}
 }
 
-// The observed state the contract says moves with no write: a cluster that
-// the watchdog force-fails "may still return to `active` with no user
-// action", health carries a staleness boundary, the control plane's ready
+// The observed state the contract says moves with no write: health carries a
+// staleness boundary, the control plane's ready
 // replicas are sampled, and a pool can carry a target for a scale that was
 // force-failed until its retry window retires.
 func TestChurnMovesObservedState(t *testing.T) {
 	h := churning(fixedAnswer(churnedCluster))
-	var sawFailed, sawActive, sawExpiry, sawReplicaDip, sawTarget bool
+	var sawExpiry, sawReplicaDip, sawTarget bool
 	for range 6 {
 		_, got, _ := churnRead(t, h, http.MethodGet)
 		var c struct {
@@ -218,19 +217,9 @@ func TestChurnMovesObservedState(t *testing.T) {
 		if err := json.Unmarshal([]byte(got), &c); err != nil {
 			t.Fatal(err)
 		}
-		switch c.State {
-		case "failed":
-			sawFailed = true
-			if c.StateMessage == "" {
-				t.Errorf("failed with no stateMessage: %s", got)
-			}
-		case "active":
-			sawActive = true
-			if c.StateMessage != "" {
-				t.Errorf("active with a stateMessage: %s", got)
-			}
-		default:
-			t.Errorf("state %q", c.State)
+		// A settled cluster's state doesn't churn: see churnObject.
+		if c.State != "active" || c.StateMessage != "" {
+			t.Errorf("a settled cluster read %q with message %q: %s", c.State, c.StateMessage, got)
 		}
 		if c.Health.State != "unknown" && c.Health.ExpiresAt != nil {
 			sawExpiry = true
@@ -249,9 +238,9 @@ func TestChurnMovesObservedState(t *testing.T) {
 			}
 		}
 	}
-	if !sawFailed || !sawActive || !sawExpiry || !sawReplicaDip || !sawTarget {
-		t.Errorf("not every shape appeared: failed %v, active %v, expiry %v, replica dip %v, pool target %v",
-			sawFailed, sawActive, sawExpiry, sawReplicaDip, sawTarget)
+	if !sawExpiry || !sawReplicaDip || !sawTarget {
+		t.Errorf("not every shape appeared: expiry %v, replica dip %v, pool target %v",
+			sawExpiry, sawReplicaDip, sawTarget)
 	}
 }
 

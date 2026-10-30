@@ -77,20 +77,22 @@ func TestAccClusterSSHAccess(t *testing.T) {
 
 // A teardown that fails leaves the cluster `failed` with its node pools and
 // SSH users released, which is what a landscape on dev.4 answered. The
-// configuration that made it still plans clean, so the refresh that
-// `terraform destroy` plans first gets past the replacement guard, and the
-// destroy that ends the test succeeds. A configuration that drops
-// `ssh_access` agrees with the platform and records that in place.
+// configuration that made it plans the update that waits for a `failed`
+// cluster, not a replacement, so the refresh that `terraform destroy` plans
+// first gets past the replacement guard, and the destroy that ends the test
+// succeeds. A configuration that drops `ssh_access`, and keeps the cluster
+// with `on_failed = "keep"`, agrees with the platform and records that in
+// place.
 func TestAccClusterWhoseTeardownFailedStillDestroys(t *testing.T) {
 	const name = "acc-cluster-teardown-failed"
-	cluster := func(access string) string {
+	cluster := func(extra string) string {
 		return fmt.Sprintf(`
 resource %q "test" {
   id           = %q
   cluster_type = %q
   display_name = "acceptance fake-teardown-fails"%s
 }
-`, clusterType, name, clusterTypeRef, access)
+`, clusterType, name, clusterTypeRef, extra)
 	}
 	withAccess := cluster(`
   ssh_access = [` + sshAdam + `
@@ -118,11 +120,15 @@ resource %q "test" {
 					}
 					t.Fatal("the teardown never failed")
 				},
-				Config:   withAccess,
-				PlanOnly: true,
+				Config:             withAccess,
+				PlanOnly:           true,
+				ExpectNonEmptyPlan: true,
+				ConfigPlanChecks: resource.ConfigPlanChecks{PostApplyPostRefresh: []plancheck.PlanCheck{
+					plancheck.ExpectResourceAction(clusterAddr, plancheck.ResourceActionUpdate),
+				}},
 			},
 			{
-				Config:           cluster(""),
+				Config:           cluster("\n  on_failed = \"keep\""),
 				ConfigPlanChecks: expect(clusterAddr, plancheck.ResourceActionUpdate),
 				Check:            resource.TestCheckNoResourceAttr(clusterAddr, "ssh_access.#"),
 			},
