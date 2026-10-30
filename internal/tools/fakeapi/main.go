@@ -207,6 +207,7 @@ func newHandler(s *state, secrets runSecrets, port string, shutdown func()) http
 	mux.HandleFunc("GET /_harness/ready", secrets.ownerControl(nil))
 	mux.HandleFunc("POST /_harness/shutdown", secrets.ownerControl(shutdown))
 	mux.HandleFunc("GET /_harness/store/{path...}", secrets.owner(s.storeRead()))
+	mux.HandleFunc("POST /_harness/webhooks/{id}/disable", secrets.owner(s.disableWebhook))
 	counts := newRequestCounts()
 	mux.HandleFunc("GET /_harness/requests", secrets.owner(counts.serve))
 	s.routes(mux, secrets.auth)

@@ -155,8 +155,10 @@ func webhookSubscriptionViewAttributes() map[string]schema.Attribute {
 				"`X-K0r-Signature-Version`.",
 		},
 		"is_active": schema.BoolAttribute{
-			Computed:            true,
-			MarkdownDescription: "Whether the platform is delivering to this endpoint.",
+			Computed: true,
+			MarkdownDescription: "Whether the platform delivers events to the subscription's `url`. It reads " +
+				"`false` once the platform has turned the subscription off because deliveries there kept failing, which can't be " +
+				"undone: only deleting it and creating it again gets deliveries going.",
 		},
 		"created_at": schema.StringAttribute{
 			Computed:            true,

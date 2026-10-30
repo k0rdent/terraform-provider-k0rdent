@@ -3,23 +3,26 @@
 page_title: "k0rdent_webhook_subscription Resource - k0rdent"
 subcategory: ""
 description: |-
-  An endpoint the platform POSTs notification events to, each one signed with HMAC-SHA256 under a secret the endpoint verifies it with.
+  A subscription that has the platform POST notification events to your own server, at url, each one signed with HMAC-SHA256 under a secret your server verifies it with.
   It takes no region and no project. A subscription lives on the global tier and belongs to the organization the provider's credential is in, so it receives the events of every project in that organization. Only event_types narrows them: there's no filter by project or cluster, so a receiver that serves one project should check each event's project and drop those for other projects. An event with no project may still concern yours: it concerns no single project, or was recorded before events carried one.
   The signing secret never reaches state. The platform shows a secret once and never again, and this provider keeps no secret in state or in a plan, so the secret is the configuration's to hold: set secret_wo, ideally from an ephemeral source such as a secrets manager's ephemeral resource, and bump secret_wo_version whenever it changes. Creating or replacing a subscription needs secret_wo, and so Terraform 1.11 or later: without it the platform would generate a secret nobody can read back, every receiver that verifies would refuse every delivery, and the platform dead-letters a refused delivery at once. A subscription already made can be imported and managed without it.
-  A new secret rotates the same subscription. Bumping secret_wo_version calls the platform's rotation, which keeps the id and everything queued for the endpoint. By default the previous secret is still accepted for 24 hours, and every delivery carries a signature under each, so receivers can move to the new one at their own pace.
+  A new secret rotates the same subscription. Bumping secret_wo_version calls the platform's rotation, which keeps the id and every delivery still queued for your url. By default the previous secret is still accepted for 24 hours, and every delivery carries a signature under each, so receivers can move to the new one at their own pace.
+  A subscription the platform turned off is replaced. When deliveries to your url keep failing, the platform turns the subscription off for good, and is_active reads false. The next plan replaces it, under a new id. Fix the server that receives the events first, or the new subscription gets turned off too.
   Delivery health (last success, consecutive failures) is on the k0rdent_webhook_subscription data source rather than here, because it moves with every delivery and isn't anything a configuration sets.
   What replaces it. Changing event_types or url cannot be done in place and replaces the subscription. Everything else changes in place.
 ---
 
 # k0rdent_webhook_subscription (Resource)
 
-An endpoint the platform POSTs notification events to, each one signed with HMAC-SHA256 under a secret the endpoint verifies it with.
+A subscription that has the platform POST notification events to your own server, at `url`, each one signed with HMAC-SHA256 under a secret your server verifies it with.
 
 It takes no `region` and no `project`. A subscription lives on the global tier and belongs to the organization the provider's credential is in, so it receives the events of every project in that organization. Only `event_types` narrows them: there's no filter by project or cluster, so a receiver that serves one project should check each event's `project` and drop those for other projects. An event with no `project` may still concern yours: it concerns no single project, or was recorded before events carried one.
 
 **The signing secret never reaches state.** The platform shows a secret once and never again, and this provider keeps no secret in state or in a plan, so the secret is the configuration's to hold: set `secret_wo`, ideally from an ephemeral source such as a secrets manager's ephemeral resource, and bump `secret_wo_version` whenever it changes. Creating or replacing a subscription needs `secret_wo`, and so Terraform 1.11 or later: without it the platform would generate a secret nobody can read back, every receiver that verifies would refuse every delivery, and the platform dead-letters a refused delivery at once. A subscription already made can be imported and managed without it.
 
-**A new secret rotates the same subscription.** Bumping `secret_wo_version` calls the platform's rotation, which keeps the id and everything queued for the endpoint. By default the previous secret is still accepted for 24 hours, and every delivery carries a signature under each, so receivers can move to the new one at their own pace.
+**A new secret rotates the same subscription.** Bumping `secret_wo_version` calls the platform's rotation, which keeps the id and every delivery still queued for your `url`. By default the previous secret is still accepted for 24 hours, and every delivery carries a signature under each, so receivers can move to the new one at their own pace.
+
+**A subscription the platform turned off is replaced.** When deliveries to your `url` keep failing, the platform turns the subscription off for good, and `is_active` reads `false`. The next plan replaces it, under a new id. Fix the server that receives the events first, or the new subscription gets turned off too.
 
 Delivery health (last success, consecutive failures) is on the `k0rdent_webhook_subscription` data source rather than here, because it moves with every delivery and isn't anything a configuration sets.
 
@@ -87,7 +90,7 @@ Rotate once per overlap. Only the most recent previous secret is kept, so a seco
 
 - `created_at` (String) When the subscription was created, as RFC 3339.
 - `id` (String) The subscription's id, a UUID the platform assigns. It's what an import names.
-- `is_active` (Boolean) Whether the platform is delivering to this endpoint.
+- `is_active` (Boolean) Whether the platform delivers events to your `url`. It reads `false` once the platform has turned the subscription off because deliveries to your `url` kept failing, and that can't be undone: a subscription turned off is never delivered to again, and the only way back is to delete it and create it again. So when a refresh reads `false`, the plan does that, the new one gets a new id, and the plan warns why. That needs `secret_wo`: without it the plan only warns.
 - `previous_secret_expires_at` (String) When the previous secret stops being accepted, as RFC 3339. Only set while a rotation's overlap is open, so a refresh after it closes reads null.
 - `rotated_at` (String) When the secret was last rotated, as RFC 3339. Null if it never has been.
 - `secret_version` (Number) The platform's count of signing secrets, 1 for the first and one more for each rotation. Every delivery carries it as `X-K0r-Signature-Version`, so receivers can tell whether they've caught up. It isn't `secret_wo_version`.
