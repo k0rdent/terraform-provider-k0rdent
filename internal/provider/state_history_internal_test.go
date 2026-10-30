@@ -319,14 +319,10 @@ func snapshotProblems(dir, typeName, suffix string, h stateHistory, got []byte, 
 		return []string{err.Error()}
 	}
 
-	if !bytes.Equal(got, want) {
-		return []string{fmt.Sprintf("%s: the shape its state is stored in no longer matches %s, the snapshot for schema version %d.\n"+
-			"A state written by the last release would no longer be read the way it was written.\n"+
-			"Add a step to its entry in stateHistories (state_history.go) that migrates version %d to %d, which raises the\n"+
-			"schema version, then record v%d.json with\n"+
-			"  go test ./internal/provider -run TestStateSchemaSnapshots -update-state-schemas\n"+
-			"Never edit %s: it's the shape that's in people's state files.\n\n--- %s\n%s\n--- the schema now\n%s",
-			typeName, path, current, current, current+1, current+1, path, path, want, got)}
+	// The snapshot is the shape a release stored at this version. The schema
+	// may add what the history lists as added later, and nothing else.
+	if problems := addedLaterProblems(typeName, path, current, want, got, h.addedAt(current)); problems != nil {
+		return problems
 	}
 
 	// Every earlier version stays committed and parseable, because the
@@ -355,6 +351,13 @@ func snapshotProblems(dir, typeName, suffix string, h stateHistory, got []byte, 
 		before, haveBefore := shapes[v]
 		after, haveAfter := shapes[v+1]
 		if haveBefore && haveAfter {
+			// What a build added to version v later is in some states at v,
+			// so the step from v accounts for it too.
+			if grown, errs := withAdded(before, h.addedAt(v)); len(errs) == 0 {
+				before = grown
+			} else {
+				problems = append(problems, fmt.Sprintf("%s: version %d's addedLater: %s", typeName, v, strings.Join(errs, ", ")))
+			}
 			problems = append(problems, stepProblems(typeName, v, h.steps[v], before, after)...)
 		}
 	}
@@ -482,7 +485,10 @@ func TestEveryPriorStateVersionUpgradesThroughTheProtocol(t *testing.T) {
 		if reported != h.version() {
 			t.Errorf("%s: Terraform is told schema version %d, want %d", rr.typeName, reported, h.version())
 		}
-		for v := h.firstVersion; v < h.version(); v++ {
+		// The current version too: a state the last release wrote there
+		// lacks whatever was added to it later, and has to read with each
+		// of those null.
+		for v := h.firstVersion; v <= h.version(); v++ {
 			prior := populated(readSnapshot(t, rr.suffix, v), "")
 			raw, err := json.Marshal(prior)
 			if err != nil {
@@ -940,6 +946,105 @@ func stepProblems(typeName string, v int64, step stateStep, before, after tftype
 	return problems
 }
 
+// addedLaterProblems compares the shape the schema stores now with the
+// snapshot of its version plus added, and says what to do when they differ.
+// It's nil when they match.
+func addedLaterProblems(typeName, path string, current int64, want, got []byte, added map[string]string) []string {
+	mismatch := func(extra string) []string {
+		return []string{fmt.Sprintf("%s: the shape its state is stored in no longer matches %s, the snapshot for schema version %d.\n"+
+			"A state written by the last release would no longer be read the way it was written.%s\n"+
+			"If the schema only adds attributes, put each in addedLater on version %d's step in stateHistories\n"+
+			"(state_history.go), with its type. The last release then still reads this build's state, and this build\n"+
+			"reads the last release's with each added attribute null.\n"+
+			"Anything else, a removal, a rename or a type change, needs a step that migrates version %d to %d, which\n"+
+			"raises the schema version, then a record of v%d.json with\n"+
+			"  go test ./internal/provider -run TestStateSchemaSnapshots -update-state-schemas\n"+
+			"Never edit %s: it's the shape that's in people's state files.\n\n--- %s\n%s\n--- the schema now\n%s",
+			typeName, path, current, extra, current, current, current+1, current+1, path, path, want, got)}
+	}
+	wantType, err := parseStateType(want)
+	if err != nil {
+		return []string{fmt.Sprintf("%s doesn't parse as a state type: %v", path, err)}
+	}
+	grown, errs := withAdded(wantType, added)
+	if len(errs) > 0 {
+		return []string{fmt.Sprintf("%s: version %d's addedLater: %s", typeName, current, strings.Join(errs, ", "))}
+	}
+	if bytes.Equal(got, want) && len(added) == 0 {
+		return nil
+	}
+	gotType, err := parseStateType(got)
+	if err != nil {
+		return []string{err.Error()}
+	}
+	if !grown.Equal(gotType) {
+		return mismatch("")
+	}
+	return nil
+}
+
+// withAdded is typ with each attribute in added put at its path with the
+// type it names. Each path names an attribute typ doesn't have, under objects
+// typ does, looking through collections as removedAttributes does.
+func withAdded(typ tftypes.Type, added map[string]string) (tftypes.Type, []string) {
+	paths := make([]string, 0, len(added))
+	for p := range added {
+		paths = append(paths, p)
+	}
+	sort.Strings(paths)
+	var errs []string
+	for _, p := range paths {
+		declared, err := parseStateType([]byte(added[p]))
+		if err != nil {
+			errs = append(errs, fmt.Sprintf("%s's type %s doesn't parse: %v", p, added[p], err))
+			continue
+		}
+		next, err := addAttribute(typ, strings.Split(p, "."), declared)
+		if err != nil {
+			errs = append(errs, p+" "+err.Error())
+			continue
+		}
+		typ = next
+	}
+	return typ, errs
+}
+
+func addAttribute(typ tftypes.Type, path []string, declared tftypes.Type) (tftypes.Type, error) {
+	switch tt := typ.(type) {
+	case tftypes.List:
+		e, err := addAttribute(tt.ElementType, path, declared)
+		return tftypes.List{ElementType: e}, err
+	case tftypes.Set:
+		e, err := addAttribute(tt.ElementType, path, declared)
+		return tftypes.Set{ElementType: e}, err
+	case tftypes.Map:
+		e, err := addAttribute(tt.ElementType, path, declared)
+		return tftypes.Map{ElementType: e}, err
+	case tftypes.Object:
+		attrs := make(map[string]tftypes.Type, len(tt.AttributeTypes)+1)
+		for name, at := range tt.AttributeTypes {
+			attrs[name] = at
+		}
+		was, inSnapshot := attrs[path[0]]
+		switch {
+		case len(path) == 1 && inSnapshot:
+			return nil, errors.New("is in the snapshot already")
+		case len(path) == 1:
+			attrs[path[0]] = declared
+		case !inSnapshot:
+			return nil, errors.New("sits under an attribute the snapshot doesn't have: add that one instead")
+		default:
+			inner, err := addAttribute(was, path[1:], declared)
+			if err != nil {
+				return nil, err
+			}
+			attrs[path[0]] = inner
+		}
+		return tftypes.Object{AttributeTypes: attrs}, nil
+	}
+	return nil, errors.New("isn't under an object")
+}
+
 // removedAttributes is the path of every attribute in before that isn't in
 // after, outermost first: a block that went is named and its insides aren't.
 // A collection's elements are looked through, so an attribute of a block
@@ -1152,5 +1257,82 @@ func TestANewResourceCanFollowTheGuardsInstructions(t *testing.T) {
 	}
 	if problems := strings.Join(snapshotProblems(dir, ResourceName("brand_new"), "brand_new", h, []byte(shape), false, t.Logf), "\n"); !strings.Contains(problems, "v0.json doesn't belong") {
 		t.Errorf("a snapshot from before the resource's first version wasn't flagged: %s", problems)
+	}
+}
+
+// An attribute added at the current version passes once addedLater names it,
+// and only then. Everything else the guard refused before, a removal, a type
+// change, an unnamed addition, it still refuses, and addedLater can't name an
+// attribute the snapshot has or the schema doesn't.
+func TestAnAttributeAddedLaterNeedsNoVersion(t *testing.T) {
+	t.Parallel()
+	const (
+		v1        = `["object",{"id":"string","pools":["list",["object",{"size":"number"}]]}]` + "\n"
+		added     = `["object",{"id":"string","keep":"string","pools":["list",["object",{"size":"number"}]]}]` + "\n"
+		addedDeep = `["object",{"id":"string","pools":["list",["object",{"size":"number","zone":"string"}]]}]` + "\n"
+		retyped   = `["object",{"id":"number","keep":"string","pools":["list",["object",{"size":"number"}]]}]` + "\n"
+		removed   = `["object",{"keep":"string","pools":["list",["object",{"size":"number"}]]}]` + "\n"
+	)
+	for _, tc := range []struct {
+		name, now  string
+		addedLater map[string]string
+		want       string // "" passes
+	}{
+		{"named", added, map[string]string{"keep": `"string"`}, ""},
+		{"named inside a block", addedDeep, map[string]string{"pools.zone": `"string"`}, ""},
+		{"not named", added, nil, "put each in addedLater"},
+		{"named with another type", added, map[string]string{"keep": `"bool"`}, "no longer matches"},
+		{"named, with a type change beside it", retyped, map[string]string{"keep": `"string"`}, "no longer matches"},
+		{"named, with a removal beside it", removed, map[string]string{"keep": `"string"`}, "no longer matches"},
+		{"named, but the snapshot has it", v1, map[string]string{"id": `"string"`}, "is in the snapshot already"},
+		{"named, but the schema doesn't have it", added, map[string]string{"keep": `"string"`, "other": `"string"`}, "no longer matches"},
+		{"named with a type that doesn't parse", added, map[string]string{"keep": `"strng"`}, "doesn't parse"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			dir := writeSnapshots(t, "made_up", map[int64]string{1: v1})
+			h := stateHistory{firstVersion: 1, steps: []stateStep{{why: "declared", addedLater: tc.addedLater}}}
+			problems := strings.Join(snapshotProblems(dir, ResourceName("made_up"), "made_up", h, []byte(tc.now), false, t.Logf), "\n")
+			switch {
+			case tc.want == "" && problems != "":
+				t.Errorf("refused an addition addedLater names:\n%s", problems)
+			case tc.want != "" && !strings.Contains(problems, tc.want):
+				t.Errorf("want a problem saying %q, got:\n%s", tc.want, problems)
+			}
+		})
+	}
+}
+
+// An attribute added later at version 1 is in some states at 1, so the step
+// that takes it away at 2 has to account for it like any other.
+func TestAStepAccountsForWhatWasAddedLater(t *testing.T) {
+	t.Parallel()
+	const (
+		v1 = `["object",{"id":"string"}]` + "\n"
+		v2 = `["object",{"id":"string"}]` + "\n"
+	)
+	for _, tc := range []struct {
+		name    string
+		dropped []string
+		want    string
+	}{
+		{"unaccounted", nil, "keep is in v1.json and not in v2.json"},
+		{"dropped", []string{"keep"}, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			dir := writeSnapshots(t, "made_up", map[int64]string{1: v1, 2: v2})
+			h := stateHistory{firstVersion: 1, steps: []stateStep{
+				{why: "declared", addedLater: map[string]string{"keep": `"string"`}},
+				{why: "keep went", dropped: tc.dropped},
+			}}
+			problems := strings.Join(snapshotProblems(dir, ResourceName("made_up"), "made_up", h, []byte(v2), false, t.Logf), "\n")
+			switch {
+			case tc.want == "" && problems != "":
+				t.Errorf("refused a step that drops what was added later:\n%s", problems)
+			case tc.want != "" && !strings.Contains(problems, tc.want):
+				t.Errorf("want a problem saying %q, got:\n%s", tc.want, problems)
+			}
+		})
 	}
 }
