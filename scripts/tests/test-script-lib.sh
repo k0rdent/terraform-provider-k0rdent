@@ -28,7 +28,7 @@ in_lib() {
 # A PATH holding only what each case puts there, plus the basics the library
 # itself calls.
 mkdir -p "$work/base"
-for tool in bash env awk sed tr python3 cat mkdir dirname pwd; do
+for tool in bash env awk sed tr python3 cat cp mkdir dirname pwd; do
   ln -s "$(command -v "$tool")" "$work/base/$tool"
 done
 
@@ -104,6 +104,16 @@ bindir="$work/run/plugins/my-ns/my-prov/9.9.9-test/testos_testarch"
 [ -f "$bindir/terraform-provider-my-prov" ] || fail "build_provider did not build into $bindir"
 grep -qF "\"my-ns/my-prov\" = \"$bindir\"" "$work/run/terraform.rc" \
   || fail "build_provider's terraform.rc does not point the override at the binary"
+
+in_lib "PATH='$GO_PATH'; REPO='$work/tree/repo'; read_names; build_provider_mirror '$work/mirrored' 9.9.9-test"
+for host in registry.terraform.io registry.opentofu.org; do
+  [ -f "$work/mirrored/mirror/$host/my-ns/my-prov/9.9.9-test/testos_testarch/terraform-provider-my-prov_v9.9.9-test" ] \
+    || fail "build_provider_mirror did not put the binary in the mirror for $host"
+done
+grep -qF "path    = \"$work/mirrored/mirror\"" "$work/mirrored/terraform.rc" \
+  || fail "build_provider_mirror's terraform.rc does not install from the mirror"
+grep -qF 'exclude = ["registry.terraform.io/my-ns/my-prov", "registry.opentofu.org/my-ns/my-prov"]' "$work/mirrored/terraform.rc" \
+  || fail "build_provider_mirror's terraform.rc lets direct install the provider too"
 
 # --- the fake: start_loopback_server and export_fake_credential -----------
 
@@ -237,5 +247,53 @@ grep -qx 'Authorization: Bearer dummy-bearer-not-a-secret' "$work/curl.stdin" \
   || fail "curl_bearer did not hand curl the bearer on stdin"
 [ "$(tr '\n' ' ' < "$work/curl.argv")" = "-H @- -sS https://example.invalid/x " ] \
   || fail "curl_bearer passed curl '$(tr '\n' ' ' < "$work/curl.argv")'"
+
+# --- walkthrough.sh: walkthrough_dirs, walkthrough_pick, walkthrough_tfvars --
+
+wlib="$here/scripts/lib/walkthrough.sh"
+ex="$work/examples"
+mkdir -p "$ex/look" "$ex/nodes" "$ex/full" "$ex/zone" "$ex/notes"
+for d in look nodes full zone; do : > "$ex/$d/main.tf"; done
+cat > "$ex/full/terraform.tfvars" <<'EOF'
+prefix       = "" # yours
+environment  = "dev"
+cluster_type = ""
+build = {
+  network = true # on
+  file    = false # off
+}
+EOF
+printf 'prefix = ""\nzone_id = "" # new\n' > "$ex/zone/terraform.tfvars"
+
+# in_wlib <script> is in_lib with walkthrough.sh sourced too.
+in_wlib() { in_lib ". \"$wlib\"; $1"; }
+
+in_wlib "walkthrough_dirs '$ex' | tr '\n' ' '"
+[ "$(cat "$work/stdout")" = "look full full-everything zone " ] \
+  || fail "walkthrough_dirs listed '$(cat "$work/stdout")', not 'look full full-everything zone '"
+
+cat > "$work/look.json" <<'EOF'
+{"cluster_types": {"value": {"r0": [], "r1": ["cpu-general", "gpu"]}},
+ "projects": {"value": ["p0 in org, region r0 x", "p1 in org, region r1 x"]},
+ "organizations": {"value": ["o1 the org"]}}
+EOF
+in_wlib "walkthrough_pick '$work/look.json'; echo \"\$region \$cluster_type \$filtered_type \$organization \$project\""
+[ "$(cat "$work/stdout")" = "r1 cpu-general gpu o1 p1" ] \
+  || fail "walkthrough_pick set '$(cat "$work/stdout")', not 'r1 cpu-general gpu o1 p1'"
+
+in_wlib "region=r1 cluster_type=t1 filtered_type=t2; walkthrough_tfvars full '$ex' ci"
+{ grep -qx 'prefix = "ci"' "$work/stdout" && grep -qx 'cluster_type = "t2"' "$work/stdout" &&
+  grep -qx 'environment  = "dev"' "$work/stdout" && grep -q '^  file    = false' "$work/stdout"; } \
+  || fail "walkthrough_tfvars full did not fill in the values and keep the rest: $(cat "$work/stdout")"
+in_wlib "region=r1 cluster_type=t1 filtered_type=t2; walkthrough_tfvars full-everything '$ex' ci"
+grep -q '^  file    = true' "$work/stdout" || fail "walkthrough_tfvars full-everything left a switch off"
+in_wlib "walkthrough_tfvars zone '$ex' ci"
+{ [ "$status" != 0 ] && grep -qF 'zone/terraform.tfvars needs zone_id' "$work/stderr"; } \
+  || fail "walkthrough_tfvars did not refuse a variable it doesn't fill in"
+in_wlib "walkthrough_tfvars missing '$ex' ci"
+{ [ "$status" != 0 ] && grep -qF 'no directory missing' "$work/stderr"; } \
+  || fail "walkthrough_tfvars did not refuse a directory that isn't there"
+in_wlib "walkthrough_tfvars look '$ex' ci; echo finished"
+[ "$(cat "$work/stdout")" = finished ] || fail "walkthrough_tfvars printed a terraform.tfvars for a directory without one"
 
 echo "script lib test: PASS"
