@@ -20,14 +20,25 @@ import (
 // declared when it wrote it. On the first plan after a provider upgrade it
 // hands that state back with its version, and the provider has to return it in
 // the current shape. The framework does that only between declared versions,
-// so a shape change with no version to migrate from is a state nobody can
-// read.
+// so a removal, a rename or a type change with no version to migrate from is a
+// state nobody can read.
+//
+// An added attribute is the exception. At the same version the framework
+// decodes a stored state with any attribute it doesn't know skipped and any it
+// misses read as null (terraform-plugin-framework's
+// internal/fwserver/server_upgraderesourcestate.go, and tftypes'
+// value_json.go). So this build reads a state the last release wrote, and the
+// last release reads one this build wrote, as long as the version stays. A
+// version raised for an addition alone would lose the second: Terraform
+// refuses a state from a newer schema version, so nobody could go back to the
+// last release.
 //
 // Each resource's history is the list of steps its state has taken, and its
 // schema version is the length of that list. So the version can't be raised
 // without writing the step that migrates to it, and the snapshot test in
 // state_history_internal_test.go fails on any shape change that doesn't raise
-// it. Together they mean a shape change can't ship without a migration.
+// it, other than the additions a step lists in addedLater. Together they mean
+// a shape change can't ship without a migration.
 //
 // A step rewrites the state as Terraform stores it, a JSON object, rather than
 // decoding it through a frozen copy of the old schema. Upgrading from version N
@@ -60,6 +71,17 @@ type stateStep struct {
 	// each moved value where moved says.
 	dropped []string
 	moved   map[string]string
+
+	// addedLater is the attributes added to the shape this step produces
+	// after a release stored it, with no step of their own: each one's path,
+	// as dropped names it, and its type in Terraform's type notation, as the
+	// snapshots write it ("string", ["list","string"]). New ones go on the
+	// newest step only, since an older version's shape is what releases
+	// stored. The snapshot test checks the schema against that version's
+	// snapshot plus these, so an added attribute that changes type fails it,
+	// and one that leaves at a later step has to be accounted for there like
+	// any other.
+	addedLater map[string]string
 }
 
 // formerName is a type a resource was registered under before it was renamed.
@@ -186,6 +208,14 @@ var stateHistories = map[string]stateHistory{
 
 // version is the schema version a resource declares: one per step taken.
 func (h stateHistory) version() int64 { return int64(len(h.steps)) }
+
+// addedAt is what was added to version v's shape after a release stored it.
+func (h stateHistory) addedAt(v int64) map[string]string {
+	if v < 1 || v > h.version() {
+		return nil
+	}
+	return h.steps[v-1].addedLater
+}
 
 // FirstStateVersion is the earliest schema version any build stored the
 // resource typeName at, so the earliest a state Terraform hands back can be.
