@@ -10,6 +10,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
+	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -189,7 +190,7 @@ func TestCreateFinish(t *testing.T) {
 						Name: types.StringValue("web"), State: types.StringValue("active"),
 					}, tc.readFound, readDiags
 				},
-			}.run(ctx, create, plan, &state, &diags)
+			}.run(ctx, create, plan, &state, nil, &diags)
 
 			if ok != tc.wantOK {
 				t.Errorf("ok = %t, want %t: %v", ok, tc.wantOK, diags)
@@ -267,7 +268,7 @@ func TestCreateFinishReportsAWaitFailureTheKindsWay(t *testing.T) {
 			a.id = "t1"
 			return a
 		},
-	}, plan, &state, &diags)
+	}, plan, &state, nil, &diags)
 	if ok {
 		t.Fatal("a failed wait finished")
 	}
@@ -312,7 +313,7 @@ func TestCreateFinishReportsACreateStillRunning(t *testing.T) {
 					a.id = "t1"
 					return a
 				},
-			}, plan, &state, &diags)
+			}, plan, &state, nil, &diags)
 			if ok {
 				t.Fatal("a create still running finished")
 			}
@@ -347,5 +348,67 @@ func assertFirstError(t *testing.T, diags diag.Diagnostics, want string) {
 		t.Errorf("no error, want one saying %q", want)
 	case want != "" && !strings.Contains(errs[0].Summary(), want):
 		t.Errorf("first error = %q, want one saying %q", errs[0].Summary(), want)
+	}
+}
+
+// Every way a create learns the uid of what it made is recorded before the
+// wait, so a wait that fails leaves the row bound to that object: the 2xx
+// answer, the read that claims it after a lost answer, a 409 or a 502, and
+// the read after a 504 that names it.
+func TestACreateRecordsTheUIDBeforeItsWait(t *testing.T) {
+	const made = "00000000-0000-4000-8000-0000000000aa"
+	status := func(code int) createAnswer {
+		return createAnswer{resp: &http.Response{StatusCode: code, Status: http.StatusText(code)}}
+	}
+	found := createLookup{found: true, uid: made}
+	for name, tc := range map[string]struct {
+		answer  createAnswer
+		lookup  createLookup
+		timeout bool
+	}{
+		"201":                             {answer: createAnswer{resp: answerCreated().resp, uid: made}},
+		"lost answer, then read back":     {answer: createAnswer{err: errors.New("connection reset by peer")}, lookup: found},
+		"409, then read back":             {answer: status(http.StatusConflict), lookup: found},
+		"502, then read back":             {answer: status(http.StatusBadGateway), lookup: found},
+		"504 naming it, then read back":   {answer: status(http.StatusGatewayTimeout), lookup: found, timeout: true},
+		"201 naming none, nothing to add": {answer: answerCreated()},
+	} {
+		t.Run(name, func(t *testing.T) {
+			key, err := newCreateKey(types.StringNull(), false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			create := convergingCreate{
+				key: key, kind: "thing", what: "create the thing", resourceName: ResourceName("thing"),
+				importID: func(id string) string { return id },
+				send:     func(context.Context) createAnswer { return tc.answer },
+				lookup:   func(context.Context, string) createLookup { return tc.lookup },
+			}
+			if tc.timeout {
+				create.timeoutID = func(*http.Response, []byte) string { return key.id }
+			}
+			plan := finishPlan(t)
+			state := tfsdk.State{Schema: plan.Schema, Raw: tftypes.NewValue(plan.Raw.Type(), nil)}
+			resp := resource.CreateResponse{}
+			freshPrivate(t, &resp.Private, nil)
+			var diags diag.Diagnostics
+			createFinish[finishModel]{
+				operation: "createThing", target: clusterTarget{region: "test", project: "elsewhere"},
+				parentAttr: "network", parentID: "n1",
+				wait: func(context.Context, string) error { return errors.New("the platform reports the thing as failed") },
+				read: func(context.Context, string) (finishModel, bool, diag.Diagnostics) {
+					t.Error("read after a failed wait")
+					return finishModel{}, false, nil
+				},
+			}.run(context.Background(), create, plan, &state, resp.Private, &diags)
+			assertFirstError(t, diags, "The thing did not become active")
+			want := made
+			if tc.answer.uid == "" && !tc.lookup.found {
+				want = ""
+			}
+			if got := heldUID(context.Background(), resp.Private); got != want {
+				t.Errorf("recorded uid = %q, want %q", got, want)
+			}
+		})
 	}
 }

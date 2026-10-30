@@ -780,7 +780,7 @@ func (r *fileStoreResource) Create(ctx context.Context, req resource.CreateReque
 			}
 			a := createAnswer{resp: created.HTTPResponse, body: created.Body}
 			if created.JSON201 != nil {
-				a.id = created.JSON201.Id
+				a.id, a.uid = created.JSON201.Id, uidOf(created.JSON201.Uid)
 			}
 			return a
 		},
@@ -789,7 +789,8 @@ func (r *fileStoreResource) Create(ctx context.Context, req resource.CreateReque
 			if err != nil {
 				return createLookup{err: err}
 			}
-			return lookupFrom(got.HTTPResponse, got.Body, got.JSON200 != nil, func() string { return "" })
+			return lookupFrom(got.HTTPResponse, got.Body, got.JSON200 != nil,
+				func() (string, string) { return "", uidOf(got.JSON200.Uid) })
 		},
 		timeoutID: timeoutMetadataID("fileStoreId"),
 	}
@@ -803,7 +804,7 @@ func (r *fileStoreResource) Create(ctx context.Context, req resource.CreateReque
 		read: func(ctx context.Context, id string) (fileStoreModel, bool, diag.Diagnostics) {
 			return r.read(ctx, target, id, plan)
 		},
-	}.run(ctx, create, req.Plan, &resp.State, &resp.Diagnostics)
+	}.run(ctx, create, req.Plan, &resp.State, resp.Private, &resp.Diagnostics)
 	if ok {
 		resp.Diagnostics.Append(recordUID(ctx, resp.Private, state.uid)...)
 	}

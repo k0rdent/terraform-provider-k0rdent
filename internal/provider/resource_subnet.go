@@ -323,7 +323,7 @@ func (r *subnetResource) Create(ctx context.Context, req resource.CreateRequest,
 			}
 			a := createAnswer{resp: created.HTTPResponse, body: created.Body}
 			if created.JSON201 != nil {
-				a.id = deref(created.JSON201.Id)
+				a.id, a.uid = deref(created.JSON201.Id), uidOf(created.JSON201.Uid)
 			}
 			return a
 		},
@@ -332,8 +332,9 @@ func (r *subnetResource) Create(ctx context.Context, req resource.CreateRequest,
 			if err != nil {
 				return createLookup{err: err}
 			}
-			return lookupFrom(got.HTTPResponse, got.Body, got.JSON200 != nil,
-				func() string { return createTokenOf(presentMap(got.JSON200.Tags)) })
+			return lookupFrom(got.HTTPResponse, got.Body, got.JSON200 != nil, func() (string, string) {
+				return createTokenOf(presentMap(got.JSON200.Tags)), uidOf(got.JSON200.Uid)
+			})
 		},
 		busy: newBusyRetry("createSubnet", r.meta.Wait, r.dependencies(plan.AddressPool.ValueString())...),
 	}
@@ -346,7 +347,7 @@ func (r *subnetResource) Create(ctx context.Context, req resource.CreateRequest,
 		read: func(ctx context.Context, id string) (subnetModel, bool, diag.Diagnostics) {
 			return r.read(ctx, target, network, id, plan)
 		},
-	}.run(ctx, create, req.Plan, &resp.State, &resp.Diagnostics)
+	}.run(ctx, create, req.Plan, &resp.State, resp.Private, &resp.Diagnostics)
 	if found {
 		resp.Diagnostics.Append(recordUID(ctx, resp.Private, created.uid)...)
 	}

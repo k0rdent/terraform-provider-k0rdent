@@ -615,7 +615,7 @@ func (r *networkResource) Create(ctx context.Context, req resource.CreateRequest
 				// A 201 whose union does not decode still made the network
 				// it was sent, so its id is the one in the request.
 				if view, err := networkViewOf(*created.JSON201); err == nil {
-					a.id = view.id
+					a.id, a.uid = view.id, view.uid
 				}
 			}
 			return a
@@ -625,12 +625,12 @@ func (r *networkResource) Create(ctx context.Context, req resource.CreateRequest
 			if err != nil {
 				return createLookup{err: err}
 			}
-			return lookupFrom(got.HTTPResponse, got.Body, got.JSON200 != nil, func() string {
+			return lookupFrom(got.HTTPResponse, got.Body, got.JSON200 != nil, func() (string, string) {
 				view, err := networkViewOf(*got.JSON200)
 				if err != nil {
-					return ""
+					return "", ""
 				}
-				return createTokenOf(view.tags)
+				return createTokenOf(view.tags), view.uid
 			})
 		},
 	}
@@ -642,7 +642,7 @@ func (r *networkResource) Create(ctx context.Context, req resource.CreateRequest
 		read: func(ctx context.Context, id string) (networkModel, bool, diag.Diagnostics) {
 			return r.read(ctx, target, id, plan)
 		},
-	}.run(ctx, create, req.Plan, &resp.State, &resp.Diagnostics)
+	}.run(ctx, create, req.Plan, &resp.State, resp.Private, &resp.Diagnostics)
 	if found {
 		resp.Diagnostics.Append(recordUID(ctx, resp.Private, created.uid)...)
 	}

@@ -115,12 +115,17 @@ func (c *cliRun) write(config string) {
 // which TestMain pointed at the fake.
 func (c *cliRun) run(args ...string) (string, bool) {
 	c.t.Helper()
-	cmd := exec.Command(c.terraform, append(args, "-no-color")...)
+	out, err := c.command(append(args, "-no-color")...).CombinedOutput()
+	return string(out), err == nil
+}
+
+// command is terraform with args, in this run's directory and environment.
+func (c *cliRun) command(args ...string) *exec.Cmd {
+	cmd := exec.Command(c.terraform, args...)
 	cmd.Dir = c.dir
 	cmd.Env = append(quietEnviron(), "TF_CLI_CONFIG_FILE="+c.rc, "TF_IN_AUTOMATION=1", "TF_INPUT=0",
 		"CHECKPOINT_DISABLE=1")
-	out, err := cmd.CombinedOutput()
-	return string(out), err == nil
+	return cmd
 }
 
 // mustSay fails unless out, folded to single spaces, says every want.

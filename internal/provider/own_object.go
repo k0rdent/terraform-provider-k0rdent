@@ -23,9 +23,14 @@ import (
 // adopting it. A webhook subscription's id is the platform's own UUID, so it
 // needs none of this.
 //
-// A row with none recorded takes the first uid it reads: one an import or an
-// earlier version wrote, and a create whose wait failed or whose answer
-// couldn't be confirmed, which records the row before it has read the object.
+// A create records the uid the moment the platform names it, in its answer or
+// in the read that claims it, before any wait, so a row whose wait fails is
+// still bound. A row with none recorded takes the first uid it reads: one an
+// import or an earlier version wrote, and a create whose answer couldn't be
+// confirmed, which records the row before anything has named the object.
+//
+// A cluster's destroy checks it too, at every read before a cancel or a
+// delete, since those go by id.
 //
 // The check also rests on a live object keeping its uid. The contract says
 // so for a file store and a security group, and calls the uid the handle to
@@ -52,15 +57,24 @@ func recordUID(ctx context.Context, private privateWriter, uid string) diag.Diag
 // heldObject reports whether uid is the object this row is for, and the uid
 // the row holds. A row that holds none, or a read with no uid, is the same.
 func heldObject(ctx context.Context, private privateState, uid string) (string, bool) {
-	if v := reflect.ValueOf(private); uid == "" || !v.IsValid() || (v.Kind() == reflect.Pointer && v.IsNil()) {
+	if uid == "" {
 		return "", true
+	}
+	held := heldUID(ctx, private)
+	return held, held == "" || held == uid
+}
+
+// heldUID is the uid the row holds, or "" for none.
+func heldUID(ctx context.Context, private privateState) string {
+	if v := reflect.ValueOf(private); !v.IsValid() || (v.Kind() == reflect.Pointer && v.IsNil()) {
+		return ""
 	}
 	raw, diags := private.GetKey(ctx, uidKey)
 	var held string
-	if diags.HasError() || len(raw) == 0 || json.Unmarshal(raw, &held) != nil || held == "" {
-		return "", true
+	if diags.HasError() || len(raw) == 0 || json.Unmarshal(raw, &held) != nil {
+		return ""
 	}
-	return held, held == uid
+	return held
 }
 
 // addAnotherObject warns that the row was dropped because id now names
@@ -72,6 +86,18 @@ func addAnotherObject(diags *diag.Diagnostics, kind, id, was, now string) {
 			"this state was for was deleted, and another was created under the same id. It was dropped from "+
 			"state rather than adopted, so Terraform won't change or delete it. To manage it from this "+
 			"configuration, import it.", kind, id, was, kind, now),
+	)
+}
+
+// addAnotherObjectAtDestroy warns that a destroy sent nothing, because id now
+// names another object than the one the row was made for.
+func addAnotherObjectAtDestroy(diags *diag.Diagnostics, kind, id, was, now string) {
+	diags.AddWarning(
+		fmt.Sprintf("The %s %q is another %s now", kind, id, kind),
+		fmt.Sprintf("This state's %s %q has uid %s. The platform's %s under that id has uid %s, so the one "+
+			"this state was for was deleted, and another was created under the same id. The destroy sent "+
+			"nothing to it and dropped this state's %s, so the other one is still there.",
+			kind, id, was, kind, now, kind),
 	)
 }
 

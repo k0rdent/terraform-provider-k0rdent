@@ -291,7 +291,7 @@ func (r *vpcPeeringResource) Create(ctx context.Context, req resource.CreateRequ
 			}
 			a := createAnswer{resp: created.HTTPResponse, body: created.Body}
 			if created.JSON201 != nil {
-				a.id = deref(created.JSON201.Id)
+				a.id, a.uid = deref(created.JSON201.Id), uidOf(created.JSON201.Uid)
 			}
 			return a
 		},
@@ -300,8 +300,9 @@ func (r *vpcPeeringResource) Create(ctx context.Context, req resource.CreateRequ
 			if err != nil {
 				return createLookup{err: err}
 			}
-			return lookupFrom(got.HTTPResponse, got.Body, got.JSON200 != nil,
-				func() string { return createTokenOf(got.JSON200.Tags) })
+			return lookupFrom(got.HTTPResponse, got.Body, got.JSON200 != nil, func() (string, string) {
+				return createTokenOf(got.JSON200.Tags), uidOf(got.JSON200.Uid)
+			})
 		},
 		busy: newBusyRetry("createVPCPeering", r.meta.Wait, r.dependencies(target, vpc, remote)...),
 	}
@@ -315,7 +316,7 @@ func (r *vpcPeeringResource) Create(ctx context.Context, req resource.CreateRequ
 		read: func(ctx context.Context, id string) (vpcPeeringModel, bool, diag.Diagnostics) {
 			return r.read(ctx, target, vpc, id, plan)
 		},
-	}.run(ctx, create, req.Plan, &resp.State, &resp.Diagnostics)
+	}.run(ctx, create, req.Plan, &resp.State, resp.Private, &resp.Diagnostics)
 	if ok {
 		resp.Diagnostics.Append(recordUID(ctx, resp.Private, created.uid)...)
 	}

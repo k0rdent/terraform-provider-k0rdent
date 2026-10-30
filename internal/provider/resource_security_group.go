@@ -390,7 +390,7 @@ func (r *securityGroupResource) Create(ctx context.Context, req resource.CreateR
 			}
 			a := createAnswer{resp: created.HTTPResponse, body: created.Body}
 			if created.JSON201 != nil {
-				a.id = created.JSON201.Id
+				a.id, a.uid = created.JSON201.Id, uidOf(created.JSON201.Uid)
 			}
 			return a
 		},
@@ -399,8 +399,9 @@ func (r *securityGroupResource) Create(ctx context.Context, req resource.CreateR
 			if err != nil {
 				return createLookup{err: err}
 			}
-			return lookupFrom(got.HTTPResponse, got.Body, got.JSON200 != nil,
-				func() string { return createTokenOfFreeform(presentMap(got.JSON200.Tags)) })
+			return lookupFrom(got.HTTPResponse, got.Body, got.JSON200 != nil, func() (string, string) {
+				return createTokenOfFreeform(presentMap(got.JSON200.Tags)), uidOf(got.JSON200.Uid)
+			})
 		},
 		timeoutID: timeoutMetadataID("securityGroupId"),
 		// A group still tearing down holds its id, so a replacement under a
@@ -416,7 +417,7 @@ func (r *securityGroupResource) Create(ctx context.Context, req resource.CreateR
 		read: func(ctx context.Context, id string) (securityGroupModel, bool, diag.Diagnostics) {
 			return r.read(ctx, target, id, plan)
 		},
-	}.run(ctx, create, req.Plan, &resp.State, &resp.Diagnostics)
+	}.run(ctx, create, req.Plan, &resp.State, resp.Private, &resp.Diagnostics)
 	if found {
 		resp.Diagnostics.Append(recordUID(ctx, resp.Private, created.uid)...)
 	}
