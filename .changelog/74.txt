@@ -1,0 +1,11 @@
+```release-note:enhancement
+resource/k0rdent_kubernetes_cluster: The plan refused over a tainted cluster without this provider's create token, such as an imported one, says `terraform destroy` is refused too and to run `terraform untaint` on it first, or `terraform destroy -refresh=false` when the state doesn't hold it
+```
+
+```release-note:enhancement
+resource/k0rdent_kubernetes_cluster: A create that meets a cluster carrying this provider's create token from another apply says it's most often what an apply stopped before saving state leaves, such as a killed process or a lost CI runner, beside the `terraform import` that takes it back
+```
+
+```release-note:note
+resource/k0rdent_kubernetes_cluster: Document that a run killed before the create returns saves nothing: `terraform destroy` finds nothing to destroy while the cluster is still built, and the next apply's "already exists" gives the import
+```
