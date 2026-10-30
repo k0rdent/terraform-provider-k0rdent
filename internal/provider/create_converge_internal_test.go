@@ -311,22 +311,32 @@ func TestA409CarryingThisCreatesTokenIsAdopted(t *testing.T) {
 
 // A cluster with the configured id that this create did not make is not taken
 // over. The error says so, quotes the platform and names the import command.
+// One carrying another apply's token is most often what a killed run left, and
+// the error says that too, but only then.
 func TestA409WithoutThisCreatesTokenIsRefused(t *testing.T) {
-	for name, tags := range map[string]map[string]string{
-		"no token":            nil,
-		"another run's token": {createTokenTag(): "another-run"},
+	const killed = "Most often that's an apply stopped before it could save state, such as a killed process"
+	for name, tc := range map[string]struct {
+		tags      map[string]string
+		saysKills bool
+	}{
+		"no token":            {nil, false},
+		"another run's token": {map[string]string{createTokenTag(): "another-run"}, true},
 	} {
 		t.Run(name, func(t *testing.T) {
 			api := newClusterAPI(t)
-			api.tags["c1"] = tags
+			api.tags["c1"] = tc.tags
 			resp := createCluster(t, api.serve(), "c1")
 			assertRefusedWithImport(t, resp.Diagnostics, "terraform import <address> test/test/c1")
-			found := false
+			found, kills := false, false
 			for _, d := range resp.Diagnostics.Errors() {
 				found = found || strings.Contains(d.Detail(), `cluster "c1" already exists in project`)
+				kills = kills || strings.Contains(d.Detail(), killed)
 			}
 			if !found {
 				t.Errorf("the platform's own message is missing: %v", resp.Diagnostics.Errors())
+			}
+			if kills != tc.saysKills {
+				t.Errorf("names an interrupted apply = %v, want %v: %v", kills, tc.saysKills, resp.Diagnostics.Errors())
 			}
 			if !resp.State.Raw.IsNull() {
 				t.Errorf("state was written for a cluster this create did not make: %v", resp.State.Raw)
