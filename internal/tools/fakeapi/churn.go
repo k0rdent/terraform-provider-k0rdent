@@ -154,14 +154,11 @@ func churnObject(obj map[string]any, read int64) {
 		obj["etag"] = "rev-churn-" + strconv.FormatInt(read, 10)
 	}
 
-	// "A watchdog-force-failed cluster may still return to `active` with no
-	// user action", so between two reads of a settled cluster it can be
-	// `failed`, with a `stateMessage` that is "not stable across releases",
-	// and then `active` again with none. Only a cluster carries `health`.
-	if _, isCluster := obj["health"]; isCluster && obj["state"] == "active" && read%4 == 2 {
-		obj["state"] = "failed"
-		obj["stateMessage"] = "the platform watchdog marked the cluster failed (read " + strconv.FormatInt(read, 10) + ")"
-	}
+	// A cluster's `state` doesn't churn. The contract's "a watchdog-force-
+	// failed cluster may still return to `active`" is a run the watchdog
+	// stopped, not a settled cluster turning `failed` between two reads, and
+	// a cluster read `failed` plans an update that waits for it. The marker
+	// watchdogFails in main.go is that run.
 
 	// "Timestamp of the latest persisted in-flight per-pool progress."
 	if _, ok := obj["progressUpdatedAt"]; ok {

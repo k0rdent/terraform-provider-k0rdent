@@ -1,0 +1,7 @@
+```release-note:bug
+resource/k0rdent_kubernetes_cluster: Fix `terraform apply` exiting 0 with "No changes" on a cluster the platform reports `failed`. The plan now warns with the platform's reason and plans an update, and the apply waits up to 2m for the cluster to come back to `active`, then fails with the `terraform apply -replace` advice if it doesn't. A cluster the cancel action left `failed` warns and plans nothing
+```
+
+```release-note:enhancement
+resource/k0rdent_kubernetes_cluster: Add `on_failed`. `keep` warns about a `failed` cluster and plans nothing, for a cluster kept as it is, such as one whose upgrade failed. It's stored without raising the state's schema version, so a workspace applied with this release can still go back to the one before
+```
