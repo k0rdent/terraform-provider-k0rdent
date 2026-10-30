@@ -94,10 +94,11 @@ func TestEveryGuidanceEntryIsTested(t *testing.T) {
 	}
 }
 
-// A bare 403 on a read only an organization role can make says which role it
-// needs, and that a credential scoped to a project can't have it. The same
-// 403 on another operation, or with a reason, isn't given that guidance.
-func TestAForbiddenOrganizationReadSaysWhichRoleItNeeds(t *testing.T) {
+// A bare 403 on a call only an organization role can make says which role it
+// needs, and that the platform gives the same 403 for an organization that
+// doesn't exist. The same 403 on another operation, or with a reason, isn't
+// given that guidance.
+func TestAForbiddenOrganizationCallSaysWhichRoleItNeeds(t *testing.T) {
 	forbidden := func(operation, reason string) *k0rdent.APIError {
 		resp, body := refusal(t, http.StatusForbidden, reason, "forbidden", false)
 		apiErr := k0rdent.NewAPIError(resp, body)
@@ -118,7 +119,18 @@ func TestAForbiddenOrganizationReadSaysWhichRoleItNeeds(t *testing.T) {
 		{"getServiceAccount", []string{"iam-admin", "not iam-viewer", "scoped to a project"}},
 		{"listServiceAccounts", []string{"iam-admin", "not iam-viewer", "scoped to a project"}},
 		{"listServiceAccountCredentials", []string{"iam-admin", "not iam-viewer", "scoped to a project"}},
+		// A destroy has to delete the project too, so a create names the
+		// role a delete needs.
+		{"createProjectInOrg", []string{"Creating a project needs organizations-member or organizations-admin",
+			"scoped to a project can't have either", "Ask for organizations-admin",
+			"can create a project but can't delete it, so a destroy fails"}},
+		{"updateProjectInOrg", []string{"Changing a project needs organizations-member or organizations-admin",
+			"scoped to a project can't have either"}},
+		{"deleteProjectInOrg", []string{"Deleting a project needs organizations-admin", "not organizations-member",
+			"scoped to a project"}},
 	}
+	// Each next step is one or two sentences, except these.
+	sentences := map[string]int{"createProjectInOrg": 3}
 	tested := map[string]bool{}
 	for _, tt := range tests {
 		tested[tt.operation] = true
@@ -137,8 +149,12 @@ func TestAForbiddenOrganizationReadSaysWhichRoleItNeeds(t *testing.T) {
 					t.Errorf("the next step contains %q: %s", banned, next)
 				}
 			}
-			if n := strings.Count(next, ". "); n > 1 {
-				t.Errorf("the next step is %d sentences, want one or two: %s", n+1, next)
+			most := sentences[tt.operation]
+			if most == 0 {
+				most = 2
+			}
+			if n := strings.Count(next, ". ") + 1; n > most {
+				t.Errorf("the next step is %d sentences, want at most %d: %s", n, most, next)
 			}
 			detail := apiErrorDetail(apiErr)
 			if at, id := strings.Index(detail, next), strings.Index(detail, "Request id: req-guide"); at < 0 || id < at {
