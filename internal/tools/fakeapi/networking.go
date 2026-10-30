@@ -77,7 +77,7 @@ type fakeVPC struct {
 // vpcForOwner is how a VPC comes into being. There is no create operation: the
 // cluster and instance-group workflows materialize one, which is exactly why
 // the provider exposes VPCs as a data source and not a resource.
-func (o *objects) vpcForOwner(ownerKind, ownerID string) {
+func (o *objects) vpcForOwner(ownerKind, ownerID, ownerUID string) {
 	vpc := "vpc-" + ownerID
 	// The fabric backend, which used to be the constant "nico" for every VPC.
 	// Only a `nico` VPC can carry security groups, the provider has a dedicated
@@ -89,7 +89,7 @@ func (o *objects) vpcForOwner(ownerKind, ownerID string) {
 	}
 	v := &fakeVPC{
 		id: vpc, uid: uidFor(o.scope, "vpc", vpc), backend: backend,
-		owner: ownerID, ownerKind: ownerKind, ownerUID: uidFor(o.scope, ownerKind, ownerID),
+		owner: ownerID, ownerKind: ownerKind, ownerUID: ownerUID,
 		securityGroups: []string{}, state: "active",
 	}
 	o.vpcs[at{id: vpc}] = v

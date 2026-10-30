@@ -283,7 +283,7 @@ func (r *projectResource) Create(ctx context.Context, req resource.CreateRequest
 	// A create is synchronous, so its answer is the project. When the answer
 	// is lost the read that proves the project is this one supplies it.
 	var got *k0rdent.Project
-	outcome, id, diags := convergingCreate{
+	outcome, made, diags := convergingCreate{
 		key: key, kind: "project", what: "create the project",
 		resourceName: ResourceName(projectResourceSuffix),
 		importID:     func(id string) string { return org + "/" + id },
@@ -294,7 +294,7 @@ func (r *projectResource) Create(ctx context.Context, req resource.CreateRequest
 			}
 			a := createAnswer{resp: created.HTTPResponse, body: created.Body}
 			if created.JSON201 != nil {
-				got, a.id = created.JSON201, deref(created.JSON201.Id)
+				got, a.id, a.uid = created.JSON201, deref(created.JSON201.Id), uidOf(created.JSON201.Uid)
 			}
 			return a
 		},
@@ -306,7 +306,8 @@ func (r *projectResource) Create(ctx context.Context, req resource.CreateRequest
 			if read.JSON200 != nil {
 				got = read.JSON200
 			}
-			return lookupFrom(read.HTTPResponse, read.Body, read.JSON200 != nil, func() string { return "" })
+			return lookupFrom(read.HTTPResponse, read.Body, read.JSON200 != nil,
+				func() (string, string) { return "", uidOf(read.JSON200.Uid) })
 		},
 	}.run(ctx)
 	resp.Diagnostics.Append(diags...)
@@ -316,11 +317,11 @@ func (r *projectResource) Create(ctx context.Context, req resource.CreateRequest
 	case outcome == createUnconfirmed || got == nil:
 		// Recorded so the next refresh reads it back rather than creating
 		// another. A 2xx with no body to read lands here too.
-		resp.Diagnostics.Append(recordUnconfirmed(ctx, req.Plan, &resp.State, id)...)
+		resp.Diagnostics.Append(recordUnconfirmed(ctx, req.Plan, &resp.State, made.id)...)
 		if outcome == createDone {
 			// Local: a 2xx the provider could not read.
 			resp.Diagnostics.AddError("The new project could not be read",
-				fmt.Sprintf("`createProjectInOrg` answered %q without a project body.", id))
+				fmt.Sprintf("`createProjectInOrg` answered %q without a project body.", made.id))
 		}
 		return
 	}

@@ -24,7 +24,8 @@ const (
 // replaces a tainted object, which reads as a create. So each state below
 // runs the real CLI:
 //
-//  1. `terraform apply` with a 1s create timeout fails, tainted
+//  1. `terraform apply` with a 1s create timeout fails, tainted, with the
+//     uid its answer named
 //  2. the fake takes the object to the state under test
 //  3. `terraform plan` passes, plans the replacement, and warns what applying
 //     it does
@@ -73,6 +74,11 @@ func TestAccADestroyRunsPastATaintedCreateInEveryState(t *testing.T) {
 				t.Fatalf("the apply passed while the create is still running:\n%s", out)
 			}
 			mustSay(t, "the apply", out, "is still being created")
+			// The uid the create's answer named, so the destroy below runs
+			// with the row bound to the object it made.
+			if c.heldUID(addr) == "" {
+				t.Error("the tainted row holds no uid")
+			}
 			destroyed := false
 			t.Cleanup(func() {
 				if destroyed {

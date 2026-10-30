@@ -489,6 +489,8 @@ type objects struct {
 	// released are the records of instances whose group was deleted, which
 	// the contract keeps and never reaps. See instances.go.
 	released []fakeInstance
+	// made counts the objects made under each kind and id. See newUID.
+	made map[string]int
 
 	// Only the global tier's objects, the scope with no region and no
 	// project, hold these. See projects.go, webhooks.go and
@@ -528,6 +530,7 @@ func newObjects(sc scope) *objects {
 		groupsSec:  table[*fakeSecurityGroup]{},
 		peerings:   table[*fakePeering]{},
 		fileStores: table[*fakeFileStore]{},
+		made:       map[string]int{},
 
 		projects:        table[*fakeProject]{},
 		webhooks:        table[*fakeWebhook]{},
@@ -1242,7 +1245,7 @@ func (s *state) createCluster(w http.ResponseWriter, r *http.Request) {
 
 	c := &cluster{
 		id:          id,
-		uid:         uidFor(o.scope, "cluster", id),
+		uid:         o.newUID("cluster", id),
 		project:     r.PathValue("project"),
 		ct:          ct,
 		version:     version,
@@ -1265,7 +1268,7 @@ func (s *state) createCluster(w http.ResponseWriter, r *http.Request) {
 	c.start("provisioning the cluster", "reserving-hardware", "provisioning-nodes", "bootstrapping-control-plane", "joining-workers")
 	clusterKind.put(o, "", id, c)
 	// A VPC is materialized by the cluster workflow, never created directly.
-	o.vpcForOwner("cluster", id)
+	o.vpcForOwner("cluster", id, c.uid)
 
 	// ASSUMPTION: a mutation response is a different
 	// shape from a read. `nextAvailableClusterTypeVersion` is "Populated only on
@@ -1990,7 +1993,7 @@ func (s *state) createInstanceGroup(w http.ResponseWriter, r *http.Request) {
 
 	g := &instanceGroup{
 		id:          id,
-		uid:         uidFor(o.scope, "instance_group", id),
+		uid:         o.newUID("instance_group", id),
 		project:     r.PathValue("project"),
 		clusterType: resolved,
 		displayName: body.DisplayName,
@@ -2001,7 +2004,7 @@ func (s *state) createInstanceGroup(w http.ResponseWriter, r *http.Request) {
 	}
 	g.provisioning = sortedMapKeys(pools)
 	instanceGroupKind.put(o, "", id, g)
-	o.vpcForOwner("instance_group", id)
+	o.vpcForOwner("instance_group", id, g.uid)
 	writeJSON(w, http.StatusCreated, s.groupBody(region, g))
 }
 
@@ -2578,6 +2581,19 @@ func patchString(current, sent *string) *string {
 	default:
 		return sent
 	}
+}
+
+// newUID is the uid of an object made under id. The first is uidFor's, and
+// each one made again under an id a deleted one released gets another, as the
+// platform's do.
+func (o *objects) newUID(kind, id string) string {
+	key := kind + "/" + id
+	n := o.made[key]
+	o.made[key] = n + 1
+	if n == 0 {
+		return uidFor(o.scope, kind, id)
+	}
+	return uidFor(o.scope, kind, fmt.Sprintf("%s#%d", id, n))
 }
 
 // uidFor gives an object the same UUID on every read, distinct per scope, kind

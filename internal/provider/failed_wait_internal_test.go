@@ -143,6 +143,14 @@ type pendingPlatform struct {
 	requests  []string
 	body      map[string]any
 	interrupt func()
+	// createdUID, when set, is the uid the create's answer names. No read
+	// names it.
+	createdUID string
+	// readUID, when set, makes the create answer 504 naming the id it was
+	// sent, and every read after it name readUID and carry the tags the
+	// create sent, its token among them.
+	readUID string
+	tags    any
 }
 
 func (p *pendingPlatform) serve(t *testing.T) *httptest.Server {
@@ -157,6 +165,29 @@ func (p *pendingPlatform) serve(t *testing.T) *httptest.Server {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.Method {
 		case http.MethodPost:
+			if p.readUID != "" {
+				var sent struct {
+					ID   string `json:"id"`
+					Tags any    `json:"tags"`
+				}
+				if err := json.NewDecoder(r.Body).Decode(&sent); err != nil {
+					t.Errorf("read create: %v", err)
+				}
+				p.mu.Lock()
+				p.tags = sent.Tags
+				p.mu.Unlock()
+				// Each kind's 504 names it under its own key. A kind with no
+				// key of its own reads it back as any 504.
+				w.WriteHeader(http.StatusGatewayTimeout)
+				if err := json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{
+					"code": 504, "message": "deadline exceeded", "details": []any{map[string]any{"metadata": map[string]any{
+						"clusterId": sent.ID, "instanceGroupId": sent.ID, "fileStoreId": sent.ID, "securityGroupId": sent.ID,
+					}}},
+				}}); err != nil {
+					t.Errorf("write: %v", err)
+				}
+				return
+			}
 			// The binding's POST answers 202, every create 201.
 			status := http.StatusCreated
 			if strings.Contains(r.URL.Path, "/networking/vpcs/") && !strings.Contains(r.URL.Path, "/peerings") {
@@ -168,7 +199,23 @@ func (p *pendingPlatform) serve(t *testing.T) *httptest.Server {
 				interrupt()
 			}
 		}
-		if err := json.NewEncoder(w).Encode(p.body); err != nil {
+		body := p.body
+		extra := map[string]any{}
+		switch {
+		case r.Method == http.MethodPost && p.createdUID != "":
+			extra["uid"] = p.createdUID
+		case r.Method == http.MethodGet && p.readUID != "":
+			p.mu.Lock()
+			extra["uid"], extra["tags"] = p.readUID, p.tags
+			p.mu.Unlock()
+		}
+		if len(extra) > 0 {
+			for k, v := range p.body {
+				extra[k] = v
+			}
+			body = extra
+		}
+		if err := json.NewEncoder(w).Encode(body); err != nil {
 			t.Errorf("write: %v", err)
 		}
 	}))
@@ -230,6 +277,63 @@ func TestAFailedWaitKeepsEveryKindInState(t *testing.T) {
 				}
 				if sent := platform.destructive(); len(sent) > 0 {
 					t.Errorf("a failed wait sent %v", sent)
+				}
+			})
+		}
+	}
+}
+
+// A create whose wait fails keeps the uid of what it made, so the tainted row
+// stays bound to it. Without it, the next refresh would take whatever it found
+// under the id, a cluster another tool made there after this one was deleted
+// included, and a destroy would delete that. The uid comes from the 201, or
+// from the kind's own read back after a 504, since that answer names none. A
+// wait that's interrupted stops on its first read, which would be the read
+// back, so a 504 is only waited out to its timeout.
+func TestAFailedWaitRecordsTheUIDOfWhatTheCreateMade(t *testing.T) {
+	const made = "00000000-0000-4000-8000-0000000000aa"
+	for kind, k := range pendingKinds() {
+		if kind == "VPC security group binding" {
+			continue // it creates nothing, so it has no uid to record
+		}
+		for _, tc := range []struct {
+			name              string
+			read, interrupted bool
+		}{
+			{"201, wait times out", false, false},
+			{"201, wait interrupted", false, true},
+			{"504, read back, wait times out", true, false},
+		} {
+			t.Run(kind+" answered "+tc.name, func(t *testing.T) {
+				ctx, cancel := context.WithCancel(context.Background())
+				defer cancel()
+				body := map[string]any{}
+				for name, v := range k.body {
+					if name != "uid" {
+						body[name] = v
+					}
+				}
+				platform := &pendingPlatform{body: body, createdUID: made}
+				if tc.read {
+					platform = &pendingPlatform{body: body, readUID: made}
+				}
+				timeout := 300 * time.Millisecond
+				if tc.interrupted {
+					platform.interrupt, timeout = cancel, time.Minute
+				}
+				r := k.build(testClusterMeta(t, platform.serve(t).URL, timeout))
+				planRaw, s := testValue(t, r, k.plan(t, r))
+				resp := resource.CreateResponse{State: tfsdk.State{Raw: tftypes.NewValue(planRaw.Type(), nil), Schema: s.Schema}}
+				freshPrivate(t, &resp.Private, nil)
+				r.Create(ctx, resource.CreateRequest{Plan: tfsdk.Plan{Raw: planRaw, Schema: s.Schema}}, &resp)
+				if !resp.Diagnostics.HasError() {
+					t.Fatal("a create whose wait never ended reported success")
+				}
+				if resp.State.Raw.IsNull() {
+					t.Fatalf("nothing was written to state: %v", resp.Diagnostics.Errors())
+				}
+				if got := heldUID(context.Background(), resp.Private); got != made {
+					t.Errorf("recorded uid = %q, want %q: %v", got, made, resp.Diagnostics.Errors())
 				}
 			})
 		}
