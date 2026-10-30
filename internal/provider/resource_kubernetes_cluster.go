@@ -169,6 +169,7 @@ func (r *clusterResource) Schema(ctx context.Context, _ resource.SchemaRequest, 
 			"waits for the same delete without sending another. " +
 			"A tainted cluster without the token, such as an imported one, refuses `terraform destroy` too, " +
 			"since destroy runs that plan first: run `terraform untaint` on it, then `terraform destroy`. " +
+			"If the state doesn't hold it, `terraform destroy -refresh=false` skips that plan. " +
 			"A run killed before the create returns, such as by `kill -9` or a lost CI runner, saves nothing, " +
 			"so the cluster keeps being built with nothing in state: `terraform destroy` finds nothing to " +
 			"destroy, and the next apply fails with \"already exists\" and gives the `terraform import` " +

@@ -658,7 +658,8 @@ func TestAPlanPassesATaintedCreateInEveryState(t *testing.T) {
 				if tc.refuse {
 					containsAll(t, "the refused plan", strings.Join(errs, "\n"),
 						"carries no create token", "Nothing was sent: the plan was refused.",
-						"so it's refused too", "terraform untaint <address>\n    terraform destroy")
+						"so it's refused too", "terraform untaint <address>\n    terraform destroy",
+						"`terraform destroy -refresh=false` skips that plan")
 					return
 				}
 				if len(errs) > 0 {

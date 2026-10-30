@@ -1,5 +1,5 @@
 ```release-note:enhancement
-resource/k0rdent_kubernetes_cluster: The plan refused over a tainted cluster without this provider's create token, such as an imported one, says `terraform destroy` is refused too and to run `terraform untaint` on it first
+resource/k0rdent_kubernetes_cluster: The plan refused over a tainted cluster without this provider's create token, such as an imported one, says `terraform destroy` is refused too and to run `terraform untaint` on it first, or `terraform destroy -refresh=false` when the state doesn't hold it
 ```
 
 ```release-note:enhancement
