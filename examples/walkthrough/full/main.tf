@@ -67,7 +67,8 @@ locals {
 # ---------------------------------------------------------------------------
 
 # With build.own_project, a project of its own, deleted last on destroy. That
-# needs a credential scoped to the organization.
+# needs organizations-admin on the organization: organizations-member can't
+# delete a project.
 resource "k0rdent_project" "own" {
   # count = 1 or 0 turns the resource on or off.
   count = var.build.own_project ? 1 : 0
