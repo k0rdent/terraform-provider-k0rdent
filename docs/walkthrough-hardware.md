@@ -409,6 +409,18 @@ The `build` block in `terraform.tfvars` turns each part on or off:
 
 ## When something goes wrong
 
+To keep everything a run showed, run it through `record.sh` from the
+provider checkout in the run folder:
+
+```sh
+../provider/scripts/record.sh -- ./walkthrough.sh up cluster
+```
+
+It prints the directory at the end: the terminal as you saw it, and each
+`terraform` command's own output and `TF_LOG` output filed under that command,
+with the credential redacted. Attach that directory's `index.md` and the
+failing step's files to a report. `TESTING.md` has the details.
+
 | What you see | What to do |
 | --- | --- |
 | 401 | Check the client id and secret |

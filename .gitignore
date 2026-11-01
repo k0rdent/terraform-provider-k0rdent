@@ -45,6 +45,11 @@ terraform.rc
 # state in here describes real resources, so it must never be committed.
 .live/
 
+# `scripts/record.sh` without --out: a recorded run's transcript and each
+# command's output and logs. Redacted, but the transcript holds whatever the
+# run printed.
+.record/
+
 # Go
 *.test
 *.out

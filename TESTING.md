@@ -137,6 +137,55 @@ Follow [docs/walkthrough-hardware.md](docs/walkthrough-hardware.md) and
 [docs/walkthrough-api.md](docs/walkthrough-api.md) against the fake. A page
 that no longer matches its directories or commands fails here.
 
+### Recording a run
+
+[`scripts/record.sh`](scripts/record.sh) runs any of the commands above, or a
+walkthrough, and keeps everything it produced in one directory: the terminal as
+you saw it, and for every `terraform` or `tofu` command the run made, that
+command's own stdout, stderr, `TF_LOG` output and the fake's log lines, filed
+under the command that produced them.
+
+```sh
+scripts/record.sh -- make walkthrough-test
+scripts/record.sh --fake-log .demo/fake.log -- make demo
+```
+
+In a run folder from `walkthrough.sh setup`, after `. ./setup.sh`:
+
+```sh
+../provider/scripts/record.sh -- ./walkthrough.sh up cluster
+```
+
+The command runs as it would without the script, prompts included, and
+`record.sh` exits with its exit code. The directory is `.record/<time>-<command>`
+under the current directory, or `--out DIR`, and it holds:
+
+- `terminal.txt`, the whole terminal with the control codes stripped, and
+  `terminal.log`, the raw recording.
+- `index.md`, every wrapped command in order with where it ran, how long it
+  took, its exit code, its files and its first error lines. `steps.jsonl` is
+  the same for tools.
+- `steps/NNN-terraform-<subcommand>/`, one per command: `stdout.log`,
+  `stderr.log`, `output.log` with both as they arrived, `terraform.log` from
+  `TF_LOG`, `fake.log` with the fake's lines during that command, `terminal.txt`
+  with that command's part of the transcript, and `crash.log` when Terraform
+  wrote one.
+- `command.txt` and `environment.txt`: the command, the versions it ran with,
+  and the `K0RDENT_*` and `TF_*` variables, secret values replaced.
+
+`TF_LOG` defaults to `DEBUG` for the wrapped commands and goes to each step's
+`terraform.log` rather than the terminal. `--tf-log TRACE` adds the plugin
+protocol, `--tf-log off` leaves logging as the shell has it, and a `TF_LOG`
+already set in the shell is kept. Every value of a `SECRET`, `TOKEN`,
+`API_KEY`, `PASSWORD` or `CREDENTIAL` variable is replaced with `[redacted]`
+in every file once the command finishes. Look through the directory before
+sharing it all the same: the transcript holds whatever the run printed.
+
+A wrapped command's stdout isn't a terminal while it's recorded, so Terraform
+prints it without colour. `--wrap ""` records the transcript alone, and
+`--wrap "terraform tofu curl"` files other commands the same way. The header
+of `scripts/record.sh` has the rest.
+
 ### `make upgrade-test`
 
 Applies each walkthrough directory, as the previous release shipped it, with
@@ -364,4 +413,6 @@ terraform destroy -auto-approve -var-file=../../.live/kept.tfvars
 
 Open an issue with the command, the PASS and FAIL lines (`.live/results.txt`
 for a live run), the failing step's full output, and your Terraform or
-OpenTofu version. Never paste a client secret, a token or a kubeconfig.
+OpenTofu version. A run made through `scripts/record.sh` has all of that in
+its directory, with the failing step's own `stderr.log` and `terraform.log`
+beside each other. Never paste a client secret, a token or a kubeconfig.

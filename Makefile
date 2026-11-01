@@ -319,6 +319,10 @@ live-kept-vars-test: ## Prove LIVE_KEEP=1 keeps the cluster type and version, an
 script-lib-test: ## Test the helpers every script sources from scripts/lib
 	./scripts/tests/test-script-lib.sh
 
+.PHONY: record-test
+record-test: ## Prove scripts/record.sh keeps the transcript, files each wrapped command's output and logs by command, and redacts secrets
+	./scripts/tests/test-record.sh
+
 # Every tracked script under scripts/ and ci/, at warning and above. Notes are
 # left out because most are single quotes around text another program
 # expands, which is the point. .shellcheckrc lets -x follow `. lib/common.sh`

@@ -72,6 +72,8 @@ jobs:
         run: make live-kept-vars-test
       - name: the helpers the scripts share
         run: make script-lib-test
+      - name: record.sh files each command's output and logs, and redacts the secret
+        run: make record-test
       # shellcheck comes with the ubuntu-latest image.
       - name: shellcheck the scripts
         run: make shellcheck
