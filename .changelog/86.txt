@@ -1,0 +1,7 @@
+```release-note:bug
+resource/k0rdent_kubernetes_cluster: Fix the first plan after importing a cluster with `ssh_access` proposing a replacement. The platform returns references to the keys and not the keys, so the configured keys are recorded in place, with a warning
+```
+
+```release-note:bug
+resource/k0rdent_instance_group: Fix the first plan after importing an instance group with `ssh_access` proposing a replacement. The platform returns references to the keys and not the keys, so the configured keys are recorded in place, with a warning
+```

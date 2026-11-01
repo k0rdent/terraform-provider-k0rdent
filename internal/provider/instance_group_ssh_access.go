@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework-validators/listvalidator"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
@@ -94,13 +95,61 @@ func missingSSHAccessAdvice(access types.Set, last *k0rdent.InstanceGroup) strin
 }
 
 // sshAccessRequiresReplace makes every change to `ssh_access` a replacement
-// but one: a configuration with no users, planned against a group whose last
-// read held users the platform had released (teardown_read.go). The platform
-// and the configuration agree there are none, so the change records that in
-// place and sends nothing.
+// but two, which record the change in place and send nothing. One is a
+// configuration with no users, planned against a group whose last read held
+// users the platform had released (teardown_read.go): the platform and the
+// configuration agree there are none. The other is keys written for users an
+// import read with none: see fillsUnreadKeys.
 func sshAccessRequiresReplace(ctx context.Context, req planmodifier.SetRequest, resp *setplanmodifier.RequiresReplaceIfFuncResponse) {
+	if fillsUnreadKeys(ctx, req.StateValue, req.PlanValue, &resp.Diagnostics) {
+		return
+	}
 	none := req.ConfigValue.IsNull() || (!req.ConfigValue.IsUnknown() && len(req.ConfigValue.Elements()) == 0)
 	resp.RequiresReplace = !none || !wasReleased(ctx, req.Private)
+}
+
+// fillsUnreadKeys reports whether the plan only writes keys for users that
+// state holds with none, and warns that the apply records them. A user always
+// has a key, so one held with none was read from a platform that answers
+// with references to its keys and not the keys (the k0rdent API since
+// v1.3.0-rc.1), with no prior state to take them from: an import. The users,
+// their sudo and their display names must match, so only the keys are new.
+func fillsUnreadKeys(ctx context.Context, state, plan types.Set, diags *diag.Diagnostics) bool {
+	if state.IsNull() || state.IsUnknown() || plan.IsNull() || plan.IsUnknown() || state.Equal(plan) {
+		return false
+	}
+	var held, planned []sshUserModel
+	if state.ElementsAs(ctx, &held, false).HasError() || plan.ElementsAs(ctx, &planned, false).HasError() ||
+		len(held) != len(planned) {
+		return false
+	}
+	byName := make(map[string]sshUserModel, len(held))
+	for _, u := range held {
+		byName[u.Username.ValueString()] = u
+	}
+	var filled []string
+	for _, p := range planned {
+		h, ok := byName[p.Username.ValueString()]
+		if !ok || !h.Sudo.Equal(p.Sudo) || !h.DisplayName.Equal(p.DisplayName) {
+			return false
+		}
+		// Each held user once, so a username written twice can't stand in
+		// for a user the plan drops.
+		delete(byName, p.Username.ValueString())
+		if h.SSHPublicKeys.Equal(p.SSHPublicKeys) {
+			continue
+		}
+		if h.SSHPublicKeys.IsNull() || h.SSHPublicKeys.IsUnknown() || len(h.SSHPublicKeys.Elements()) > 0 {
+			return false
+		}
+		filled = append(filled, p.Username.ValueString())
+	}
+	diags.AddWarning("`ssh_public_keys` is recorded, not sent",
+		fmt.Sprintf("The platform doesn't return the public keys of %s, only references to them, so "+
+			"state had none after the import. The apply records the configured keys and sends nothing. "+
+			"It can't check them against the nodes: make sure they're the keys the nodes were made with. "+
+			"A later change to them replaces the resource.", strings.Join(filled, ", ")))
+	return true
 }
 
 // sshAccessRequest turns the configured set into the create body's list. Nil

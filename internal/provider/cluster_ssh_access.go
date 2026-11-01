@@ -66,9 +66,13 @@ func noSSHUsers(v types.Set) bool {
 // replaces nothing. Without a record there's nothing to compare against, so
 // the change is recorded in place: see warnUnrecordedSSHAccess. Nor does a
 // configuration with no users, against a cluster whose last read held users
-// the platform had released (teardown_read.go): both say there are none.
+// the platform had released (teardown_read.go): both say there are none. Nor
+// do keys written for users an import read with none: see fillsUnreadKeys.
 func clusterSSHAccessRequiresReplace(ctx context.Context, req planmodifier.SetRequest, resp *setplanmodifier.RequiresReplaceIfFuncResponse) {
 	if noSSHUsers(req.PlanValue) && wasReleased(ctx, req.Private) {
+		return
+	}
+	if fillsUnreadKeys(ctx, req.StateValue, req.PlanValue, &resp.Diagnostics) {
 		return
 	}
 	resp.RequiresReplace = sshAccessRecorded(ctx, req.Private) &&
