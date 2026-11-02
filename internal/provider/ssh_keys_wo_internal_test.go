@@ -687,3 +687,35 @@ func TestAClusterCreateKeepsItsUsersOverAnEmptyReadBack(t *testing.T) {
 		t.Errorf("ssh_access = %v (%v), want the user the create sent", stored, resp.Diagnostics)
 	}
 }
+
+// Keys the configuration leaves out keep what state holds for that user, so
+// moving them to `ssh_public_keys_wo` plans no change. On a create there's
+// nothing to keep, and they're planned null.
+func TestKeysLeftOutKeepWhatStateHolds(t *testing.T) {
+	ctx := context.Background()
+	user := func(keys types.List) types.Set {
+		v, d := types.SetValueFrom(ctx, sshUserObjectType(), []sshUserModel{{Username: types.StringValue("ops"),
+			SSHPublicKeys: keys, Credentials: types.ListNull(types.StringType), Sudo: types.StringNull(), DisplayName: types.StringNull()}})
+		if d.HasError() {
+			t.Fatal(d)
+		}
+		return v
+	}
+	held := types.ListValueMust(types.StringType, []attr.Value{types.StringValue(keyA)})
+	unknown := user(types.ListUnknown(types.StringType))
+	for name, tt := range map[string]struct {
+		state types.Set
+		want  types.Set
+	}{
+		"kept from state": {user(held), user(held)},
+		"on a create":     {types.SetNull(sshUserObjectType()), user(types.ListNull(types.StringType))},
+	} {
+		t.Run(name, func(t *testing.T) {
+			resp := planmodifier.SetResponse{PlanValue: unknown}
+			refsByUsername{}.PlanModifySet(ctx, planmodifier.SetRequest{StateValue: tt.state, PlanValue: unknown}, &resp)
+			if !resp.PlanValue.Equal(tt.want) {
+				t.Errorf("planned %v, want %v", resp.PlanValue, tt.want)
+			}
+		})
+	}
+}

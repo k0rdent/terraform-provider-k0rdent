@@ -25,3 +25,11 @@ resource/k0rdent_instance_group: Add `ssh_public_key_refs` to each `ssh_access` 
 ```release-note:enhancement
 data-source/k0rdent_instance_group: Add `ssh_public_key_refs` to each `ssh_access` user
 ```
+
+```release-note:note
+resource/k0rdent_kubernetes_cluster: The first refresh after upgrading reads `ssh_public_key_refs` for each SSH user. The plan stays empty
+```
+
+```release-note:note
+resource/k0rdent_instance_group: The first refresh after upgrading reads `ssh_public_key_refs` for each SSH user. The plan stays empty
+```

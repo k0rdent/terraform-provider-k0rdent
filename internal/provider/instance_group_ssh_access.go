@@ -331,6 +331,7 @@ func sshUserNestedObject() schema.NestedAttributeObject {
 			},
 			"ssh_public_keys": schema.ListAttribute{
 				Optional:            true,
+				Computed:            true,
 				ElementType:         types.StringType,
 				MarkdownDescription: sshPublicKeysDescription,
 				Validators: []validator.List{
@@ -490,32 +491,42 @@ func configuredWriteOnlyKeys(ctx context.Context, config tfsdk.Config) (map[stri
 	return writeOnlyKeys(ctx, v)
 }
 
-// refsByUsername keeps each user's references from state by username.
-// UseStateForUnknown matches set elements by position, which swaps them.
+// refsByUsername keeps each user's keys and references from state, by
+// username, where the configuration leaves them out. So moving keys to
+// `ssh_public_keys_wo` plans no change. UseStateForUnknown matches set
+// elements by position, which swaps them. On a create there's nothing to keep.
 type refsByUsername struct{}
 
 func (refsByUsername) Description(context.Context) string {
-	return "references kept from state, by username"
+	return "keys and references kept from state, by username"
 }
 
 func (m refsByUsername) MarkdownDescription(ctx context.Context) string { return m.Description(ctx) }
 
 func (refsByUsername) PlanModifySet(ctx context.Context, req planmodifier.SetRequest, resp *planmodifier.SetResponse) {
 	plan, state := resp.PlanValue, req.StateValue
-	if plan.IsNull() || plan.IsUnknown() || state.IsNull() || state.IsUnknown() {
+	if plan.IsNull() || plan.IsUnknown() || state.IsUnknown() {
 		return
 	}
 	var planned, held []sshUserModel
-	if plan.ElementsAs(ctx, &planned, false).HasError() || state.ElementsAs(ctx, &held, false).HasError() {
+	if plan.ElementsAs(ctx, &planned, false).HasError() ||
+		(!state.IsNull() && state.ElementsAs(ctx, &held, false).HasError()) {
 		return
 	}
-	refs := make(map[string]types.List, len(held))
+	byName := make(map[string]sshUserModel, len(held))
 	for _, u := range held {
-		refs[u.Username.ValueString()] = u.Credentials
+		byName[u.Username.ValueString()] = u
 	}
 	for i, u := range planned {
-		if r, ok := refs[u.Username.ValueString()]; ok && u.Credentials.IsUnknown() {
-			planned[i].Credentials = r
+		h, ok := byName[u.Username.ValueString()]
+		if u.Credentials.IsUnknown() && ok {
+			planned[i].Credentials = h.Credentials
+		}
+		if u.SSHPublicKeys.IsUnknown() {
+			planned[i].SSHPublicKeys = types.ListNull(types.StringType)
+			if ok {
+				planned[i].SSHPublicKeys = h.SSHPublicKeys
+			}
 		}
 	}
 	out, d := types.SetValueFrom(ctx, sshUserObjectType(), planned)
