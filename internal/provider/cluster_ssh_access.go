@@ -180,8 +180,8 @@ func sshPublicKeysWOAttribute() schema.MapAttribute {
 			"`ssh_public_key_refs`. A changed key is found by its fingerprint and planned as a change " +
 			"to `ssh_access`. After a create the provider checks against the " +
 			"keys it sent. After an import it reads each key's fingerprint from the platform, which needs " +
-			"`credentials.metadata.read` in the project: a project-scoped service account with " +
-			"`credentials-admin`. Without it, the plan warns and the apply stops: it never plans no change " +
+			"`credentials.metadata.read` bound in the project. " +
+			"Without it, the plan warns and the apply stops: it never plans no change " +
 			"over keys it can't check.",
 	}
 }

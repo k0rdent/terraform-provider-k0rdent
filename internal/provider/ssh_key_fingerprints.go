@@ -200,14 +200,18 @@ func describeUnchecked(why map[string]string) string {
 const sshKeysBlockedKey = "ssh_keys_blocked"
 
 // keysNeedRole is how an account gets to read a key's fingerprint. The
-// platform binds `credentials-admin` only at platform or project scope
-// (k0rdent API v1.3.0-rc.5, its built-in roles), and on kind an
-// organization-scoped account holding it was refused, a project-scoped one
-// read it.
-const keysNeedRole = "The read needs `credentials.metadata.read` in the resource's project: a " +
-	"service account scoped to that project with the built-in role `credentials-admin` has it. " +
-	"An organization-scoped account doesn't, even with that role, since the platform binds it " +
-	"only at platform or project scope."
+// platform applies `credentials-admin` only at platform or project scope
+// (k0rdent API v1.3.0-rc.5, its built-in roles). On kind an
+// organization-scoped account holding it across the organization was
+// refused, and the same account read the key once a policy bound the role
+// in the project. The platform passes only compute permissions from an
+// organization binding down to its projects, so a role with this permission
+// bound across the organization (a custom one, on kind) reads nothing.
+const keysNeedRole = "The read needs `credentials.metadata.read` bound in the resource's project. A " +
+	"custom role holding only that permission is enough. The built-in `credentials-admin` has it " +
+	"too, but can also change and revoke credentials. An organization-scoped account needs the " +
+	"role bound in each project it imports into: the platform passes only compute roles from an " +
+	"organization down to its projects."
 
 // uncheckedKeysText says which users' configured keys couldn't be checked,
 // and why.

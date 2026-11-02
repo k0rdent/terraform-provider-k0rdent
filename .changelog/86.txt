@@ -7,11 +7,11 @@ resource/k0rdent_instance_group: Fix the first plan after importing an instance 
 ```
 
 ```release-note:enhancement
-resource/k0rdent_kubernetes_cluster: Add write-only `ssh_public_keys_wo`, the users' keys by username, sent on the create and never stored, so an import with the same configuration plans no changes. Needs Terraform or OpenTofu 1.11. A changed key, in either attribute, plans a replacement: after an import the provider checks keys against the fingerprints the platform holds, which needs `credentials.metadata.read` in the project (a project-scoped account with `credentials-admin`). Without it, a plan that sets keys warns and the apply stops
+resource/k0rdent_kubernetes_cluster: Add write-only `ssh_public_keys_wo`, the users' keys by username, sent on the create and never stored, so an import with the same configuration plans no changes. Needs Terraform or OpenTofu 1.11. A changed key, in either attribute, plans a replacement: after an import the provider checks keys against the fingerprints the platform holds, which needs `credentials.metadata.read` in the project bound in that project. Without it, a plan that sets keys warns and the apply stops
 ```
 
 ```release-note:enhancement
-resource/k0rdent_instance_group: Add write-only `ssh_public_keys_wo`, the users' keys by username, sent on the create and never stored, so an import with the same configuration plans no changes. Needs Terraform or OpenTofu 1.11. A changed key, in either attribute, plans a replacement: after an import the provider checks keys against the fingerprints the platform holds, which needs `credentials.metadata.read` in the project (a project-scoped account with `credentials-admin`). Without it, a plan that sets keys warns and the apply stops
+resource/k0rdent_instance_group: Add write-only `ssh_public_keys_wo`, the users' keys by username, sent on the create and never stored, so an import with the same configuration plans no changes. Needs Terraform or OpenTofu 1.11. A changed key, in either attribute, plans a replacement: after an import the provider checks keys against the fingerprints the platform holds, which needs `credentials.metadata.read` in the project bound in that project. Without it, a plan that sets keys warns and the apply stops
 ```
 
 ```release-note:enhancement

@@ -106,10 +106,40 @@ keys on the nodes. After a create it has the keys it sent. After an import it
 reads each key's fingerprint from the platform. A different key plans a
 replacement, since the platform sets keys only when nodes are made.
 
-Reading a fingerprint needs `credentials.metadata.read` in the resource's
-project. A service account scoped to that project with the built-in role
-`credentials-admin` has it. An organization-scoped account doesn't, even with
-that role, because the platform binds it only at platform or project scope.
+Reading a fingerprint needs `credentials.metadata.read` bound in the
+resource's project. Resources the account creates need nothing, since the
+provider checks them against the keys it sent. A binding across the
+organization doesn't reach its projects, because the platform passes only
+compute roles down. So an organization-scoped account, such as the one the
+walkthrough uses, needs the role bound in each project it imports into.
+
+The narrowest role holds only that permission, and can't read a credential's
+secret or change one. An organization admin creates it once, with
+`POST /v1/regions/global/organizations/<org>/iam/roles`:
+
+```json
+{
+  "id": "ssh-key-reader",
+  "displayName": "SSH key reader",
+  "permissions": ["credentials.metadata.read"],
+  "scopes": ["project"]
+}
+```
+
+Then binds it in each project, with
+`POST /v1/regions/global/organizations/<org>/iam/policies`:
+
+```json
+{
+  "role": "ssh-key-reader",
+  "principal": { "type": "serviceAccount", "id": "<service account id>" },
+  "scope": { "type": "project", "resource": "<project>" }
+}
+```
+
+The built-in `credentials-admin` also has the permission, but it can change
+and revoke credentials too.
+
 Without it:
 
 - The import warns that it can't check the keys.
