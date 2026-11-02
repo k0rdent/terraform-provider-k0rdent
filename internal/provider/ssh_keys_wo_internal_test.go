@@ -244,7 +244,7 @@ func TestAClusterCreateHoldsTheFingerprintsOfTheKeysItSent(t *testing.T) {
 	if len(sent) != 1 || !reflect.DeepEqual(sent[0]["sshAccess"], []any{map[string]any{"username": "ops", "sshPublicKeys": []any{keyA}}}) {
 		t.Errorf("sent %v, want ops with the write-only key", sent)
 	}
-	held := loadFingerprints(context.Background(), any(resp.Private).(privateState))
+	held := loadFingerprints(context.Background(), privateIn(t, resp.Private))
 	if !reflect.DeepEqual(held, map[string][]string{"ops": {keyAFP}}) {
 		t.Errorf("held %v, want the key's fingerprint", held)
 	}
@@ -292,7 +292,7 @@ func TestAGroupCreateHoldsTheFingerprintsOfTheKeysItSent(t *testing.T) {
 	if resp.Diagnostics.HasError() {
 		t.Fatalf("create: %v", resp.Diagnostics.Errors())
 	}
-	held := loadFingerprints(context.Background(), any(resp.Private).(privateState))
+	held := loadFingerprints(context.Background(), privateIn(t, resp.Private))
 	if !reflect.DeepEqual(held, map[string][]string{"ops": {keyAFP}}) {
 		t.Errorf("held %v, want the key's fingerprint", held)
 	}
@@ -324,7 +324,7 @@ func TestAChangedWriteOnlyKeyIsRefusedAsAReplacement(t *testing.T) {
 				req := resource.ModifyPlanRequest{Config: tfsdk.Config{Raw: configRaw, Schema: s.Schema}, Plan: plan,
 					State: tfsdk.State{Raw: stateRaw, Schema: s.Schema}}
 				freshPrivate(t, &req.Private, nil)
-				if d := saveFingerprints(context.Background(), any(req.Private).(privateWriter), map[string][]string{"ops": {keyAFP}}); d.HasError() {
+				if d := saveFingerprints(context.Background(), privateIn(t, req.Private), map[string][]string{"ops": {keyAFP}}); d.HasError() {
 					t.Fatal(d)
 				}
 				resp := resource.ModifyPlanResponse{Plan: plan}
@@ -518,8 +518,8 @@ func TestAFailedResourceWithSSHAccessLeftOutPlansNoChange(t *testing.T) {
 			tt.r.ModifyPlan(context.Background(), resource.ModifyPlanRequest{Config: tfsdk.Config{Raw: configRaw, Schema: s.Schema},
 				Plan: plan, State: tfsdk.State{Raw: stateRaw, Schema: s.Schema}}, &resp)
 			if !resp.Plan.Raw.Equal(stateRaw) {
-				diffs, _ := stateRaw.Diff(resp.Plan.Raw)
-				t.Errorf("planned a change: %v (%v)", diffs, resp.Diagnostics)
+				diffs, err := stateRaw.Diff(resp.Plan.Raw)
+				t.Errorf("planned a change: %v %v (%v)", diffs, err, resp.Diagnostics)
 			}
 		})
 	}
@@ -545,7 +545,7 @@ func TestAChangedWriteOnlyKeyPlansNewReferences(t *testing.T) {
 		req := resource.ModifyPlanRequest{Config: tfsdk.Config{Raw: configRaw, Schema: s.Schema}, Plan: plan,
 			State: tfsdk.State{Raw: stateRaw, Schema: s.Schema}}
 		freshPrivate(t, &req.Private, nil)
-		if d := saveFingerprints(context.Background(), any(req.Private).(privateWriter), map[string][]string{"ops": {keyAFP}}); d.HasError() {
+		if d := saveFingerprints(context.Background(), privateIn(t, req.Private), map[string][]string{"ops": {keyAFP}}); d.HasError() {
 			t.Fatal(d)
 		}
 		resp := resource.ModifyPlanResponse{Plan: plan}
@@ -644,7 +644,7 @@ func TestAWriteOnlyKeyUnknownAtPlanReplaces(t *testing.T) {
 	req := resource.ModifyPlanRequest{Config: tfsdk.Config{Raw: configRaw, Schema: s.Schema}, Plan: plan,
 		State: tfsdk.State{Raw: stateRaw, Schema: s.Schema}}
 	freshPrivate(t, &req.Private, nil)
-	if d := saveFingerprints(context.Background(), any(req.Private).(privateWriter), map[string][]string{"ops": {keyAFP}}); d.HasError() {
+	if d := saveFingerprints(context.Background(), privateIn(t, req.Private), map[string][]string{"ops": {keyAFP}}); d.HasError() {
 		t.Fatal(d)
 	}
 	resp := resource.ModifyPlanResponse{Plan: plan}
@@ -672,7 +672,7 @@ func TestARefreshHoldsTheKeysStateHolds(t *testing.T) {
 	resp, _ := readCluster(t, sshAccessAPI(t, answerJSON(t, http.StatusOK,
 		`[{"username":"ops","sshPublicKeyCredentials":["/v1/regions/test/projects/test/credentials/mcred-01jabcdefghjkmnpqrstvwxyz0"]}]`)), opsAccess())
 	want := map[string][]string{"ops": {sshFingerprint("ssh-ed25519 AAAA ops")}}
-	if got := loadFingerprints(context.Background(), any(resp.Private).(privateState)); !reflect.DeepEqual(got, want) {
+	if got := loadFingerprints(context.Background(), privateIn(t, resp.Private)); !reflect.DeepEqual(got, want) {
 		t.Errorf("cluster held %v, want %v", got, want)
 	}
 	body := deletingGroupBody("active")
@@ -680,7 +680,7 @@ func TestARefreshHoldsTheKeysStateHolds(t *testing.T) {
 		"sshPublicKeyCredentials": []any{"/v1/regions/test/projects/test/credentials/mcred-01jabcdefghjkmnpqrstvwxyz0"}}}
 	read, _ := refreshThenPlan(t, body, with(opsGroup("active"), map[string]tftypes.Value{"ssh_access": opsAccess()}),
 		with(opsGroup("active"), map[string]tftypes.Value{"ssh_access": opsAccess()}))
-	if got := loadFingerprints(context.Background(), any(read.Private).(privateState)); !reflect.DeepEqual(got, want) {
+	if got := loadFingerprints(context.Background(), privateIn(t, read.Private)); !reflect.DeepEqual(got, want) {
 		t.Errorf("group held %v, want %v", got, want)
 	}
 }
@@ -797,4 +797,21 @@ func TestConfiguredUnknownReferencesStayUnknown(t *testing.T) {
 	if !resp.PlanValue.Equal(unknown) {
 		t.Errorf("planned %v, want the references unknown", resp.PlanValue)
 	}
+}
+
+// privateIn is a response's or request's private state, which these tests
+// both read and write.
+func privateIn(t *testing.T, p any) interface {
+	privateState
+	privateWriter
+} {
+	t.Helper()
+	rw, ok := p.(interface {
+		privateState
+		privateWriter
+	})
+	if !ok {
+		t.Fatal("private state can't be read and written")
+	}
+	return rw
 }

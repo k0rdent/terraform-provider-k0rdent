@@ -344,7 +344,7 @@ func TestImportedUsersWithoutKeysTakeTheConfiguredOnes(t *testing.T) {
 				req := planmodifier.SetRequest{StateValue: setOf(t, tt.state), PlanValue: setOf(t, tt.plan),
 					ConfigValue: setOf(t, tt.plan)}
 				freshPrivate(t, &req.Private, nil)
-				if d := recordSSHAccess(context.Background(), any(req.Private).(privateWriter)); d.HasError() {
+				if d := recordSSHAccess(context.Background(), privateIn(t, req.Private)); d.HasError() {
 					t.Fatal(d)
 				}
 				var resp setplanmodifier.RequiresReplaceIfFuncResponse
