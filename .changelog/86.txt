@@ -1,7 +1,27 @@
 ```release-note:bug
-resource/k0rdent_kubernetes_cluster: Fix the first plan after importing a cluster with `ssh_access` proposing a replacement. The platform returns references to the keys and not the keys, so the configured keys are recorded in place, with a warning
+resource/k0rdent_kubernetes_cluster: Fix the first plan after importing a cluster with `ssh_access` proposing a replacement. The platform returns references to the keys and not the keys, so keys written in `ssh_public_keys` are recorded in place, with a warning
 ```
 
 ```release-note:bug
-resource/k0rdent_instance_group: Fix the first plan after importing an instance group with `ssh_access` proposing a replacement. The platform returns references to the keys and not the keys, so the configured keys are recorded in place, with a warning
+resource/k0rdent_instance_group: Fix the first plan after importing an instance group with `ssh_access` proposing a replacement. The platform returns references to the keys and not the keys, so keys written in `ssh_public_keys` are recorded in place, with a warning
+```
+
+```release-note:enhancement
+resource/k0rdent_kubernetes_cluster: Add write-only `ssh_public_keys_wo`, the users' keys by username, sent on the create and never stored, so an import with the same configuration plans no changes. Needs Terraform or OpenTofu 1.11
+```
+
+```release-note:enhancement
+resource/k0rdent_instance_group: Add write-only `ssh_public_keys_wo`, the users' keys by username, sent on the create and never stored, so an import with the same configuration plans no changes. Needs Terraform or OpenTofu 1.11
+```
+
+```release-note:enhancement
+resource/k0rdent_kubernetes_cluster: Add `ssh_public_key_refs` to each `ssh_access` user, the references to the credentials the platform holds the keys in. `ssh_public_keys` is now optional, and `ssh_access` left out is read from the platform
+```
+
+```release-note:enhancement
+resource/k0rdent_instance_group: Add `ssh_public_key_refs` to each `ssh_access` user, the references to the credentials the platform holds the keys in. `ssh_public_keys` is now optional, and `ssh_access` left out is read from the platform
+```
+
+```release-note:enhancement
+data-source/k0rdent_instance_group: Add `ssh_public_key_refs` to each `ssh_access` user
 ```

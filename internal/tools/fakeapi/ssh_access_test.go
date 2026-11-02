@@ -8,10 +8,10 @@ import (
 	"testing"
 )
 
-// A k0rdent API build from main echoes an instance group's `sshAccess` sorted by
-// username, with each user's keys in the order sent, and leaves the field out
-// when none was sent. The provider's drift handling rests on that, so the fake
-// answers the same way.
+// The platform echoes an instance group's `sshAccess` sorted by username,
+// with each user's keys answered as references to the credentials they were
+// registered as (since the k0rdent API v1.3.0-rc.1), in the order sent. The
+// provider's drift handling rests on that, so the fake answers the same way.
 
 func groupWithSSH(access string) string {
 	body := `{"id":"x","clusterType":"` + inferenceRef + `/versions/` + inferenceV2 +
@@ -41,8 +41,10 @@ func TestAGroupsSSHAccessReadsBackSortedByUsername(t *testing.T) {
 		t.Fatalf("listed group: %v", items[0])
 	}
 
-	const want = "[map[displayName:Adam sshPublicKeys:[abe] username:adam] " +
-		"map[sshPublicKeys:[zed abe] sudo:ALL=(ALL) NOPASSWD:ALL username:zoe]]"
+	sc := scope{"r", "p"}
+	abe, zed := credentialRef(sc, "abe"), credentialRef(sc, "zed")
+	want := "[map[displayName:Adam sshPublicKeyCredentials:[" + abe + "] username:adam] " +
+		"map[sshPublicKeyCredentials:[" + zed + " " + abe + "] sudo:ALL=(ALL) NOPASSWD:ALL username:zoe]]"
 	for name, body := range map[string]map[string]any{"create": out, "get": got, "list": listedGroup} {
 		if echo := fmt.Sprint(body["sshAccess"]); echo != want {
 			t.Errorf("%s sshAccess = %s, want %s", name, echo, want)
@@ -100,15 +102,19 @@ func clusterWithSSH(access string) string {
 	return body + "}"
 }
 
-// A cluster keeps the users its create carried, keys trimmed, and answers
-// them at their own path: sorted by username, `[]` for none, and 404 for a
-// cluster that doesn't exist. The cluster's own body never carries them.
+// A cluster keeps the users its create carried, keys trimmed and registered
+// as credentials, and answers them at their own path: sorted by username, with
+// references to the credentials, `[]` for none, and 404 for a cluster that
+// doesn't exist. A reference sent is kept. The cluster's own body never
+// carries them.
 func TestAClustersSSHAccessIsServedAtItsOwnPath(t *testing.T) {
+	sc := scope{"r", "p"}
+	abe, zed := credentialRef(sc, "abe"), credentialRef(sc, "zed")
 	for name, tt := range map[string]struct{ access, want string }{
 		"two users": {`[{"username":"zoe","sshPublicKeys":["zed\n","abe"],"sudo":"ALL=(ALL) NOPASSWD:ALL"},
-			{"username":"adam","sshPublicKeys":["abe"],"displayName":"Adam"}]`,
-			`[{"username":"adam","sshPublicKeys":["abe"],"displayName":"Adam"},` +
-				`{"username":"zoe","sshPublicKeys":["zed","abe"],"sudo":"ALL=(ALL) NOPASSWD:ALL"}]`},
+			{"username":"adam","sshPublicKeyCredentials":["` + abe + `"],"displayName":"Adam"}]`,
+			`[{"username":"adam","sshPublicKeyCredentials":["` + abe + `"],"displayName":"Adam"},` +
+				`{"username":"zoe","sshPublicKeyCredentials":["` + zed + `","` + abe + `"],"sudo":"ALL=(ALL) NOPASSWD:ALL"}]`},
 		"none": {"", "[]"},
 	} {
 		t.Run(name, func(t *testing.T) {

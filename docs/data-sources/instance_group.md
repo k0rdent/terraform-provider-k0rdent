@@ -82,6 +82,7 @@ Read-Only:
 Read-Only:
 
 - `display_name` (String) Human-friendly name for this entry.
+- `ssh_public_key_refs` (List of String) References to the `ssh_public_key` credentials holding this user's keys, as the platform reports them. Keys given as text are registered as credentials when the cluster or group is created, and read back here. Give references instead of keys to use credentials that already exist; an import fills them in.
 - `ssh_public_keys` (List of String) Public keys, each one `authorized_keys` line, allowed to log in as this user. From 1 to 32. The platform accepts `ssh-ed25519`, `ecdsa-sha2-nistp256/384/521`, `ssh-rsa` of at least 2048 bits, and the `sk-` security-key variants. Kept in the order written. A key must not start or end with whitespace, since the platform trims it: read one from a file with `trimspace(file(...))`, because `file()` keeps the trailing newline.
 - `sudo` (String) A sudo fragment granting this user privileges, such as `ALL=(ALL) NOPASSWD:ALL`.
 - `username` (String) Linux username to provision on every host. Must match `^[a-z_][a-z0-9_-]{0,31}$`.

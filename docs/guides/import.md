@@ -92,6 +92,17 @@ changes nothing on the platform:
 - **A tag set both in `tags` and in the provider's `default_tags`**, to the
   same value. The import gives it to the defaults.
 - **`allow_replace` and `timeouts`**, which never reach the platform.
+- **SSH keys written in a user's `ssh_public_keys`**, on a cluster or an
+  instance group. The platform answers references to the keys, not the keys,
+  so the import records the configured keys and warns that it can't check
+  them against the nodes. Write the keys in `ssh_public_keys_wo` instead and
+  the plan is empty.
+
+`ssh_public_keys_wo` is write-only, so it needs Terraform 1.11 or OpenTofu
+1.11 or later. The provider checks a change to it against the keys the nodes
+were made with, which it holds from the create. An imported cluster or group
+has no such record, so a later change to a key there plans nothing. To put
+new keys on its nodes, replace it with `terraform apply -replace`.
 
 A security group binding that holds only its VPC's default group imports as
 `security_groups = []`. Write it that way to plan clean. Naming the default

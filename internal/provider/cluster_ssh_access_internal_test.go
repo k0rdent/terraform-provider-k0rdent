@@ -191,10 +191,11 @@ func readCluster(t *testing.T, url string, prior tftypes.Value) (resource.ReadRe
 func TestAClusterReadTakesTheSSHAccessThePlatformReports(t *testing.T) {
 	adam := tftypes.NewValue(tftypes.Set{ElementType: sshUserTF}, []tftypes.Value{
 		tftypes.NewValue(sshUserTF, map[string]tftypes.Value{
-			"username":        str("adam"),
-			"ssh_public_keys": tftypes.NewValue(tftypes.List{ElementType: tftypes.String}, []tftypes.Value{str("ssh-ed25519 abe")}),
-			"sudo":            tftypes.NewValue(tftypes.String, nil),
-			"display_name":    str("Adam"),
+			"username":            str("adam"),
+			"ssh_public_keys":     tftypes.NewValue(tftypes.List{ElementType: tftypes.String}, []tftypes.Value{str("ssh-ed25519 abe")}),
+			"ssh_public_key_refs": tftypes.NewValue(tftypes.List{ElementType: tftypes.String}, nil),
+			"sudo":                tftypes.NewValue(tftypes.String, nil),
+			"display_name":        str("Adam"),
 		}),
 	})
 	for name, tt := range map[string]struct {
@@ -299,10 +300,11 @@ func sshUser(name string, sudo tftypes.Value, keys ...string) tftypes.Value {
 		vals = append(vals, str(k))
 	}
 	return tftypes.NewValue(sshUserTF, map[string]tftypes.Value{
-		"username":        str(name),
-		"ssh_public_keys": tftypes.NewValue(tftypes.List{ElementType: tftypes.String}, vals),
-		"sudo":            sudo,
-		"display_name":    tftypes.NewValue(tftypes.String, nil),
+		"username":            str(name),
+		"ssh_public_keys":     tftypes.NewValue(tftypes.List{ElementType: tftypes.String}, vals),
+		"ssh_public_key_refs": tftypes.NewValue(tftypes.List{ElementType: tftypes.String}, nil),
+		"sudo":                sudo,
+		"display_name":        tftypes.NewValue(tftypes.String, nil),
 	})
 }
 

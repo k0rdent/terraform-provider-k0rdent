@@ -38,11 +38,15 @@ resource "k0rdent_instance_group" "hosts" {
   # needs `allow_replace = true`.
   ssh_access = [
     {
-      username        = "ops"
-      ssh_public_keys = [trimspace(file("~/.ssh/id_ed25519.pub"))]
-      sudo            = "ALL=(ALL) NOPASSWD:ALL"
+      username = "ops"
+      sudo     = "ALL=(ALL) NOPASSWD:ALL"
     },
   ]
+  # Write-only, so never stored, and an import plans clean. Needs Terraform
+  # 1.11 or later.
+  ssh_public_keys_wo = {
+    ops = [trimspace(file("~/.ssh/id_ed25519.pub"))]
+  }
 }
 ```
 
@@ -56,6 +60,8 @@ resource "k0rdent_instance_group" "hosts" {
 
 ### Optional
 
+> **NOTE**: [Write-only arguments](https://developer.hashicorp.com/terraform/language/resources/ephemeral#write-only-arguments) are supported in Terraform 1.11 and later.
+
 - `allow_replace` (Boolean) Permit a plan that replaces this instance group. Left out or `false`, a change that cannot be made in place fails the plan, naming the attribute that forces the replacement, instead of destroying the instance group and creating another. Set it to `true` in the same configuration as the change to let the replacement go ahead, and remove it afterwards to put the guard back. It is read from the configuration being planned and must be known at plan time. It is never sent to the platform: setting or removing it on its own is an update that changes nothing there.
 - `description` (String) Free-form description. The other mutable field.
 - `display_name` (String) Human-friendly name. One of only two mutable fields on this resource.
@@ -68,9 +74,10 @@ A scale waits, within the `update` timeout, while another operation on the group
 - `region` (String) Region this resource lives in. Defaults to the provider's `region`. It's part of the resource's API path, so a resource can't move between regions. **Forces replacement** (needs `allow_replace = true`). **Constraints:** Must be lower-case letters, digits and hyphens, starting with a letter and not ending with a hyphen (`[a-z]([-a-z0-9]*[a-z0-9])?`), because it becomes a segment of a request URL.
 - `ssh_access` (Attributes Set) Linux users written onto every host in the group when it is provisioned, each with the public keys allowed to log in as that user. Up to 32 users. Only public keys go here. The contract says the platform never stores or generates a private key.
 
-Set it. A group with no SSH keys can fail with `INVALID_CONFIGURATION`.
+Set it on a create. A group with no SSH keys can fail with `INVALID_CONFIGURATION`. A user's keys can go in `ssh_public_keys_wo` in place of its `ssh_public_keys`, so an import with the same configuration plans clean.
 
-**Changing it replaces the whole group**, unless it's left out or empty and the platform already reports no users. The platform returns the users sorted by username, so the order they are written in here makes no difference. **Can force replacement** (needs `allow_replace = true`): replaced when it changes, unless the platform already reports none and none is configured. **Constraints:** Set must contain at most 32 elements. (see [below for nested schema](#nestedatt--ssh_access))
+Left out, it's read from the platform and changes nothing, so an import without it plans clean. **Changing it replaces the whole group**, unless it's empty and the platform already reports no users. The platform returns the users sorted by username, so the order they are written in here makes no difference. **Can force replacement** (needs `allow_replace = true`): replaced when it changes, unless the platform already reports none and none is configured. **Constraints:** Set must contain at most 32 elements. (see [below for nested schema](#nestedatt--ssh_access))
+- `ssh_public_keys_wo` (Map of List of String, [Write-only](https://developer.hashicorp.com/terraform/language/resources/ephemeral#write-only-arguments)) Public keys for the users in `ssh_access`, by username, sent on the create and never stored. Requires Terraform 1.11 or OpenTofu 1.11 or later. Use it in place of a user's `ssh_public_keys` so that an import with the same configuration plans no changes: the platform reports only references to the keys, which state holds as `ssh_public_key_refs`. A changed key is found by its fingerprint and planned as a change to `ssh_access`. After an import, the provider has no record of the keys the nodes were made with, so a changed key isn't found. **Write-only:** Terraform sends it to the provider and never writes it to plan or state.
 - `timeouts` (Block, Optional) How long each operation may take before it fails. Left out, `create` and `delete` default to `3h` and every other operation to the provider's `operation_timeout`, which is `2h` unless the provider block or `K0RDENT_OPERATION_TIMEOUT` sets it. (see [below for nested schema](#nestedblock--timeouts))
 
 ### Read-Only
@@ -93,12 +100,13 @@ Required:
 
 Required:
 
-- `ssh_public_keys` (List of String) Public keys, each one `authorized_keys` line, allowed to log in as this user. From 1 to 32. The platform accepts `ssh-ed25519`, `ecdsa-sha2-nistp256/384/521`, `ssh-rsa` of at least 2048 bits, and the `sk-` security-key variants. Kept in the order written. A key must not start or end with whitespace, since the platform trims it: read one from a file with `trimspace(file(...))`, because `file()` keeps the trailing newline. **Constraints:** Must hold from 1 to 32 keys. Each key must be one line with no whitespace at either end, and at most 16384 characters long. Read one from a file with `trimspace(file(...))`.
 - `username` (String) Linux username to provision on every host. Must match `^[a-z_][a-z0-9_-]{0,31}$`. **Constraints:** Must start with a lowercase letter or an underscore, then up to 31 lowercase letters, digits, underscores or hyphens.
 
 Optional:
 
 - `display_name` (String) Human-friendly name for this entry. **Constraints:** String length must be at most 255.
+- `ssh_public_key_refs` (List of String) References to the `ssh_public_key` credentials holding this user's keys, as the platform reports them. Keys given as text are registered as credentials when the cluster or group is created, and read back here. Give references instead of keys to use credentials that already exist; an import fills them in. **Constraints:** Must hold from 1 to 32 references. Each reference must be the self-link of an `ssh_public_key` credential in this project, as an import reads it.
+- `ssh_public_keys` (List of String) Public keys, each one `authorized_keys` line, allowed to log in as this user. From 1 to 32. The platform accepts `ssh-ed25519`, `ecdsa-sha2-nistp256/384/521`, `ssh-rsa` of at least 2048 bits, and the `sk-` security-key variants. Kept in the order written. A key must not start or end with whitespace, since the platform trims it: read one from a file with `trimspace(file(...))`, because `file()` keeps the trailing newline. **Constraints:** Must hold from 1 to 32 keys. Each key must be one line with no whitespace at either end, and at most 16384 characters long. Read one from a file with `trimspace(file(...))`.
 - `sudo` (String) A sudo fragment granting this user privileges, such as `ALL=(ALL) NOPASSWD:ALL`. **Constraints:** String length must be at most 4096.
 
 

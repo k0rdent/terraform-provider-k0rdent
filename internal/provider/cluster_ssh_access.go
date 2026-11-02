@@ -3,16 +3,22 @@ package provider
 import (
 	"context"
 	"fmt"
+	"maps"
 	"net/http"
 	"reflect"
+	"slices"
 
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/setplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+
+	"github.com/k0rdent/terraform-provider-k0rdent/internal/k0rdent"
 )
 
 // A cluster's `sshAccess`: the Linux users written onto every node when it is
@@ -67,12 +73,12 @@ func noSSHUsers(v types.Set) bool {
 // the change is recorded in place: see warnUnrecordedSSHAccess. Nor does a
 // configuration with no users, against a cluster whose last read held users
 // the platform had released (teardown_read.go): both say there are none. Nor
-// do keys written for users an import read with none: see fillsUnreadKeys.
+// do keys that only moved, as keysOnlyMoved says.
 func clusterSSHAccessRequiresReplace(ctx context.Context, req planmodifier.SetRequest, resp *setplanmodifier.RequiresReplaceIfFuncResponse) {
 	if noSSHUsers(req.PlanValue) && wasReleased(ctx, req.Private) {
 		return
 	}
-	if fillsUnreadKeys(ctx, req.StateValue, req.PlanValue, &resp.Diagnostics) {
+	if keysOnlyMoved(ctx, req, &resp.Diagnostics) {
 		return
 	}
 	resp.RequiresReplace = sshAccessRecorded(ctx, req.Private) &&
@@ -158,4 +164,193 @@ func (r *clusterResource) readSSHAccess(ctx context.Context, target clusterTarge
 			"succeeds replaces it with what the platform reports.")
 	}
 	return clusterSSHAccessState(prior), false, diags
+}
+
+// sshPublicKeysWOAttribute is the users' keys by username, sent on the create
+// and never stored, so an import plans no change for them.
+func sshPublicKeysWOAttribute() schema.MapAttribute {
+	return schema.MapAttribute{
+		Optional:    true,
+		WriteOnly:   true,
+		ElementType: types.ListType{ElemType: types.StringType},
+		MarkdownDescription: "Public keys for the users in `ssh_access`, by username, sent on the create " +
+			"and never stored. Requires Terraform 1.11 or OpenTofu 1.11 or later. Use it in place of a " +
+			"user's `ssh_public_keys` so that an import with the same configuration plans no changes: " +
+			"the platform reports only references to the keys, which state holds as " +
+			"`ssh_public_key_refs`. A changed key is found by its fingerprint and planned as a change " +
+			"to `ssh_access`. After an import, the provider has no record of the keys the nodes were " +
+			"made with, so a changed key isn't found.",
+	}
+}
+
+// sentKeys is the keys a create body carried, by username.
+func sentKeys(users *[]k0rdent.SshUser) map[string][]string {
+	out := map[string][]string{}
+	if users == nil {
+		return out
+	}
+	for _, u := range *users {
+		if u.SshPublicKeys != nil {
+			out[u.Username] = *u.SshPublicKeys
+		}
+	}
+	return out
+}
+
+// replaceOnChangedKeys replaces the resource when a write-only key differs, by
+// fingerprint, from the keys the nodes were made with. The changed users'
+// references are planned unknown, since Terraform drops a replacement whose
+// path planned no change.
+func replaceOnChangedKeys(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
+	if req.State.Raw.IsNull() || req.Plan.Raw.IsNull() {
+		return
+	}
+	var configured types.Map
+	if req.Config.GetAttribute(ctx, path.Root("ssh_public_keys_wo"), &configured).HasError() {
+		return
+	}
+	keys, unknown, diags := writeOnlyKeys(ctx, configured)
+	if diags.HasError() || (len(keys) == 0 && !unknown) {
+		return
+	}
+	held := loadFingerprints(ctx, req.Private)
+	changed := keysChanged(held, fingerprintsOf(keys))
+	// Keys unknown at plan may differ.
+	for user := range held {
+		if ks, ok := keys[user]; unknown || (ok && ks == nil) {
+			changed = append(changed, user)
+		}
+	}
+	slices.Sort(changed)
+	changed = slices.Compact(changed)
+	if len(changed) == 0 {
+		return
+	}
+	var planned types.Set
+	var users []sshUserModel
+	resp.Diagnostics.Append(resp.Plan.GetAttribute(ctx, path.Root("ssh_access"), &planned)...)
+	if resp.Diagnostics.HasError() || planned.IsNull() || planned.IsUnknown() {
+		return
+	}
+	resp.Diagnostics.Append(planned.ElementsAs(ctx, &users, false)...)
+	for i := range users {
+		if slices.Contains(changed, users[i].Username.ValueString()) {
+			users[i].Credentials = types.ListUnknown(types.StringType)
+		}
+	}
+	marked, d := types.SetValueFrom(ctx, sshUserObjectType(), users)
+	resp.Diagnostics.Append(d...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, path.Root("ssh_access"), marked)...)
+	resp.RequiresReplace = append(resp.RequiresReplace, path.Root("ssh_access"))
+}
+
+// keysChanged is the users whose keys differ from the ones held for them. A
+// user with none held, after an import, can't be checked.
+func keysChanged(held, want map[string][]string) []string {
+	var changed []string
+	for user, fps := range want {
+		if have, ok := held[user]; ok && !slices.Equal(fps, have) {
+			changed = append(changed, user)
+		}
+	}
+	slices.Sort(changed)
+	return changed
+}
+
+// onlyReferencesUnknown reports whether two `ssh_access` values differ only
+// in references planned unknown by replaceOnChangedKeys.
+func onlyReferencesUnknown(from, to attr.Value) bool {
+	f, okFrom := from.(types.Set)
+	t, okTo := to.(types.Set)
+	if !okFrom || !okTo || f.IsNull() || t.IsNull() || f.IsUnknown() || t.IsUnknown() {
+		return from.Equal(to)
+	}
+	strip := func(s types.Set) (types.Set, bool) {
+		var users []sshUserModel
+		if s.ElementsAs(context.Background(), &users, false).HasError() {
+			return s, false
+		}
+		for i := range users {
+			users[i].Credentials = types.ListNull(types.StringType)
+		}
+		out, d := types.SetValueFrom(context.Background(), sshUserObjectType(), users)
+		return out, !d.HasError()
+	}
+	fs, ok1 := strip(f)
+	ts, ok2 := strip(t)
+	return ok1 && ok2 && fs.Equal(ts)
+}
+
+// checkConfiguredKeys fails a create's plan on a user with no keys, keys
+// written both ways, or write-only keys for a user `ssh_access` lacks. On an
+// existing resource they warn, so a plan before a destroy still runs.
+func checkConfiguredKeys(ctx context.Context, req resource.ModifyPlanRequest, diags *diag.Diagnostics) {
+	if req.Plan.Raw.IsNull() {
+		return
+	}
+	var access types.Set
+	var configured types.Map
+	if req.Config.GetAttribute(ctx, path.Root("ssh_access"), &access).HasError() ||
+		req.Config.GetAttribute(ctx, path.Root("ssh_public_keys_wo"), &configured).HasError() ||
+		access.IsUnknown() || configured.IsUnknown() {
+		return
+	}
+	keys, _, d := writeOnlyKeys(ctx, configured)
+	var users []sshUserModel
+	if d.HasError() || (!access.IsNull() && access.ElementsAs(ctx, &users, false).HasError()) {
+		return
+	}
+	creating := req.State.Raw.IsNull()
+	report := diags.AddAttributeWarning
+	if creating {
+		report = diags.AddAttributeError
+	}
+	named, allKnown := map[string]bool{}, true
+	for _, u := range users {
+		if u.Username.IsUnknown() || u.SSHPublicKeys.IsUnknown() || u.Credentials.IsUnknown() {
+			allKnown = allKnown && !u.Username.IsUnknown()
+			continue
+		}
+		name := u.Username.ValueString()
+		named[name] = true
+		wo, written := keys[name]
+		inline := len(u.SSHPublicKeys.Elements()) > 0
+		switch {
+		case creating && !inline && len(u.Credentials.Elements()) == 0 && (!written || (wo != nil && len(wo) == 0)):
+			report(path.Root("ssh_access"), "An SSH user has no keys",
+				fmt.Sprintf("`ssh_access` names %q with no keys, and the platform refuses a user without one. "+
+					"Write the user's keys in `ssh_public_keys_wo`, as `%s = [...]`, or in the user's "+
+					"`ssh_public_keys`, or give `ssh_public_key_refs`.", name, name))
+		case inline && written:
+			report(path.Root("ssh_public_keys_wo"), "An SSH user's keys are written twice",
+				fmt.Sprintf("%q has keys in both its `ssh_public_keys` and `ssh_public_keys_wo`. A create "+
+					"sends only the write-only ones. Keep one of the two.", name))
+		}
+	}
+	if !allKnown {
+		return
+	}
+	for _, user := range slices.Sorted(maps.Keys(keys)) {
+		if !named[user] {
+			report(path.Root("ssh_public_keys_wo"), "Keys for a user `ssh_access` doesn't name",
+				fmt.Sprintf("`ssh_public_keys_wo` has keys for %q, but `ssh_access` has no user of that name, so "+
+					"the keys would go nowhere. Add the user to `ssh_access`, or correct the name.", user))
+		}
+	}
+}
+
+// planNoUsersWhenLeftOut plans `ssh_access` null on a create that leaves it
+// out, which is what the platform reports back.
+func planNoUsersWhenLeftOut(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
+	if !req.State.Raw.IsNull() || req.Plan.Raw.IsNull() {
+		return
+	}
+	var configured types.Set
+	if req.Config.GetAttribute(ctx, path.Root("ssh_access"), &configured).HasError() || !configured.IsNull() {
+		return
+	}
+	resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, path.Root("ssh_access"), types.SetNull(sshUserObjectType()))...)
 }

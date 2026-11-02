@@ -216,7 +216,9 @@ func importCases() map[string]func() importCase {
 				// Every pool named, at the counts the platform holds. A
 				// configuration naming a subset is
 				// TestAccImportClusterSparsePools. The SSH users are read
-				// from the platform, so an import fills them in.
+				// from the platform, so an import fills them in. The keys
+				// are write-only: the platform answers references to them,
+				// which an import reads the same as the create did.
 				config: fmt.Sprintf(`
 resource %q "test" {
   id           = %q
@@ -228,8 +230,9 @@ resource %q "test" {
   }
   ssh_access = [%s
   ]
+  ssh_public_keys_wo = %s
 }
-`, clusterType, name, clusterTypeRef, sshZoe+sshAdam),
+`, clusterType, name, clusterTypeRef, sshZoeWO+sshAdamWO, sshKeysWO),
 				resourceType: clusterType,
 				importID:     "us-texas-1/demo/" + name,
 				identity:     scoped(name),

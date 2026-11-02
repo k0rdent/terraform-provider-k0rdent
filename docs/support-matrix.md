@@ -10,6 +10,9 @@ What this provider runs with, and what's not decided yet.
 
 - 1.10 is the minimum because the cluster kubeconfig is an ephemeral
   resource, which older versions don't support.
+- Write-only attributes need 1.11: a cluster's or an instance group's
+  `ssh_public_keys_wo`, and a webhook subscription's `secret_wo`. An older
+  version fails the plan when a configuration sets one.
 - CI tests a current Terraform release, not 1.10 itself.
 - The nightly run tests Terraform and OpenTofu on the same configuration.
 

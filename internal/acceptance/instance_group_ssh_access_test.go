@@ -29,7 +29,24 @@ resource %q "test" {
 
 // Written zoe first. The platform answers adam first, as a k0rdent API build
 // from main was seen to, so a plan that compared the users in order would drift.
+// sshZoeWO and sshAdamWO are the same users with their keys in sshKeysWO, as
+// `ssh_public_keys_wo`.
 const (
+	sshZoeWO = `
+    {
+      username = "zoe"
+      sudo     = "ALL=(ALL) NOPASSWD:ALL"
+    },`
+	sshAdamWO = `
+    {
+      username     = "adam"
+      display_name = "Adam"
+    },`
+	sshKeysWO = `{
+    zoe  = ["ssh-ed25519 zed", "ssh-ed25519 abe"]
+    adam = ["ssh-ed25519 abe"]
+  }`
+
 	sshZoe = `
     {
       username        = "zoe"
@@ -146,8 +163,8 @@ resource %q "test" {
 
 // A teardown that fails leaves the group `failed` with its users released.
 // The configuration that made it still plans clean, so a second destroy gets
-// past its refresh, and a configuration that drops `ssh_access` agrees with
-// the platform and records that in place rather than replacing the group.
+// past its refresh, and so does a configuration that drops `ssh_access`, which
+// leaves the users as state holds them rather than replacing the group.
 func TestAccInstanceGroupWhoseTeardownFailedPlansWithoutReplacing(t *testing.T) {
 	const name = "acc-ig-ssh-teardown-failed"
 	group := func(access string) string {
@@ -193,8 +210,7 @@ resource %q "test" {
 			},
 			{
 				Config:           group(""),
-				ConfigPlanChecks: expect(instanceGroupAddr, plancheck.ResourceActionUpdate),
-				Check:            resource.TestCheckNoResourceAttr(instanceGroupAddr, "ssh_access.#"),
+				ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{plancheck.ExpectEmptyPlan()}},
 			},
 		},
 	})

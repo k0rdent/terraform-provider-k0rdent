@@ -83,6 +83,7 @@ type clusterModel struct {
 	SecurityGroups      types.List     `tfsdk:"security_groups"`
 	StorageCeilingGiB   types.Int64    `tfsdk:"storage_ceiling_gib"`
 	SSHAccess           types.Set      `tfsdk:"ssh_access"`
+	SSHPublicKeysWO     types.Map      `tfsdk:"ssh_public_keys_wo"`
 	Timeouts            timeouts.Value `tfsdk:"timeouts"`
 
 	// uid is the platform's uid for the cluster read, which own_object.go
@@ -331,6 +332,7 @@ func (r *clusterResource) Schema(ctx context.Context, _ resource.SchemaRequest, 
 			"storage_ceiling_gib": storageCeilingAttribute(),
 			"ssh_access": schema.SetNestedAttribute{
 				Optional: true,
+				Computed: true,
 				MarkdownDescription: "Linux users written onto every node when the cluster is provisioned, each " +
 					"with the public keys allowed to log in as that user. Up to " +
 					fmt.Sprint(k0rdent.ClusterCreateRequestSshAccessMaxItems) + " users. Only public keys go " +
@@ -339,17 +341,20 @@ func (r *clusterResource) Schema(ctx context.Context, _ resource.SchemaRequest, 
 					"difference from the configuration shows in the plan. Where the platform doesn't report " +
 					"them, state keeps what the provider sent.\n\n" +
 					"**Changing it replaces the cluster**, because the platform won't change a running cluster's users. " +
-					"Leaving it out and `[]` both mean no users, so moving between them replaces nothing. " +
+					"Left out, it's read from the platform and changes nothing, so an import without it plans " +
+					"clean. `[]` asks for no users. A user's keys can go in `ssh_public_keys_wo` in place of its " +
+					"`ssh_public_keys`, so an import with the same configuration plans clean too. " +
 					"Where the platform doesn't report the users, a cluster that was imported, or created by an " +
 					"earlier version of the provider, has no record of them: a change is recorded without " +
 					"replacing anything, the nodes keep the users they have, and the plan warns. Use `terraform " +
 					"apply -replace` to put new users on such a cluster's nodes.",
 				Validators: []validator.Set{setvalidator.SizeAtMost(k0rdent.ClusterCreateRequestSshAccessMaxItems)},
-				PlanModifiers: []planmodifier.Set{setplanmodifier.RequiresReplaceIf(clusterSSHAccessRequiresReplace,
+				PlanModifiers: []planmodifier.Set{setplanmodifier.UseStateForUnknown(), refsByUsername{}, setplanmodifier.RequiresReplaceIf(clusterSSHAccessRequiresReplace,
 					"replaced when it changes, unless state has no record of the nodes' users",
 					"replaced when it changes, unless state has no record of the nodes' users")},
 				NestedObject: sshUserNestedObject(),
 			},
+			"ssh_public_keys_wo":   sshPublicKeysWOAttribute(),
 			onDestroyBusyAttribute: onDestroyBusySchemaAttribute(),
 			onFailedAttribute:      onFailedSchemaAttribute(),
 		},
@@ -451,7 +456,10 @@ func (r *clusterResource) ModifyPlan(ctx context.Context, req resource.ModifyPla
 	if resp.Diagnostics.HasError() {
 		return
 	}
+	checkConfiguredKeys(ctx, req, &resp.Diagnostics)
+	planNoUsersWhenLeftOut(ctx, req, resp)
 	warnUnrecordedSSHAccess(ctx, req, resp)
+	replaceOnChangedKeys(ctx, req, resp)
 
 	if !req.State.Raw.IsNull() && (req.Plan.Raw.IsNull() || len(resp.RequiresReplace) > 0) {
 		warnOnBusyDestroy(ctx, req.State, &resp.Diagnostics)
@@ -459,6 +467,7 @@ func (r *clusterResource) ModifyPlan(ctx context.Context, req resource.ModifyPla
 	if req.State.Raw.IsNull() || req.Plan.Raw.IsNull() {
 		return // create or destroy; the framework already handles both
 	}
+	planNoChangeOverUnreadAttributes(req, resp)
 	// A create an earlier apply stopped waiting for plans an update that
 	// waits for it, though nothing in the configuration moved.
 	planResume(ctx, req, resp)
@@ -541,7 +550,9 @@ func (r *clusterResource) Create(ctx context.Context, req resource.CreateRequest
 		body.SecurityGroups = groups
 	}
 	body.Storage = storageRequest(plan.StorageCeilingGiB)
-	body.SshAccess, diags = sshAccessRequest(ctx, plan.SSHAccess)
+	writeOnly, _, diags := configuredWriteOnlyKeys(ctx, req.Config)
+	resp.Diagnostics.Append(diags...)
+	body.SshAccess, diags = sshAccessRequest(ctx, plan.SSHAccess, writeOnly)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -590,7 +601,20 @@ func (r *clusterResource) Create(ctx context.Context, req resource.CreateRequest
 			return r.waitForSettled(ctx, target, id, "the cluster to finish creating")
 		},
 		read: func(ctx context.Context, id string) (clusterModel, bool, diag.Diagnostics) {
-			return r.read(ctx, target, id, plan)
+			m, found, diags := r.read(ctx, target, id, plan)
+			if !found || diags.HasError() {
+				return m, found, diags
+			}
+			// The platform registers the keys as credentials: read back the
+			// references it made, which state holds from here on.
+			users, reported, d := r.readSSHAccess(ctx, target, id, m.SSHAccess)
+			diags.Append(d...)
+			// A read that races the create and reports none says nothing.
+			if reported && (!noSSHUsers(users) || noSSHUsers(m.SSHAccess)) {
+				m.SSHAccess = users
+			}
+			m.SSHAccess = sshAccessWithoutUnknownCredentials(ctx, m.SSHAccess, &diags)
+			return m, found, diags
 		},
 	}.run(ctx, create, req.Plan, &resp.State, resp.Private, &resp.Diagnostics)
 	if resp.Diagnostics.HasError() {
@@ -603,6 +627,7 @@ func (r *clusterResource) Create(ctx context.Context, req resource.CreateRequest
 	// create carried the users either way.
 	if !resp.State.Raw.IsNull() {
 		resp.Diagnostics.Append(recordSSHAccess(ctx, resp.Private)...)
+		resp.Diagnostics.Append(saveFingerprints(ctx, resp.Private, fingerprintsOf(sentKeys(body.SshAccess)))...)
 	}
 }
 
@@ -651,6 +676,7 @@ func (r *clusterResource) Read(ctx context.Context, req resource.ReadRequest, re
 			)
 		}
 		resp.Diagnostics.Append(recordReleased(ctx, resp.Private, held)...)
+		resp.Diagnostics.Append(holdKeysInState(ctx, resp.Private, state.SSHAccess)...)
 		if reported {
 			resp.Diagnostics.Append(recordSSHAccess(ctx, resp.Private)...)
 		}
@@ -1096,17 +1122,19 @@ func clusterStateFrom(ctx context.Context, c k0rdent.Cluster, prior clusterModel
 
 		ID: types.StringValue(c.Id),
 		// From prior state: the response does not echo them.
-		Region:      prior.Region,
-		Timeouts:    prior.Timeouts,
-		SSHAccess:   clusterSSHAccessState(prior.SSHAccess),
-		Project:     prior.Project,
-		DisplayName: md.DisplayName,
-		Description: md.Description,
-		Tags:        md.Tags,
-		TagsAll:     md.TagsAll,
-		SelfLink:    stringOrNull(c.SelfLink),
-		State:       types.StringNull(),
-		NodeCount:   types.Int64Null(),
+		Region:    prior.Region,
+		Timeouts:  prior.Timeouts,
+		SSHAccess: clusterSSHAccessState(prior.SSHAccess),
+		// Write-only: never held in state.
+		SSHPublicKeysWO: types.MapNull(types.ListType{ElemType: types.StringType}),
+		Project:         prior.Project,
+		DisplayName:     md.DisplayName,
+		Description:     md.Description,
+		Tags:            md.Tags,
+		TagsAll:         md.TagsAll,
+		SelfLink:        stringOrNull(c.SelfLink),
+		State:           types.StringNull(),
+		NodeCount:       types.Int64Null(),
 	}
 	if c.State != nil {
 		out.State = types.StringValue(string(*c.State))

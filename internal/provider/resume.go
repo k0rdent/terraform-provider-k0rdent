@@ -50,7 +50,10 @@ const creatingState = "creating"
 // keptThroughResume are the computed attributes a resumed create never marks
 // unknown: they name the object, and a dependent that forces replacement on
 // one would plan to replace itself over a value that can't change.
-var keptThroughResume = map[string]bool{"id": true, "region": true, "project": true}
+//
+// `ssh_access` is the users the nodes are made with, which a resume doesn't
+// change: unknown, it would plan a replacement.
+var keptThroughResume = map[string]bool{"id": true, "region": true, "project": true, "ssh_access": true}
 
 // priorState is prior state's `state`, or "" when it holds none.
 func priorState(ctx context.Context, state tfsdk.State) string {
