@@ -310,16 +310,22 @@ func checkConfiguredKeys(ctx context.Context, req resource.ModifyPlanRequest, di
 	}
 	named, allKnown := map[string]bool{}, true
 	for _, u := range users {
-		if u.Username.IsUnknown() || u.SSHPublicKeys.IsUnknown() || u.Credentials.IsUnknown() {
-			allKnown = allKnown && !u.Username.IsUnknown()
+		if u.Username.IsUnknown() {
+			allKnown = false
 			continue
 		}
 		name := u.Username.ValueString()
+		if named[name] {
+			report(path.Root("ssh_access"), "An SSH user is written twice",
+				fmt.Sprintf("`ssh_access` names %q more than once. Write each user once.", name))
+		}
 		named[name] = true
 		wo, written := keys[name]
-		inline := len(u.SSHPublicKeys.Elements()) > 0
+		// Unknown at plan counts as given.
+		inline := u.SSHPublicKeys.IsUnknown() || len(u.SSHPublicKeys.Elements()) > 0
+		refs := u.Credentials.IsUnknown() || len(u.Credentials.Elements()) > 0
 		switch {
-		case creating && !inline && len(u.Credentials.Elements()) == 0 && (!written || (wo != nil && len(wo) == 0)):
+		case creating && !inline && !refs && (!written || (wo != nil && len(wo) == 0)):
 			report(path.Root("ssh_access"), "An SSH user has no keys",
 				fmt.Sprintf("`ssh_access` names %q with no keys, and the platform refuses a user without one. "+
 					"Write the user's keys in `ssh_public_keys_wo`, as `%s = [...]`, or in the user's "+
@@ -328,7 +334,7 @@ func checkConfiguredKeys(ctx context.Context, req resource.ModifyPlanRequest, di
 			report(path.Root("ssh_public_keys_wo"), "An SSH user's keys are written twice",
 				fmt.Sprintf("%q has keys in both its `ssh_public_keys` and `ssh_public_keys_wo`. A create "+
 					"sends only the write-only ones. Keep one of the two.", name))
-		case (inline || written) && len(u.Credentials.Elements()) > 0:
+		case (inline || written) && refs:
 			report(path.Root("ssh_access"), "An SSH user has both keys and references",
 				fmt.Sprintf("%q has keys and `ssh_public_key_refs`. A create sends one or the other, and "+
 					"the platform makes new references from keys. Keep the keys, or the references.", name))

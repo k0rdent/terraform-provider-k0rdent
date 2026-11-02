@@ -154,7 +154,7 @@ func keysMoved(ctx context.Context, state, plan types.Set, writeOnly, madeWith m
 		name := p.Username.ValueString()
 		h, ok := byName[name]
 		if !ok || !h.Sudo.Equal(p.Sudo) || !h.DisplayName.Equal(p.DisplayName) ||
-			(!p.Credentials.IsUnknown() && !h.Credentials.Equal(p.Credentials)) {
+			p.Credentials.IsUnknown() || !h.Credentials.Equal(p.Credentials) {
 			return false
 		}
 		// Each held user once, so a username written twice can't stand in
@@ -526,9 +526,14 @@ func (refsByUsername) PlanModifySet(ctx context.Context, req planmodifier.SetReq
 	}
 	leftOut := make(map[string]sshUserModel, len(configured))
 	for _, u := range configured {
-		leftOut[u.Username.ValueString()] = u
+		if !u.Username.IsUnknown() {
+			leftOut[u.Username.ValueString()] = u
+		}
 	}
 	for i, u := range planned {
+		if u.Username.IsUnknown() {
+			continue
+		}
 		name := u.Username.ValueString()
 		h, ok := byName[name]
 		c, inConfig := leftOut[name]

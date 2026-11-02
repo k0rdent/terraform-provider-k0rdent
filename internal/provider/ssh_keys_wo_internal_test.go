@@ -142,6 +142,12 @@ func TestKeysThatOnlyMoveReplaceNothing(t *testing.T) {
 	}
 	madeWithA := map[string][]string{"ops": {keyAFP}}
 	woA, woB := map[string][]string{"ops": {keyA}}, map[string][]string{"ops": {keyB}}
+	unknownRefs, d := types.SetValueFrom(ctx, sshUserObjectType(), []sshUserModel{{Username: types.StringValue("ops"),
+		SSHPublicKeys: types.ListNull(types.StringType), Credentials: types.ListUnknown(types.StringType),
+		Sudo: types.StringNull(), DisplayName: types.StringNull()}})
+	if d.HasError() {
+		t.Fatal(d)
+	}
 	for name, tt := range map[string]struct {
 		state, plan         types.Set
 		writeOnly, madeWith map[string][]string
@@ -158,6 +164,7 @@ func TestKeysThatOnlyMoveReplaceNothing(t *testing.T) {
 		"keys left out":                        {user([]string{keyA}, ref), user(nil, ref), nil, nil, true, false},
 		"reference changed":                    {user(nil, ref), user(nil, other), nil, nil, false, false},
 		"reference changed with the same keys": {user([]string{keyA}, ref), user([]string{keyA}, other), nil, nil, false, false},
+		"references not known until the apply": {user(nil, ref), unknownRefs, nil, nil, false, false},
 	} {
 		t.Run(name, func(t *testing.T) {
 			var diags diag.Diagnostics
@@ -354,6 +361,17 @@ func TestKeysTheCreateCantSendFailThePlan(t *testing.T) {
 		"sudo":                tftypes.NewValue(tftypes.String, nil),
 		"display_name":        tftypes.NewValue(tftypes.String, nil),
 	})})
+	unknownRefsAccess := tftypes.NewValue(tftypes.Set{ElementType: sshUserTF}, []tftypes.Value{tftypes.NewValue(sshUserTF, map[string]tftypes.Value{
+		"username":            str("ops"),
+		"ssh_public_keys":     tftypes.NewValue(tftypes.List{ElementType: tftypes.String}, nil),
+		"ssh_public_key_refs": tftypes.NewValue(tftypes.List{ElementType: tftypes.String}, tftypes.UnknownValue),
+		"sudo":                tftypes.NewValue(tftypes.String, nil),
+		"display_name":        tftypes.NewValue(tftypes.String, nil),
+	})})
+	twice := tftypes.NewValue(tftypes.Set{ElementType: sshUserTF}, []tftypes.Value{
+		sshUser("ops", tftypes.NewValue(tftypes.String, nil), "ssh-ed25519 AAAA ops"),
+		sshUser("ops", str("ALL=(ALL) ALL"), "ssh-ed25519 AAAA ops"),
+	})
 	for name, tt := range map[string]struct {
 		config   map[string]tftypes.Value
 		existing bool
@@ -369,6 +387,8 @@ func TestKeysTheCreateCantSendFailThePlan(t *testing.T) {
 		"keys for a user ssh_access lacks":           {map[string]tftypes.Value{"ssh_access": opsAccess(), "ssh_public_keys_wo": eve}, false, "no user of that name", false},
 		"keys for a user lacking, existing cluster":  {map[string]tftypes.Value{"ssh_access": opsAccess(), "ssh_public_keys_wo": eve}, true, "no user of that name", true},
 		"keys and references on a create":            {map[string]tftypes.Value{"ssh_access": withRefs, "ssh_public_keys_wo": woKeys(keyA)}, false, "and `ssh_public_key_refs`", false},
+		"keys and references not known yet":          {map[string]tftypes.Value{"ssh_access": unknownRefsAccess, "ssh_public_keys_wo": woKeys(keyA)}, false, "and `ssh_public_key_refs`", false},
+		"a username twice":                           {map[string]tftypes.Value{"ssh_access": twice}, false, "more than once", false},
 		"no users and no keys":                       {nil, false, "", false},
 	} {
 		t.Run(name, func(t *testing.T) {
