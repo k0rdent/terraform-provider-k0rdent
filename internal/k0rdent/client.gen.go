@@ -2048,6 +2048,18 @@ type ClientInterface interface {
 	// Corresponds with POST /v1/regions/{region}/projects/{project}/compute/instances/{id}/{action} (the `ExecuteInstancePowerAction` operationId).
 	ExecuteInstancePowerAction(ctx context.Context, region RegionPathParam, project ProjectPathParam, id string, action string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetProjectCredential Get project credential metadata
+	//
+	// **Visibility:** `public` (x-visibility)
+	//
+	// Return one project-scoped credential's metadata. Never returns
+	// material. A credential outside this project's scope — including any
+	// platform/admin-owned credential — returns 404 with no acknowledgement of its
+	// existence.
+	//
+	// Corresponds with GET /v1/regions/{region}/projects/{project}/credentials/{id} (the `GetProjectCredential` operationId).
+	GetProjectCredential(ctx context.Context, region RegionPathParam, project ProjectPathParam, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// ListNetworks List networks
 	//
 	// **Visibility:** `internal` · `public` (x-visibility)
@@ -5175,6 +5187,29 @@ func (c *Client) ExecuteInstancePowerAction(ctx context.Context, region RegionPa
 		return nil, err
 	}
 	ctx = withOperation(ctx, "executeInstancePowerAction")
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetProjectCredential Get project credential metadata
+//
+// **Visibility:** `public` (x-visibility)
+//
+// Return one project-scoped credential's metadata. Never returns
+// material. A credential outside this project's scope — including any
+// platform/admin-owned credential — returns 404 with no acknowledgement of its
+// existence.
+//
+// Corresponds with GET /v1/regions/{region}/projects/{project}/credentials/{id} (the `GetProjectCredential` operationId).
+func (c *Client) GetProjectCredential(ctx context.Context, region RegionPathParam, project ProjectPathParam, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetProjectCredentialRequest(c.Server, region, project, id)
+	if err != nil {
+		return nil, err
+	}
+	ctx = withOperation(ctx, "getProjectCredential")
 	req = req.WithContext(ctx)
 	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
 		return nil, err
@@ -10085,6 +10120,66 @@ func NewExecuteInstancePowerActionRequest(server string, region RegionPathParam,
 	return req, nil
 }
 
+// NewGetProjectCredentialRequest constructs an http.Request for the GetProjectCredential method
+func NewGetProjectCredentialRequest(server string, region RegionPathParam, project ProjectPathParam, id string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "region", region, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	if err := checkPathParam("getProjectCredential", "region", string(region), pathParam0, pathParamRule{}); err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "project", project, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	if err := checkPathParam("getProjectCredential", "project", string(project), pathParam1, pathParamRule{}); err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	if err := checkPathParam("getProjectCredential", "id", id, pathParam2, pathParamRule{}); err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/regions/%s/projects/%s/credentials/%s", pathParam0, pathParam1, pathParam2)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewListNetworksRequest constructs an http.Request for the ListNetworks method
 func NewListNetworksRequest(server string, region RegionPathParam, project ProjectPathParam, params *ListNetworksParams) (*http.Request, error) {
 	var err error
@@ -13336,6 +13431,18 @@ var Operations = map[string]OperationInfo{
 			503: {Description: "Service unavailable. The server is temporarily unable to handle the\nrequest because a required dependency is not configured (e.g., an upstream\ndependency is not wired up) or cannot be reached. Distinct from 504\nGateway Timeout, which signals a transient upstream stall.\n", Ref: "#/components/responses/ServiceUnavailable"},
 		},
 	},
+	"getProjectCredential": {
+		Method:     "GET",
+		Path:       "/v1/regions/{region}/projects/{project}/credentials/{id}",
+		Deprecated: false,
+		Responses: map[int]ResponseInfo{
+			200: {Ref: ""},
+			401: {Description: "Unauthorized", Ref: "#/components/responses/Unauthorized"},
+			403: {Description: "Forbidden", Ref: "#/components/responses/Forbidden"},
+			404: {Description: "Not found", Ref: "#/components/responses/NotFound"},
+			500: {Description: "Internal server error", Ref: "#/components/responses/InternalServerError"},
+		},
+	},
 	"listNetworks": {
 		Method:     "GET",
 		Path:       "/v1/regions/{region}/projects/{project}/networking/networks",
@@ -15808,6 +15915,20 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with POST /v1/regions/{region}/projects/{project}/compute/instances/{id}/{action} (the `ExecuteInstancePowerAction` operationId).
 	ExecuteInstancePowerActionWithResponse(ctx context.Context, region RegionPathParam, project ProjectPathParam, id string, action string, reqEditors ...RequestEditorFn) (*ExecuteInstancePowerActionResponse, error)
+
+	// GetProjectCredentialWithResponse Get project credential metadata
+	//
+	// **Visibility:** `public` (x-visibility)
+	//
+	// Return one project-scoped credential's metadata. Never returns
+	// material. A credential outside this project's scope — including any
+	// platform/admin-owned credential — returns 404 with no acknowledgement of its
+	// existence.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /v1/regions/{region}/projects/{project}/credentials/{id} (the `GetProjectCredential` operationId).
+	GetProjectCredentialWithResponse(ctx context.Context, region RegionPathParam, project ProjectPathParam, id string, reqEditors ...RequestEditorFn) (*GetProjectCredentialResponse, error)
 
 	// ListNetworksWithResponse List networks
 	//
@@ -20719,6 +20840,84 @@ func (r ExecuteInstancePowerActionResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r ExecuteInstancePowerActionResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetProjectCredentialResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *CredentialRecord
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalServerError
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetProjectCredentialResponse) GetJSON200() *CredentialRecord {
+	return r.JSON200
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r GetProjectCredentialResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r GetProjectCredentialResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r GetProjectCredentialResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r GetProjectCredentialResponse) GetJSON500() *InternalServerError {
+	return r.JSON500
+}
+
+// GetBody returns the raw response body bytes
+func (r GetProjectCredentialResponse) GetBody() []byte {
+	return r.Body
+}
+
+// HTTPResult returns HTTPResponse and Body together. Unlike the getters above
+// it is safe to call on a nil receiver. See [HTTPResulter].
+func (r *GetProjectCredentialResponse) HTTPResult() (*http.Response, []byte) {
+	if r == nil {
+		return nil, nil
+	}
+	return r.HTTPResponse, r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetProjectCredentialResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetProjectCredentialResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetProjectCredentialResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -25831,6 +26030,26 @@ func (c *ClientWithResponses) ExecuteInstancePowerActionWithResponse(ctx context
 	return ParseExecuteInstancePowerActionResponse(rsp)
 }
 
+// GetProjectCredentialWithResponse Get project credential metadata
+//
+// **Visibility:** `public` (x-visibility)
+//
+// Return one project-scoped credential's metadata. Never returns
+// material. A credential outside this project's scope — including any
+// platform/admin-owned credential — returns 404 with no acknowledgement of its
+// existence.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /v1/regions/{region}/projects/{project}/credentials/{id} (the `GetProjectCredential` operationId).
+func (c *ClientWithResponses) GetProjectCredentialWithResponse(ctx context.Context, region RegionPathParam, project ProjectPathParam, id string, reqEditors ...RequestEditorFn) (*GetProjectCredentialResponse, error) {
+	rsp, err := c.GetProjectCredential(ctx, region, project, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetProjectCredentialResponse(rsp)
+}
+
 // ListNetworksWithResponse List networks
 //
 // **Visibility:** `internal` · `public` (x-visibility)
@@ -30235,6 +30454,68 @@ func decodeExecuteInstancePowerActionResponse(response *ExecuteInstancePowerActi
 			return nil, err
 		}
 		response.JSON503 = &dest
+
+	}
+
+	return nil, nil
+}
+
+// ParseGetProjectCredentialResponse parses an HTTP response from a GetProjectCredentialWithResponse call
+func ParseGetProjectCredentialResponse(rsp *http.Response) (*GetProjectCredentialResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetProjectCredentialResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+	if _, err := decodeGetProjectCredentialResponse(response, rsp, bodyBytes); err != nil {
+		return response, err
+	}
+
+	return response, nil
+}
+
+// decodeGetProjectCredentialResponse fills response from the body. A decode error leaves Body set.
+func decodeGetProjectCredentialResponse(response *GetProjectCredentialResponse, rsp *http.Response, bodyBytes []byte) (*GetProjectCredentialResponse, error) {
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest CredentialRecord
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalServerError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
 
 	}
 
