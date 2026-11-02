@@ -19,6 +19,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/setplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-go/tftypes"
@@ -152,6 +153,13 @@ func TestKeysThatOnlyMoveReplaceNothing(t *testing.T) {
 	if d.HasError() {
 		t.Fatal(d)
 	}
+	refs, _ := types.ListValueFrom(ctx, types.StringType, []string{ref})
+	unknownText, d := types.SetValueFrom(ctx, sshUserObjectType(), []sshUserModel{{Username: types.StringValue("ops"),
+		SSHPublicKeys: types.ListUnknown(types.StringType), Credentials: refs,
+		Sudo: types.StringNull(), DisplayName: types.StringNull()}})
+	if d.HasError() {
+		t.Fatal(d)
+	}
 	for name, tt := range map[string]struct {
 		state, plan         types.Set
 		writeOnly, madeWith map[string][]string
@@ -174,6 +182,7 @@ func TestKeysThatOnlyMoveReplaceNothing(t *testing.T) {
 		"reference changed with the same keys": {user([]string{keyA}, ref), user([]string{keyA}, other), nil, nil, false, false},
 		"references not known until the apply": {user(nil, ref), unknownRefs, nil, madeWithA, false, false},
 		"references unknown with none held":    {user(nil, ref), unknownRefs, nil, nil, true, false},
+		"text keys not known until the apply":  {user([]string{keyA}, ref), unknownText, nil, madeWithA, false, false},
 	} {
 		t.Run(name, func(t *testing.T) {
 			var diags diag.Diagnostics
@@ -184,6 +193,29 @@ func TestKeysThatOnlyMoveReplaceNothing(t *testing.T) {
 				t.Errorf("diagnostics: %v", diags)
 			}
 		})
+	}
+}
+
+// A group whose write-only keys aren't known at plan can't show they only
+// moved, so a change to its users replaces it.
+func TestAGroupWriteOnlyKeyUnknownAtPlanReplaces(t *testing.T) {
+	ctx := context.Background()
+	unknownKey := tftypes.NewValue(tftypes.Map{ElementType: tftypes.List{ElementType: tftypes.String}}, tftypes.UnknownValue)
+	configRaw, s := testValue(t, &instanceGroupResource{}, with(opsGroup("active"),
+		map[string]tftypes.Value{"ssh_access": woUsers(), "ssh_public_keys_wo": unknownKey}))
+	access, d := types.SetValueFrom(ctx, sshUserObjectType(), []sshUserModel{{Username: types.StringValue("ops"),
+		SSHPublicKeys: types.ListNull(types.StringType), Credentials: types.ListNull(types.StringType),
+		Sudo: types.StringNull(), DisplayName: types.StringNull()}})
+	if d.HasError() {
+		t.Fatal(d)
+	}
+	req := planmodifier.SetRequest{Config: tfsdk.Config{Raw: configRaw, Schema: s.Schema},
+		ConfigValue: access, StateValue: access, PlanValue: access}
+	freshPrivate(t, &req.Private, nil)
+	var resp setplanmodifier.RequiresReplaceIfFuncResponse
+	sshAccessRequiresReplace(ctx, req, &resp)
+	if !resp.RequiresReplace {
+		t.Error("a write-only key unknown at plan doesn't replace the group")
 	}
 }
 
