@@ -517,12 +517,28 @@ func (refsByUsername) PlanModifySet(ctx context.Context, req planmodifier.SetReq
 	for _, u := range held {
 		byName[u.Username.ValueString()] = u
 	}
+	// Only what the configuration leaves out: a value configured but unknown
+	// at plan stays unknown.
+	var configured []sshUserModel
+	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() ||
+		req.ConfigValue.ElementsAs(ctx, &configured, false).HasError() {
+		return
+	}
+	leftOut := make(map[string]sshUserModel, len(configured))
+	for _, u := range configured {
+		leftOut[u.Username.ValueString()] = u
+	}
 	for i, u := range planned {
-		h, ok := byName[u.Username.ValueString()]
-		if u.Credentials.IsUnknown() && ok {
+		name := u.Username.ValueString()
+		h, ok := byName[name]
+		c, inConfig := leftOut[name]
+		if !inConfig {
+			continue
+		}
+		if u.Credentials.IsUnknown() && c.Credentials.IsNull() && ok {
 			planned[i].Credentials = h.Credentials
 		}
-		if u.SSHPublicKeys.IsUnknown() {
+		if u.SSHPublicKeys.IsUnknown() && c.SSHPublicKeys.IsNull() {
 			planned[i].SSHPublicKeys = types.ListNull(types.StringType)
 			if ok {
 				planned[i].SSHPublicKeys = h.SSHPublicKeys

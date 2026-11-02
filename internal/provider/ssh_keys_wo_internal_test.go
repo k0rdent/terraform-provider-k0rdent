@@ -347,6 +347,13 @@ func TestKeysTheCreateCantSendFailThePlan(t *testing.T) {
 	unknownKey := tftypes.NewValue(tftypes.Map{ElementType: tftypes.List{ElementType: tftypes.String}}, map[string]tftypes.Value{
 		"ops": tftypes.NewValue(tftypes.List{ElementType: tftypes.String}, []tftypes.Value{tftypes.NewValue(tftypes.String, tftypes.UnknownValue)}),
 	})
+	withRefs := tftypes.NewValue(tftypes.Set{ElementType: sshUserTF}, []tftypes.Value{tftypes.NewValue(sshUserTF, map[string]tftypes.Value{
+		"username":            str("ops"),
+		"ssh_public_keys":     tftypes.NewValue(tftypes.List{ElementType: tftypes.String}, nil),
+		"ssh_public_key_refs": tftypes.NewValue(tftypes.List{ElementType: tftypes.String}, []tftypes.Value{str("/v1/regions/test/projects/test/credentials/mcred-01jabcdefghjkmnpqrstvwxyz0")}),
+		"sudo":                tftypes.NewValue(tftypes.String, nil),
+		"display_name":        tftypes.NewValue(tftypes.String, nil),
+	})})
 	for name, tt := range map[string]struct {
 		config   map[string]tftypes.Value
 		existing bool
@@ -361,6 +368,7 @@ func TestKeysTheCreateCantSendFailThePlan(t *testing.T) {
 		"keys written both ways on a create":         {map[string]tftypes.Value{"ssh_access": opsAccess(), "ssh_public_keys_wo": woKeys(keyA)}, false, "in both", false},
 		"keys for a user ssh_access lacks":           {map[string]tftypes.Value{"ssh_access": opsAccess(), "ssh_public_keys_wo": eve}, false, "no user of that name", false},
 		"keys for a user lacking, existing cluster":  {map[string]tftypes.Value{"ssh_access": opsAccess(), "ssh_public_keys_wo": eve}, true, "no user of that name", true},
+		"keys and references on a create":            {map[string]tftypes.Value{"ssh_access": withRefs, "ssh_public_keys_wo": woKeys(keyA)}, false, "and `ssh_public_key_refs`", false},
 		"no users and no keys":                       {nil, false, "", false},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -556,8 +564,9 @@ func TestReferencesStayWithTheirUser(t *testing.T) {
 	state := set(user("bob", refs("rb")), user("alice", refs("ra")))
 	for _, order := range [][]string{{"alice", "bob"}, {"bob", "alice"}} {
 		plan := set(user(order[0], types.ListUnknown(types.StringType)), user(order[1], types.ListUnknown(types.StringType)))
+		config := set(user(order[0], types.ListNull(types.StringType)), user(order[1], types.ListNull(types.StringType)))
 		resp := planmodifier.SetResponse{PlanValue: plan}
-		refsByUsername{}.PlanModifySet(ctx, planmodifier.SetRequest{StateValue: state, PlanValue: plan}, &resp)
+		refsByUsername{}.PlanModifySet(ctx, planmodifier.SetRequest{StateValue: state, PlanValue: plan, ConfigValue: config}, &resp)
 		var got []sshUserModel
 		resp.Diagnostics.Append(resp.PlanValue.ElementsAs(ctx, &got, false)...)
 		for _, u := range got {
@@ -703,19 +712,69 @@ func TestKeysLeftOutKeepWhatStateHolds(t *testing.T) {
 	}
 	held := types.ListValueMust(types.StringType, []attr.Value{types.StringValue(keyA)})
 	unknown := user(types.ListUnknown(types.StringType))
+	leftOut := user(types.ListNull(types.StringType))
 	for name, tt := range map[string]struct {
-		state types.Set
-		want  types.Set
+		state, config types.Set
+		want          types.Set
 	}{
-		"kept from state": {user(held), user(held)},
-		"on a create":     {types.SetNull(sshUserObjectType()), user(types.ListNull(types.StringType))},
+		"kept from state": {user(held), leftOut, user(held)},
+		"on a create":     {types.SetNull(sshUserObjectType()), leftOut, user(types.ListNull(types.StringType))},
+		// Keys configured but not known until the apply stay unknown, on a
+		// create and on a change alike.
+		"configured, unknown, on a create": {types.SetNull(sshUserObjectType()), unknown, unknown},
+		"configured, unknown, on a change": {user(held), unknown, unknown},
 	} {
 		t.Run(name, func(t *testing.T) {
 			resp := planmodifier.SetResponse{PlanValue: unknown}
-			refsByUsername{}.PlanModifySet(ctx, planmodifier.SetRequest{StateValue: tt.state, PlanValue: unknown}, &resp)
+			refsByUsername{}.PlanModifySet(ctx, planmodifier.SetRequest{StateValue: tt.state, PlanValue: unknown, ConfigValue: tt.config}, &resp)
 			if !resp.PlanValue.Equal(tt.want) {
 				t.Errorf("planned %v, want %v", resp.PlanValue, tt.want)
 			}
 		})
+	}
+}
+
+// Default tags not known until the apply still plan an update of `tags_all`
+// when `ssh_access` is left out: only the unknowns the framework marks for
+// that are reset.
+func TestUnknownDefaultTagsStillPlanAnUpdate(t *testing.T) {
+	r := &clusterResource{meta: testClusterMeta(t, "https://unused.invalid", time.Minute)}
+	r.meta.DefaultTags = defaultTags{unknown: true}
+	base := with(existingCluster(nil), map[string]tftypes.Value{"state": str("active"), "on_failed": str("keep"),
+		"tags_all": tftypes.NewValue(tftypes.Map{ElementType: tftypes.String}, map[string]tftypes.Value{})})
+	stateRaw, s := testValue(t, r, with(base, map[string]tftypes.Value{"ssh_access": opsAccess()}))
+	planRaw, _ := testValue(t, r, with(base, map[string]tftypes.Value{"ssh_access": opsAccess(),
+		"state": tftypes.NewValue(tftypes.String, tftypes.UnknownValue)}))
+	configRaw, _ := testValue(t, r, with(base, map[string]tftypes.Value{"state": tftypes.NewValue(tftypes.String, nil),
+		"tags_all": tftypes.NewValue(tftypes.Map{ElementType: tftypes.String}, nil)}))
+	plan := tfsdk.Plan{Raw: planRaw, Schema: s.Schema}
+	resp := resource.ModifyPlanResponse{Plan: plan}
+	r.ModifyPlan(context.Background(), resource.ModifyPlanRequest{Config: tfsdk.Config{Raw: configRaw, Schema: s.Schema},
+		Plan: plan, State: tfsdk.State{Raw: stateRaw, Schema: s.Schema}}, &resp)
+	var all types.Map
+	resp.Diagnostics.Append(resp.Plan.GetAttribute(context.Background(), path.Root("tags_all"), &all)...)
+	if resp.Diagnostics.HasError() || !all.IsUnknown() {
+		t.Errorf("tags_all planned %v (%v), want unknown: the defaults aren't known yet", all, resp.Diagnostics)
+	}
+}
+
+// References configured but not known until the apply, such as a credential
+// created in the same apply, stay unknown rather than taking state's.
+func TestConfiguredUnknownReferencesStayUnknown(t *testing.T) {
+	ctx := context.Background()
+	user := func(refs types.List) types.Set {
+		v, d := types.SetValueFrom(ctx, sshUserObjectType(), []sshUserModel{{Username: types.StringValue("ops"),
+			SSHPublicKeys: types.ListNull(types.StringType), Credentials: refs, Sudo: types.StringNull(), DisplayName: types.StringNull()}})
+		if d.HasError() {
+			t.Fatal(d)
+		}
+		return v
+	}
+	unknown := user(types.ListUnknown(types.StringType))
+	state := user(types.ListValueMust(types.StringType, []attr.Value{types.StringValue("/v1/regions/r/projects/p/credentials/mcred-0123456789abcdefghjkmnpqrs")}))
+	resp := planmodifier.SetResponse{PlanValue: unknown}
+	refsByUsername{}.PlanModifySet(ctx, planmodifier.SetRequest{StateValue: state, PlanValue: unknown, ConfigValue: unknown}, &resp)
+	if !resp.PlanValue.Equal(unknown) {
+		t.Errorf("planned %v, want the references unknown", resp.PlanValue)
 	}
 }

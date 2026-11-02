@@ -450,6 +450,9 @@ func (r *clusterResource) Configure(_ context.Context, req resource.ConfigureReq
 func (r *clusterResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
 	// Runs on every plan, create included: the resolved scope has to reach state.
 	modifyScopePlan(ctx, r.meta, req, resp)
+	// Before planTagsAll, which plans `tags_all` unknown for default tags
+	// not known yet: that one is a change.
+	planNoChangeOverUnreadAttributes(req, resp)
 	// Before the no-op check below: a change to the provider's default_tags
 	// is a change to this cluster, though nothing in its configuration moved.
 	planTagsAll(ctx, r.meta, req, resp)
@@ -467,7 +470,6 @@ func (r *clusterResource) ModifyPlan(ctx context.Context, req resource.ModifyPla
 	if req.State.Raw.IsNull() || req.Plan.Raw.IsNull() {
 		return // create or destroy; the framework already handles both
 	}
-	planNoChangeOverUnreadAttributes(req, resp)
 	// A create an earlier apply stopped waiting for plans an update that
 	// waits for it, though nothing in the configuration moved.
 	planResume(ctx, req, resp)

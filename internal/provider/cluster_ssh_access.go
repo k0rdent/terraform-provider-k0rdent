@@ -328,6 +328,10 @@ func checkConfiguredKeys(ctx context.Context, req resource.ModifyPlanRequest, di
 			report(path.Root("ssh_public_keys_wo"), "An SSH user's keys are written twice",
 				fmt.Sprintf("%q has keys in both its `ssh_public_keys` and `ssh_public_keys_wo`. A create "+
 					"sends only the write-only ones. Keep one of the two.", name))
+		case (inline || written) && len(u.Credentials.Elements()) > 0:
+			report(path.Root("ssh_access"), "An SSH user has both keys and references",
+				fmt.Sprintf("%q has keys and `ssh_public_key_refs`. A create sends one or the other, and "+
+					"the platform makes new references from keys. Keep the keys, or the references.", name))
 		}
 	}
 	if !allKnown {
