@@ -135,7 +135,11 @@ func keysOnlyMoved(ctx context.Context, req planmodifier.SetRequest, diags *diag
 }
 
 // keysMoved is keysOnlyMoved given the write-only keys configured and the
-// fingerprints of the keys the nodes were made with.
+// fingerprints of the keys the nodes were made with. Keys with none to check
+// against are recorded in place here, and so are the references of a user
+// with none, which only planUncheckedKeys plans unknown: the update it plans
+// stops at the apply, so nothing is ever recorded unchecked, and it's no
+// replacement.
 func keysMoved(ctx context.Context, state, plan types.Set, writeOnly, madeWith map[string][]string, diags *diag.Diagnostics) bool {
 	if state.IsNull() || state.IsUnknown() || plan.IsNull() || plan.IsUnknown() || state.Equal(plan) {
 		return false
@@ -149,12 +153,13 @@ func keysMoved(ctx context.Context, state, plan types.Set, writeOnly, madeWith m
 	for _, u := range held {
 		byName[u.Username.ValueString()] = u
 	}
-	var unchecked []string
 	for _, p := range planned {
 		name := p.Username.ValueString()
 		h, ok := byName[name]
+		_, checked := madeWith[name]
+		blocked := !checked && p.Credentials.IsUnknown()
 		if !ok || !h.Sudo.Equal(p.Sudo) || !h.DisplayName.Equal(p.DisplayName) ||
-			p.Credentials.IsUnknown() || !h.Credentials.Equal(p.Credentials) {
+			(!blocked && (p.Credentials.IsUnknown() || !h.Credentials.Equal(p.Credentials))) {
 			return false
 		}
 		// Each held user once, so a username written twice can't stand in
@@ -179,20 +184,9 @@ func keysMoved(ctx context.Context, state, plan types.Set, writeOnly, madeWith m
 			diags.Append(h.SSHPublicKeys.ElementsAs(ctx, &keys, false)...)
 			have, known = fingerprintList(keys), true
 		}
-		switch {
-		case len(want) == 0:
-		case !known:
-			unchecked = append(unchecked, name)
-		case !slices.Equal(fingerprintList(want), have):
+		if len(want) > 0 && known && !sameFingerprints(fingerprintList(want), have) {
 			return false
 		}
-	}
-	if len(unchecked) > 0 {
-		diags.AddWarning("`ssh_public_keys` is recorded, not sent",
-			fmt.Sprintf("The platform doesn't return the public keys of %s, only references to them, so "+
-				"state had none after the import. The apply records the configured keys and sends nothing. "+
-				"It can't check them against the nodes: make sure they're the keys the nodes were made with. "+
-				"A later change to them replaces the resource.", strings.Join(unchecked, ", ")))
 	}
 	return true
 }

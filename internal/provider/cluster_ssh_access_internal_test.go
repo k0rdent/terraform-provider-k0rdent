@@ -315,26 +315,33 @@ func opsWith(sudo tftypes.Value, keys ...string) tftypes.Value {
 
 // An import of a cluster or a group whose keys the platform answers as
 // references holds each user with no keys. Writing the configured keys over
-// that records them in place, with a warning, on both resources. Anything else
-// that differs still replaces, keys state did hold included.
+// that records them in place, on both resources, when they're the keys whose
+// fingerprints a refresh read from the platform, or when none were read:
+// replaceOnChangedKeys then plans the update that stops at the apply. Another
+// key replaces. Anything else that differs still replaces, keys state did hold
+// included.
 func TestImportedUsersWithoutKeysTakeTheConfiguredOnes(t *testing.T) {
 	noSudo := tftypes.NewValue(tftypes.String, nil)
 	unread := opsWith(noSudo)
 	usersSet := func(users ...tftypes.Value) tftypes.Value {
 		return tftypes.NewValue(tftypes.Set{ElementType: sshUserTF}, users)
 	}
+	read := map[string][]string{"ops": fingerprintList([]string{"ssh-ed25519 AAAA ops"})}
 	for name, tt := range map[string]struct {
-		state, plan tftypes.Value
-		replace     bool
+		state, plan      tftypes.Value
+		madeWith         map[string][]string
+		replace, refused bool
 	}{
-		"keys filled in":          {unread, opsAccess(), false},
-		"keys changed":            {opsAccess(), opsWith(noSudo, "ssh-ed25519 BBBB ops"), true},
-		"sudo changed with keys":  {unread, opsWith(str("ALL=(ALL) ALL"), "ssh-ed25519 AAAA ops"), true},
-		"keys filled in, renamed": {unread, tftypes.NewValue(tftypes.Set{ElementType: sshUserTF}, nil), true},
+		"keys filled in":            {unread, opsAccess(), read, false, false},
+		"keys filled in, none read": {unread, opsAccess(), nil, false, false},
+		"another key filled in":     {unread, opsWith(noSudo, "ssh-ed25519 BBBB ops"), read, true, false},
+		"keys changed":              {opsAccess(), opsWith(noSudo, "ssh-ed25519 BBBB ops"), nil, true, false},
+		"sudo changed with keys":    {unread, opsWith(str("ALL=(ALL) ALL"), "ssh-ed25519 AAAA ops"), nil, true, false},
+		"keys filled in, renamed":   {unread, tftypes.NewValue(tftypes.Set{ElementType: sshUserTF}, nil), nil, true, false},
 		"a username twice drops a user": {
 			usersSet(sshUser("ops", noSudo), sshUser("bob", noSudo, "ssh-ed25519 BBBB bob")),
 			usersSet(sshUser("ops", noSudo, "ssh-ed25519 AAAA ops"), sshUser("ops", noSudo, "ssh-ed25519 CCCC ops")),
-			true,
+			nil, true, false,
 		},
 	} {
 		for resourceName, requiresReplace := range map[string]setplanmodifier.RequiresReplaceIfFunc{
@@ -347,13 +354,18 @@ func TestImportedUsersWithoutKeysTakeTheConfiguredOnes(t *testing.T) {
 				if d := recordSSHAccess(context.Background(), privateIn(t, req.Private)); d.HasError() {
 					t.Fatal(d)
 				}
+				if tt.madeWith != nil {
+					if d := saveFingerprints(context.Background(), privateIn(t, req.Private), tt.madeWith); d.HasError() {
+						t.Fatal(d)
+					}
+				}
 				var resp setplanmodifier.RequiresReplaceIfFuncResponse
 				requiresReplace(context.Background(), req, &resp)
 				if resp.RequiresReplace != tt.replace {
 					t.Errorf("replace = %v, want %v", resp.RequiresReplace, tt.replace)
 				}
-				if warned := resp.Diagnostics.WarningsCount() == 1; warned == tt.replace {
-					t.Errorf("warned = %v, want a warning only when the keys are recorded: %v", warned, resp.Diagnostics)
+				if refused := resp.Diagnostics.ErrorsCount() == 1; refused != tt.refused || resp.Diagnostics.WarningsCount() != 0 {
+					t.Errorf("refused = %v, want %v: %v", refused, tt.refused, resp.Diagnostics)
 				}
 			})
 		}

@@ -482,10 +482,14 @@ func (r *instanceGroupResource) Read(ctx context.Context, req resource.ReadReque
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 	resp.Diagnostics.Append(recordReleased(ctx, resp.Private, state.SSHAccessHeld)...)
 	resp.Diagnostics.Append(holdKeysInState(ctx, resp.Private, state.SSHAccess)...)
+	resp.Diagnostics.Append(holdPlatformFingerprints(ctx, r.meta, resp.Private, state.SSHAccess, prior.SSHAccess.IsNull())...)
 }
 
 func (r *instanceGroupResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
 	defer syncIdentity(ctx, r.meta, resp.Identity, &resp.Diagnostics, &resp.State)
+	if refuseUncheckedKeys(ctx, req.Private, &resp.Diagnostics) {
+		return
+	}
 	var plan, state instanceGroupModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)

@@ -362,8 +362,9 @@ func refuseReplacement(diags *diag.Diagnostics, p path.Path, from, to attr.Value
 	name := p.String()
 	changed := fmt.Sprintf("`%s` goes from %s to %s.", name, describeValue(from), describeValue(to))
 	if onlyReferencesUnknown(from, to) {
-		// Only a write-only key moved, which state never holds.
-		changed = fmt.Sprintf("A key in `ssh_public_keys_wo` differs, by fingerprint, from the keys this "+
+		// Only references moved: a configured key differs from the nodes'
+		// by fingerprint, which state doesn't show.
+		changed = fmt.Sprintf("A configured SSH key, or a key reference, differs from the keys this "+
 			"%s's nodes were made with.", what.noun)
 	}
 	// Local: decided from configuration and prior state, no request made.

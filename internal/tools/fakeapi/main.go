@@ -216,6 +216,7 @@ func newHandler(s *state, secrets runSecrets, port string, shutdown func()) http
 	mux.HandleFunc("POST /_harness/shutdown", secrets.ownerControl(shutdown))
 	mux.HandleFunc("GET /_harness/store/{path...}", secrets.owner(s.storeRead()))
 	mux.HandleFunc("POST /_harness/webhooks/{id}/disable", secrets.owner(s.disableWebhook))
+	mux.HandleFunc("POST /_harness/regions/{region}/projects/{project}/credentials/{id}/{action}", secrets.owner(s.sshKeyHarness))
 	counts := newRequestCounts()
 	mux.HandleFunc("GET /_harness/requests", secrets.owner(counts.serve))
 	s.routes(mux, secrets.auth)
@@ -267,6 +268,7 @@ func (s *state) routesWith(mux *http.ServeMux, authorized func(http.HandlerFunc)
 	mux.HandleFunc("GET /v1/regions/{region}/projects/{project}/compute/clusters", authorized(s.listClusters))
 	mux.HandleFunc("POST /v1/regions/{region}/projects/{project}/compute/clusters", authorized(s.createCluster))
 	mux.HandleFunc("GET /v1/regions/{region}/projects/{project}/compute/clusters/{id}", authorized(s.getCluster))
+	mux.HandleFunc("GET /v1/regions/{region}/projects/{project}/credentials/{id}", authorized(s.getProjectCredential))
 	mux.HandleFunc("PATCH /v1/regions/{region}/projects/{project}/compute/clusters/{id}", authorized(s.updateCluster))
 	mux.HandleFunc("DELETE /v1/regions/{region}/projects/{project}/compute/clusters/{id}", authorized(s.deleteCluster))
 	mux.HandleFunc("POST /v1/regions/{region}/projects/{project}/compute/clusters/{id}/scale", authorized(s.scaleCluster))
@@ -496,6 +498,7 @@ type scope struct{ region, project string }
 // in the object table in kinds.go, which is the only thing that keys into it.
 type objects struct {
 	scope      scope
+	sshKeys    map[string]*fakeSSHKey // by credential id: see ssh_key_credentials.go
 	clusters   table[*cluster]
 	groups     table[*instanceGroup]
 	networks   table[*fakeNetwork]
@@ -552,6 +555,7 @@ func newObjects(sc scope) *objects {
 		fileStores: table[*fakeFileStore]{},
 		power:      map[string]powered{},
 		made:       map[string]int{},
+		sshKeys:    map[string]*fakeSSHKey{},
 
 		projects:        table[*fakeProject]{},
 		webhooks:        table[*fakeWebhook]{},
@@ -1277,7 +1281,7 @@ func (s *state) createCluster(w http.ResponseWriter, r *http.Request) {
 		state:       "creating",
 
 		securityGroups: groups,
-		sshAccess:      keysAsCredentials(o.scope, body.SSHAccess),
+		sshAccess:      o.keysAsCredentials(body.SSHAccess),
 	}
 	if body.Storage != nil {
 		c.ceiling = *body.Storage.CeilingGiB
@@ -2049,7 +2053,7 @@ func (s *state) createInstanceGroup(w http.ResponseWriter, r *http.Request) {
 		displayName: body.DisplayName,
 		description: body.Description,
 		pools:       pools,
-		sshAccess:   keysAsCredentials(o.scope, body.SSHAccess),
+		sshAccess:   o.keysAsCredentials(body.SSHAccess),
 		state:       "creating",
 	}
 	g.provisioning = sortedMapKeys(pools)
@@ -2480,12 +2484,14 @@ type sshUser struct {
 // credential, and a read answers the references to those credentials, never
 // the keys. A reference sent is kept as it is. The same key, whitespace
 // trimmed, makes the same reference.
-func keysAsCredentials(sc scope, users []sshUser) []sshUser {
+func (o *objects) keysAsCredentials(users []sshUser) []sshUser {
 	out := slices.Clone(users)
 	for i := range out {
 		refs := slices.Clone(out[i].SSHPublicKeyCredentials)
 		for _, k := range out[i].SSHPublicKeys {
-			refs = append(refs, credentialRef(sc, strings.TrimSpace(k)))
+			ref := credentialRef(o.scope, strings.TrimSpace(k))
+			o.registerSSHKey(ref, strings.TrimSpace(k))
+			refs = append(refs, ref)
 		}
 		out[i].SSHPublicKeys, out[i].SSHPublicKeyCredentials = nil, refs
 	}

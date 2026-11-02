@@ -121,6 +121,10 @@ func TestAWriteOnlyKeyChangeIsFoundByFingerprint(t *testing.T) {
 // Keys that only move, between `ssh_public_keys` and `ssh_public_keys_wo` or
 // in over none after an import, change nothing on the nodes and replace
 // nothing. A different key, by fingerprint, or a changed reference replaces.
+// Keys written over none with no fingerprints to check them against, and the
+// references of a user with none, which only planUncheckedKeys plans unknown,
+// are left to replaceOnChangedKeys, which plans the update that stops at the
+// apply.
 func TestKeysThatOnlyMoveReplaceNothing(t *testing.T) {
 	ctx := context.Background()
 	ref := "/v1/regions/local/projects/p/credentials/mcred-0123456789abcdefghjkmnpqrs"
@@ -151,10 +155,14 @@ func TestKeysThatOnlyMoveReplaceNothing(t *testing.T) {
 	for name, tt := range map[string]struct {
 		state, plan         types.Set
 		writeOnly, madeWith map[string][]string
-		moved, warned       bool
+		moved, _            bool
 	}{
-		"imported, keys written":               {user(nil, ref), user([]string{keyA}, ref), nil, nil, true, true},
+		"imported, keys written, none read":    {user(nil, ref), user([]string{keyA}, ref), nil, nil, true, true},
 		"imported, written as before":          {user([]string{}, ref), user([]string{keyA}, ref), nil, nil, true, true},
+		"imported, the platform's key written": {user(nil, ref), user([]string{keyA}, ref), nil, madeWithA, true, false},
+		"imported, another key written":        {user(nil, ref), user([]string{keyB}, ref), nil, madeWithA, false, false},
+		"imported, the keys in another order": {user(nil, ref, other), user([]string{keyB, keyA}, ref, other), nil,
+			map[string][]string{"ops": {keyAFP, keyBFP}}, true, false},
 		"made with A, A written":               {user(nil, ref), user([]string{keyA}, ref), nil, madeWithA, true, false},
 		"made with A, B written":               {user(nil, ref), user([]string{keyB}, ref), nil, madeWithA, false, false},
 		"moved to write-only, same key":        {user([]string{keyA}, ref), user(nil, ref), woA, nil, true, false},
@@ -164,15 +172,16 @@ func TestKeysThatOnlyMoveReplaceNothing(t *testing.T) {
 		"keys left out":                        {user([]string{keyA}, ref), user(nil, ref), nil, nil, true, false},
 		"reference changed":                    {user(nil, ref), user(nil, other), nil, nil, false, false},
 		"reference changed with the same keys": {user([]string{keyA}, ref), user([]string{keyA}, other), nil, nil, false, false},
-		"references not known until the apply": {user(nil, ref), unknownRefs, nil, nil, false, false},
+		"references not known until the apply": {user(nil, ref), unknownRefs, nil, madeWithA, false, false},
+		"references unknown with none held":    {user(nil, ref), unknownRefs, nil, nil, true, false},
 	} {
 		t.Run(name, func(t *testing.T) {
 			var diags diag.Diagnostics
 			if got := keysMoved(ctx, tt.state, tt.plan, tt.writeOnly, tt.madeWith, &diags); got != tt.moved {
 				t.Errorf("moved = %v, want %v", got, tt.moved)
 			}
-			if warned := diags.WarningsCount() == 1; warned != tt.warned {
-				t.Errorf("warned = %v, want %v: %v", warned, tt.warned, diags)
+			if len(diags) != 0 {
+				t.Errorf("diagnostics: %v", diags)
 			}
 		})
 	}
@@ -303,7 +312,7 @@ func TestAGroupCreateHoldsTheFingerprintsOfTheKeysItSent(t *testing.T) {
 
 // A plan whose write-only key differs, by fingerprint, from the one the nodes
 // were made with is refused as a replacement, on both resources, and the
-// refusal names the write-only keys: `ssh_access` itself didn't move. The same
+// refusal says a key differs: `ssh_access` itself didn't move. The same
 // key plans nothing.
 func TestAChangedWriteOnlyKeyIsRefusedAsAReplacement(t *testing.T) {
 	for _, rc := range []struct {
@@ -333,8 +342,8 @@ func TestAChangedWriteOnlyKeyIsRefusedAsAReplacement(t *testing.T) {
 				if got := len(errs) == 1 && strings.Contains(errs[0].Summary(), "would replace"); got != refused {
 					t.Fatalf("refused = %v, want %v: %v", got, refused, resp.Diagnostics)
 				}
-				if refused && !strings.Contains(errs[0].Detail(), "`ssh_public_keys_wo` differs") {
-					t.Errorf("the refusal doesn't name the write-only keys:\n%s", errs[0].Detail())
+				if refused && !strings.Contains(errs[0].Detail(), "A configured SSH key, or a key reference, differs") {
+					t.Errorf("the refusal doesn't say a key differs:\n%s", errs[0].Detail())
 				}
 			})
 		}

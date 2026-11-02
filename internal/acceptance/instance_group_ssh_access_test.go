@@ -43,20 +43,20 @@ const (
       display_name = "Adam"
     },`
 	sshKeysWO = `{
-    zoe  = ["ssh-ed25519 zed", "ssh-ed25519 abe"]
-    adam = ["ssh-ed25519 abe"]
+    zoe  = ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILtyRynZeYirXq5ccQxlj1Yu9ZEKlIxD2TfRiRXiGlgB zed", "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBmp6b9eead9KG+K/3fmxntRsFaanrf2V9865hkrILhL abe"]
+    adam = ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBmp6b9eead9KG+K/3fmxntRsFaanrf2V9865hkrILhL abe"]
   }`
 
 	sshZoe = `
     {
       username        = "zoe"
-      ssh_public_keys = ["ssh-ed25519 zed", "ssh-ed25519 abe"]
+      ssh_public_keys = ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILtyRynZeYirXq5ccQxlj1Yu9ZEKlIxD2TfRiRXiGlgB zed", "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBmp6b9eead9KG+K/3fmxntRsFaanrf2V9865hkrILhL abe"]
       sudo            = "ALL=(ALL) NOPASSWD:ALL"
     },`
 	sshAdam = `
     {
       username        = "adam"
-      ssh_public_keys = ["ssh-ed25519 abe"]
+      ssh_public_keys = ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBmp6b9eead9KG+K/3fmxntRsFaanrf2V9865hkrILhL abe"]
       display_name    = "Adam"
     },`
 )
@@ -91,8 +91,8 @@ func TestAccInstanceGroupSSHAccess(t *testing.T) {
 					resource.TestCheckTypeSetElemNestedAttrs(instanceGroupAddr, "ssh_access.*", map[string]string{
 						"username":          "zoe",
 						"ssh_public_keys.#": "2",
-						"ssh_public_keys.0": "ssh-ed25519 zed",
-						"ssh_public_keys.1": "ssh-ed25519 abe",
+						"ssh_public_keys.0": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILtyRynZeYirXq5ccQxlj1Yu9ZEKlIxD2TfRiRXiGlgB zed",
+						"ssh_public_keys.1": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBmp6b9eead9KG+K/3fmxntRsFaanrf2V9865hkrILhL abe",
 						"sudo":              "ALL=(ALL) NOPASSWD:ALL",
 					}),
 					resource.TestCheckTypeSetElemNestedAttrs(instanceGroupAddr, "ssh_access.*", map[string]string{

@@ -43,8 +43,8 @@ func TestAccClusterSSHAccess(t *testing.T) {
 					resource.TestCheckTypeSetElemNestedAttrs(clusterAddr, "ssh_access.*", map[string]string{
 						"username":          "zoe",
 						"ssh_public_keys.#": "2",
-						"ssh_public_keys.0": "ssh-ed25519 zed",
-						"ssh_public_keys.1": "ssh-ed25519 abe",
+						"ssh_public_keys.0": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILtyRynZeYirXq5ccQxlj1Yu9ZEKlIxD2TfRiRXiGlgB zed",
+						"ssh_public_keys.1": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBmp6b9eead9KG+K/3fmxntRsFaanrf2V9865hkrILhL abe",
 						"sudo":              "ALL=(ALL) NOPASSWD:ALL",
 					}),
 					resource.TestCheckTypeSetElemNestedAttrs(clusterAddr, "ssh_access.*", map[string]string{

@@ -178,8 +178,11 @@ func sshPublicKeysWOAttribute() schema.MapAttribute {
 			"user's `ssh_public_keys` so that an import with the same configuration plans no changes: " +
 			"the platform reports only references to the keys, which state holds as " +
 			"`ssh_public_key_refs`. A changed key is found by its fingerprint and planned as a change " +
-			"to `ssh_access`. After an import, the provider has no record of the keys the nodes were " +
-			"made with, so a changed key isn't found.",
+			"to `ssh_access`. After a create the provider checks against the " +
+			"keys it sent. After an import it reads each key's fingerprint from the platform, which needs " +
+			"`credentials.metadata.read` in the project: a project-scoped service account with " +
+			"`credentials-admin`. Without it, the plan warns and the apply stops: it never plans no change " +
+			"over keys it can't check.",
 	}
 }
 
@@ -197,10 +200,10 @@ func sentKeys(users *[]k0rdent.SshUser) map[string][]string {
 	return out
 }
 
-// replaceOnChangedKeys replaces the resource when a write-only key differs, by
-// fingerprint, from the keys the nodes were made with. The changed users'
-// references are planned unknown, since Terraform drops a replacement whose
-// path planned no change.
+// replaceOnChangedKeys replaces the resource when a configured key differs, by
+// fingerprint, from the keys the nodes were made with, in either layout. The
+// changed users' references are planned unknown, since Terraform drops a
+// replacement whose path planned no change.
 func replaceOnChangedKeys(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
 	if req.State.Raw.IsNull() || req.Plan.Raw.IsNull() {
 		return
@@ -210,10 +213,41 @@ func replaceOnChangedKeys(ctx context.Context, req resource.ModifyPlanRequest, r
 		return
 	}
 	keys, unknown, diags := writeOnlyKeys(ctx, configured)
-	if diags.HasError() || (len(keys) == 0 && !unknown) {
+	if diags.HasError() {
 		return
 	}
+	// The marker is a plan's, for its own apply: none carries over.
+	if was, d := req.Private.GetKey(ctx, sshKeysBlockedKey); !d.HasError() && len(was) > 0 {
+		resp.Diagnostics.Append(resp.Private.SetKey(ctx, sshKeysBlockedKey, nil)...)
+	}
 	held := loadFingerprints(ctx, req.Private)
+	text := usersWithConfiguredKeys(ctx, req.Config)
+	// Keys state holds as text came from a create, this version's or an
+	// earlier one's, and are what the nodes were made with.
+	inState := usersWithConfiguredKeys(ctx, req.State)
+	// Only users the platform holds keys for, by reference, can be checked;
+	// any other is an added user, which replaces.
+	referenced := usersWithReferences(ctx, req.State)
+	var unchecked []string
+	// Keys not known until the apply can't be checked at plan either.
+	for user := range referenced {
+		if _, ok := held[user]; ok {
+			continue
+		}
+		if ks, set := keys[user]; (set && (ks == nil || len(ks) > 0)) || (unknown && !set) {
+			unchecked = append(unchecked, user)
+		}
+	}
+	for user, ks := range text {
+		if _, ok := held[user]; !ok && len(ks) > 0 && len(inState[user]) == 0 && referenced[user] &&
+			!slices.Contains(unchecked, user) {
+			unchecked = append(unchecked, user)
+		}
+	}
+	if len(unchecked) > 0 {
+		planUncheckedKeys(ctx, resp, unchecked, loadUnchecked(ctx, req.Private))
+		return
+	}
 	changed := keysChanged(held, fingerprintsOf(keys))
 	// Keys unknown at plan may differ.
 	for user := range held {
@@ -221,6 +255,14 @@ func replaceOnChangedKeys(ctx context.Context, req resource.ModifyPlanRequest, r
 			changed = append(changed, user)
 		}
 	}
+	// Keys written as text are checked the same way, against the platform's
+	// fingerprints where a refresh read them.
+	for user, ks := range text {
+		if have, ok := held[user]; ok && ks != nil && !sameFingerprints(fingerprintList(ks), have) {
+			changed = append(changed, user)
+		}
+	}
+	warnRevokedKeys(&resp.Diagnostics, loadRevoked(ctx, req.Private))
 	slices.Sort(changed)
 	changed = slices.Compact(changed)
 	if len(changed) == 0 {
@@ -247,12 +289,55 @@ func replaceOnChangedKeys(ctx context.Context, req resource.ModifyPlanRequest, r
 	resp.RequiresReplace = append(resp.RequiresReplace, path.Root("ssh_access"))
 }
 
+// usersWithConfiguredKeys is the keys `ssh_access` sets as text in a
+// configuration or a state, by username, nil for keys not known until the
+// apply.
+func usersWithConfiguredKeys(ctx context.Context, config interface {
+	GetAttribute(context.Context, path.Path, any) diag.Diagnostics
+}) map[string][]string {
+	var access types.Set
+	var users []sshUserModel
+	if config.GetAttribute(ctx, path.Root("ssh_access"), &access).HasError() || access.IsNull() ||
+		access.IsUnknown() || access.ElementsAs(ctx, &users, false).HasError() {
+		return nil
+	}
+	out := map[string][]string{}
+	for _, u := range users {
+		if u.Username.IsUnknown() || u.SSHPublicKeys.IsNull() {
+			continue
+		}
+		var ks []string
+		if !u.SSHPublicKeys.IsUnknown() && (u.SSHPublicKeys.ElementsAs(ctx, &ks, false).HasError() || len(ks) == 0) {
+			continue
+		}
+		out[u.Username.ValueString()] = ks
+	}
+	return out
+}
+
+// usersWithReferences is the users state holds key references for.
+func usersWithReferences(ctx context.Context, state tfsdk.State) map[string]bool {
+	var access types.Set
+	var users []sshUserModel
+	if state.GetAttribute(ctx, path.Root("ssh_access"), &access).HasError() || access.IsNull() ||
+		access.IsUnknown() || access.ElementsAs(ctx, &users, false).HasError() {
+		return nil
+	}
+	out := map[string]bool{}
+	for _, u := range users {
+		if !u.Credentials.IsNull() && !u.Credentials.IsUnknown() && len(u.Credentials.Elements()) > 0 {
+			out[u.Username.ValueString()] = true
+		}
+	}
+	return out
+}
+
 // keysChanged is the users whose keys differ from the ones held for them. A
-// user with none held, after an import, can't be checked.
+// user with none held is replaceOnChangedKeys' error, not a change.
 func keysChanged(held, want map[string][]string) []string {
 	var changed []string
 	for user, fps := range want {
-		if have, ok := held[user]; ok && !slices.Equal(fps, have) {
+		if have, ok := held[user]; ok && !sameFingerprints(fps, have) {
 			changed = append(changed, user)
 		}
 	}

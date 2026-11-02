@@ -679,6 +679,7 @@ func (r *clusterResource) Read(ctx context.Context, req resource.ReadRequest, re
 		}
 		resp.Diagnostics.Append(recordReleased(ctx, resp.Private, held)...)
 		resp.Diagnostics.Append(holdKeysInState(ctx, resp.Private, state.SSHAccess)...)
+		resp.Diagnostics.Append(holdPlatformFingerprints(ctx, r.meta, resp.Private, state.SSHAccess, prior.SSHAccess.IsNull())...)
 		if reported {
 			resp.Diagnostics.Append(recordSSHAccess(ctx, resp.Private)...)
 		}
@@ -697,6 +698,9 @@ func (r *clusterResource) Read(ctx context.Context, req resource.ReadRequest, re
 
 func (r *clusterResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
 	defer syncIdentity(ctx, r.meta, resp.Identity, &resp.Diagnostics, &resp.State)
+	if refuseUncheckedKeys(ctx, req.Private, &resp.Diagnostics) {
+		return
+	}
 	var plan, state clusterModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
