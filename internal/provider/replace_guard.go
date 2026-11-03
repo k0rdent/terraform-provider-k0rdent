@@ -360,10 +360,17 @@ func plannedReplacements(ctx context.Context, req resource.ModifyPlanRequest, re
 // refuseReplacement is the one message every refusal uses.
 func refuseReplacement(diags *diag.Diagnostics, p path.Path, from, to attr.Value, what tenantState) {
 	name := p.String()
+	changed := fmt.Sprintf("`%s` goes from %s to %s.", name, describeValue(from), describeValue(to))
+	if onlyReferencesUnknown(from, to) {
+		// Only references moved: a configured key differs from the nodes'
+		// by fingerprint, which state doesn't show.
+		changed = fmt.Sprintf("A configured SSH key, or a key reference, differs from the keys this "+
+			"%s's nodes were made with.", what.noun)
+	}
 	// Local: decided from configuration and prior state, no request made.
 	diags.AddAttributeError(p,
 		fmt.Sprintf("Changing `%s` would replace this %s", name, what.noun),
-		fmt.Sprintf("`%s` goes from %s to %s. That cannot be done in place, so Terraform would "+
+		fmt.Sprintf("%s That cannot be done in place, so Terraform would "+
 			"destroy this %s and create another. %s\n\n"+
 			"The plan is refused rather than making the replacement silently. To replace the %s "+
 			"on purpose, add `%s = true` to this resource and plan again. To keep it, put `%s` back "+
@@ -371,7 +378,7 @@ func refuseReplacement(diags *diag.Diagnostics, p path.Path, from, to attr.Value
 			"If you ran `terraform destroy`: Terraform plans a refresh before every destroy as if "+
 			"applying, and this refusal stops that plan. Run `terraform destroy -refresh=false` to "+
 			"destroy from state as it is.",
-			name, describeValue(from), describeValue(to), what.noun, what.loses,
+			changed, what.noun, what.loses,
 			what.noun, allowReplaceAttribute, name))
 }
 

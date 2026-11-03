@@ -51,15 +51,21 @@ locals {
   # In prod, a destroy waits for a running operation instead of cancelling it.
   on_destroy_busy = var.environment == "prod" ? "wait" : "cancel"
 
-  # One entry per user in var.ssh_users, with that user's keys, or your key
-  # if it names none. Each key file is read and trimmed.
+  # One entry per user in var.ssh_users. The keys go separately, in
+  # ssh_keys: write-only, so an import of what this makes plans clean.
   ssh_access = [
     for username, u in var.ssh_users : {
-      username        = username
-      ssh_public_keys = [for f in(length(u.public_key_files) > 0 ? u.public_key_files : [var.ssh_public_key_file]) : trimspace(file(pathexpand(f)))]
-      sudo            = u.sudo ? "ALL=(ALL) NOPASSWD:ALL" : null
+      username = username
+      sudo     = u.sudo ? "ALL=(ALL) NOPASSWD:ALL" : null
     }
   ]
+
+  # Each user's keys, or your key if it names none. Each key file is read
+  # and trimmed.
+  ssh_keys = {
+    for username, u in var.ssh_users :
+    username => [for f in(length(u.public_key_files) > 0 ? u.public_key_files : [var.ssh_public_key_file]) : trimspace(file(pathexpand(f)))]
+  }
 }
 
 # ---------------------------------------------------------------------------
@@ -376,7 +382,8 @@ resource "k0rdent_kubernetes_cluster" "this" {
 
   # On every node. Set when nodes are built, so a change later replaces the
   # cluster.
-  ssh_access = local.ssh_access
+  ssh_access         = local.ssh_access
+  ssh_public_keys_wo = local.ssh_keys
 
   on_destroy_busy = local.on_destroy_busy
 
@@ -583,7 +590,8 @@ resource "k0rdent_instance_group" "this" {
     }
   }
 
-  ssh_access = local.ssh_access
+  ssh_access         = local.ssh_access
+  ssh_public_keys_wo = local.ssh_keys
 
   timeouts {
     create = "3h"

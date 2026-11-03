@@ -9,13 +9,14 @@
       "plan": "examples/walkthrough/cluster, first plan",
       "resources": {
         "k0rdent_kubernetes_cluster": {
-          "count": 8,
+          "count": 9,
           "unknown": {
             "cluster_type_resolved": "the platform may resolve an unversioned cluster_type to a pinned version",
             "kubernetes_version": "read from the ClusterType version the platform binds on create",
             "node_count": "counted across the node pools the platform materializes",
             "security_groups": "the groups the platform applies when the configuration names none",
             "self_link": "the platform-defined reference, assigned on create",
+            "ssh_access[*].ssh_public_key_refs": "the credentials the platform registers the keys as, on create",
             "state": "the lifecycle state the create settles on, read back after it",
             "storage_ceiling_gib": "the platform's default, since the configuration leaves it out",
             "vpc": "the VPC the platform materializes with the cluster"
@@ -171,12 +172,13 @@
           }
         },
         "k0rdent_kubernetes_cluster": {
-          "count": 7,
+          "count": 8,
           "unknown": {
             "cluster_type_resolved": "the platform may resolve an unversioned cluster_type to a pinned version",
             "kubernetes_version": "read from the ClusterType version the platform binds on create",
             "node_count": "counted across the node pools the platform materializes",
             "self_link": "the platform-defined reference, assigned on create",
+            "ssh_access[*].ssh_public_key_refs": "the credentials the platform registers the keys as, on create",
             "state": "the lifecycle state the create settles on, read back after it",
             "storage_ceiling_gib": "the platform's default, since the configuration leaves it out",
             "vpc": "the VPC the platform materializes with the cluster"
@@ -452,21 +454,23 @@
           }
         },
         "k0rdent_instance_group": {
-          "count": 4,
+          "count": 5,
           "unknown": {
             "cluster_type_resolved": "the platform may answer with a different form of the cluster_type reference",
             "self_link": "the platform-defined reference, assigned on create",
+            "ssh_access[*].ssh_public_key_refs": "the credentials the platform registers the keys as, on create",
             "state": "the lifecycle state the create settles on, read back after it",
             "vpc": "the VPC the platform materializes with the group"
           }
         },
         "k0rdent_kubernetes_cluster": {
-          "count": 7,
+          "count": 8,
           "unknown": {
             "cluster_type_resolved": "the platform may resolve an unversioned cluster_type to a pinned version",
             "kubernetes_version": "read from the ClusterType version the platform binds on create",
             "node_count": "counted across the node pools the platform materializes",
             "self_link": "the platform-defined reference, assigned on create",
+            "ssh_access[*].ssh_public_key_refs": "the credentials the platform registers the keys as, on create",
             "state": "the lifecycle state the create settles on, read back after it",
             "storage_ceiling_gib": "the platform's default, since the configuration leaves it out",
             "vpc": "the VPC the platform materializes with the cluster"

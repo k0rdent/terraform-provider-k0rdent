@@ -548,6 +548,138 @@ func ControlPlaneTypeValues() []ControlPlaneType {
 	}
 }
 
+// Defines values for CredentialOperationStatus.
+const (
+	CredentialOperationStatusFailed  CredentialOperationStatus = "failed"
+	CredentialOperationStatusOk      CredentialOperationStatus = "ok"
+	CredentialOperationStatusOngoing CredentialOperationStatus = "ongoing"
+)
+
+// Valid indicates whether the value is a known member of the CredentialOperationStatus enum.
+func (e CredentialOperationStatus) Valid() bool {
+	switch e {
+	case CredentialOperationStatusFailed:
+		return true
+	case CredentialOperationStatusOk:
+		return true
+	case CredentialOperationStatusOngoing:
+		return true
+	default:
+		return false
+	}
+}
+
+// CredentialOperationStatusValues returns every member of the enum, in the contract's
+// order. A null member is left out: the generator turns it into a "<nil>"
+// constant that Valid accepts, and no client ever sends that string. The slice
+// is new on each call, so a caller may keep or change it.
+func CredentialOperationStatusValues() []CredentialOperationStatus {
+	return []CredentialOperationStatus{
+		CredentialOperationStatusOngoing,
+		CredentialOperationStatusFailed,
+		CredentialOperationStatusOk,
+	}
+}
+
+// Defines values for CredentialOperationType.
+const (
+	CredentialOperationTypeResourcerevocation CredentialOperationType = "resourcerevocation"
+	CredentialOperationTypeRevocation         CredentialOperationType = "revocation"
+	CredentialOperationTypeRotation           CredentialOperationType = "rotation"
+)
+
+// Valid indicates whether the value is a known member of the CredentialOperationType enum.
+func (e CredentialOperationType) Valid() bool {
+	switch e {
+	case CredentialOperationTypeResourcerevocation:
+		return true
+	case CredentialOperationTypeRevocation:
+		return true
+	case CredentialOperationTypeRotation:
+		return true
+	default:
+		return false
+	}
+}
+
+// CredentialOperationTypeValues returns every member of the enum, in the contract's
+// order. A null member is left out: the generator turns it into a "<nil>"
+// constant that Valid accepts, and no client ever sends that string. The slice
+// is new on each call, so a caller may keep or change it.
+func CredentialOperationTypeValues() []CredentialOperationType {
+	return []CredentialOperationType{
+		CredentialOperationTypeRotation,
+		CredentialOperationTypeRevocation,
+		CredentialOperationTypeResourcerevocation,
+	}
+}
+
+// Defines values for CredentialRecordScope.
+const (
+	CredentialRecordScopePlatform CredentialRecordScope = "platform"
+	CredentialRecordScopeProject  CredentialRecordScope = "project"
+)
+
+// Valid indicates whether the value is a known member of the CredentialRecordScope enum.
+func (e CredentialRecordScope) Valid() bool {
+	switch e {
+	case CredentialRecordScopePlatform:
+		return true
+	case CredentialRecordScopeProject:
+		return true
+	default:
+		return false
+	}
+}
+
+// CredentialRecordScopeValues returns every member of the enum, in the contract's
+// order. A null member is left out: the generator turns it into a "<nil>"
+// constant that Valid accepts, and no client ever sends that string. The slice
+// is new on each call, so a caller may keep or change it.
+func CredentialRecordScopeValues() []CredentialRecordScope {
+	return []CredentialRecordScope{
+		CredentialRecordScopePlatform,
+		CredentialRecordScopeProject,
+	}
+}
+
+// Defines values for CredentialRecordState.
+const (
+	CredentialRecordStateACTIVE  CredentialRecordState = "ACTIVE"
+	CredentialRecordStateDELETED CredentialRecordState = "DELETED"
+	CredentialRecordStatePENDING CredentialRecordState = "PENDING"
+	CredentialRecordStateREVOKED CredentialRecordState = "REVOKED"
+)
+
+// Valid indicates whether the value is a known member of the CredentialRecordState enum.
+func (e CredentialRecordState) Valid() bool {
+	switch e {
+	case CredentialRecordStateACTIVE:
+		return true
+	case CredentialRecordStateDELETED:
+		return true
+	case CredentialRecordStatePENDING:
+		return true
+	case CredentialRecordStateREVOKED:
+		return true
+	default:
+		return false
+	}
+}
+
+// CredentialRecordStateValues returns every member of the enum, in the contract's
+// order. A null member is left out: the generator turns it into a "<nil>"
+// constant that Valid accepts, and no client ever sends that string. The slice
+// is new on each call, so a caller may keep or change it.
+func CredentialRecordStateValues() []CredentialRecordState {
+	return []CredentialRecordState{
+		CredentialRecordStatePENDING,
+		CredentialRecordStateACTIVE,
+		CredentialRecordStateREVOKED,
+		CredentialRecordStateDELETED,
+	}
+}
+
 // Defines values for EffectiveSecurityGroupSource.
 const (
 	EffectiveSecurityGroupSourceCluster       EffectiveSecurityGroupSource = "cluster"
@@ -6261,6 +6393,95 @@ type CreateWebhookSubscriptionResult struct {
 	Id            openapi_types.UUID `json:"id"`
 	SigningSecret string             `json:"signing_secret"`
 }
+
+// CredentialOperation In-flight or most recent lifecycle operation on a credential. Absent when the
+// credential has never had an operation.
+type CredentialOperation struct {
+	// FailureReason Failure detail; present when status is `failed`.
+	FailureReason *string `json:"failureReason,omitempty"`
+
+	// Generation Monotonic generation counter that keys the actuation workflow.
+	Generation *int64                     `json:"generation,omitempty"`
+	StartedAt  *time.Time                 `json:"startedAt,omitempty"`
+	Status     *CredentialOperationStatus `json:"status,omitempty"`
+	Type       *CredentialOperationType   `json:"type,omitempty"`
+}
+
+// CredentialOperationStatus defines model for CredentialOperation.Status.
+type CredentialOperationStatus string
+
+// CredentialOperationType defines model for CredentialOperation.Type.
+type CredentialOperationType string
+
+// CredentialRecord Credential metadata record. The stable, long-lived record for a
+// credential; its `id` never changes across rotations. Material never appears on
+// this resource — it is fetched only through the dedicated get-material operation.
+type CredentialRecord struct {
+	CreatedAt *time.Time `json:"createdAt,omitempty"`
+
+	// CurrentVersion Current material version counter, incremented on rotation.
+	CurrentVersion int `json:"currentVersion"`
+
+	// Description Optional human-friendly description.
+	Description *string `json:"description,omitempty"`
+
+	// ExpiresAt Expiry, for types that support it.
+	ExpiresAt *time.Time `json:"expiresAt,omitempty"`
+
+	// Id Stable server-generated credential identifier, immutable across rotations.
+	Id *string `json:"id,omitempty"`
+
+	// LastRotatedAt Timestamp of the last successful rotation, if any.
+	LastRotatedAt *time.Time `json:"lastRotatedAt,omitempty"`
+
+	// MaterialAttributes Non-secret attributes derived from the material at issue time, present only for types that define them.
+	MaterialAttributes *CredentialRecord_MaterialAttributes `json:"materialAttributes,omitempty"`
+
+	// Operation In-flight or most recent lifecycle operation on a credential. Absent when the
+	// credential has never had an operation.
+	Operation *CredentialOperation `json:"operation,omitempty"`
+
+	// OrgId Owning organization (derived from the project for project-scoped credentials).
+	OrgId *string `json:"orgId,omitempty"`
+
+	// Placement Instance that stores and serves the credential — `global` or `region:<id>`. Set by the issuing instance and immutable thereafter.
+	Placement *string `json:"placement,omitempty"`
+
+	// ProjectId Owning project, present for project-scoped credentials.
+	ProjectId *string `json:"projectId,omitempty"`
+
+	// RotationSchedule Rotation schedule — modeled but not enforced at this release.
+	RotationSchedule *string `json:"rotationSchedule,omitempty"`
+
+	// Scope Owning scope. `platform` credentials are administrator-only; `project` credentials belong to a tenant project.
+	Scope CredentialRecordScope `json:"scope"`
+
+	// State Lifecycle state. Monotonic; never regresses.
+	State CredentialRecordState `json:"state"`
+
+	// Type Credential type from the compile-time type registry.
+	Type      string     `json:"type"`
+	UpdatedAt *time.Time `json:"updatedAt,omitempty"`
+}
+
+// CredentialRecord_MaterialAttributes Non-secret attributes derived from the material at issue time, present only for types that define them.
+type CredentialRecord_MaterialAttributes struct {
+	// Comment Comment from the supplied SSH public key line, if any.
+	Comment *string `json:"comment,omitempty"`
+
+	// Fingerprint SHA256 fingerprint of the SSH public key.
+	Fingerprint *string `json:"fingerprint,omitempty"`
+
+	// KeyType SSH public key algorithm.
+	KeyType              *string           `json:"keyType,omitempty"`
+	AdditionalProperties map[string]string `json:"-"`
+}
+
+// CredentialRecordScope Owning scope. `platform` credentials are administrator-only; `project` credentials belong to a tenant project.
+type CredentialRecordScope string
+
+// CredentialRecordState Lifecycle state. Monotonic; never regresses.
+type CredentialRecordState string
 
 // EffectiveSecurityGroup One security group filtering interfaces in a VPC, with the binding that put it
 // there.
@@ -13521,6 +13742,104 @@ type UpdateFileStoreJSONRequestBody = FileStoreUpdateRequest
 
 // DeliverWebhookEventJSONRequestBody defines body for DeliverWebhookEvent for application/json ContentType.
 type DeliverWebhookEventJSONRequestBody = NotificationEvent
+
+// Getter for additional properties for CredentialRecord_MaterialAttributes. Returns the specified
+// element and whether it was found
+func (a CredentialRecord_MaterialAttributes) Get(fieldName string) (value string, found bool) {
+	if a.AdditionalProperties != nil {
+		value, found = a.AdditionalProperties[fieldName]
+	}
+	return
+}
+
+// Setter for additional properties for CredentialRecord_MaterialAttributes
+func (a *CredentialRecord_MaterialAttributes) Set(fieldName string, value string) {
+	if a.AdditionalProperties == nil {
+		a.AdditionalProperties = make(map[string]string)
+	}
+	a.AdditionalProperties[fieldName] = value
+}
+
+// Override default JSON handling for CredentialRecord_MaterialAttributes to handle AdditionalProperties
+func (a *CredentialRecord_MaterialAttributes) UnmarshalJSON(b []byte) error {
+	object := make(map[string]json.RawMessage)
+	err := json.Unmarshal(b, &object)
+	if err != nil {
+		return err
+	}
+
+	if raw, found := object["comment"]; found {
+		err = json.Unmarshal(raw, &a.Comment)
+		if err != nil {
+			return fmt.Errorf("error reading 'comment': %w", err)
+		}
+		delete(object, "comment")
+	}
+
+	if raw, found := object["fingerprint"]; found {
+		err = json.Unmarshal(raw, &a.Fingerprint)
+		if err != nil {
+			return fmt.Errorf("error reading 'fingerprint': %w", err)
+		}
+		delete(object, "fingerprint")
+	}
+
+	if raw, found := object["keyType"]; found {
+		err = json.Unmarshal(raw, &a.KeyType)
+		if err != nil {
+			return fmt.Errorf("error reading 'keyType': %w", err)
+		}
+		delete(object, "keyType")
+	}
+
+	if len(object) != 0 {
+		a.AdditionalProperties = make(map[string]string)
+		for fieldName, fieldBuf := range object {
+			var fieldVal string
+			err := json.Unmarshal(fieldBuf, &fieldVal)
+			if err != nil {
+				return fmt.Errorf("error unmarshaling field %s: %w", fieldName, err)
+			}
+			a.AdditionalProperties[fieldName] = fieldVal
+		}
+	}
+	return nil
+}
+
+// Override default JSON handling for CredentialRecord_MaterialAttributes to handle AdditionalProperties
+func (a CredentialRecord_MaterialAttributes) MarshalJSON() ([]byte, error) {
+	var err error
+	object := make(map[string]json.RawMessage)
+
+	if a.Comment != nil {
+		object["comment"], err = json.Marshal(a.Comment)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'comment': %w", err)
+		}
+	}
+
+	if a.Fingerprint != nil {
+		object["fingerprint"], err = json.Marshal(a.Fingerprint)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'fingerprint': %w", err)
+		}
+	}
+
+	if a.KeyType != nil {
+		object["keyType"], err = json.Marshal(a.KeyType)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'keyType': %w", err)
+		}
+	}
+
+	for fieldName, field := range a.AdditionalProperties {
+		object[fieldName], err = json.Marshal(field)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling '%s': %w", fieldName, err)
+		}
+	}
+	return json.Marshal(object)
+}
 
 // AsQuotaRefusal returns the union data inside the ErrorDetail_Metadata as a QuotaRefusal
 func (t ErrorDetail_Metadata) AsQuotaRefusal() (QuotaRefusal, error) {

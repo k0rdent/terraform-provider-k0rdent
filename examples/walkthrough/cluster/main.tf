@@ -56,6 +56,9 @@ locals {
 }
 
 terraform {
+  # ssh_public_keys_wo is write-only, which needs 1.11.
+  required_version = ">= 1.11"
+
   required_providers {
     k0rdent = {
       source = "k0rdent/k0rdent"
@@ -104,20 +107,21 @@ resource "k0rdent_kubernetes_cluster" "walkthrough" {
   }
 
   # Set when nodes are built. Changing the key later replaces the cluster,
-  # which needs `allow_replace = true` here.
+  # which needs `allow_replace = true` here. The key is write-only: sent on
+  # the create and never stored, so an import of this cluster plans clean.
   ssh_access = [
     {
-      username        = "ops"
-      ssh_public_keys = [trimspace(file(pathexpand(var.ssh_public_key_file)))]
-      sudo            = "ALL=(ALL) NOPASSWD:ALL"
+      username = "ops"
+      sudo     = "ALL=(ALL) NOPASSWD:ALL"
     },
   ]
-
-  # A create on real hardware takes as long as provisioning the nodes.
-  timeouts {
-    create = "3h"
-    delete = "3h"
+  ssh_public_keys_wo = {
+    ops = [trimspace(file(pathexpand(var.ssh_public_key_file)))]
   }
+
+  # A create or a delete waits up to 3 hours by default, as long as building
+  # or freeing the hardware takes. No timeouts block here, so an import of
+  # this cluster plans no changes.
 
   lifecycle {
     # Fail the plan if the cluster type isn't available in this region.

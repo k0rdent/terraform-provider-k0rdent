@@ -22,20 +22,22 @@ import (
 // teardown_read.go.
 
 var sshUserTF = tftypes.Object{AttributeTypes: map[string]tftypes.Type{
-	"username":        tftypes.String,
-	"ssh_public_keys": tftypes.List{ElementType: tftypes.String},
-	"sudo":            tftypes.String,
-	"display_name":    tftypes.String,
+	"username":            tftypes.String,
+	"ssh_public_keys":     tftypes.List{ElementType: tftypes.String},
+	"ssh_public_key_refs": tftypes.List{ElementType: tftypes.String},
+	"sudo":                tftypes.String,
+	"display_name":        tftypes.String,
 }}
 
 // opsAccess is one user with one key, as a configuration writes it.
 func opsAccess() tftypes.Value {
 	return tftypes.NewValue(tftypes.Set{ElementType: sshUserTF}, []tftypes.Value{
 		tftypes.NewValue(sshUserTF, map[string]tftypes.Value{
-			"username":        str("ops"),
-			"ssh_public_keys": tftypes.NewValue(tftypes.List{ElementType: tftypes.String}, []tftypes.Value{str("ssh-ed25519 AAAA ops")}),
-			"sudo":            tftypes.NewValue(tftypes.String, nil),
-			"display_name":    tftypes.NewValue(tftypes.String, nil),
+			"username":            str("ops"),
+			"ssh_public_keys":     tftypes.NewValue(tftypes.List{ElementType: tftypes.String}, []tftypes.Value{str("ssh-ed25519 AAAA ops")}),
+			"ssh_public_key_refs": tftypes.NewValue(tftypes.List{ElementType: tftypes.String}, nil),
+			"sudo":                tftypes.NewValue(tftypes.String, nil),
+			"display_name":        tftypes.NewValue(tftypes.String, nil),
 		}),
 	})
 }
@@ -208,10 +210,11 @@ func TestAnActiveGroupThatLostItsSSHAccessStillPlansTheChange(t *testing.T) {
 func TestTheGuardStillRefusesAReplacementWhileDeleting(t *testing.T) {
 	other := tftypes.NewValue(tftypes.Set{ElementType: sshUserTF}, []tftypes.Value{
 		tftypes.NewValue(sshUserTF, map[string]tftypes.Value{
-			"username":        str("dev"),
-			"ssh_public_keys": tftypes.NewValue(tftypes.List{ElementType: tftypes.String}, []tftypes.Value{str("ssh-ed25519 AAAA dev")}),
-			"sudo":            tftypes.NewValue(tftypes.String, nil),
-			"display_name":    tftypes.NewValue(tftypes.String, nil),
+			"username":            str("dev"),
+			"ssh_public_keys":     tftypes.NewValue(tftypes.List{ElementType: tftypes.String}, []tftypes.Value{str("ssh-ed25519 AAAA dev")}),
+			"ssh_public_key_refs": tftypes.NewValue(tftypes.List{ElementType: tftypes.String}, nil),
+			"sudo":                tftypes.NewValue(tftypes.String, nil),
+			"display_name":        tftypes.NewValue(tftypes.String, nil),
 		}),
 	})
 	_, plan := refreshThenPlan(t, deletingGroupBody("deleting"), opsGroup("active"),

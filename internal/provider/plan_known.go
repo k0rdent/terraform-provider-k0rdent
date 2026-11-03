@@ -11,6 +11,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/hashicorp/terraform-plugin-go/tftypes"
 
 	"github.com/k0rdent/terraform-provider-k0rdent/internal/k0rdent"
 )
@@ -337,4 +338,27 @@ func activeAddressGrant(status, consumer attr.Value) bool {
 	return okState && okReason && okKind &&
 		state.ValueString() == string(k0rdent.FileStoreConsumerStatusStateActive) && reason.IsNull() &&
 		kind.ValueString() == string(k0rdent.ConsumerTypeIpAddress)
+}
+
+// planNoChangeOverUnreadAttributes plans no change when the plan differs from
+// state only in unknown attributes the configuration leaves out. Leaving out
+// `ssh_access` makes the framework mark them, which planned an update on every
+// run for a group left `failed`.
+func planNoChangeOverUnreadAttributes(req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
+	if req.State.Raw.IsNull() || req.Plan.Raw.IsNull() || req.Config.Raw.IsNull() || resp.Plan.Raw.Equal(req.State.Raw) {
+		return
+	}
+	var planned, prior, configured map[string]tftypes.Value
+	if resp.Plan.Raw.As(&planned) != nil || req.State.Raw.As(&prior) != nil || req.Config.Raw.As(&configured) != nil {
+		return
+	}
+	for name, v := range planned {
+		if v.Equal(prior[name]) {
+			continue
+		}
+		if v.IsKnown() || !configured[name].IsNull() {
+			return
+		}
+	}
+	resp.Plan.Raw = req.State.Raw.Copy()
 }

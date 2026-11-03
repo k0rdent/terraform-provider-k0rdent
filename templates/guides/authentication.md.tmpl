@@ -71,6 +71,11 @@ If a token request fails with 401, check the client id and secret.
 Exactly what its roles allow through the API, nothing more. To limit what a
 pipeline can do, limit the service account's roles.
 
+One read needs a role beyond the compute ones: importing a cluster or
+instance group whose configuration sets SSH keys reads each key's
+fingerprint, which needs `credentials.metadata.read` bound in the resource's
+project. The [import guide](import.md) shows the narrowest role for it.
+
 ## Nothing is written to state
 
 - No credential, certificate or kubeconfig is saved in Terraform state.

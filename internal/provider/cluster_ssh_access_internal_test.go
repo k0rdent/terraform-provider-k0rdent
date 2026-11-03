@@ -191,10 +191,11 @@ func readCluster(t *testing.T, url string, prior tftypes.Value) (resource.ReadRe
 func TestAClusterReadTakesTheSSHAccessThePlatformReports(t *testing.T) {
 	adam := tftypes.NewValue(tftypes.Set{ElementType: sshUserTF}, []tftypes.Value{
 		tftypes.NewValue(sshUserTF, map[string]tftypes.Value{
-			"username":        str("adam"),
-			"ssh_public_keys": tftypes.NewValue(tftypes.List{ElementType: tftypes.String}, []tftypes.Value{str("ssh-ed25519 abe")}),
-			"sudo":            tftypes.NewValue(tftypes.String, nil),
-			"display_name":    str("Adam"),
+			"username":            str("adam"),
+			"ssh_public_keys":     tftypes.NewValue(tftypes.List{ElementType: tftypes.String}, []tftypes.Value{str("ssh-ed25519 abe")}),
+			"ssh_public_key_refs": tftypes.NewValue(tftypes.List{ElementType: tftypes.String}, nil),
+			"sudo":                tftypes.NewValue(tftypes.String, nil),
+			"display_name":        str("Adam"),
 		}),
 	})
 	for name, tt := range map[string]struct {
@@ -289,6 +290,85 @@ func TestNoSSHUsersEitherWayReplacesNothing(t *testing.T) {
 				t.Errorf("replace = %v, want %v", resp.RequiresReplace, tt.replace)
 			}
 		})
+	}
+}
+
+// sshUser is one `ssh_access` entry with the given keys and sudo.
+func sshUser(name string, sudo tftypes.Value, keys ...string) tftypes.Value {
+	vals := make([]tftypes.Value, 0, len(keys))
+	for _, k := range keys {
+		vals = append(vals, str(k))
+	}
+	return tftypes.NewValue(sshUserTF, map[string]tftypes.Value{
+		"username":            str(name),
+		"ssh_public_keys":     tftypes.NewValue(tftypes.List{ElementType: tftypes.String}, vals),
+		"ssh_public_key_refs": tftypes.NewValue(tftypes.List{ElementType: tftypes.String}, nil),
+		"sudo":                sudo,
+		"display_name":        tftypes.NewValue(tftypes.String, nil),
+	})
+}
+
+// opsWith is opsAccess with the given keys and sudo.
+func opsWith(sudo tftypes.Value, keys ...string) tftypes.Value {
+	return tftypes.NewValue(tftypes.Set{ElementType: sshUserTF}, []tftypes.Value{sshUser("ops", sudo, keys...)})
+}
+
+// An import of a cluster or a group whose keys the platform answers as
+// references holds each user with no keys. Writing the configured keys over
+// that records them in place, on both resources, when they're the keys whose
+// fingerprints a refresh read from the platform, or when none were read:
+// replaceOnChangedKeys then plans the update that stops at the apply. Another
+// key replaces. Anything else that differs still replaces, keys state did hold
+// included.
+func TestImportedUsersWithoutKeysTakeTheConfiguredOnes(t *testing.T) {
+	noSudo := tftypes.NewValue(tftypes.String, nil)
+	unread := opsWith(noSudo)
+	usersSet := func(users ...tftypes.Value) tftypes.Value {
+		return tftypes.NewValue(tftypes.Set{ElementType: sshUserTF}, users)
+	}
+	read := map[string][]string{"ops": fingerprintList([]string{"ssh-ed25519 AAAA ops"})}
+	for name, tt := range map[string]struct {
+		state, plan      tftypes.Value
+		madeWith         map[string][]string
+		replace, refused bool
+	}{
+		"keys filled in":            {unread, opsAccess(), read, false, false},
+		"keys filled in, none read": {unread, opsAccess(), nil, false, false},
+		"another key filled in":     {unread, opsWith(noSudo, "ssh-ed25519 BBBB ops"), read, true, false},
+		"keys changed":              {opsAccess(), opsWith(noSudo, "ssh-ed25519 BBBB ops"), nil, true, false},
+		"sudo changed with keys":    {unread, opsWith(str("ALL=(ALL) ALL"), "ssh-ed25519 AAAA ops"), nil, true, false},
+		"keys filled in, renamed":   {unread, tftypes.NewValue(tftypes.Set{ElementType: sshUserTF}, nil), nil, true, false},
+		"a username twice drops a user": {
+			usersSet(sshUser("ops", noSudo), sshUser("bob", noSudo, "ssh-ed25519 BBBB bob")),
+			usersSet(sshUser("ops", noSudo, "ssh-ed25519 AAAA ops"), sshUser("ops", noSudo, "ssh-ed25519 CCCC ops")),
+			nil, true, false,
+		},
+	} {
+		for resourceName, requiresReplace := range map[string]setplanmodifier.RequiresReplaceIfFunc{
+			"cluster": clusterSSHAccessRequiresReplace, "instance group": sshAccessRequiresReplace,
+		} {
+			t.Run(name+"/"+resourceName, func(t *testing.T) {
+				req := planmodifier.SetRequest{StateValue: setOf(t, tt.state), PlanValue: setOf(t, tt.plan),
+					ConfigValue: setOf(t, tt.plan)}
+				freshPrivate(t, &req.Private, nil)
+				if d := recordSSHAccess(context.Background(), privateIn(t, req.Private)); d.HasError() {
+					t.Fatal(d)
+				}
+				if tt.madeWith != nil {
+					if d := saveFingerprints(context.Background(), privateIn(t, req.Private), tt.madeWith); d.HasError() {
+						t.Fatal(d)
+					}
+				}
+				var resp setplanmodifier.RequiresReplaceIfFuncResponse
+				requiresReplace(context.Background(), req, &resp)
+				if resp.RequiresReplace != tt.replace {
+					t.Errorf("replace = %v, want %v", resp.RequiresReplace, tt.replace)
+				}
+				if refused := resp.Diagnostics.ErrorsCount() == 1; refused != tt.refused || resp.Diagnostics.WarningsCount() != 0 {
+					t.Errorf("refused = %v, want %v: %v", refused, tt.refused, resp.Diagnostics)
+				}
+			})
+		}
 	}
 }
 

@@ -96,11 +96,9 @@ resource "k0rdent_kubernetes_cluster" "walkthrough" {
     }
   }
 
-  # A create on real hardware takes as long as provisioning the nodes.
-  timeouts {
-    create = "3h"
-    delete = "3h"
-  }
+  # A create or a delete waits up to 3 hours by default, as long as building
+  # or freeing the hardware takes. No timeouts block here, so an import of
+  # this cluster plans no changes.
 
   lifecycle {
     # Fail the plan if the cluster type isn't available in this region.

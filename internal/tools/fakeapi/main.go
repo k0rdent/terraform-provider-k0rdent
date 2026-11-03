@@ -47,6 +47,7 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -208,6 +209,7 @@ func newHandler(s *state, secrets runSecrets, port string, shutdown func()) http
 	mux.HandleFunc("POST /_harness/shutdown", secrets.ownerControl(shutdown))
 	mux.HandleFunc("GET /_harness/store/{path...}", secrets.owner(s.storeRead()))
 	mux.HandleFunc("POST /_harness/webhooks/{id}/disable", secrets.owner(s.disableWebhook))
+	mux.HandleFunc("POST /_harness/regions/{region}/projects/{project}/credentials/{id}/{action}", secrets.owner(s.sshKeyHarness))
 	counts := newRequestCounts()
 	mux.HandleFunc("GET /_harness/requests", secrets.owner(counts.serve))
 	s.routes(mux, secrets.auth)
@@ -259,6 +261,7 @@ func (s *state) routesWith(mux *http.ServeMux, authorized func(http.HandlerFunc)
 	mux.HandleFunc("GET /v1/regions/{region}/projects/{project}/compute/clusters", authorized(s.listClusters))
 	mux.HandleFunc("POST /v1/regions/{region}/projects/{project}/compute/clusters", authorized(s.createCluster))
 	mux.HandleFunc("GET /v1/regions/{region}/projects/{project}/compute/clusters/{id}", authorized(s.getCluster))
+	mux.HandleFunc("GET /v1/regions/{region}/projects/{project}/credentials/{id}", authorized(s.getProjectCredential))
 	mux.HandleFunc("PATCH /v1/regions/{region}/projects/{project}/compute/clusters/{id}", authorized(s.updateCluster))
 	mux.HandleFunc("DELETE /v1/regions/{region}/projects/{project}/compute/clusters/{id}", authorized(s.deleteCluster))
 	mux.HandleFunc("POST /v1/regions/{region}/projects/{project}/compute/clusters/{id}/scale", authorized(s.scaleCluster))
@@ -444,7 +447,7 @@ type instanceGroup struct {
 	displayName  *string
 	description  *string
 	pools        map[string]int32 // desiredCount
-	sshAccess    []sshUser        // as sent, echoed sorted by username
+	sshAccess    []sshUser        // as keysAsCredentials stores them, echoed sorted by username
 	held         map[string]int32 // readyCount + notReadyCount
 	provisioning []string         // pools that change what they hold on settling
 	state        string
@@ -482,6 +485,7 @@ type scope struct{ region, project string }
 // in the object table in kinds.go, which is the only thing that keys into it.
 type objects struct {
 	scope      scope
+	sshKeys    map[string]*fakeSSHKey // by credential id: see ssh_key_credentials.go
 	clusters   table[*cluster]
 	groups     table[*instanceGroup]
 	networks   table[*fakeNetwork]
@@ -535,6 +539,7 @@ func newObjects(sc scope) *objects {
 		peerings:   table[*fakePeering]{},
 		fileStores: table[*fakeFileStore]{},
 		made:       map[string]int{},
+		sshKeys:    map[string]*fakeSSHKey{},
 
 		projects:        table[*fakeProject]{},
 		webhooks:        table[*fakeWebhook]{},
@@ -1260,7 +1265,7 @@ func (s *state) createCluster(w http.ResponseWriter, r *http.Request) {
 		state:       "creating",
 
 		securityGroups: groups,
-		sshAccess:      trimmedSSHKeys(body.SSHAccess),
+		sshAccess:      o.keysAsCredentials(body.SSHAccess),
 	}
 	if body.Storage != nil {
 		c.ceiling = *body.Storage.CeilingGiB
@@ -1304,10 +1309,8 @@ func (s *state) getCluster(w http.ResponseWriter, r *http.Request) {
 }
 
 // listClusterSSHAccess answers the users the create carried, `[]` for none.
-// Sorted by username, as a k0rdent API build from main answers an instance group's, with
-// each user's keys in the order sent: no landscape has answered this read
-// yet, so the fake answers it the way the platform answers the same field
-// elsewhere.
+// Sorted by username, with each user's credential references in the order
+// the keys were sent, as the k0rdent API v1.3.0-rc.5 answers on kind.
 func (s *state) listClusterSSHAccess(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -2020,7 +2023,7 @@ func (s *state) createInstanceGroup(w http.ResponseWriter, r *http.Request) {
 		displayName: body.DisplayName,
 		description: body.Description,
 		pools:       pools,
-		sshAccess:   trimmedSSHKeys(body.SSHAccess),
+		sshAccess:   o.keysAsCredentials(body.SSHAccess),
 		state:       "creating",
 	}
 	g.provisioning = sortedMapKeys(pools)
@@ -2427,8 +2430,9 @@ func (s *state) groupBody(region string, g *instanceGroup) map[string]any {
 		body["sshAccess"] = []any{}
 	}
 	if !g.released && len(g.sshAccess) > 0 {
-		// A k0rdent API build from main answers the users sorted by username, on create, get
-		// and list alike, with each user's keys in the order sent.
+		// The platform answers the users sorted by username, on create, get
+		// and list alike, with each user's credential references in the
+		// order the keys were sent.
 		users := slices.Clone(g.sshAccess)
 		slices.SortFunc(users, func(a, b sshUser) int { return strings.Compare(a.Username, b.Username) })
 		body["sshAccess"] = users
@@ -2438,40 +2442,62 @@ func (s *state) groupBody(region string, g *instanceGroup) map[string]any {
 
 // sshUser is the contract's `SshUser`.
 type sshUser struct {
-	Username      string   `json:"username"`
-	SSHPublicKeys []string `json:"sshPublicKeys"`
-	Sudo          *string  `json:"sudo,omitempty"`
-	DisplayName   *string  `json:"displayName,omitempty"`
+	Username                string   `json:"username"`
+	SSHPublicKeys           []string `json:"sshPublicKeys,omitempty"`
+	SSHPublicKeyCredentials []string `json:"sshPublicKeyCredentials,omitempty"`
+	Sudo                    *string  `json:"sudo,omitempty"`
+	DisplayName             *string  `json:"displayName,omitempty"`
 }
 
-// trimmedSSHKeys stores each key the way a k0rdent API build from main does, with
-// surrounding whitespace trimmed, so the echo differs from a key sent with a
-// trailing newline just as the platform's does.
-func trimmedSSHKeys(users []sshUser) []sshUser {
+// keysAsCredentials stores the users the way the platform has since the
+// k0rdent API v1.3.0-rc.1: each key sent is registered as an `ssh_public_key`
+// credential, and a read answers the references to those credentials, never
+// the keys. A reference sent is kept as it is. The same key, whitespace
+// trimmed, makes the same reference.
+func (o *objects) keysAsCredentials(users []sshUser) []sshUser {
 	out := slices.Clone(users)
 	for i := range out {
-		keys := make([]string, len(out[i].SSHPublicKeys))
-		for j, k := range out[i].SSHPublicKeys {
-			keys[j] = strings.TrimSpace(k)
+		refs := slices.Clone(out[i].SSHPublicKeyCredentials)
+		for _, k := range out[i].SSHPublicKeys {
+			ref := credentialRef(o.scope, strings.TrimSpace(k))
+			o.registerSSHKey(ref, strings.TrimSpace(k))
+			refs = append(refs, ref)
 		}
-		out[i].SSHPublicKeys = keys
+		out[i].SSHPublicKeys, out[i].SSHPublicKeyCredentials = nil, refs
 	}
 	return out
+}
+
+// credentialRef is the self-link of the credential a key is registered as:
+// `mcred-` and 26 characters of Crockford base32, as the contract's pattern
+// asks, derived from the key.
+func credentialRef(sc scope, key string) string {
+	const crockford = "0123456789abcdefghjkmnpqrstvwxyz"
+	sum := sha256.Sum256([]byte(key))
+	id := make([]byte, 26)
+	for i := range id {
+		id[i] = crockford[sum[i]%32]
+	}
+	return "/v1/regions/" + sc.region + "/projects/" + sc.project + "/credentials/mcred-" + string(id)
 }
 
 // sshUsernamePattern is the contract's pattern for `SshUser.username`.
 var sshUsernamePattern = regexp.MustCompile(`^[a-z_][a-z0-9_-]{0,31}$`)
 
 // invalidSSHAccess checks only what the contract states about each user: the
-// username pattern and 1 to 32 keys. The fake takes no view on the keys
-// themselves.
+// username pattern, and keys or credential references, 1 to 32 of each. The
+// fake takes no view on the keys themselves.
 func invalidSSHAccess(users []sshUser) string {
 	for i, u := range users {
 		if !sshUsernamePattern.MatchString(u.Username) {
 			return fmt.Sprintf("sshAccess[%d].username %q does not match %s", i, u.Username, sshUsernamePattern)
 		}
-		if n := len(u.SSHPublicKeys); n < 1 || n > 32 {
-			return fmt.Sprintf("sshAccess[%d].sshPublicKeys has %d keys, want 1 to 32", i, n)
+		keys, refs := len(u.SSHPublicKeys), len(u.SSHPublicKeyCredentials)
+		if keys == 0 && refs == 0 {
+			return fmt.Sprintf("sshAccess[%d] has no sshPublicKeys and no sshPublicKeyCredentials, want one or the other", i)
+		}
+		if keys > 32 || refs > 32 {
+			return fmt.Sprintf("sshAccess[%d] has %d keys and %d credential references, want at most 32 of each", i, keys, refs)
 		}
 	}
 	return ""

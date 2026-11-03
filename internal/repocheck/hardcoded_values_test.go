@@ -197,16 +197,20 @@ var inputClasses = map[attrRef]inputClass{
 
 	// The users and public keys a group's hosts, or a cluster's nodes, let in
 	// are the tenant's own.
-	{"resource", "instance_group", "ssh_access"}:                     free,
-	{"resource", "instance_group", "ssh_access.username"}:            free,
-	{"resource", "instance_group", "ssh_access.ssh_public_keys"}:     free,
-	{"resource", "instance_group", "ssh_access.sudo"}:                free,
-	{"resource", "instance_group", "ssh_access.display_name"}:        free,
-	{"resource", "kubernetes_cluster", "ssh_access"}:                 free,
-	{"resource", "kubernetes_cluster", "ssh_access.username"}:        free,
-	{"resource", "kubernetes_cluster", "ssh_access.ssh_public_keys"}: free,
-	{"resource", "kubernetes_cluster", "ssh_access.sudo"}:            free,
-	{"resource", "kubernetes_cluster", "ssh_access.display_name"}:    free,
+	{"resource", "instance_group", "ssh_access"}:                         free,
+	{"resource", "instance_group", "ssh_access.username"}:                free,
+	{"resource", "instance_group", "ssh_access.ssh_public_keys"}:         free,
+	{"resource", "instance_group", "ssh_access.ssh_public_key_refs"}:     free,
+	{"resource", "instance_group", "ssh_public_keys_wo"}:                 free,
+	{"resource", "instance_group", "ssh_access.sudo"}:                    free,
+	{"resource", "instance_group", "ssh_access.display_name"}:            free,
+	{"resource", "kubernetes_cluster", "ssh_access"}:                     free,
+	{"resource", "kubernetes_cluster", "ssh_access.username"}:            free,
+	{"resource", "kubernetes_cluster", "ssh_access.ssh_public_keys"}:     free,
+	{"resource", "kubernetes_cluster", "ssh_access.ssh_public_key_refs"}: free,
+	{"resource", "kubernetes_cluster", "ssh_public_keys_wo"}:             free,
+	{"resource", "kubernetes_cluster", "ssh_access.sudo"}:                free,
+	{"resource", "kubernetes_cluster", "ssh_access.display_name"}:        free,
 
 	// A service account sits in an organization, which the projects data
 	// source reports per project. The level searched is the configuration's

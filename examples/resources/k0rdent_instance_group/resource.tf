@@ -17,9 +17,13 @@ resource "k0rdent_instance_group" "hosts" {
   # needs `allow_replace = true`.
   ssh_access = [
     {
-      username        = "ops"
-      ssh_public_keys = [trimspace(file("~/.ssh/id_ed25519.pub"))]
-      sudo            = "ALL=(ALL) NOPASSWD:ALL"
+      username = "ops"
+      sudo     = "ALL=(ALL) NOPASSWD:ALL"
     },
   ]
+  # Write-only, so never stored, and an import plans clean. Needs Terraform
+  # 1.11 or later.
+  ssh_public_keys_wo = {
+    ops = [trimspace(file("~/.ssh/id_ed25519.pub"))]
+  }
 }
