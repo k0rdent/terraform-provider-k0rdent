@@ -181,8 +181,10 @@ pace() { [ "${PACE:-0}" = 0 ] || sleep "$PACE"; }
 
 # Landscape gaps: what a stack can't do that a walkthrough asks for, each
 # named in REAL_API_WALKTHROUGH_GAPS and written into the record, so a pass
-# says what it didn't cover. Each one changes the stack's copy of a directory
-# in one stated way, and only on the real side.
+# says what it didn't cover. Each one changes a copy of a directory in one
+# stated way. subnet-cidr drops a check, so only the real side's copy. The
+# others turn a resource off, so both sides' copies, or the fake records
+# requests the stack never got and the compare reads them as drift.
 #
 #   subnet-cidr    the stack answers a subnet's CIDR without allocating it from
 #                  the pool, as kind does (10.0.0.0/24 for a /28 from any
@@ -190,16 +192,20 @@ pace() { [ "${PACE:-0}" = 0 ] || sleep "$PACE"; }
 #                  pool
 #   no-file-store  the stack runs no storage service, as kind doesn't.
 #                  full-everything leaves file_store off
-GAPS_KNOWN="subnet-cidr no-file-store"
+#   no-hosts       the stack has no server for an instance group's host, as
+#                  kind has none. full-everything leaves instance_group off,
+#                  and vpc_peering, which peers with the group's VPC
+GAPS_KNOWN="subnet-cidr no-file-store no-hosts"
 
 # gap <name> is true when REAL_API_WALKTHROUGH_GAPS names it.
 gap() { case " ${REAL_API_WALKTHROUGH_GAPS:-} " in *" $1 "*) return 0 ;; esac; return 1; }
 
-# apply_gaps <dir> <name> changes the copy <dir> of walkthrough <name> for each
-# gap named, and fails when the line it changes has moved.
+# apply_gaps <dir> <name> <side> changes the copy <dir> of walkthrough <name>
+# for each gap named, and fails when the line it changes has moved. <side> is
+# real or fake.
 apply_gaps() {
   case "$2" in full | full-everything) ;; *) return 0 ;; esac
-  if gap subnet-cidr; then
+  if [ "$3" = real ] && gap subnet-cidr; then
     python3 - "$1/main.tf" <<'PY' || return 1
 import sys
 p = sys.argv[1]; s = open(p).read()
@@ -211,16 +217,26 @@ open(p, "w").write(s[:i] + s[j:])
 PY
   fi
   if [ "$2" = full-everything ] && gap no-file-store; then
-    grep -q '^  file_store *= *true' "$1/terraform.tfvars" \
-      || { warn "the no-file-store gap: full-everything's terraform.tfvars has no file_store = true"; return 1; }
-    sed -i.bak 's/^  file_store *= *true /  file_store          = false/' "$1/terraform.tfvars"
+    switch_off "$1/terraform.tfvars" file_store no-file-store || return 1
   fi
+  if [ "$2" = full-everything ] && gap no-hosts; then
+    switch_off "$1/terraform.tfvars" instance_group no-hosts || return 1
+    switch_off "$1/terraform.tfvars" vpc_peering no-hosts || return 1
+  fi
+}
+
+# switch_off <terraform.tfvars> <switch> <gap> turns a build switch that's on
+# off, and fails when it isn't on.
+switch_off() {
+  grep -Eq "^  $2 *= *true( |$)" "$1" \
+    || { warn "the $3 gap: full-everything's terraform.tfvars has no $2 = true"; return 1; }
+  sed -i.bak -E "s/^(  $2 *= *)true( |$)/\1false/" "$1"
 }
 
 # walkthroughs <dir> [real]: look/, then every directory of
 # examples/walkthrough the fake can apply, as a reader runs them:
 # terraform.tfvars filled in from what look/ printed, apply, plan again,
-# destroy. With real, the landscape gaps apply. The credential is the one in
+# destroy. The landscape gaps apply, as apply_gaps says. The credential is the one in
 # the environment. Each step's exit code goes to <dir>/steps, as lifecycle's do.
 walkthroughs() {
   local dir="$1" side="${2:-}" examples="$REPO/examples/walkthrough" d rc
@@ -239,7 +255,7 @@ walkthroughs() {
     walkthrough_tfvars "$d" "$examples" rapi > "$dir/$d/terraform.tfvars.new" \
       || { printf '%s-tfvars 1\n' "$d" >> "$dir/steps"; continue; }
     mv "$dir/$d/terraform.tfvars.new" "$dir/$d/terraform.tfvars"
-    if [ "$side" = real ] && ! apply_gaps "$dir/$d" "$d" 2> "$dir/$d-gaps.log"; then
+    if ! apply_gaps "$dir/$d" "$d" "${side:-fake}" 2> "$dir/$d-gaps.log"; then
       printf '%s-gaps 1\n' "$d" >> "$dir/steps"
       continue
     fi

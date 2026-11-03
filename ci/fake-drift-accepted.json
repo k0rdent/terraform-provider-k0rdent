@@ -418,49 +418,7 @@
     "reason": "Not read: Operation.Stages and every OperationStage field (types.gen.go:9834, 9901-9918) have no use in internal/provider."
   },
 
-  {
-    "operation": "GET /v1/regions/{region}/projects/{project}/compute/instance-groups/{id} 200",
-    "field": "response $.nodePools[].readyCount",
-    "side": "fake",
-    "reason": "Landscape data: kind has no hosts, so the walkthrough group with hosts failed INSUFFICIENT_CAPACITY (the run's full-everything apply log) and never reserved a pool or reported progress. The fake's hosts provision. Read at datasource_instance_group.go:226, :234-235 and resource_instance_group.go:869. The fake answers neither counts nor progress on a pool created at 0 (TestAPoolCreatedAtZeroHasNoCountsAndNoProgress) and no progress once a group settles (TestAScaleHasProgressOnlyWhileUpdating)."
-  },
-  {
-    "operation": "GET /v1/regions/{region}/projects/{project}/compute/instance-groups/{id} 200",
-    "field": "response $.nodePools[].notReadyCount",
-    "side": "fake",
-    "reason": "Landscape data: kind has no hosts, so the walkthrough group with hosts failed INSUFFICIENT_CAPACITY (the run's full-everything apply log) and never reserved a pool or reported progress. The fake's hosts provision. Read at datasource_instance_group.go:226, :234-235 and resource_instance_group.go:869. The fake answers neither counts nor progress on a pool created at 0 (TestAPoolCreatedAtZeroHasNoCountsAndNoProgress) and no progress once a group settles (TestAScaleHasProgressOnlyWhileUpdating)."
-  },
-  {
-    "operation": "GET /v1/regions/{region}/projects/{project}/compute/instance-groups/{id} 200",
-    "field": "response $.progressUpdatedAt",
-    "side": "fake",
-    "reason": "Landscape data: kind has no hosts, so the walkthrough group with hosts failed INSUFFICIENT_CAPACITY (the run's full-everything apply log) and never reserved a pool or reported progress. The fake's hosts provision. Read at datasource_instance_group.go:226, :234-235 and resource_instance_group.go:869. The fake answers neither counts nor progress on a pool created at 0 (TestAPoolCreatedAtZeroHasNoCountsAndNoProgress) and no progress once a group settles (TestAScaleHasProgressOnlyWhileUpdating)."
-  },
-  {
-    "operation": "GET /v1/regions/{region}/projects/{project}/compute/instance-groups/{id} 200",
-    "field": "response $.stateMessage",
-    "side": "real",
-    "reason": "Landscape data: the real group failed INSUFFICIENT_CAPACITY because kind has no hosts, and the fake's walkthrough groups provision. API v1.3.0-rc.5 answers stateMessage and statusReason from one column beside stateReason (services/compute/internal/service/instance_group_db_store.go:1438-1440), and the fake answers all three for a group whose create fails (TestAFailedGroupCreateSaysWhy). stateMessage and stateReason are read at datasource_instance_group.go:221, :225 and resource_instance_group.go:1066. InstanceGroup.StatusReason (types.gen.go:8269) has no use."
-  },
-  {
-    "operation": "GET /v1/regions/{region}/projects/{project}/compute/instance-groups/{id} 200",
-    "field": "response $.stateReason",
-    "side": "real",
-    "reason": "Landscape data: the real group failed INSUFFICIENT_CAPACITY because kind has no hosts, and the fake's walkthrough groups provision. API v1.3.0-rc.5 answers stateMessage and statusReason from one column beside stateReason (services/compute/internal/service/instance_group_db_store.go:1438-1440), and the fake answers all three for a group whose create fails (TestAFailedGroupCreateSaysWhy). stateMessage and stateReason are read at datasource_instance_group.go:221, :225 and resource_instance_group.go:1066. InstanceGroup.StatusReason (types.gen.go:8269) has no use."
-  },
-  {
-    "operation": "GET /v1/regions/{region}/projects/{project}/compute/instance-groups/{id} 200",
-    "field": "response $.statusReason",
-    "side": "real",
-    "reason": "Landscape data: the real group failed INSUFFICIENT_CAPACITY because kind has no hosts, and the fake's walkthrough groups provision. API v1.3.0-rc.5 answers stateMessage and statusReason from one column beside stateReason (services/compute/internal/service/instance_group_db_store.go:1438-1440), and the fake answers all three for a group whose create fails (TestAFailedGroupCreateSaysWhy). stateMessage and stateReason are read at datasource_instance_group.go:221, :225 and resource_instance_group.go:1066. InstanceGroup.StatusReason (types.gen.go:8269) has no use."
-  },
 
-  {
-    "operation": "GET /v1/regions/{region}/projects/{project}/compute/instances 200",
-    "field": "response $.instances[]*",
-    "side": "fake",
-    "reason": "Landscape data: the real group failed before it held a host, so every real page was `instances: []`. Read at datasource_instances.go:181-201 (Instance, types.gen.go:7875). The fake's hosts are the ones the acceptance tests read."
-  },
 
   {
     "operation": "GET /v1/regions/{region}/projects/{project}/networking/networks 200",
@@ -575,12 +533,6 @@
     "reason": "Not read: VPC.SystemTags (types.gen.go:11988) has no use in internal/provider."
   },
 
-  {
-    "operation": "GET /v1/regions/{region}/projects/{project}/networking/vpcs/{vpcId}/peerings 200",
-    "field": "response $.peerings[]*",
-    "side": "fake",
-    "reason": "Run gap: the real leg made no peering (its POST is recorded on the fake only). The walkthrough's peerings need the instance group's VPC (examples/walkthrough/full/main.tf:537-543), and the real group failed for want of hosts, so every real page was `peerings: []`. Read at datasource_security_groups.go:443-459 and datasource_managed_singulars.go:589-601."
-  },
 
   {
     "operation": "GET /v1/regions/{region}/storage/share-types 200",
