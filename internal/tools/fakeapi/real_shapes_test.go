@@ -264,6 +264,10 @@ func TestAProjectAnswersItsUID(t *testing.T) {
 		if other, dup := seen[p["uid"]]; dup {
 			t.Errorf("projects %v and %v share uid %v", other, p["id"], p["uid"])
 		}
-		seen[p["uid"]] = p["id"].(string)
+		id, ok := p["id"].(string)
+		if !ok {
+			t.Fatalf("listed project id %v isn't a string", p["id"])
+		}
+		seen[p["uid"]] = id
 	}
 }

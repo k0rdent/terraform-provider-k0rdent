@@ -1838,10 +1838,10 @@ func (s *state) clusterBody(region string, c *cluster, read bool) map[string]any
 // answers them (recorded on a kind stack).
 func clusterHealth(c *cluster) map[string]any {
 	health := map[string]any{"state": "unknown", "reason": nil, "observedAt": nil, "expiresAt": nil}
-	switch {
-	case c.state == "creating":
+	switch c.state {
+	case "creating":
 		health["reason"] = "health assessment is withheld while the cluster is being created"
-	case c.state == "deleting":
+	case "deleting":
 		health["reason"] = "health assessment is withheld while the cluster is being deleted"
 	}
 	return health

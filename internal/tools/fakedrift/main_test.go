@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -44,15 +45,24 @@ func TestAShapeHoldsFieldsAndTypesButNoValues(t *testing.T) {
 // request's shape beside the answer's.
 func TestTheRecorderPassesAnswersThroughAndRecordsBothShapes(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		sent, _ := io.ReadAll(r.Body)
+		sent, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 		w.WriteHeader(http.StatusCreated)
-		_, _ = w.Write([]byte(`{"echo":` + string(sent) + `}`))
+		if _, err := w.Write([]byte(`{"echo":` + string(sent) + `}`)); err != nil {
+			t.Errorf("the upstream's write: %v", err)
+		}
 	}))
 	defer upstream.Close()
-	target, _ := url.Parse(upstream.URL)
+	target, err := url.Parse(upstream.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
 	var mu sync.Mutex
 	var got []exchange
-	rec := httptest.NewServer(recorder(target, func(e exchange) { mu.Lock(); got = append(got, e); mu.Unlock() }))
+	rec := httptest.NewServer(recorder(target, func(e exchange) error { mu.Lock(); got = append(got, e); mu.Unlock(); return nil }))
 	defer rec.Close()
 
 	// The server's own client, not http.Post: the shared default transport is
@@ -61,7 +71,10 @@ func TestTheRecorderPassesAnswersThroughAndRecordsBothShapes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	body, _ := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
 	_ = resp.Body.Close()
 	if resp.StatusCode != http.StatusCreated || string(body) != `{"echo":{"name":"n"}}` {
 		t.Errorf("the client got %d %s, want the upstream's 201 and body", resp.StatusCode, body)
@@ -108,7 +121,10 @@ func compareFiles(t *testing.T, fake, real []exchange, accepted []acceptedDiff) 
 	recording := func(es []exchange) []byte {
 		var b bytes.Buffer
 		for _, e := range es {
-			line, _ := json.Marshal(e)
+			line, err := json.Marshal(e)
+			if err != nil {
+				t.Fatal(err)
+			}
 			b.Write(append(line, '\n'))
 		}
 		return b.Bytes()
@@ -119,7 +135,10 @@ func compareFiles(t *testing.T, fake, real []exchange, accepted []acceptedDiff) 
 		"-real", write("real.ndjson", recording(real)),
 	}
 	if accepted != nil {
-		raw, _ := json.Marshal(accepted)
+		raw, err := json.Marshal(accepted)
+		if err != nil {
+			t.Fatal(err)
+		}
 		args = append(args, "-accepted", write("accepted.json", raw))
 	}
 	var out bytes.Buffer
@@ -132,6 +151,29 @@ func get(path string, response ...string) exchange {
 }
 
 const getCluster = "GET /v1/clusters/{id} 200"
+
+// An answer the recorder can't write fails the request, so the step that
+// sent it fails, and no run compares a recording with holes in it.
+func TestAnAnswerTheRecorderCannotWriteFailsTheRequest(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer upstream.Close()
+	target, err := url.Parse(upstream.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := httptest.NewServer(recorder(target, func(exchange) error { return errors.New("disk full") }))
+	defer rec.Close()
+	resp, err := rec.Client().Get(rec.URL + "/v1/things")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusBadGateway {
+		t.Errorf("the client got %d, want 502 when the answer can't be recorded", resp.StatusCode)
+	}
+}
 
 func TestCompareNamesEachDifferenceAndItsSide(t *testing.T) {
 	fake := []exchange{get("/v1/clusters/a", "$ object", "$.id string", "$.message string", "$.count string")}
@@ -172,7 +214,10 @@ func TestAnAcceptedLineExcusesItsDifferenceAndASubtree(t *testing.T) {
 
 	// The same line on the wrong side excuses nothing, and goes stale.
 	accepted[0].Side = "fake"
-	clean, out, _ = compareFiles(t, fake, real, accepted)
+	clean, out, err = compareFiles(t, fake, real, accepted)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if clean || !strings.Contains(out, "accepted, but no longer differs: "+getCluster+" response $.uid (fake)") {
 		t.Errorf("a line for the wrong side passed:\n%s", out)
 	}

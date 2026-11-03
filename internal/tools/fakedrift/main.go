@@ -99,11 +99,15 @@ func record(args []string) error {
 	}
 	defer func() { _ = f.Close() }()
 	var mu sync.Mutex
-	write := func(e exchange) {
-		line, _ := json.Marshal(e)
+	write := func(e exchange) error {
+		line, merr := json.Marshal(e)
+		if merr != nil {
+			return merr
+		}
 		mu.Lock()
 		defer mu.Unlock()
-		_, _ = f.Write(append(line, '\n'))
+		_, werr := f.Write(append(line, '\n'))
+		return werr
 	}
 
 	ln, err := net.Listen("tcp", *listen)
@@ -115,8 +119,9 @@ func record(args []string) error {
 }
 
 // recorder is a reverse proxy to target that hands write each answer's shape,
-// beside the shape of the request that got it.
-func recorder(target *url.URL, write func(exchange)) http.Handler {
+// beside the shape of the request that got it. An answer write can't record
+// fails the request, so a run never compares a recording with holes in it.
+func recorder(target *url.URL, write func(exchange) error) http.Handler {
 	proxy := httputil.NewSingleHostReverseProxy(target)
 	proxy.ModifyResponse = func(resp *http.Response) error {
 		body, err := io.ReadAll(resp.Body)
@@ -129,7 +134,9 @@ func recorder(target *url.URL, write func(exchange)) http.Handler {
 		if sent, ok := resp.Request.Context().Value(sentKey{}).([]byte); ok {
 			e.Request = shapeOf(sent)
 		}
-		write(e)
+		if err := write(e); err != nil {
+			return fmt.Errorf("fakedrift could not record %s %s: %w", e.Method, e.Path, err)
+		}
 		return nil
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
