@@ -1,0 +1,16 @@
+{
+  "fake": "8dbfb9828bd6b941763ef2bd6df0be8e84d84ba8",
+  "code": "a60366f2679637bcd87e4fd5303ad08752dcf459",
+  "api_version": "v1.3.0-rc.5",
+  "terraform": "Terraform v1.16.3",
+  "steps": {
+    "fake drift": "PASS",
+    "live": "PASS"
+  },
+  "landscape_gaps": [
+    "subnet-cidr",
+    "no-file-store",
+    "no-hosts"
+  ],
+  "ran": "2026-11-03T11:43:29Z"
+}
