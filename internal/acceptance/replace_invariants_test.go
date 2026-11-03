@@ -16,6 +16,8 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/plancheck"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
+
+	"github.com/k0rdent/terraform-provider-k0rdent/internal/provider"
 )
 
 // Every managed resource's replace and refuse decisions, every way into
@@ -519,7 +521,7 @@ func checkGoneAt(path string) resource.TestCheckFunc {
 }
 
 func shortKind(typ string) string {
-	return strings.NewReplacer("k0rdent_", "", "kubernetes_", "", "_", "").Replace(typ)
+	return strings.NewReplacer(provider.ResourcePrefix(), "", "kubernetes_", "", "_", "").Replace(typ)
 }
 
 // The rows name every attribute the docs say replaces each resource, and the
@@ -533,7 +535,7 @@ func TestReplacementRulesNameEveryDocumentedAttribute(t *testing.T) {
 	quoted := regexp.MustCompile("`([a-z_]+)`")
 	for _, k := range invKinds() {
 		t.Run(k.typ, func(t *testing.T) {
-			doc, err := os.ReadFile(filepath.Join("..", "..", "docs", "resources", strings.TrimPrefix(k.typ, "k0rdent_")+".md"))
+			doc, err := os.ReadFile(filepath.Join("..", "..", "docs", "resources", strings.TrimPrefix(k.typ, provider.ResourcePrefix())+".md"))
 			if err != nil {
 				t.Fatal(err)
 			}
