@@ -9,7 +9,7 @@ stores, projects and webhooks.
   [Terraform Registry](https://registry.terraform.io/providers/k0rdent/k0rdent/latest)
   and the
   [OpenTofu Registry](https://search.opentofu.org/provider/k0rdent/k0rdent/latest)
-- Needs Terraform 1.10 or later, or OpenTofu
+- Needs Terraform 1.10 or later, but not 1.16.0 to 1.16.4 ([why](docs/known-limitations.md#terraform-1160-to-1164)), or OpenTofu
 - Reference docs: [`docs/`](docs/index.md), the same pages both registries show
 
 ## Install
