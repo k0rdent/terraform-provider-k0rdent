@@ -183,7 +183,7 @@ jobs:
         run: make test
       - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e  # v4.0.1
         with:
-          terraform_version: "1.16.3"
+          terraform_version: "1.16.5"
           terraform_wrapper: false
       - name: acceptance
         run: make testacc
@@ -238,7 +238,7 @@ jobs:
           cache: true
       - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e  # v4.0.1
         with:
-          terraform_version: "1.16.3"
+          terraform_version: "1.16.5"
       - name: verify generated provider documentation
         run: make docs-check
 
@@ -256,7 +256,7 @@ jobs:
           cache: true
       - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e  # v4.0.1
         with:
-          terraform_version: "1.16.3"
+          terraform_version: "1.16.5"
           terraform_wrapper: false
       - name: plan the examples against the fake, over both tiers
         run: make plan-fake
@@ -283,7 +283,7 @@ jobs:
           cache: true
       - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e  # v4.0.1
         with:
-          terraform_version: "1.16.3"
+          terraform_version: "1.16.5"
           terraform_wrapper: false
       - name: refresh-only plans find nothing, and plans stay within the unknown budget
         run: make plan-quality
@@ -308,7 +308,7 @@ jobs:
           cache: true
       - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e  # v4.0.1
         with:
-          terraform_version: "1.16.3"
+          terraform_version: "1.16.5"
           terraform_wrapper: false
       - uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4  # v2.0.2
         with:

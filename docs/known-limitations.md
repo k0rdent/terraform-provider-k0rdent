@@ -104,6 +104,18 @@ Nothing else is retried. A 401, a 409 during a change, a 500, and any other
 **Plan and refresh time.** See [performance](performance.md). The supported
 limit is 1,000 resources in one configuration.
 
+## Terraform 1.16.0 to 1.16.4
+
+A ctrl-C during an apply that's creating two or more resources can crash
+Terraform 1.16.0 to 1.16.4 and leave the state file empty. What the apply
+created stays on the platform, and neither the next apply nor a destroy knows
+about it. It's a Terraform bug, fixed in 1.16.5
+([hashicorp/terraform#39287](https://github.com/hashicorp/terraform/pull/39287)).
+Use 1.16.5 or later, or OpenTofu, which doesn't have it.
+
+If it already happened, [import](guides/import.md) each resource the run
+created, then keep it or destroy it.
+
 ## Values you still have to hardcode
 
 Some values can't be read with a tenant credential, so a configuration has to
