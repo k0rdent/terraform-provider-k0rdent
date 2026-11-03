@@ -114,6 +114,17 @@ var fakeRoles = []fakeRole{
 	{"storage-admin", "Storage Admin", []string{"platform"}},
 }
 
+// selfServicePermissions are the slugs every built-in role grants, whatever
+// else it does: API v1.3.0-rc.5 adds them to each role in the catalog
+// (internal/middleware/roleperms.go:126-145). A role's own slugs aren't
+// modelled, so a role here answers these alone, never the empty list no real
+// role has. Every built-in role has a description too (the seeds in
+// services/iam/db/migrations, 000005, 000062 and 000065).
+var selfServicePermissions = []string{
+	"iam.apikeys.create", "iam.apikeys.read", "iam.apikeys.update", "iam.apikeys.delete",
+	"iam.apikeys.rotate", "iam.profile.read", "iam.profile.update",
+}
+
 func roleExists(id string) bool {
 	return slices.ContainsFunc(fakeRoles, func(r fakeRole) bool { return r.id == id })
 }
@@ -131,9 +142,11 @@ func (s *state) listRoles(w http.ResponseWriter, r *http.Request) {
 			"id":          role.id,
 			"uid":         uidFor(scope{"global", org}, "role", role.id),
 			"displayName": role.name,
-			"permissions": []string{},
+			"description": "The built-in " + role.name + " role.",
+			"permissions": selfServicePermissions,
 			"scopes":      role.scopes,
 			"createdAt":   fixedTime,
+			"updatedAt":   fixedTime,
 			"version":     1,
 			"selfLink":    "/v1/regions/global/organizations/" + org + "/iam/roles/" + role.id,
 		})

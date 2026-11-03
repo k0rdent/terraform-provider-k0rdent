@@ -53,7 +53,8 @@ CI also runs `make docs-check`, `make doc-commands`, `make client-check`,
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) lists them all.
 `make help` says what each target does.
 
-None of these prove the real API behaves like the fake. The live tests do.
+None of these prove the real API behaves like the fake.
+[`make real-api-check`](#make-real-api-check) and the other live tests do.
 
 ### `make check`
 
@@ -260,6 +261,57 @@ PASS  destroy
 
 The upgrade steps need two or more `available` versions of the cluster type.
 With fewer, they're SKIP.
+
+### `make real-api-check`
+
+The acceptance tests run against the fake, so they're only as good as the
+fake's answers. This check runs the same Terraform against the fake and
+against the real API on a local kind stack, and compares the shape of every
+answer: each field's path and JSON type, never a value. Then it runs
+`make live` against the stack. It refuses an endpoint that isn't on
+localhost.
+
+It runs:
+
+- `look/` and every directory of `examples/walkthrough` the fake can apply,
+  each applied, planned again and destroyed
+- A cluster and an instance group with write-only SSH keys, applied, removed
+  from state, imported and planned again (`ci/real-api/lifecycle`)
+- `fakedrift compare` on the two recordings
+- `make live` against the stack
+
+Each difference `fakedrift` finds is either fixed in the fake or listed in
+`ci/fake-drift-accepted.json` with a reason. A listed difference that no
+longer turns up fails the check too, so the list can't go stale.
+
+When every step passes, the check writes `ci/real-api/record.json`. Commit it
+with the change. The record holds two hashes:
+
+| Hash | Covers | CI checks it |
+| --- | --- | --- |
+| `fake` | The fake, the API client and its spec, `fakedrift`, the accepted list, the lifecycle and the script | On every pull request, with the API version in `ci/real-api/api-version` |
+| `code` | Everything in `fake`, plus the provider, `make live` and the walkthroughs | Before a release, with `scripts/real-api-check.sh verify-release` |
+
+So a pull request needs a new run when it changes the fake or the API client,
+or moves `ci/real-api/api-version` to a new API. A change to the provider alone
+doesn't, since its tests run against a fake that's known to match. A release
+does.
+
+| Variable | Value |
+| --- | --- |
+| `K0RDENT_ENDPOINT` | The stack's gateway, such as `http://localhost:14000` |
+| `K0RDENT_REGION` | A region the stack serves |
+| `K0RDENT_PROJECT` | A project to build in |
+| `K0RDENT_CLIENT_ID`, `K0RDENT_CLIENT_SECRET` | A service account scoped to that project, with `compute-admin` and `credentials-admin`, so an import can check SSH keys |
+| `REAL_API_ORG_CLIENT_ID`, `REAL_API_ORG_CLIENT_SECRET` | A service account scoped to the organization, with `compute-admin`, `organizations-admin` and `iam-viewer`, for the walkthroughs, as `docs/walkthrough-hardware.md` lists them |
+| `REAL_API_CLUSTER_TYPE` | A cluster type in the region with a worker pool and two or more `available` versions. `make live` uses it too, and a skipped step fails the check |
+| `REAL_API_WALKTHROUGH_GAPS` | What the stack can't do that a walkthrough asks for. `subnet-cidr`: the stack answers a subnet's CIDR without allocating it from the pool, so `full/` doesn't check it. `no-file-store`: no storage service, so `full-everything` leaves `file_store` off. `no-hosts`: no server for an instance group's host, so `full-everything` leaves `instance_group` and `vpc_peering` off. A kind stack needs all three. The record lists them. Default none |
+| `REAL_API_KUBE_CONTEXT` | The stack's kube context. The API version is read from its images. Default `kind-k0rdent-rc5` |
+
+```sh
+make real-api-check
+git add ci/real-api/record.json
+```
 
 ### Seed a cluster type
 

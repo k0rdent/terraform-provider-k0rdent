@@ -166,7 +166,9 @@ data %q "read" {
 				resource.TestCheckResourceAttr(instanceGroupDataAddr, "state", "active"),
 				resource.TestCheckResourceAttr(instanceGroupDataAddr, "node_pools.gpu-workers.desired_count", "2"),
 				resource.TestCheckResourceAttr(instanceGroupDataAddr, "node_pools.gpu-workers.ready_count", "2"),
-				resource.TestCheckResourceAttr(instanceGroupDataAddr, "progress_updated_at", "2026-09-21T00:00:00Z"),
+				// Cleared when the group settles: the API answers it only
+				// while an operation is in flight.
+				resource.TestCheckNoResourceAttr(instanceGroupDataAddr, "progress_updated_at"),
 				resource.TestCheckNoResourceAttr(instanceGroupDataAddr, "state_reason"),
 				resource.TestCheckResourceAttr(instanceGroupDataAddr, "security_groups.#", "0"),
 			),
