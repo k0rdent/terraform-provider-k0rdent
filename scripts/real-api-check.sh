@@ -40,10 +40,12 @@
 #   K0RDENT_CLIENT_SECRET   compute-admin and credentials-admin, so an import
 #                           can check SSH keys
 #   REAL_API_ORG_CLIENT_ID      a service account scoped to the organization,
-#   REAL_API_ORG_CLIENT_SECRET  with compute-admin and organizations-admin, for
-#                               the walkthroughs: cluster-own-project/ makes a
-#                               project
+#   REAL_API_ORG_CLIENT_SECRET  with compute-admin, organizations-admin and
+#                               iam-viewer, for the walkthroughs, as
+#                               docs/walkthrough-hardware.md lists them
 #   REAL_API_CLUSTER_TYPE   a cluster type in the region, with a worker pool
+#                           and two or more available versions, so make live
+#                           runs its upgrade steps
 #   REAL_API_KUBE_CONTEXT   the stack's kube context, which the API version is
 #                           read from. Default kind-k0rdent-rc5
 #
@@ -311,7 +313,13 @@ cmd_run() {
   # some of the minute's.
   sleep "${REAL_API_MINT_PAUSE:-60}"
   steps_live=PASS
-  LIVE_CONFIRM="$(endpoint_host "$endpoint")" "$REPO/scripts/live.sh" run || steps_live=FAIL
+  TF_VAR_cluster_type_id="${TF_VAR_cluster_type_id:-$REAL_API_CLUSTER_TYPE}" \
+    LIVE_CONFIRM="$(endpoint_host "$endpoint")" "$REPO/scripts/live.sh" run || steps_live=FAIL
+  # A skipped step proves nothing, so the record needs every step run.
+  if grep -q '^SKIP' "$REPO/.live/results.txt" 2>/dev/null; then
+    steps_live=FAIL
+    warn "make live skipped a step: $(grep '^SKIP' "$REPO/.live/results.txt" | tr -s ' ' | tr '\n' ' ')"
+  fi
 
   if [ "$steps_drift" != PASS ] || [ "$steps_live" != PASS ]; then
     die "fake drift $steps_drift, live $steps_live. ci/real-api/record.json is unchanged, so CI still asks for a run."

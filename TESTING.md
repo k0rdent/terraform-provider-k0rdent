@@ -303,8 +303,8 @@ does.
 | `K0RDENT_REGION` | A region the stack serves |
 | `K0RDENT_PROJECT` | A project to build in |
 | `K0RDENT_CLIENT_ID`, `K0RDENT_CLIENT_SECRET` | A service account scoped to that project, with `compute-admin` and `credentials-admin`, so an import can check SSH keys |
-| `REAL_API_ORG_CLIENT_ID`, `REAL_API_ORG_CLIENT_SECRET` | A service account scoped to the organization, with `compute-admin` and `organizations-admin`, for the walkthroughs. `cluster-own-project/` makes a project |
-| `REAL_API_CLUSTER_TYPE` | A cluster type in the region with a worker pool |
+| `REAL_API_ORG_CLIENT_ID`, `REAL_API_ORG_CLIENT_SECRET` | A service account scoped to the organization, with `compute-admin`, `organizations-admin` and `iam-viewer`, for the walkthroughs, as `docs/walkthrough-hardware.md` lists them |
+| `REAL_API_CLUSTER_TYPE` | A cluster type in the region with a worker pool and two or more `available` versions. `make live` uses it too, and a skipped step fails the check |
 | `REAL_API_KUBE_CONTEXT` | The stack's kube context. The API version is read from its images. Default `kind-k0rdent-rc5` |
 
 ```sh
