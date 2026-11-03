@@ -209,7 +209,10 @@ walkthroughs() {
 lifecycle_passed() {
   local bad
   bad="$(awk '$2 != 0 {print $1 " (exit " $2 ")"}' "$1/steps")"
-  [ -z "$bad" ] && return 0
+  if [ -z "$bad" ]; then
+    good "$2: $(wc -l < "$1/steps" | tr -d ' ') steps passed"
+    return 0
+  fi
   warn "$2: $(printf '%s' "$bad" | tr '\n' ' ')"
   warn "logs in $1"
   return 1
