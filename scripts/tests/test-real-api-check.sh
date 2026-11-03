@@ -38,13 +38,14 @@ git -C "$repo" add -A
 
 check="$repo/scripts/real-api-check.sh"
 
-# record <api version> <step result> writes a record for the tree as it is.
+# record <api version> <step result> [gaps] writes a record for the tree as it is.
 record() {
   RECORD="$repo/ci/real-api/record.json" FAKE="$("$check" hash fake)" CODE="$("$check" hash code)" \
-    API="$1" STEP="$2" python3 -c '
+    API="$1" STEP="$2" GAPS="${3:-}" python3 -c '
 import json, os
 json.dump({"fake": os.environ["FAKE"], "code": os.environ["CODE"], "api_version": os.environ["API"],
-           "steps": {"fake drift": os.environ["STEP"], "live": "PASS"}, "ran": "2026-11-03T00:00:00Z"},
+           "steps": {"fake drift": os.environ["STEP"], "live": "PASS"}, "ran": "2026-11-03T00:00:00Z",
+           "landscape_gaps": os.environ["GAPS"].split()},
           open(os.environ["RECORD"], "w"))'
 }
 
@@ -64,6 +65,13 @@ fails_with() {
 record v1.3.0-rc.5 PASS
 passes "a matching record" "$check" verify
 passes "a matching record, for a release" "$check" verify-release "$repo"
+
+# --- a record names the landscape gaps it ran with ---------------------------
+
+record v1.3.0-rc.5 PASS "subnet-cidr no-file-store"
+passes "a record with landscape gaps" "$check" verify
+grep -q 'without: subnet-cidr, no-file-store' "$work/out" || { cat "$work/out" >&2; fail "verify doesn't name the record's landscape gaps"; }
+record v1.3.0-rc.5 PASS
 
 # --- a change to tests alone needs no run -----------------------------------
 

@@ -46,6 +46,8 @@
 #   REAL_API_CLUSTER_TYPE   a cluster type in the region, with a worker pool
 #                           and two or more available versions, so make live
 #                           runs its upgrade steps
+#   REAL_API_WALKTHROUGH_GAPS  what the stack can't do that a walkthrough
+#                           asks for, from the list below. Default none
 #   REAL_API_KUBE_CONTEXT   the stack's kube context, which the API version is
 #                           read from. Default kind-k0rdent-rc5
 #
@@ -130,7 +132,9 @@ if problems:
         print("real-api record: " + p, file=sys.stderr)
     print("Run make real-api-check against a kind stack running API %s, then commit ci/real-api/record.json." % want, file=sys.stderr)
     sys.exit(1)
-print("real-api record: API %s, run %s, covers this %s" % (want, r.get("ran"), "release" if code else "fake"))'
+gaps = r.get("landscape_gaps") or []
+print("real-api record: API %s, run %s, covers this %s%s" % (want, r.get("ran"), "release" if code else "fake",
+      ", without: " + ", ".join(gaps) if gaps else ""))'
 }
 
 # stack_api_version prints the one version every k0rdent API image on the
@@ -175,12 +179,51 @@ lifecycle() {
 # credential gets ten token mints a minute, and each command mints once.
 pace() { [ "${PACE:-0}" = 0 ] || sleep "$PACE"; }
 
-# walkthroughs <dir>: look/, then every directory of examples/walkthrough the
-# fake can apply, as a reader runs them: terraform.tfvars filled in from what
-# look/ printed, apply, plan again, destroy. The credential is the one in the
-# environment. Each step's exit code goes to <dir>/steps, as lifecycle's do.
+# Landscape gaps: what a stack can't do that a walkthrough asks for, each
+# named in REAL_API_WALKTHROUGH_GAPS and written into the record, so a pass
+# says what it didn't cover. Each one changes the stack's copy of a directory
+# in one stated way, and only on the real side.
+#
+#   subnet-cidr    the stack answers a subnet's CIDR without allocating it from
+#                  the pool, as kind does (10.0.0.0/24 for a /28 from any
+#                  pool). full/ drops its check that each subnet is inside its
+#                  pool
+#   no-file-store  the stack runs no storage service, as kind doesn't.
+#                  full-everything leaves file_store off
+GAPS_KNOWN="subnet-cidr no-file-store"
+
+# gap <name> is true when REAL_API_WALKTHROUGH_GAPS names it.
+gap() { case " ${REAL_API_WALKTHROUGH_GAPS:-} " in *" $1 "*) return 0 ;; esac; return 1; }
+
+# apply_gaps <dir> <name> changes the copy <dir> of walkthrough <name> for each
+# gap named, and fails when the line it changes has moved.
+apply_gaps() {
+  case "$2" in full | full-everything) ;; *) return 0 ;; esac
+  if gap subnet-cidr; then
+    python3 - "$1/main.tf" <<'PY' || return 1
+import sys
+p = sys.argv[1]; s = open(p).read()
+i = s.find('    postcondition {\n      condition = self.cidr != ""')
+if i < 0:
+    sys.exit("the subnet-cidr gap: full/main.tf has no subnet postcondition on self.cidr any more")
+j = s.index("    }\n", s.index("error_message", i)) + 6
+open(p, "w").write(s[:i] + s[j:])
+PY
+  fi
+  if [ "$2" = full-everything ] && gap no-file-store; then
+    grep -q '^  file_store *= *true' "$1/terraform.tfvars" \
+      || { warn "the no-file-store gap: full-everything's terraform.tfvars has no file_store = true"; return 1; }
+    sed -i.bak 's/^  file_store *= *true /  file_store          = false/' "$1/terraform.tfvars"
+  fi
+}
+
+# walkthroughs <dir> [real]: look/, then every directory of
+# examples/walkthrough the fake can apply, as a reader runs them:
+# terraform.tfvars filled in from what look/ printed, apply, plan again,
+# destroy. With real, the landscape gaps apply. The credential is the one in
+# the environment. Each step's exit code goes to <dir>/steps, as lifecycle's do.
 walkthroughs() {
-  local dir="$1" examples="$REPO/examples/walkthrough" d rc
+  local dir="$1" side="${2:-}" examples="$REPO/examples/walkthrough" d rc
   mkdir -p "$dir"
   : > "$dir/steps"
   wt() { local name="$1" sub="$2"; shift 2; pace; ( cd "$dir/$sub" && "$TF_BIN" "$@" -no-color ) > "$dir/$name.log" 2>&1; rc=$?; printf '%s %s\n' "$name" "$rc" >> "$dir/steps"; return "$rc"; }
@@ -196,6 +239,10 @@ walkthroughs() {
     walkthrough_tfvars "$d" "$examples" rapi > "$dir/$d/terraform.tfvars.new" \
       || { printf '%s-tfvars 1\n' "$d" >> "$dir/steps"; continue; }
     mv "$dir/$d/terraform.tfvars.new" "$dir/$d/terraform.tfvars"
+    if [ "$side" = real ] && ! apply_gaps "$dir/$d" "$d" 2> "$dir/$d-gaps.log"; then
+      printf '%s-gaps 1\n' "$d" >> "$dir/steps"
+      continue
+    fi
     if wt "$d-apply" "$d" apply -auto-approve -input=false; then
       wt "$d-replan" "$d" plan -detailed-exitcode -input=false
     fi
@@ -236,6 +283,9 @@ cmd_run() {
   done
   for v in REAL_API_ORG_CLIENT_ID REAL_API_ORG_CLIENT_SECRET; do
     [ -n "$(eval printf '%s' "\"\${$v:-}\"")" ] || die "$v is not set. TESTING.md lists what make real-api-check needs."
+  done
+  for g in ${REAL_API_WALKTHROUGH_GAPS:-}; do
+    case " $GAPS_KNOWN " in *" $g "*) ;; *) die "REAL_API_WALKTHROUGH_GAPS names $g. The gaps are: $GAPS_KNOWN" ;; esac
   done
   [ -n "${REAL_API_CLUSTER_TYPE:-}" ] || die "REAL_API_CLUSTER_TYPE is not set. It is a cluster type id in ${ENV_PREFIX}REGION with a worker pool."
 
@@ -293,7 +343,7 @@ cmd_run() {
     # the endpoint and the credential only.
     export "${ENV_PREFIX}CLIENT_ID=$REAL_API_ORG_CLIENT_ID" "${ENV_PREFIX}CLIENT_SECRET=$REAL_API_ORG_CLIENT_SECRET"
     unset "${ENV_PREFIX}REGION" "${ENV_PREFIX}PROJECT"
-    walkthroughs "$work/real-walkthrough"
+    walkthroughs "$work/real-walkthrough" real
   )
   lifecycle_passed "$work/real" "the lifecycle against the real API" || steps_drift=FAIL
   lifecycle_passed "$work/real-walkthrough" "the walkthroughs against the real API" || steps_drift=FAIL
@@ -324,7 +374,7 @@ cmd_run() {
   if [ "$steps_drift" != PASS ] || [ "$steps_live" != PASS ]; then
     die "fake drift $steps_drift, live $steps_live. ci/real-api/record.json is unchanged, so CI still asks for a run."
   fi
-  RECORD="$RECORD" FAKE="$fake" CODE="$code" API="$have" TF="$("$TF_BIN" version | head -1)" python3 -c '
+  RECORD="$RECORD" FAKE="$fake" CODE="$code" API="$have" GAPS="${REAL_API_WALKTHROUGH_GAPS:-}" TF="$("$TF_BIN" version | head -1)" python3 -c '
 import json, os, datetime
 json.dump({
     "fake": os.environ["FAKE"],
@@ -332,6 +382,7 @@ json.dump({
     "api_version": os.environ["API"],
     "terraform": os.environ["TF"],
     "steps": {"fake drift": "PASS", "live": "PASS"},
+    "landscape_gaps": os.environ["GAPS"].split(),
     "ran": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
 }, open(os.environ["RECORD"], "w"), indent=2)
 open(os.environ["RECORD"], "a").write("\n")'
