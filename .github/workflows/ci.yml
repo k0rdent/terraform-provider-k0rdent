@@ -216,6 +216,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
+          # The testing matrix reads the previous release's walkthrough and
+          # state schemas from its tag.
+          fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
         with:
@@ -227,8 +230,10 @@ jobs:
         with:
           terraform_version: "1.16.5"
           terraform_wrapper: false
-      - name: acceptance
-        run: make testacc
+      # The acceptance suite with the testing matrix recorder on, then the
+      # check that docs/testing-matrix.md is what it saw.
+      - name: acceptance, and the testing matrix is current
+        run: make testacc-matrix
 
   # The same suite under OpenTofu, in a job of its own because the one above
   # already takes most of its time limit. It's where write-only attributes,
