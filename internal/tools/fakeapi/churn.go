@@ -172,11 +172,13 @@ func churnObject(obj map[string]any, read int64) {
 		// `expiresAt` is the "staleness boundary" an observation carries, so
 		// it moves with every new one.
 		switch read % 3 {
+		// Every optional field is an explicit null when unset, as the real
+		// API answers it (recorded on a kind stack at API v1.3.0-rc.5).
 		case 0:
-			obj["health"] = map[string]any{"state": "unknown", "expiresAt": nil}
+			obj["health"] = map[string]any{"state": "unknown", "reason": nil, "observedAt": nil, "expiresAt": nil}
 		case 1:
 			obj["health"] = map[string]any{
-				"state": "healthy", "observedAt": churnTime(read), "expiresAt": churnTime(read + 300),
+				"state": "healthy", "reason": nil, "observedAt": churnTime(read), "expiresAt": churnTime(read + 300),
 			}
 		default:
 			obj["health"] = map[string]any{

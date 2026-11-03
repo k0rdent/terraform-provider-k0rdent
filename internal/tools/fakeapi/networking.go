@@ -672,11 +672,15 @@ func asRanges(items []string) []string {
 
 func vpcJSON(sc scope, v *fakeVPC) map[string]any {
 	return map[string]any{
-		"id":        v.id,
-		"uid":       v.uid,
-		"backend":   v.backend,
-		"ownerKind": v.ownerKind,
-		"ownerId":   v.ownerUID,
+		"id":  v.id,
+		"uid": v.uid,
+		// The real API names an owned VPC after the networkSchema.vpcs[]
+		// entry it was made from: "fabric" for every VPC on the v1.3.0-rc.5
+		// kind stack, whose seed type has one entry of that id.
+		"displayName": "fabric",
+		"backend":     v.backend,
+		"ownerKind":   v.ownerKind,
+		"ownerId":     v.ownerUID,
 		// Never empty: clearing the binding reinstates the DEFAULT group, which
 		// is why the provider documents this list as always populated.
 		"securityGroups": v.securityGroups,

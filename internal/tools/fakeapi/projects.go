@@ -38,6 +38,7 @@ import (
 // legacyProject is one.
 type fakeProject struct {
 	id          string
+	uid         string
 	org         string
 	region      string
 	displayName string
@@ -174,7 +175,11 @@ func (s *state) getOrganization(w http.ResponseWriter, r *http.Request) {
 
 func (p *fakeProject) body() map[string]any {
 	out := map[string]any{
-		"id":             p.id,
+		"id": p.id,
+		// The real list, get and create all answer it (recorded on the
+		// v1.3.0-rc.5 kind stack), and the provider keeps it to know the
+		// project it made from another made later under the same id.
+		"uid":            p.uid,
 		"organizationId": p.org,
 		"status":         p.status,
 		"displayName":    p.displayName,
@@ -255,7 +260,10 @@ func (s *state) createProjectInOrg(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	p := &fakeProject{id: id, org: org, region: *body.Region, status: "active", createdAt: time.Now().UTC()}
+	p := &fakeProject{
+		id: id, uid: s.global().newUID("project", id),
+		org: org, region: *body.Region, status: "active", createdAt: time.Now().UTC(),
+	}
 	if body.DisplayName != nil {
 		p.displayName = *body.DisplayName
 	}

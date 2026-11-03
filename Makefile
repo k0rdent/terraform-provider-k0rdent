@@ -196,6 +196,20 @@ doctor: ## Check this machine can run the tests, before anything long fails half
 
 # `live` targets talk to a real control plane, configured entirely from the
 # K0RDENT_* environment. `live-preflight` is read-only and safe anywhere;
+# `real-api-check` creates real resources on a local kind stack only, and
+# writes ci/real-api/record.json, which CI holds every pull request to.
+.PHONY: real-api-check
+real-api-check: ## On a local kind stack: fake drift, then make live. Writes the record CI checks
+	./scripts/real-api-check.sh run
+
+.PHONY: real-api-record-check
+real-api-record-check: ## Fail unless ci/real-api/record.json covers this tree's fake and API version
+	./scripts/real-api-check.sh verify
+
+.PHONY: real-api-check-test
+real-api-check-test: ## Prove the real-API record check fails on each kind of mismatch
+	./scripts/tests/test-real-api-check.sh
+
 # `live` creates real resources and requires LIVE_CONFIRM=<endpoint host>.
 .PHONY: live-preflight
 live-preflight: ## Read-only check against a real API: mint, list regions, list cluster types, plan

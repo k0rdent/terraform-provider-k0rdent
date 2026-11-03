@@ -1,0 +1,330 @@
+[
+  {
+    "operation": "GET /v1/regions/global/projects 200",
+    "field": "response $.limit",
+    "side": "real",
+    "reason": "Not read: ProjectPage.Limit has no use in internal/provider; readProjects (list_calls.go:175) reads only Projects and TotalCount and pages by its own offset and limit."
+  },
+  {
+    "operation": "GET /v1/regions/global/projects 200",
+    "field": "response $.offset",
+    "side": "real",
+    "reason": "Not read: ProjectPage.Offset has no use in internal/provider; readProjects (list_calls.go:175) reads only Projects and TotalCount."
+  },
+  {
+    "operation": "GET /v1/regions/global/projects 200",
+    "field": "response $.projects[].updatedAt",
+    "side": "real",
+    "reason": "Not read: Project.UpdatedAt has no use in internal/provider."
+  },
+
+  {
+    "operation": "GET /v1/regions/{region}/compute/cluster-types/{id} 200",
+    "field": "response $.createdAt",
+    "side": "real",
+    "reason": "Not read: ClusterType.CreatedAt has no use in internal/provider."
+  },
+  {
+    "operation": "GET /v1/regions/{region}/compute/cluster-types/{id} 200",
+    "field": "response $.updatedAt",
+    "side": "real",
+    "reason": "Not read: ClusterType.UpdatedAt has no use in internal/provider."
+  },
+  {
+    "operation": "GET /v1/regions/{region}/compute/cluster-types/{id} 200",
+    "field": "response $.uid",
+    "side": "real",
+    "reason": "Not read: ClusterType.Uid has no use in internal/provider."
+  },
+  {
+    "operation": "GET /v1/regions/{region}/compute/cluster-types/{id} 200",
+    "field": "response $.k8s.controlPlane*",
+    "side": "real",
+    "reason": "Not read: of ClusterTypeK8s the provider reads only K0sVersion (cluster_upgrade.go:173, datasource_cluster_types.go:375); ControlPlane and its fields have no use."
+  },
+  {
+    "operation": "GET /v1/regions/{region}/compute/cluster-types/{id} 200",
+    "field": "response $.k8s.k0sNetworkProvider",
+    "side": "real",
+    "reason": "Not read: ClusterTypeK8s.K0sNetworkProvider has no use in internal/provider."
+  },
+  {
+    "operation": "GET /v1/regions/{region}/compute/cluster-types/{id} 200",
+    "field": "response $.k8s.podCidrs*",
+    "side": "real",
+    "reason": "Not read: ClusterTypeK8s.PodCidrs has no use in internal/provider."
+  },
+  {
+    "operation": "GET /v1/regions/{region}/compute/cluster-types/{id} 200",
+    "field": "response $.k8s.service*",
+    "side": "real",
+    "reason": "Not read: ClusterTypeK8s.ServiceCidrs, ServiceDomain, Services and ServicesLoadBalancerSubnet, every field this prefix covers, have no use in internal/provider."
+  },
+  {
+    "operation": "GET /v1/regions/{region}/compute/cluster-types/{id} 200",
+    "field": "response $.k8s.workers*",
+    "side": "real",
+    "reason": "Not read: ClusterTypeK8s.Workers has no use in internal/provider."
+  },
+  {
+    "operation": "GET /v1/regions/{region}/compute/cluster-types/{id} 200",
+    "field": "response $.networkSchema.*",
+    "side": "real",
+    "reason": "Not read: ClusterType.NetworkSchema has no use in internal/provider."
+  },
+  {
+    "operation": "GET /v1/regions/{region}/compute/cluster-types/{id} 200",
+    "field": "response $.nodePools[].networkAttachment.*",
+    "side": "real",
+    "reason": "Not read: ClusterTypeNodePool.NetworkAttachment has no use in internal/provider."
+  },
+  {
+    "operation": "GET /v1/regions/{region}/compute/cluster-types/{id} 200",
+    "field": "response $.nodePools[].uid",
+    "side": "real",
+    "reason": "Not read: ClusterTypeNodePool.Uid has no use in internal/provider."
+  },
+  {
+    "operation": "GET /v1/regions/{region}/compute/cluster-types/{id} 200",
+    "field": "response $.nodePools[].versionIntroduced",
+    "side": "real",
+    "reason": "Not read: ClusterTypeNodePool.VersionIntroduced has no use in internal/provider."
+  },
+  {
+    "operation": "GET /v1/regions/{region}/compute/cluster-types/{id} 200",
+    "field": "response $.description",
+    "side": "fake",
+    "reason": "Fixture data: optional, and the kind type rc5-ct-subnets has none. Read at datasource_cluster_types.go:366 through stringOrNull, so absent reads as null; the real leg of drift-proof.sh read it absent and its apply, replan, import and destroy passed. No named test reads it absent."
+  },
+  {
+    "operation": "GET /v1/regions/{region}/compute/cluster-types/{id} 200",
+    "field": "response $.nodePools[].displayName",
+    "side": "fake",
+    "reason": "Fixture data: optional, and the kind type's one pool has none. Read at datasource_cluster_types.go:382 through stringOrNull; the real leg of drift-proof.sh read it absent and passed. No named test reads it absent."
+  },
+  {
+    "operation": "GET /v1/regions/{region}/compute/cluster-types/{id} 200",
+    "field": "response $.nodePools[].nodeCountMin",
+    "side": "type",
+    "reason": "Fixture data: the kind type's pool has no lower bound (null). Read at datasource_cluster_types.go:386 through int64OrNull and in cluster_upgrade.go:111 and :118, both nil-checked; the real leg of drift-proof.sh read null and passed. No named test reads a null bound."
+  },
+  {
+    "operation": "GET /v1/regions/{region}/compute/cluster-types/{id} 200",
+    "field": "response $.nodePools[].nodeCountMax",
+    "side": "type",
+    "reason": "Fixture data: the kind type's pool has no upper bound (null). Read at datasource_cluster_types.go:387 through int64OrNull and in cluster_upgrade.go:112 and :121, both nil-checked; the real leg of drift-proof.sh read null and passed. No named test reads a null bound."
+  },
+
+  {
+    "operation": "GET /v1/regions/{region}/compute/cluster-types/{id}/versions 200",
+    "field": "response $.versions[].description",
+    "side": "fake",
+    "reason": "Fixture data: optional, and the kind type's version has none. Read at datasource_cluster_type_versions.go:214 through stringOrNull; the fake answers it absent too, for gpu-inference v1. No named test reads it absent."
+  },
+
+  {
+    "operation": "GET /v1/regions/{region}/compute/cluster-types/{id}/versions/{versionId} 200",
+    "field": "response $.createdAt",
+    "side": "real",
+    "reason": "Not read: getClusterTypeVersion answers a ClusterType, and ClusterType.CreatedAt has no use in internal/provider."
+  },
+  {
+    "operation": "GET /v1/regions/{region}/compute/cluster-types/{id}/versions/{versionId} 200",
+    "field": "response $.updatedAt",
+    "side": "real",
+    "reason": "Not read: ClusterType.UpdatedAt has no use in internal/provider."
+  },
+  {
+    "operation": "GET /v1/regions/{region}/compute/cluster-types/{id}/versions/{versionId} 200",
+    "field": "response $.uid",
+    "side": "real",
+    "reason": "Not read: ClusterType.Uid has no use in internal/provider."
+  },
+  {
+    "operation": "GET /v1/regions/{region}/compute/cluster-types/{id}/versions/{versionId} 200",
+    "field": "response $.k8s.controlPlane*",
+    "side": "real",
+    "reason": "Not read: of ClusterTypeK8s the provider reads only K0sVersion (cluster_upgrade.go:173, datasource_cluster_type_versions.go:235); ControlPlane has no use."
+  },
+  {
+    "operation": "GET /v1/regions/{region}/compute/cluster-types/{id}/versions/{versionId} 200",
+    "field": "response $.k8s.k0sNetworkProvider",
+    "side": "real",
+    "reason": "Not read: ClusterTypeK8s.K0sNetworkProvider has no use in internal/provider."
+  },
+  {
+    "operation": "GET /v1/regions/{region}/compute/cluster-types/{id}/versions/{versionId} 200",
+    "field": "response $.k8s.podCidrs*",
+    "side": "real",
+    "reason": "Not read: ClusterTypeK8s.PodCidrs has no use in internal/provider."
+  },
+  {
+    "operation": "GET /v1/regions/{region}/compute/cluster-types/{id}/versions/{versionId} 200",
+    "field": "response $.k8s.service*",
+    "side": "real",
+    "reason": "Not read: ClusterTypeK8s.ServiceCidrs, ServiceDomain, Services and ServicesLoadBalancerSubnet, every field this prefix covers, have no use in internal/provider."
+  },
+  {
+    "operation": "GET /v1/regions/{region}/compute/cluster-types/{id}/versions/{versionId} 200",
+    "field": "response $.k8s.workers*",
+    "side": "real",
+    "reason": "Not read: ClusterTypeK8s.Workers has no use in internal/provider."
+  },
+  {
+    "operation": "GET /v1/regions/{region}/compute/cluster-types/{id}/versions/{versionId} 200",
+    "field": "response $.networkSchema.*",
+    "side": "real",
+    "reason": "Not read: ClusterType.NetworkSchema has no use in internal/provider."
+  },
+  {
+    "operation": "GET /v1/regions/{region}/compute/cluster-types/{id}/versions/{versionId} 200",
+    "field": "response $.nodePools[].networkAttachment.*",
+    "side": "real",
+    "reason": "Not read: ClusterTypeNodePool.NetworkAttachment has no use in internal/provider."
+  },
+  {
+    "operation": "GET /v1/regions/{region}/compute/cluster-types/{id}/versions/{versionId} 200",
+    "field": "response $.nodePools[].uid",
+    "side": "real",
+    "reason": "Not read: ClusterTypeNodePool.Uid has no use in internal/provider."
+  },
+  {
+    "operation": "GET /v1/regions/{region}/compute/cluster-types/{id}/versions/{versionId} 200",
+    "field": "response $.nodePools[].versionIntroduced",
+    "side": "real",
+    "reason": "Not read: ClusterTypeNodePool.VersionIntroduced has no use in internal/provider."
+  },
+  {
+    "operation": "GET /v1/regions/{region}/compute/cluster-types/{id}/versions/{versionId} 200",
+    "field": "response $.description",
+    "side": "fake",
+    "reason": "Fixture data: optional, and the kind type has none. Read at datasource_cluster_type_versions.go:423 through stringOrNull; the real leg of drift-proof.sh read it absent and passed. No named test reads it absent."
+  },
+  {
+    "operation": "GET /v1/regions/{region}/compute/cluster-types/{id}/versions/{versionId} 200",
+    "field": "response $.nodePools[].displayName",
+    "side": "fake",
+    "reason": "Fixture data: optional, and the kind type's pool has none. Read at datasource_cluster_type_versions.go:439 through stringOrNull; the real leg of drift-proof.sh read it absent and passed. No named test reads it absent."
+  },
+  {
+    "operation": "GET /v1/regions/{region}/compute/cluster-types/{id}/versions/{versionId} 200",
+    "field": "response $.nodePools[].nodeCountMin",
+    "side": "type",
+    "reason": "Fixture data: the kind type's pool has no lower bound (null). Read at datasource_cluster_type_versions.go:443 through int64OrNull and by versionBounds in cluster_upgrade.go:111 and :118, both nil-checked; the real leg of drift-proof.sh read null and passed. No named test reads a null bound."
+  },
+  {
+    "operation": "GET /v1/regions/{region}/compute/cluster-types/{id}/versions/{versionId} 200",
+    "field": "response $.nodePools[].nodeCountMax",
+    "side": "type",
+    "reason": "Fixture data: the kind type's pool has no upper bound (null). Read at datasource_cluster_type_versions.go:444 through int64OrNull and by versionBounds in cluster_upgrade.go:112 and :121, both nil-checked; the real leg of drift-proof.sh read null and passed. No named test reads a null bound."
+  },
+
+  {
+    "operation": "GET /v1/regions/{region}/projects/{project}/compute/clusters/{id} 200",
+    "field": "response $.controlPlane*",
+    "side": "fake",
+    "reason": "Landscape data: the kind type is hcp, but the real API omits controlPlane until a watcher has reported the hosted K0smotronControlPlane (API v1.3.0-rc.5), and kind runs none. Read at datasource_kubernetes_cluster.go:385-394, nil-checked; TestClusterDataLeavesWhatIsAbsentNull covers it absent, and the fake answers it absent while creating."
+  },
+  {
+    "operation": "GET /v1/regions/{region}/projects/{project}/compute/clusters/{id} 200",
+    "field": "response $.nodePools[].uid",
+    "side": "real",
+    "reason": "Not read: ClusterNodePool.Uid has no use in internal/provider."
+  },
+
+  {
+    "operation": "GET /v1/regions/{region}/projects/{project}/compute/clusters/{id}/runtime/events 200",
+    "field": "response $.cursor",
+    "side": "fake",
+    "reason": "Landscape data: the spec sends cursor only beside a non-empty events, and the real log is filled by the runtime-events ingest from the cluster's own agent (API v1.3.0-rc.5), which kind never runs, so every real page was empty. Read at cluster_events.go:122 and :236, both nil-checked for the empty page; the fake answers the empty shape too, on this lifecycle's delete-phase read."
+  },
+  {
+    "operation": "GET /v1/regions/{region}/projects/{project}/compute/clusters/{id}/runtime/events 200",
+    "field": "response $.events[]*",
+    "side": "fake",
+    "reason": "Landscape data: kind runs no runtime-events producer, so its pages were all `events: []`. Read at cluster_events.go:107-123 and :229-232, which handle an empty page; TestAQuietEventLogSaysSo covers a log with no warning or error, and the fake answers `events: []` on this lifecycle's delete-phase read."
+  },
+
+  {
+    "operation": "GET /v1/regions/{region}/projects/{project}/compute/instance-groups/{id} 200",
+    "field": "response $.nodePools[].id",
+    "side": "real",
+    "reason": "Not read: NodePool.Id has no use in internal/provider."
+  },
+  {
+    "operation": "GET /v1/regions/{region}/projects/{project}/compute/instance-groups/{id} 200",
+    "field": "response $.serialConsole*",
+    "side": "real",
+    "reason": "Not read: InstanceGroup.SerialConsole and its fields have no use in internal/provider."
+  },
+
+  {
+    "operation": "GET /v1/regions/{region}/projects/{project}/credentials/{id} 200",
+    "field": "response $.description",
+    "side": "real",
+    "reason": "Not read: of CredentialRecord the provider reads only MaterialAttributes, Operation and State (ssh_key_fingerprints.go:124, :141, :144)."
+  },
+  {
+    "operation": "GET /v1/regions/{region}/projects/{project}/credentials/{id} 200",
+    "field": "response $.orgId",
+    "side": "real",
+    "reason": "Not read: CredentialRecord.OrgId has no use in internal/provider."
+  },
+
+  {
+    "operation": "GET /v1/regions/{region}/projects/{project}/networking/vpcs 200",
+    "field": "response $.vpcs[].createdAt",
+    "side": "real",
+    "reason": "Not read: VPC.CreatedAt has no use in internal/provider."
+  },
+  {
+    "operation": "GET /v1/regions/{region}/projects/{project}/networking/vpcs 200",
+    "field": "response $.vpcs[].projectId",
+    "side": "real",
+    "reason": "Not read: VPC.ProjectId has no use in internal/provider."
+  },
+  {
+    "operation": "GET /v1/regions/{region}/projects/{project}/networking/vpcs 200",
+    "field": "response $.vpcs[].region",
+    "side": "real",
+    "reason": "Not read: VPC.Region has no use in internal/provider."
+  },
+  {
+    "operation": "GET /v1/regions/{region}/projects/{project}/networking/vpcs 200",
+    "field": "response $.vpcs[].schemaEntryId",
+    "side": "real",
+    "reason": "Not read: VPC.SchemaEntryId has no use in internal/provider."
+  },
+  {
+    "operation": "GET /v1/regions/{region}/projects/{project}/networking/vpcs 200",
+    "field": "response $.vpcs[].systemTags",
+    "side": "real",
+    "reason": "Not read: VPC.SystemTags has no use in internal/provider."
+  },
+  {
+    "operation": "GET /v1/regions/{region}/projects/{project}/networking/vpcs 200",
+    "field": "response $.vpcs[].updatedAt",
+    "side": "real",
+    "reason": "Not read: VPC.UpdatedAt has no use in internal/provider."
+  },
+
+  {
+    "operation": "POST /v1/regions/{region}/projects/{project}/compute/clusters 201",
+    "field": "response $.nodePools[].uid",
+    "side": "real",
+    "reason": "Not read: ClusterNodePool.Uid has no use in internal/provider."
+  },
+
+  {
+    "operation": "POST /v1/regions/{region}/projects/{project}/compute/instance-groups 201",
+    "field": "response $.nodePools[].id",
+    "side": "real",
+    "reason": "Not read: NodePool.Id has no use in internal/provider."
+  },
+  {
+    "operation": "POST /v1/regions/{region}/projects/{project}/compute/instance-groups 201",
+    "field": "response $.serialConsole*",
+    "side": "real",
+    "reason": "Not read: InstanceGroup.SerialConsole and its fields have no use in internal/provider."
+  }
+]
