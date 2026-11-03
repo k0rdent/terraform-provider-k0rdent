@@ -98,8 +98,7 @@ func newCLIRun(t *testing.T) *cliRun {
 	}
 	c := &cliRun{t: t, terraform: terraformForMigration(t), dir: t.TempDir()}
 	c.rc = filepath.Join(c.dir, "terraformrc")
-	writeFile(t, c.rc, fmt.Sprintf("provider_installation {\n  dev_overrides {\n    %q = %q\n  }\n  direct {}\n}\n",
-		provider.RegistryAddress(), builtProvider(t)))
+	writeFile(t, c.rc, devOverridesRC(t, builtProvider(t)))
 	return c
 }
 
@@ -183,7 +182,7 @@ func TestAccACreateThatTimesOutIsWaitedForAfterAnUntaint(t *testing.T) {
 			if !ok {
 				t.Fatalf("the plan without the untaint was refused, so a destroy would be too:\n%s", out)
 			}
-			mustSay(t, "the plan without the untaint", out, "is tainted, so must be replaced",
+			mustSay(t, "the plan without the untaint", out, taintedReplaced(t),
 				"is still being created: applying this plan cancels it if this state holds it",
 				"terraform untaint <address> terraform apply")
 
@@ -249,7 +248,7 @@ func TestAccADestroyRunsPastACreateThePlatformFailed(t *testing.T) {
 			if !ok {
 				t.Fatalf("the plan after the failed create was refused:\n%s", out)
 			}
-			mustSay(t, "the plan", out, "is tainted, so must be replaced", "1 to add, 0 to change, 1 to destroy",
+			mustSay(t, "the plan", out, taintedReplaced(t), "1 to add, 0 to change, 1 to destroy",
 				"failed: applying this plan replaces it if this state holds it", "run `terraform destroy` instead")
 
 			out, ok = c.run("destroy", "-auto-approve")

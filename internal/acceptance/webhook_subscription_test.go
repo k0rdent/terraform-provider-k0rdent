@@ -833,8 +833,12 @@ func TestAccWebhookSubscriptionTurnedOffPlanWarns(t *testing.T) {
 	if !ok {
 		t.Fatalf("the plan after the platform turned it off failed:\n%s", out)
 	}
-	mustSay(t, "the plan after it's off", out, "must be replaced",
-		"is_active = false -> (known after apply) # forces replacement",
+	forces := "is_active = false -> (known after apply) # forces replacement"
+	if underOpenTofu(t) {
+		// OpenTofu marks the attribute on both sides of the arrow.
+		forces = "is_active = false # forces replacement -> (known after apply) # forces replacement"
+	}
+	mustSay(t, "the plan after it's off", out, "must be replaced", forces,
 		"1 to add, 0 to change, 1 to destroy",
 		"Warning: The platform turned this subscription off, so it's replaced",
 		"Subscription "+first+" gets no more events", "deliveries to your `url` kept failing",

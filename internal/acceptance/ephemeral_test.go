@@ -33,6 +33,7 @@ import (
 // fake's server for this cluster and its token, and no CA, because the fake's
 // kubeconfig carries none.
 func TestAccEphemeralKubeconfigInTheSameRun(t *testing.T) {
+	skipUnderOpenTofu(t, openTofuChecksAnUnopenedEphemeral)
 	kubeconfigType := provider.ResourceName("cluster_kubeconfig")
 	cfg := fmt.Sprintf(`
 resource %q "eph" {
@@ -168,6 +169,7 @@ ephemeral %q "unissued" {
 // doesn't exist yet. Recorded on Terraform 1.16.3. When a Terraform release
 // defers it, this fails, and the examples can move to depends_on.
 func TestAccEphemeralKubeconfigDependsOnDoesNotDeferTheOpen(t *testing.T) {
+	skipUnderOpenTofu(t, openTofuDefersTheOpen)
 	kubeconfigType := provider.ResourceName("cluster_kubeconfig")
 	cfg := fmt.Sprintf(`
 resource %q "deps" {

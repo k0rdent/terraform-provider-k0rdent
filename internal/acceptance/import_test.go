@@ -61,6 +61,12 @@ type importCase struct {
 	// seed, when set, is what the first step applies instead of config: the
 	// object as somebody else made it, with something config doesn't manage.
 	seed string
+	// unquotedKeyUnderOpenTofu is set when the generated configuration holds
+	// a map key that isn't an HCL identifier, such as a consumer's IP
+	// address. OpenTofu writes it unquoted and can't read it back, so under
+	// OpenTofu the generating step expects that error. When OpenTofu quotes
+	// it, the step fails and this goes.
+	unquotedKeyUnderOpenTofu bool
 }
 
 func (c importCase) addr() string { return c.resourceType + ".test" }
@@ -159,6 +165,18 @@ func (c importCase) run(t *testing.T) {
 		}
 	}
 
+	generate := resource.TestStep{
+		Config:            c.imported(),
+		ResourceName:      c.addr(),
+		ImportState:       true,
+		ImportStateIdFunc: importID,
+		ImportStateKind:   resource.ImportBlockWithID,
+		GenerateConfig:    true,
+	}
+	if c.unquotedKeyUnderOpenTofu && underOpenTofu(t) {
+		generate.ExpectError = openTofuUnquotedMapKey
+	}
+
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: protoV6,
 		CheckDestroy:             c.checkDestroy,
@@ -186,14 +204,7 @@ func (c importCase) run(t *testing.T) {
 				ImportState:     true,
 				ImportStateKind: resource.ImportBlockWithResourceIdentity,
 			},
-			{
-				Config:            c.imported(),
-				ResourceName:      c.addr(),
-				ImportState:       true,
-				ImportStateIdFunc: importID,
-				ImportStateKind:   resource.ImportBlockWithID,
-				GenerateConfig:    true,
-			},
+			generate,
 			adoption,
 			{Config: c.adopted(), PlanOnly: true},
 		},
@@ -339,6 +350,8 @@ resource %q "test" {
 				identity:     scoped(name),
 				verifyIgnore: []string{"timeouts"},
 				checkDestroy: checkGone(fileStoreType, fileStorePath),
+				// consumers is keyed by IP address.
+				unquotedKeyUnderOpenTofu: true,
 			}
 		},
 		webhookType: func() importCase {

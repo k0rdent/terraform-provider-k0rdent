@@ -205,6 +205,29 @@ jobs:
       - name: acceptance
         run: make testacc
 
+  # The same suite under OpenTofu, in a job of its own because the one above
+  # already takes most of its time limit. It's where write-only attributes,
+  # import blocks and generated configuration meet OpenTofu. The tests
+  # OpenTofu can't run skip with a reason TESTING.md lists.
+  testacc-opentofu:
+    name: acceptance under OpenTofu
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4  # v2.0.2
+        with:
+          tofu_version: "1.12.6"
+          tofu_wrapper: false
+      - name: acceptance under OpenTofu
+        run: make testacc TF_BIN=tofu
+
   lint:
     name: lint
     runs-on: ubuntu-latest
@@ -463,6 +486,7 @@ jobs:
       - secrets
       - build
       - test
+      - testacc-opentofu
       - lint
       - vulncheck
       - docs
