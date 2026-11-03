@@ -11,6 +11,8 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
+
+	"github.com/k0rdent/terraform-provider-k0rdent/internal/provider"
 )
 
 // The fake holds an object whose display name carries this mid-operation
@@ -215,9 +217,20 @@ resource %q "test" {
 // the etag the settled store reads: the fake moves the etag on the settle, so
 // one resent with the etag read while it was `creating` is refused as a
 // concurrent edit.
+//
+// The fake holds the store `creating` until an update is refused, so a
+// provider that waited for it without sending the update would wait out the
+// default timeout, hours, and so would the destroy after it, holding the
+// suite until `go test` kills it. `operation_timeout` bounds every wait,
+// the destroy's included, so that fails here by name. The update this test
+// expects settles in a few polls.
 func TestAccFileStoreUpdateWaitsForACreatingStore(t *testing.T) {
 	const name = "acc-busy-store"
 	config := fmt.Sprintf(`
+provider %[4]q {
+  operation_timeout = "1m"
+}
+
 import {
   to = %[1]s.test
   id = %[2]q
@@ -230,7 +243,7 @@ resource %[1]q "test" {
   share_type   = "general"
   capacity_gib = 10
 }
-`, fileStoreType, name, busyUntilRefused)
+`, fileStoreType, name, busyUntilRefused, provider.ProviderTypeName)
 
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: protoV6,

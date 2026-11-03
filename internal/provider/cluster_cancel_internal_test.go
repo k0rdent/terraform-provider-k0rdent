@@ -989,9 +989,10 @@ func TestDestroySendsNothingToAnotherClusterUnderTheID(t *testing.T) {
 }
 
 // A destroy whose first read fails sends no DELETE when the row holds a uid,
-// since only the read tells its cluster from another made under the id. A
-// row holding none can't tell them apart anyway, and sends the DELETE as
-// before.
+// since only the read tells its cluster from another made under the id. It
+// stops there, with the read's error alone: it sent no delete, so it waits
+// for none. A row holding none can't tell them apart anyway, and sends the
+// DELETE as before.
 func TestDestroySendsNothingUncheckedWhenTheReadFails(t *testing.T) {
 	const ours = "00000000-0000-4000-8000-0000000000aa"
 	for _, tc := range []struct{ name, held, calls string }{
@@ -1004,8 +1005,17 @@ func TestDestroySendsNothingUncheckedWhenTheReadFails(t *testing.T) {
 			if got := api.callList(); got != tc.calls {
 				t.Errorf("calls = %q, want %q", got, tc.calls)
 			}
-			if tc.held != "" && !resp.Diagnostics.HasError() {
-				t.Error("the destroy passed without reading the cluster")
+			if tc.held == "" {
+				return
+			}
+			errs := resp.Diagnostics.Errors()
+			if len(errs) != 1 || errs[0].Summary() != "Could not read the cluster before deleting it" {
+				t.Errorf("want the read's error alone, got %v", resp.Diagnostics)
+			}
+			for _, d := range resp.Diagnostics {
+				if strings.Contains(d.Summary()+d.Detail(), "finish deleting") {
+					t.Errorf("waited for a delete it never sent: %s: %s", d.Summary(), d.Detail())
+				}
 			}
 		})
 	}
