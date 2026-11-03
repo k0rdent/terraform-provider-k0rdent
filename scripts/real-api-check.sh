@@ -367,7 +367,9 @@ cmd_run() {
   step "Fake drift: compare"
   if "$work/fakedrift" compare -spec "$REPO/internal/k0rdent/spec/openapi.yaml" \
       -fake "$work/fake.ndjson" -real "$work/real.ndjson" -accepted "$ACCEPTED" > "$work/compare.txt"; then
-    good "$(tail -1 "$work/compare.txt")"
+    good "$(grep -m1 ' operations compared, ' "$work/compare.txt")"
+    # An operation only one side made isn't compared, so it's listed.
+    sed -n '/^recorded on the /,$p' "$work/compare.txt"
   else
     steps_drift=FAIL
     cat "$work/compare.txt"

@@ -1,7 +1,7 @@
 {
-  "fake": "8dbfb9828bd6b941763ef2bd6df0be8e84d84ba8",
-  "code": "a60366f2679637bcd87e4fd5303ad08752dcf459",
-  "api_version": "v1.3.0-rc.5",
+  "fake": "4ff5e2538d441a0be6ff7173f5d4b508eb5c24f9",
+  "code": "fad4a50f361a9fb37a493ba9d7a77d3699bcebf2",
+  "api_version": "v1.3.0-rc.6",
   "terraform": "Terraform v1.16.3",
   "steps": {
     "fake drift": "PASS",
@@ -12,5 +12,5 @@
     "no-file-store",
     "no-hosts"
   ],
-  "ran": "2026-11-03T11:43:29Z"
+  "ran": "2026-11-03T19:32:55Z"
 }
