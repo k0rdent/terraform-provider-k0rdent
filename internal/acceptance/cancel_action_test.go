@@ -115,6 +115,7 @@ func checkFakeOperation(name, want string) resource.TestCheckFunc {
 // configuration then plans clean, and the destroy at the end deletes the
 // `failed` cluster without cancelling anything.
 func TestAccCancelActionStopsAnUpgradeAndKeepsTheCluster(t *testing.T) {
+	skipUnderOpenTofu(t, openTofuHasNoActions)
 	const name = "acc-cancel-action"
 	resource.Test(t, resource.TestCase{
 		TerraformVersionChecks:   actionsVersion,
@@ -153,6 +154,7 @@ func TestAccCancelActionStopsAnUpgradeAndKeepsTheCluster(t *testing.T) {
 // and the step wants at least one and no cancel. The last step adopts it
 // again, so the destroy deletes it.
 func TestAccCancelActionWithNothingToCancelSucceeds(t *testing.T) {
+	skipUnderOpenTofu(t, openTofuHasNoActions)
 	const name = "acc-cancel-idle"
 	var mark int64
 	resource.Test(t, resource.TestCase{
@@ -250,6 +252,7 @@ func providerRequestsSince(t *testing.T, offset int64, path string) (reads, canc
 // cancels nothing. The held upgrade is still running afterwards, and the
 // destroy at the end is what cancels it.
 func TestAccCancelActionPinnedToAnotherOperationCancelsNothing(t *testing.T) {
+	skipUnderOpenTofu(t, openTofuHasNoActions)
 	const name = "acc-cancel-pinned"
 	resource.Test(t, resource.TestCase{
 		TerraformVersionChecks:   actionsVersion,
@@ -282,6 +285,7 @@ func TestAccCancelActionPinnedToAnotherOperationCancelsNothing(t *testing.T) {
 // before the apply cancels it, the apply streams its progress, and the fake
 // reads the cluster `failed` and `cancelled` afterwards.
 func TestAccCancelActionByInvoke(t *testing.T) {
+	skipUnderOpenTofu(t, openTofuHasNoActions)
 	const name = "acc-cancel-invoke"
 	resource.Test(t, resource.TestCase{
 		TerraformVersionChecks:   actionsVersion,
@@ -334,8 +338,7 @@ func invokeByCLI(t *testing.T, cluster string) string {
 	bin := builtProvider(t)
 	dir := t.TempDir()
 	cliConfig := filepath.Join(dir, "cli.tfrc")
-	writeFile(t, cliConfig, fmt.Sprintf("provider_installation {\n  dev_overrides {\n    %q = %q\n  }\n  direct {}\n}\n",
-		provider.RegistryAddress(), bin))
+	writeFile(t, cliConfig, devOverridesRC(t, bin))
 	work := filepath.Join(dir, "work")
 	if err := os.Mkdir(work, 0o700); err != nil {
 		t.Fatal(err)

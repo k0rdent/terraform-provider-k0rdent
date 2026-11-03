@@ -197,8 +197,7 @@ func newQueryWorkspace(t *testing.T, tf, build, body string) queryWorkspace {
 	t.Helper()
 	dir := t.TempDir()
 	rc := filepath.Join(dir, "terraformrc")
-	writeFile(t, rc, fmt.Sprintf("provider_installation {\n  dev_overrides {\n    %q = %q\n  }\n  direct {}\n}\n",
-		provider.RegistryAddress(), build))
+	writeFile(t, rc, devOverridesRC(t, build))
 	writeFile(t, filepath.Join(dir, "main.tf"), fmt.Sprintf(`
 terraform {
   required_providers {
@@ -228,6 +227,7 @@ provider %q {
 // older binary is a skip rather than a failure.
 func terraformForQuery(t *testing.T) string {
 	t.Helper()
+	skipUnderOpenTofu(t, openTofuHasNoQuery)
 	tf := terraformForMigration(t)
 	ws := &migrationWorkspace{t: t, terraform: tf, dir: t.TempDir(), env: quietEnviron()}
 	out := ws.mustRun("version", "-json")

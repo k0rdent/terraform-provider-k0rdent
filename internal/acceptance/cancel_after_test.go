@@ -47,6 +47,8 @@ func cancelAfterTimeout(t *testing.T, c *cliRun, name, config string) {
 // scale again, and its apply fails, since the platform refuses a scale of a
 // `failed` cluster. Setting the count back plans clean.
 func TestAccAfterACancelledScale(t *testing.T) {
+	// The cluster is cancelled with the action.
+	skipUnderOpenTofu(t, openTofuHasNoActions)
 	if runtime.GOOS == "windows" {
 		t.Skip("the CLI sequence runs on unix")
 	}
@@ -84,6 +86,8 @@ func TestAccAfterACancelledScale(t *testing.T) {
 // that names the new one is refused, and so is `terraform destroy`, which
 // plans first, until `cluster_type` names the old version again.
 func TestAccAfterACancelledUpgrade(t *testing.T) {
+	// The cluster is cancelled with the action.
+	skipUnderOpenTofu(t, openTofuHasNoActions)
 	if runtime.GOOS == "windows" {
 		t.Skip("the CLI sequence runs on unix")
 	}
@@ -166,6 +170,8 @@ func checkFakeMetadata(t *testing.T, name, displayName, description, team string
 // cancel. The platform leaves the cluster `failed` through each, so the apply
 // doesn't wait for it to become `active`.
 func TestAccAMetadataChangeToACancelledCluster(t *testing.T) {
+	// The cluster is cancelled with the action.
+	skipUnderOpenTofu(t, openTofuHasNoActions)
 	if runtime.GOOS == "windows" {
 		t.Skip("the CLI sequence runs on unix")
 	}

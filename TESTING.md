@@ -68,7 +68,23 @@ None of these prove the real API behaves like the fake. The live tests do.
 Real Terraform against the fake, one lifecycle per resource. Each case checks
 its resources are gone after the destroy.
 
-- Needs `terraform`. It doesn't run under `tofu`. `make demo` runs under both.
+- Runs under `terraform`. `make testacc TF_BIN=tofu` runs it under OpenTofu,
+  and CI runs both.
+- Under OpenTofu, a test that needs something only Terraform has skips and
+  says why. `skipUnderOpenTofu` in `internal/acceptance/cli_test.go` holds
+  the reasons:
+
+| Skipped under OpenTofu | Why |
+| --- | --- |
+| The cancel and power action tests, and the three that cancel a cluster with the action | OpenTofu has no actions or `apply -invoke` |
+| `TestAccQueryGeneratesConfigThatPlansClean` | OpenTofu has no `query` command or list resources |
+| `TestAccEphemeralKubeconfigInTheSameRun` | OpenTofu checks an ephemeral resource's postconditions at plan, before it opens |
+| `TestAccEphemeralKubeconfigDependsOnDoesNotDeferTheOpen` | It records a Terraform behaviour that OpenTofu doesn't share |
+
+- `TestAccImport` for `k0rdent_file_store` expects OpenTofu's error at the
+  generated-configuration step. OpenTofu 1.12.6 writes a map key like
+  `10.0.0.31` without quotes, then can't read it back. The step fails once
+  OpenTofu fixes that.
 
 ### `make demo`
 

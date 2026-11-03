@@ -88,8 +88,7 @@ func newMigrationWorkspace(t *testing.T, config, state string) *migrationWorkspa
 	t.Cleanup(api.Close)
 
 	rc := filepath.Join(dir, "terraformrc")
-	writeFile(t, rc, fmt.Sprintf("provider_installation {\n  dev_overrides {\n    %q = %q\n  }\n  direct {}\n}\n",
-		provider.RegistryAddress(), build))
+	writeFile(t, rc, devOverridesRC(t, build))
 	writeFile(t, filepath.Join(dir, "main.tf"), fmt.Sprintf(`
 terraform {
   required_providers {
@@ -247,7 +246,7 @@ resource %q "demo" {
   display_name    = "Demo"
   description     = "created by the demo"
 }
-`, project), stateFile(provider.RegistryAddress(), project, "demo", `{
+`, project), stateFile(providerAddress(t), project, "demo", `{
             "allow_replace": null,
             "description": "created by the demo",
             "display_name": "Demo",
@@ -336,7 +335,7 @@ resource %q "training" {
 		!strings.Contains(out, "resource types don't match") {
 		t.Errorf("terraform state mv across type names exited %d, and the docs say it refuses:\n%s", code, out)
 	}
-	w.mustRun("state", "replace-provider", "-auto-approve", oldProvider, provider.RegistryAddress())
+	w.mustRun("state", "replace-provider", "-auto-approve", oldProvider, providerAddress(t))
 	w.mustRun("plan", "-refresh=false", "-out=moved.tfplan")
 	shown := w.mustRun("show", "-json", "moved.tfplan")
 

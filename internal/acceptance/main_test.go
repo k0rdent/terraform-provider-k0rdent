@@ -166,6 +166,18 @@ func run(m *testing.M) (int, error) {
 			return 0, err
 		}
 	}
+	// terraform-plugin-testing names the provider under registry.terraform.io
+	// unless told otherwise, and OpenTofu resolves the suite's configurations
+	// to its own registry, so it wouldn't find the provider the suite serves.
+	tofu, cliErr := cliIsOpenTofu()
+	if cliErr != nil {
+		return 0, cliErr
+	}
+	if tofu && os.Getenv(resource.EnvTfAccProviderHost) == "" {
+		if err := os.Setenv(resource.EnvTfAccProviderHost, openTofuRegistry); err != nil {
+			return 0, err
+		}
+	}
 	// TRACE is the level that carries request and response bodies, and the
 	// token mint's body is the credential. Captured so the run can be searched
 	// afterwards rather than trusted.

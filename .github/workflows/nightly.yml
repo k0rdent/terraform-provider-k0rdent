@@ -61,11 +61,8 @@ jobs:
         env:
           TF_BIN: ${{ matrix.cli }}
         run: make demo
-      # terraform only. terraform-plugin-testing builds a
-      # registry.terraform.io provider address and relies on terraform's
-      # reattach behaviour, so under tofu it tries to download the provider
-      # from registry.opentofu.org and fails. Tofu's coverage is the demo
-      # above, which drives the same lifecycle.
+      # terraform only here. ci.yml's testacc-opentofu job runs the same
+      # suite under tofu on every change.
       - name: acceptance
         if: matrix.cli == 'terraform'
         run: make testacc
@@ -75,9 +72,9 @@ jobs:
       # passed, so a failure names the requirement rather than hiding
       # among the rest of the suite. It needs the setup, though: it runs only
       # once setup-terraform has succeeded, which it can't do after anything
-      # before it failed. Terraform only, for the same reason as the
-      # acceptance step. How the same check runs against a live stack is in
-      # TESTING.md under `make drift`.
+      # before it failed. Terraform only, like the acceptance step. How the
+      # same check runs against a live stack is in TESTING.md under
+      # `make drift`.
       - name: perpetual diff
         if: ${{ !cancelled() && matrix.cli == 'terraform' && steps.setup-terraform.outcome == 'success' }}
         run: make drift

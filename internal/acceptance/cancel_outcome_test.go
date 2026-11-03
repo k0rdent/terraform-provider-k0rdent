@@ -68,6 +68,7 @@ func TestAccDestroySaysHowTheCancelEnded(t *testing.T) {
 // ended: the cluster settles `failed` and `cancelled`, or the create lands
 // anyway and the action says nothing was cancelled.
 func TestAccCancelActionSaysHowTheCancelEnded(t *testing.T) {
+	skipUnderOpenTofu(t, openTofuHasNoActions)
 	if runtime.GOOS == "windows" {
 		t.Skip("the CLI sequence runs on unix")
 	}
