@@ -242,7 +242,22 @@ resource %q "test" {
 		instanceGroupType: func() importCase {
 			const name = "acc-import-hosts"
 			return importCase{
-				config:       instanceGroupConfig(name, 1),
+				// The SSH users and their write-only keys, as on the
+				// cluster: the platform answers references to the keys,
+				// which an import reads the same as the create did.
+				config: fmt.Sprintf(`
+resource %q "test" {
+  id           = %q
+  cluster_type = %q
+  display_name = "acceptance"
+  node_pool = {
+    "gpu-workers" = { size = 1 }
+  }
+  ssh_access = [%s
+  ]
+  ssh_public_keys_wo = %s
+}
+`, instanceGroupType, name, clusterTypeRef, sshZoeWO+sshAdamWO, sshKeysWO),
 				resourceType: instanceGroupType,
 				importID:     "us-texas-1/demo/" + name,
 				identity:     scoped(name),
