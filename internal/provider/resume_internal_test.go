@@ -732,6 +732,43 @@ func TestAResumedCreateThatStopsAgainKeepsItsPlace(t *testing.T) {
 	}
 }
 
+// A cluster's resumed update says what it waited for: a cluster last read
+// `creating` to finish creating, and one last read `failed` to come back from
+// `failed`.
+func TestAResumedClusterWaitSaysWhatItWaitedFor(t *testing.T) {
+	const creating, failed = "for the cluster to finish creating", "for the cluster to come back from `failed`"
+	for _, tc := range []struct{ last, says, not string }{
+		{"creating", creating, failed},
+		{"failed", failed, creating},
+	} {
+		t.Run(tc.last, func(t *testing.T) {
+			platform := hardwarePlatform(t, "cluster")
+			run := hardwareRun(t, "cluster", platform, nil, map[string]string{"create": "100ms"})
+
+			null := tftypes.NewValue(run.obj, nil)
+			first := run.apply(context.Background(), null, run.plan(null, nil))
+			platform.set(tc.last)
+			refreshed, private := run.read(first.state, first.private)
+			if got := stateOf(t, refreshed); got != tc.last {
+				t.Fatalf("the refresh read %q, want %q", got, tc.last)
+			}
+			resume := run.plan(refreshed, private)
+			if resume.state.Equal(refreshed) {
+				t.Fatal("the plan has no changes, so nothing waits for the cluster")
+			}
+			second := run.apply(context.Background(), refreshed, resume)
+			errs := strings.Join(diagnosticErrors(second.diags), "\n")
+			if errs == "" {
+				t.Fatal("the resumed wait passed on a cluster that never settled")
+			}
+			containsAll(t, "the error", errs, tc.says)
+			if strings.Contains(errs, tc.not) {
+				t.Errorf("the error says %q:\n%s", tc.not, errs)
+			}
+		})
+	}
+}
+
 // A destroy whose wait times out leaves the object in state and says the
 // next destroy picks the delete up. That destroy reads it `deleting`, sends no
 // second DELETE, and finishes once the platform reaps it.
