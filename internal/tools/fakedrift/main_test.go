@@ -55,7 +55,9 @@ func TestTheRecorderPassesAnswersThroughAndRecordsBothShapes(t *testing.T) {
 	rec := httptest.NewServer(recorder(target, func(e exchange) { mu.Lock(); got = append(got, e); mu.Unlock() }))
 	defer rec.Close()
 
-	resp, err := http.Post(rec.URL+"/v1/things", "application/json", strings.NewReader(`{"name":"n"}`))
+	// The server's own client, not http.Post: the shared default transport is
+	// one another test's CloseIdleConnections can break a request on.
+	resp, err := rec.Client().Post(rec.URL+"/v1/things", "application/json", strings.NewReader(`{"name":"n"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
