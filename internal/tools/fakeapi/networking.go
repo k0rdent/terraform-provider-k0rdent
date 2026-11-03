@@ -20,6 +20,7 @@ import (
 
 type fakeNetwork struct {
 	id          string
+	uid         string
 	kind        string // evpn, infiniband, nvlink
 	displayName *string
 	description *string
@@ -39,12 +40,16 @@ type fakeNetwork struct {
 	ipOverIB  *bool
 
 	clusterID string // non-empty when the cluster lifecycle owns this, not the tenant
-	state     string
-	reads     int
+	// What a network the cluster lifecycle made carries beside clusterID: the
+	// UFO Vpc CR name it attaches to and the networkSchema entry it came from.
+	vpc, schemaEntryID string
+	state              string
+	reads              int
 }
 
 type fakeSubnet struct {
 	id            string
+	uid           string
 	network       string
 	addressPool   string
 	prefixLength  int
@@ -55,6 +60,7 @@ type fakeSubnet struct {
 	description   *string
 	tags          map[string]string
 	clusterID     string // as on fakeNetwork
+	schemaEntryID string // as on fakeNetwork
 	state         string
 	reads         int
 }
@@ -100,13 +106,15 @@ func (o *objects) vpcForOwner(ownerKind, ownerID, ownerUID string) {
 	var prefixes []string
 	if !strings.Contains(ownerID, noSubnetsMarker) {
 		o.networks[at{id: vpc + "-net"}] = &fakeNetwork{
-			id: vpc + "-net", kind: "evpn", serviceType: "l2vpn", vlanID: "4002",
-			clusterID: ownerID, state: "active", displayName: ptr("cluster network"),
+			id: vpc + "-net", uid: o.newUID("network", vpc+"-net"),
+			kind: "evpn", serviceType: "l2vpn", vlanID: "4002",
+			clusterID: ownerID, vpc: ufoCRName(vpc), schemaEntryID: "cluster-net",
+			state: "active", displayName: ptr("cluster network"),
 		}
 		o.subnets[at{vpc + "-net", vpc + "-net-sub"}] = &fakeSubnet{
-			id: vpc + "-net-sub", network: vpc + "-net",
+			id: vpc + "-net-sub", uid: o.newUID("subnet", vpc+"-net/"+vpc+"-net-sub"), network: vpc + "-net",
 			addressPool: "pool-routable", prefixLength: 24,
-			cidr: "10.90.0.0/24", clusterID: ownerID, state: "active",
+			cidr: "10.90.0.0/24", clusterID: ownerID, schemaEntryID: "cluster-subnet", state: "active",
 			displayName: ptr("cluster subnet"),
 		}
 		prefixes = append(prefixes, "10.90.0.0/24")
@@ -120,6 +128,7 @@ func (o *objects) vpcForOwner(ownerKind, ownerID, ownerUID string) {
 	if g == nil {
 		return
 	}
+	g.uid = o.newUID("security group", g.id)
 	o.groupsSec[at{id: g.id}] = g
 	v.defaultGroup = g.id
 	v.securityGroups = []string{g.id}
@@ -211,11 +220,12 @@ func ptr[T any](v T) *T { return &v }
 func (s *state) listNetworks(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	networks, _ := networkKind.list(w, r, s.in(r))
+	o := s.in(r)
+	networks, _ := networkKind.list(w, r, o)
 
 	items := make([]any, 0, len(networks))
 	for _, n := range networks {
-		items = append(items, networkJSON(n))
+		items = append(items, networkJSON(o, n))
 	}
 	networkList.serve(w, r, items)
 }
@@ -274,7 +284,7 @@ func (s *state) createNetwork(w http.ResponseWriter, r *http.Request) {
 	}
 
 	n := &fakeNetwork{
-		id: id, kind: body.Type,
+		id: id, uid: o.newUID("network", id), kind: body.Type,
 		displayName: body.DisplayName, description: body.Description,
 		mtu: body.MTU, dhcpEnabled: body.DhcpEnabled, dnsServers: body.DNSServers,
 		state: "creating",
@@ -315,14 +325,15 @@ func (s *state) createNetwork(w http.ResponseWriter, r *http.Request) {
 	}
 
 	networkKind.put(o, "", id, n)
-	writeJSON(w, http.StatusCreated, networkJSON(n))
+	writeJSON(w, http.StatusCreated, networkJSON(o, n))
 }
 
 func (s *state) getNetwork(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if n, ok := networkKind.read(w, r, s.in(r)); ok {
-		writeJSON(w, http.StatusOK, networkJSON(n))
+	o := s.in(r)
+	if n, ok := networkKind.read(w, r, o); ok {
+		writeJSON(w, http.StatusOK, networkJSON(o, n))
 	}
 }
 
@@ -338,7 +349,8 @@ func (s *state) updateNetwork(w http.ResponseWriter, r *http.Request) {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	n, _, ok := networkKind.find(w, r, s.in(r))
+	o := s.in(r)
+	n, _, ok := networkKind.find(w, r, o)
 	if !ok {
 		return
 	}
@@ -356,7 +368,7 @@ func (s *state) updateNetwork(w http.ResponseWriter, r *http.Request) {
 	// v1.3.0-rc.3 writes the three fields in place, in any state, and starts
 	// no workflow, so the network keeps its state: a `failed` one stays
 	// `failed`.
-	writeJSON(w, http.StatusOK, networkJSON(n))
+	writeJSON(w, http.StatusOK, networkJSON(o, n))
 }
 
 func (s *state) deleteNetwork(w http.ResponseWriter, r *http.Request) {
@@ -458,7 +470,7 @@ func (s *state) createSubnet(w http.ResponseWriter, r *http.Request) {
 	// round-trip; a provider that overwrote its state from the response would
 	// drop the user's ranges and propose recreating the subnet.
 	sub := &fakeSubnet{
-		id: id, network: network, addressPool: body.AddressPool,
+		id: id, uid: o.newUID("subnet", network+"/"+id), network: network, addressPool: body.AddressPool,
 		prefixLength: body.PrefixLength,
 		displayName:  body.DisplayName, description: body.Description,
 		tags: derefTags(body.Tags),
@@ -545,12 +557,25 @@ func orEmpty(p *string) string {
 	return *p
 }
 
-func networkJSON(n *fakeNetwork) map[string]any {
+// networkJSON is a network as API v1.3.0-rc.5 answers it (mapNetwork,
+// services/compute/internal/service/network.go:707-768, and the Network model,
+// services/compute/internal/model/model.go:1445-1470): `uid`, both timestamps
+// and the network's subnets always, `[]` on the create, and `vpc` and
+// `schemaEntryId` only on a network the cluster lifecycle made.
+func networkJSON(o *objects, n *fakeNetwork) map[string]any {
+	subnets := []any{}
+	for _, sub := range subnetKind.under(o, n.id) {
+		subnets = append(subnets, subnetJSON(sub))
+	}
 	out := map[string]any{
-		"id":       n.id,
-		"type":     n.kind,
-		"state":    n.state,
-		"selfLink": "/v1/networking/networks/" + n.id,
+		"id":        n.id,
+		"uid":       n.uid,
+		"type":      n.kind,
+		"state":     n.state,
+		"selfLink":  "/v1/networking/networks/" + n.id,
+		"subnets":   subnets,
+		"createdAt": fixedTime,
+		"updatedAt": fixedTime,
 		// A server-owned tag alongside whatever the tenant set. The provider
 		// must not fold this into `tags`, or every plan proposes removing it.
 		"systemTags": map[string]string{"managed-by": "fakeapi"},
@@ -558,6 +583,8 @@ func networkJSON(n *fakeNetwork) map[string]any {
 	failureDetail(n.state, out)
 	if n.clusterID != "" {
 		out["clusterId"] = n.clusterID
+		out["vpc"] = n.vpc
+		out["schemaEntryId"] = n.schemaEntryID
 	}
 	// The platform answers an unset name or description as "", and unset tags
 	// as {}, not by leaving them out (the k0rdent API v1.3.0-dev.3 on kind). A
@@ -603,21 +630,31 @@ func networkJSON(n *fakeNetwork) map[string]any {
 	return out
 }
 
+// subnetJSON is a subnet as API v1.3.0-rc.5 answers it (mapSubnet,
+// services/compute/internal/service/network.go:778-840): `uid` and both
+// timestamps always, `schemaEntryId` only on a subnet the cluster lifecycle
+// made, and `ipVersion` beside the CIDR, which stay NULL until the create
+// settles `active` (services/compute/db/queries/subnets.sql:78,
+// subnet_callback.sql:37) and are left out until then.
 func subnetJSON(sub *fakeSubnet) map[string]any {
 	out := map[string]any{
 		"id":           sub.id,
+		"uid":          sub.uid,
 		"addressPool":  sub.addressPool,
 		"prefixLength": sub.prefixLength,
-		"ipVersion":    "ipv4",
 		"state":        sub.state,
 		"network":      "/v1/networking/networks/" + sub.network,
 		"selfLink":     "/v1/networking/networks/" + sub.network + "/subnets/" + sub.id,
+		"createdAt":    fixedTime,
+		"updatedAt":    fixedTime,
 	}
 	failureDetail(sub.state, out)
 	if sub.clusterID != "" {
 		out["clusterId"] = sub.clusterID
+		out["schemaEntryId"] = sub.schemaEntryID
 	}
 	if sub.state == "active" {
+		out["ipVersion"] = "ipv4"
 		out["cidr"] = sub.cidr
 		if sub.gateway != "" {
 			out["gateway"] = sub.gateway
@@ -687,8 +724,14 @@ func vpcJSON(sc scope, v *fakeVPC) map[string]any {
 		"state":          v.state,
 		// getVPC's path, which is the contract's example and remoteVpc's shape.
 		"selfLink":  "/v1/regions/" + sc.region + "/projects/" + sc.project + "/networking/vpcs/" + v.id,
-		"ufoCrName": strings.ReplaceAll(v.id, "-", "_"),
+		"ufoCrName": ufoCRName(v.id),
 	}
+}
+
+// ufoCRName is the name of the UFO Vpc CR behind the VPC id: a VPC's
+// `ufoCrName`, and the `vpc` a network the cluster lifecycle made attaches to.
+func ufoCRName(vpc string) string {
+	return strings.ReplaceAll(vpc, "-", "_")
 }
 
 // The address pool catalog, deliberately more than one page. Every pool

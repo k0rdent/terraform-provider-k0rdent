@@ -23,6 +23,7 @@ type fakeRule struct {
 
 type fakeSecurityGroup struct {
 	id          string
+	uid         string
 	displayName *string
 	description *string
 	tags        map[string]any
@@ -77,7 +78,10 @@ func (s *state) createSecurityGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	g := &fakeSecurityGroup{id: id, displayName: body.DisplayName, description: body.Description, state: "creating"}
+	g := &fakeSecurityGroup{
+		id: id, uid: o.newUID("security group", id),
+		displayName: body.DisplayName, description: body.Description, state: "creating",
+	}
 	if body.Tags != nil {
 		g.tags = *body.Tags
 	}
@@ -331,6 +335,11 @@ func validateRules(g *fakeSecurityGroup) string {
 	return ""
 }
 
+// securityGroupJSON is a group as API v1.3.0-rc.5 answers it (the
+// SecurityGroup model, services/compute/internal/model/security_group.go:175-208):
+// `uid` and both timestamps always, `ownerKind` and `ownerId` on a group the
+// platform owns, and a failure's detail in `statusReason`, the one field the
+// model has for it.
 func securityGroupJSON(g *fakeSecurityGroup) map[string]any {
 	// Never nil, either list: the contract declares both as present, and a
 	// provider that tolerated a missing one here would fault on a real server.
@@ -344,12 +353,17 @@ func securityGroupJSON(g *fakeSecurityGroup) map[string]any {
 
 	out := map[string]any{
 		"id":        g.id,
+		"uid":       g.uid,
 		"state":     g.state,
 		"selfLink":  "/v1/networking/security-groups/" + g.id,
 		"ruleCount": len(ingress) + len(egress),
 		"rules":     map[string]any{"ingress": ingress, "egress": egress},
+		"createdAt": fixedTime,
+		"updatedAt": fixedTime,
 	}
-	failureDetail(g.state, out)
+	if g.state == "failed" {
+		out["statusReason"] = "the fabric rejected the request"
+	}
 	if g.ownerKind != "" {
 		out["ownerKind"] = g.ownerKind
 		out["ownerId"] = g.ownerID
