@@ -20,7 +20,7 @@ import (
 
 // Every managed resource's replace and refuse decisions, every way into
 // them. The rules the resource docs, the import guide and the known
-// limitations state are written once, in wantPlan and in each kind's
+// limitations state are written once, in wantReplacePlan and in each kind's
 // changes, and every combination of how the resource came to be, which
 // attribute the configuration changes, and whether it permits a replacement
 // is planned through real Terraform and checked against them. Each plan step
@@ -156,7 +156,7 @@ type invKind struct {
 	unexercised map[string]string
 }
 
-// wantPlan is the rule for one combination: the plans it allows, of
+// wantReplacePlan is the rule for one combination: the plans it allows, of
 // "no-op", "update", "replace" and "create", or a refusal, with the error
 // that says so.
 //
@@ -177,7 +177,7 @@ type invKind struct {
 //     with secret_wo set, and only warned about without it (is_active doc).
 //     secret_wo is required to create or replace one (secret_wo doc), so
 //     without it a replacing change is refused.
-func wantPlan(k invKind, start invStart, c invChange, allow bool) ([]string, *regexp.Regexp) {
+func wantReplacePlan(k invKind, start invStart, c invChange, allow bool) ([]string, *regexp.Regexp) {
 	tainted := start == taintedWithToken || start == taintedNoToken
 	if c.rule == refused && (c.onCreate || !tainted) {
 		return []string{"refuse"}, c.refusal
@@ -310,7 +310,7 @@ func TestReplacementsFollowTheDocumentedRules(t *testing.T) {
 							if allow {
 								b = b.with("allow_replace", "allow_replace = true")
 							}
-							want, refusal := wantPlan(k, start, c, allow)
+							want, refusal := wantReplacePlan(k, start, c, allow)
 							what := fmt.Sprintf("%s, %s, allow_replace %v", start, c.label, allow)
 							if c.silent != "" {
 								what += " (doc silent, pinned: " + c.silent + ")"
@@ -361,7 +361,7 @@ func TestReplacementsFollowTheDocumentedRules(t *testing.T) {
 func (k invKind) destroySteps(start invStart, base block, render func(block) string) []destroyRow {
 	var rows []destroyRow
 	for _, c := range k.changes {
-		want, refusal := wantPlan(k, start, c, false)
+		want, refusal := wantReplacePlan(k, start, c, false)
 		if want[0] != "refuse" || c.rule == unchanged {
 			continue
 		}
