@@ -137,8 +137,8 @@ func TestAnInstanceGroupNamesItsExecutionInFlight(t *testing.T) {
 }
 
 // A pool created at size 0 is never reserved, so its ready counts stay absent
-// and the group never records progress. A pool with hosts has both once
-// provisioned.
+// and the group never records progress. A pool with hosts has both counts once
+// provisioned, and progress only while the create is in flight.
 func TestAPoolCreatedAtZeroHasNoCountsAndNoProgress(t *testing.T) {
 	for _, tc := range []struct {
 		size         int
@@ -146,6 +146,10 @@ func TestAPoolCreatedAtZeroHasNoCountsAndNoProgress(t *testing.T) {
 	}{{0, false, false}, {2, true, true}} {
 		s := newState()
 		_, created := in(t, s.createInstanceGroup, http.MethodPost, "r", "p", nil, groupSized(tc.size))
+		_, inFlight := in(t, s.getInstanceGroup, http.MethodGet, "r", "p", map[string]string{"id": "g"}, "")
+		if inFlight["state"] != "creating" {
+			t.Fatalf("size %d: state on the first read = %v, want creating", tc.size, inFlight["state"])
+		}
 		var active map[string]any
 		for i := 0; i < settleAfter+1; i++ {
 			_, active = in(t, s.getInstanceGroup, http.MethodGet, "r", "p", map[string]string{"id": "g"}, "")
@@ -159,10 +163,70 @@ func TestAPoolCreatedAtZeroHasNoCountsAndNoProgress(t *testing.T) {
 		if ready != tc.counts || notReady != tc.counts {
 			t.Errorf("size %d: pool %v, want counts present %v", tc.size, pool, tc.counts)
 		}
-		for name, body := range map[string]map[string]any{"create": created, "get": active} {
-			if _, ok := body["progressUpdatedAt"]; ok != tc.prog {
-				t.Errorf("size %d %s: progressUpdatedAt present %v, want %v", tc.size, name, ok, tc.prog)
+		for _, read := range []struct {
+			name string
+			body map[string]any
+			want bool
+		}{{"create", created, false}, {"read in flight", inFlight, tc.prog}, {"read once active", active, false}} {
+			if _, ok := read.body["progressUpdatedAt"]; ok != read.want {
+				t.Errorf("size %d %s: progressUpdatedAt present %v, want %v", tc.size, read.name, ok, read.want)
 			}
+		}
+	}
+}
+
+// A scale's answer has no progress yet, its reads while updating do, and the
+// group settled again has none.
+func TestAScaleHasProgressOnlyWhileUpdating(t *testing.T) {
+	s := newState()
+	g := map[string]string{"id": "g"}
+	in(t, s.createInstanceGroup, http.MethodPost, "r", "p", nil, groupSized(2))
+	for i := 0; i < settleAfter+1; i++ {
+		in(t, s.getInstanceGroup, http.MethodGet, "r", "p", g, "")
+	}
+	code, scaled := in(t, s.scaleInstanceGroup, http.MethodPost, "r", "p", g, `{"nodePools":[{"nodePool":"workers","size":3}]}`)
+	if code != http.StatusOK || scaled["state"] != "updating" {
+		t.Fatalf("scale: %d %v", code, scaled)
+	}
+	_, updating := in(t, s.getInstanceGroup, http.MethodGet, "r", "p", g, "")
+	var settled map[string]any
+	for i := 0; i < settleAfter+1; i++ {
+		_, settled = in(t, s.getInstanceGroup, http.MethodGet, "r", "p", g, "")
+	}
+	if updating["state"] != "updating" || settled["state"] != "active" {
+		t.Fatalf("states %v then %v, want updating then active", updating["state"], settled["state"])
+	}
+	for _, read := range []struct {
+		name string
+		body map[string]any
+		want bool
+	}{{"scale", scaled, false}, {"read while updating", updating, true}, {"read once active", settled, false}} {
+		if _, ok := read.body["progressUpdatedAt"]; ok != read.want {
+			t.Errorf("%s: progressUpdatedAt present %v, want %v", read.name, ok, read.want)
+		}
+	}
+}
+
+// A group whose create failed says why, in the three fields the real API
+// answers it with, and a group still creating says nothing.
+func TestAFailedGroupCreateSaysWhy(t *testing.T) {
+	s := newState()
+	g := map[string]string{"id": "g"}
+	body := `{"id":"g","clusterType":"` + inferenceRef + `/versions/` + inferenceV2 +
+		`","nodePools":[{"nodePool":"workers","size":2}],"displayName":"` + createFails + `"}`
+	_, created := in(t, s.createInstanceGroup, http.MethodPost, "r", "p", nil, body)
+	var failed map[string]any
+	for i := 0; i < settleAfter+1; i++ {
+		_, failed = in(t, s.getInstanceGroup, http.MethodGet, "r", "p", g, "")
+	}
+	if failed["state"] != "failed" || failed["stateReason"] != "INSUFFICIENT_CAPACITY" ||
+		failed["stateMessage"] == nil || failed["statusReason"] != failed["stateMessage"] {
+		t.Errorf("failed group: state %v, stateReason %v, stateMessage %v, statusReason %v",
+			failed["state"], failed["stateReason"], failed["stateMessage"], failed["statusReason"])
+	}
+	for _, key := range []string{"stateReason", "stateMessage", "statusReason"} {
+		if _, ok := created[key]; ok {
+			t.Errorf("creating group answers %s", key)
 		}
 	}
 }

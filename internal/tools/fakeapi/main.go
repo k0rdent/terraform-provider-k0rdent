@@ -463,7 +463,10 @@ type instanceGroup struct {
 	// progressed is whether a pool with hosts has reported in-flight
 	// progress, which is what stamps progressUpdatedAt. A group whose pools
 	// are all sized 0 reserves nothing and never has any.
-	progressed   bool
+	progressed bool
+	// createFailed is whether the group is `failed` because its create was,
+	// which is the failure it answers the detail of.
+	createFailed bool
 	opSeq        int    // operations started, which names each execution
 	execution    string // the current or last operation's execution id
 	state        string
@@ -2131,7 +2134,7 @@ func advanceGroup(_ *objects, g *instanceGroup) bool {
 		g.state = "failed"
 	case g.state == "creating" && nameCarries(g.displayName, createsForever):
 	case g.state == "creating" && nameCarries(g.displayName, createFails):
-		g.state = "failed"
+		g.state, g.createFailed = "failed", true
 	default:
 		g.state = "active"
 		g.provision()
@@ -2496,12 +2499,27 @@ func (s *state) groupBody(region string, g *instanceGroup) map[string]any {
 		"createdAt":      fixedTime,
 		"updatedAt":      fixedTime,
 	}
-	// Provisioning records per-pool progress from the first read on, but only
-	// for a pool with hosts to reserve: API v1.3.0-rc.5 stamps it as a pool's
-	// reservation reports progress, and a group of size-0 pools answered none
-	// on a kind stack.
-	if g.progressed {
+	// Per-pool progress is in flight only, and only for a pool with hosts to
+	// reserve. API v1.3.0-rc.5 leaves it NULL on the create and the scale
+	// that start an operation, stamps it as a pool's reservation reports
+	// progress (services/compute/db/queries/instance_group_reconciler.sql:121),
+	// and clears it when the group settles, `active` or `failed`
+	// (instance_group_callback.sql:76, and migration 000069's column
+	// comment). So it's here from the first read of a create or scale until
+	// the group settles, and a group of size-0 pools, which a kind stack
+	// answered with none, never has it.
+	if g.progressed && g.reads > 0 && (g.state == "creating" || g.state == "updating") {
 		body["progressUpdatedAt"] = fixedTime
+	}
+	// A failed create says why, as API v1.3.0-rc.5 answers it: the message
+	// twice, as `stateMessage` and `statusReason` from one column
+	// (services/compute/internal/service/instance_group_db_store.go:1438-1440),
+	// beside the reason. The words are the ones a kind stack with no hosts
+	// answered a create with.
+	if g.state == "failed" && g.createFailed {
+		const message = "the operation could not be completed: not enough capacity is available"
+		body["stateMessage"], body["statusReason"] = message, message
+		body["stateReason"] = "INSUFFICIENT_CAPACITY"
 	}
 	// "Present while state is `creating`, `updating`, or `deleting`, and
 	// while state is `failed` when an execution was attempted; absent when
