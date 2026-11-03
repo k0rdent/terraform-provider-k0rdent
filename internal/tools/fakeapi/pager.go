@@ -173,8 +173,9 @@ const (
 	// offsetRefused answers `offset` or `limit` with refuse.
 	offsetRefused
 	// offsetOneRow is `offset` alone, one row a page, with a 400 for one that
-	// isn't a non-negative integer and the count always present. A non-nil
-	// refuse answers a request that mixes in a cursor parameter.
+	// isn't a non-negative integer, and the count, `offset` and `limit` always
+	// present. A non-nil refuse answers a request that mixes in a cursor
+	// parameter.
 	offsetOneRow
 )
 
@@ -278,17 +279,26 @@ func (p pager) whole(w http.ResponseWriter, rows []any) {
 }
 
 func (p pager) oneRowPage(w http.ResponseWriter, q url.Values, rows []any) {
-	start := 0
+	offset := 0
 	if raw := q.Get("offset"); raw != "" {
 		n, err := strconv.Atoi(raw)
 		if err != nil || n < 0 {
 			apiError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "offset is not a non-negative integer")
 			return
 		}
-		start = min(n, len(rows))
+		offset = n
 	}
+	start := min(offset, len(rows))
 	end := min(start+1, len(rows))
-	writeJSON(w, http.StatusOK, map[string]any{p.key: rows[start:end], p.count: len(rows)})
+	// The page is one row whatever `limit` asks for, but `offset` and `limit`
+	// are echoed as the real offset path always does (API v1.3.0-rc.5,
+	// internal/apitypes/page.go:70-77), so a provider that stepped by the
+	// echoed limit rather than by the rows it got would skip rows here.
+	limit := offsetDefaultLimit
+	if n, err := strconv.Atoi(q.Get("limit")); err == nil && n > 0 {
+		limit = n
+	}
+	writeJSON(w, http.StatusOK, map[string]any{p.key: rows[start:end], p.count: len(rows), "offset": offset, "limit": limit})
 }
 
 // cursorPage answers one page on the cursor parameters. There's no

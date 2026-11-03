@@ -460,6 +460,15 @@ type instanceGroup struct {
 	sshAccess    []sshUser        // as keysAsCredentials stores them, echoed sorted by username
 	held         map[string]int32 // readyCount + notReadyCount
 	provisioning []string         // pools that change what they hold on settling
+	// progressed is whether a pool with hosts has reported in-flight
+	// progress, which is what stamps progressUpdatedAt. A group whose pools
+	// are all sized 0 reserves nothing and never has any.
+	progressed bool
+	// createFailed is whether the group is `failed` because its create was,
+	// which is the failure it answers the detail of.
+	createFailed bool
+	opSeq        int    // operations started, which names each execution
+	execution    string // the current or last operation's execution id
 	state        string
 	reads        int
 	refusals     int  // scales refused by a transient marker since the last admitted one
@@ -530,6 +539,7 @@ func newState() *state {
 	global := newObjects(scope{})
 	for _, seed := range projectSeeds {
 		p := seed
+		p.uid = global.newUID("project", p.id)
 		global.projects[at{id: p.id}] = &p
 	}
 	return &state{scopes: map[scope]*objects{{}: global}, organizations: seededOrganizations()}
@@ -1542,10 +1552,13 @@ func (s *state) scaleCluster(w http.ResponseWriter, r *http.Request) {
 
 func (c *cluster) start(message string, stages ...string) {
 	c.opSeq++
+	// The message goes to the event log only. The operation's own message
+	// is the cluster's stateMessage, as finish sets it: the real API answers
+	// none on a create or a delete in flight (recorded on a kind stack at
+	// API v1.3.0-rc.5).
 	c.op = &fakeOperation{
 		executionID: fmt.Sprintf("%s-op-%d", c.id, c.opSeq),
 		status:      "running",
-		message:     message,
 		startedAt:   fixedTime,
 		stages:      stages,
 	}
@@ -1566,8 +1579,10 @@ func (o *fakeOperation) json() map[string]any {
 	out := map[string]any{
 		"executionId": o.executionID,
 		"status":      o.status,
-		"message":     o.message,
 		"startedAt":   o.startedAt,
+	}
+	if o.message != "" {
+		out["message"] = o.message
 	}
 	if o.completedAt != "" {
 		out["completedAt"] = o.completedAt
@@ -1768,7 +1783,10 @@ func (s *state) clusterBody(region string, c *cluster, read bool) map[string]any
 		"uid":            c.uid,
 		"createdAt":      fixedTime,
 		"updatedAt":      fixedTime,
-		"health":         map[string]any{"state": "unknown"},
+		"health":         clusterHealth(c),
+		// On every Cluster answer, writes included (recorded on the
+		// v1.3.0-rc.5 kind stack: the create's 201 carries it).
+		"clusterTypeName": c.ct.displayName,
 	}
 	if c.op != nil {
 		body["operation"] = c.op.json()
@@ -1804,7 +1822,6 @@ func (s *state) clusterBody(region string, c *cluster, read bool) map[string]any
 		body["stateReason"] = c.stateReason
 	}
 	if read {
-		body["clusterTypeName"] = c.ct.displayName
 		// Populated on reads only, and omitted when nothing newer is
 		// available. This is the field the checklist names as the clearest
 		// case of one resource having several truthful shapes.
@@ -1813,6 +1830,21 @@ func (s *state) clusterBody(region string, c *cluster, read bool) map[string]any
 		}
 	}
 	return body
+}
+
+// clusterHealth is the health block, never observed here: `unknown` with
+// every optional field an explicit null, and while the cluster is created or
+// deleted the reason the verdict is withheld. Both as API v1.3.0-rc.5
+// answers them (recorded on a kind stack).
+func clusterHealth(c *cluster) map[string]any {
+	health := map[string]any{"state": "unknown", "reason": nil, "observedAt": nil, "expiresAt": nil}
+	switch c.state {
+	case "creating":
+		health["reason"] = "health assessment is withheld while the cluster is being created"
+	case "deleting":
+		health["reason"] = "health assessment is withheld while the cluster is being deleted"
+	}
+	return health
 }
 
 const (
@@ -2057,6 +2089,10 @@ func (s *state) createInstanceGroup(w http.ResponseWriter, r *http.Request) {
 		state:       "creating",
 	}
 	g.provisioning = sortedMapKeys(pools)
+	for _, size := range pools {
+		g.progressed = g.progressed || size > 0
+	}
+	g.run()
 	instanceGroupKind.put(o, "", id, g)
 	o.vpcForOwner("instance_group", id, g.uid)
 	writeJSON(w, http.StatusCreated, s.groupBody(region, g))
@@ -2098,7 +2134,7 @@ func advanceGroup(_ *objects, g *instanceGroup) bool {
 		g.state = "failed"
 	case g.state == "creating" && nameCarries(g.displayName, createsForever):
 	case g.state == "creating" && nameCarries(g.displayName, createFails):
-		g.state = "failed"
+		g.state, g.createFailed = "failed", true
 	default:
 		g.state = "active"
 		g.provision()
@@ -2236,12 +2272,25 @@ const scaleRefusalsBeforeAdmit = 2
 
 var refusedReason = regexp.MustCompile(regexp.QuoteMeta(scaleRefuses) + `([A-Z_]+)`)
 
-// provision records what the pools being provisioned now hold.
+// run starts an operation: create, scale or delete each run a workflow
+// execution, and the group names it while it is in flight.
+func (g *instanceGroup) run() {
+	g.opSeq++
+	g.execution = fmt.Sprintf("%s-op-%d", g.id, g.opSeq)
+}
+
+// provision records what the pools being provisioned now hold. A pool created
+// at size 0 is never reserved, so it holds no reservation to count and its
+// counts stay absent, as API v1.3.0-rc.5 answers it (recorded on a kind
+// stack): the real API publishes counts only for a pool with a reservation.
 func (g *instanceGroup) provision() {
 	if g.held == nil {
 		g.held = map[string]int32{}
 	}
 	for _, id := range g.provisioning {
+		if _, reserved := g.held[id]; !reserved && g.pools[id] == 0 {
+			continue
+		}
 		held := g.pools[id]
 		if nameCarries(g.displayName, poolShort) && held > 0 {
 			held--
@@ -2376,6 +2425,8 @@ func (s *state) scaleInstanceGroup(w http.ResponseWriter, r *http.Request) {
 		g.pools[pool] = grows[pool]
 		g.provisioning = append(g.provisioning, pool)
 	}
+	g.progressed = true
+	g.run()
 	g.state = "updating"
 	g.reads = 0
 	g.refusals = 0
@@ -2413,6 +2464,7 @@ func (s *state) deleteInstanceGroup(w http.ResponseWriter, r *http.Request) {
 	default:
 		instanceGroupKind.tearDown(o, where, g)
 		g.released = true
+		g.run()
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -2423,7 +2475,12 @@ func (s *state) groupBody(region string, g *instanceGroup) map[string]any {
 		size := g.pools[id]
 		// The response names the requested size `desiredCount`. Answering with
 		// the request's `size` would decode as the required field at zero.
-		pool := map[string]any{"nodePool": id, "desiredCount": size}
+		pool := map[string]any{
+			"nodePool": id, "desiredCount": size,
+			// The machine type the source ClusterType pool binds, the same
+			// URI the cluster type answers.
+			"machineType": "/v1/regions/" + region + "/compute/machine-types/fake-" + id,
+		}
 		// Read live from the reservation, so present in flight too, beside a
 		// desiredCount that is already the new target.
 		if held, ok := g.held[id]; ok {
@@ -2441,8 +2498,34 @@ func (s *state) groupBody(region string, g *instanceGroup) map[string]any {
 		"uid":            g.uid,
 		"createdAt":      fixedTime,
 		"updatedAt":      fixedTime,
-		// Provisioning records per-pool progress from the first read on.
-		"progressUpdatedAt": fixedTime,
+	}
+	// Per-pool progress is in flight only, and only for a pool with hosts to
+	// reserve. API v1.3.0-rc.5 leaves it NULL on the create and the scale
+	// that start an operation, stamps it as a pool's reservation reports
+	// progress (services/compute/db/queries/instance_group_reconciler.sql:121),
+	// and clears it when the group settles, `active` or `failed`
+	// (instance_group_callback.sql:76, and migration 000069's column
+	// comment). So it's here from the first read of a create or scale until
+	// the group settles, and a group of size-0 pools, which a kind stack
+	// answered with none, never has it.
+	if g.progressed && g.reads > 0 && (g.state == "creating" || g.state == "updating") {
+		body["progressUpdatedAt"] = fixedTime
+	}
+	// A failed create says why, as API v1.3.0-rc.5 answers it: the message
+	// twice, as `stateMessage` and `statusReason` from one column
+	// (services/compute/internal/service/instance_group_db_store.go:1438-1440),
+	// beside the reason. The words are the ones a kind stack with no hosts
+	// answered a create with.
+	if g.state == "failed" && g.createFailed {
+		const message = "the operation could not be completed: not enough capacity is available"
+		body["stateMessage"], body["statusReason"] = message, message
+		body["stateReason"] = "INSUFFICIENT_CAPACITY"
+	}
+	// "Present while state is `creating`, `updating`, or `deleting`, and
+	// while state is `failed` when an execution was attempted; absent when
+	// state is `active`."
+	if g.state != "active" && g.execution != "" {
+		body["executionId"] = g.execution
 	}
 	if g.displayName != nil {
 		body["displayName"] = *g.displayName

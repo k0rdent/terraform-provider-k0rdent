@@ -111,6 +111,23 @@ jobs:
       - name: no text that isn't for a public repository
         run: make public-text-check
 
+  # make real-api-check runs on a local kind stack with the real API, which
+  # public CI can't reach, and commits ci/real-api/record.json. This holds
+  # every pull request to that record: the fake it vouches for and the API
+  # version it ran against have to be this tree's. TESTING.md has how to run it.
+  real-api-record:
+    name: real API record
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: the fake was last checked against the real API at this tree and API version
+        run: make real-api-record-check
+      - name: the record check can still fail
+        run: make real-api-check-test
+
   # gitleaks over the tracked tree, and over every commit this event adds, so
   # a secret added then removed inside one pull request is still caught. The
   # CLI, pinned and checksum-checked by scripts/check-secrets.sh, not
