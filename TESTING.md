@@ -380,6 +380,22 @@ terraform plan -detailed-exitcode -var-file=../../.live/kept.tfvars
 terraform destroy -auto-approve -var-file=../../.live/kept.tfvars
 ```
 
+## Writing tests
+
+Three rules keep the suite fast to run and easy to trust:
+
+- Test each behavior at the lowest layer that can see it. A plan modifier's
+  decision is a unit test. An acceptance test checks only what needs
+  Terraform: the wire shape, state across a refresh, import, and the plan
+  the CLI shows.
+- Name the resource in the test's name, or in the subtest's when one test
+  covers several, such as `TestAccInstanceGroupSSHAccess`. A resource missing
+  a case then shows up in `go test -list`.
+- Delete a test only when every mutant it catches is caught by another test.
+  A mutant is the code with one line broken on purpose, such as a condition
+  negated. Two tests can run the same lines and check different things, so
+  matching coverage doesn't make a test redundant.
+
 ## Looks like a failure, isn't
 
 - **`make check` prints a long list under "Places a rename must edit".**
