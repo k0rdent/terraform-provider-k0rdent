@@ -43,8 +43,8 @@ func TestAccClusterSSHAccess(t *testing.T) {
 					resource.TestCheckTypeSetElemNestedAttrs(clusterAddr, "ssh_access.*", map[string]string{
 						"username":          "zoe",
 						"ssh_public_keys.#": "2",
-						"ssh_public_keys.0": "ssh-ed25519 zed",
-						"ssh_public_keys.1": "ssh-ed25519 abe",
+						"ssh_public_keys.0": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILtyRynZeYirXq5ccQxlj1Yu9ZEKlIxD2TfRiRXiGlgB zed",
+						"ssh_public_keys.1": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBmp6b9eead9KG+K/3fmxntRsFaanrf2V9865hkrILhL abe",
 						"sudo":              "ALL=(ALL) NOPASSWD:ALL",
 					}),
 					resource.TestCheckTypeSetElemNestedAttrs(clusterAddr, "ssh_access.*", map[string]string{
@@ -81,8 +81,7 @@ func TestAccClusterSSHAccess(t *testing.T) {
 // cluster, not a replacement, so the refresh that `terraform destroy` plans
 // first gets past the replacement guard, and the destroy that ends the test
 // succeeds. A configuration that drops `ssh_access`, and keeps the cluster
-// with `on_failed = "keep"`, agrees with the platform and records that in
-// place.
+// with `on_failed = "keep"`, leaves the users as state holds them.
 func TestAccClusterWhoseTeardownFailedStillDestroys(t *testing.T) {
 	const name = "acc-cluster-teardown-failed"
 	cluster := func(extra string) string {
@@ -130,7 +129,7 @@ resource %q "test" {
 			{
 				Config:           cluster("\n  on_failed = \"keep\""),
 				ConfigPlanChecks: expect(clusterAddr, plancheck.ResourceActionUpdate),
-				Check:            resource.TestCheckNoResourceAttr(clusterAddr, "ssh_access.#"),
+				Check:            resource.TestCheckResourceAttr(clusterAddr, "ssh_access.#", "1"),
 			},
 		},
 	})

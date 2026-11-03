@@ -160,10 +160,11 @@ func (d *instanceGroupDataSource) Schema(_ context.Context, _ datasource.SchemaR
 					"created without any, or when the platform does not return them.",
 				NestedObject: schema.NestedAttributeObject{
 					Attributes: map[string]schema.Attribute{
-						"username":        schema.StringAttribute{Computed: true, MarkdownDescription: sshUsernameDescription},
-						"ssh_public_keys": schema.ListAttribute{Computed: true, ElementType: types.StringType, MarkdownDescription: sshPublicKeysDescription},
-						"sudo":            schema.StringAttribute{Computed: true, MarkdownDescription: sshSudoDescription},
-						"display_name":    schema.StringAttribute{Computed: true, MarkdownDescription: sshDisplayNameDescription},
+						"username":            schema.StringAttribute{Computed: true, MarkdownDescription: sshUsernameDescription},
+						"ssh_public_keys":     schema.ListAttribute{Computed: true, ElementType: types.StringType, MarkdownDescription: sshPublicKeysDescription},
+						"ssh_public_key_refs": schema.ListAttribute{Computed: true, ElementType: types.StringType, MarkdownDescription: sshCredentialsDescription},
+						"sudo":                schema.StringAttribute{Computed: true, MarkdownDescription: sshSudoDescription},
+						"display_name":        schema.StringAttribute{Computed: true, MarkdownDescription: sshDisplayNameDescription},
 					},
 				},
 			},
