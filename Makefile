@@ -100,7 +100,34 @@ test: ## Unit tests
 testacc: ## Acceptance tests: each resource's own lifecycle against the local fake. TF_BIN=tofu for OpenTofu
 	@tf="$$(command -v $(TF_BIN))" || { echo "testacc: $(TF_BIN) is not on PATH" >&2; exit 1; }; \
 	echo "testacc: $$("$$tf" version | head -1) at $$tf"; \
-	TF_ACC=1 TF_ACC_TERRAFORM_PATH="$$tf" go test ./internal/acceptance/ -count=1 -timeout 20m
+	TF_ACC=1 TF_ACC_TERRAFORM_PATH="$$tf" go test ./internal/acceptance/ -count=1 -timeout 20m $(TESTACC_ARGS)
+
+# The testing matrix, docs/testing-matrix.md: for every resource attribute,
+# the tests that import it, change it and upgrade it. The acceptance suite
+# runs with the recorder in internal/testmatrix on, which writes down what
+# each test made the provider do, and the check in internal/repocheck builds
+# the page from that record. testacc-matrix is CI's acceptance step: it fails
+# when the page isn't what the run saw. testing-matrix rewrites the page. The
+# record stays in .testing-matrix/, so testing-matrix-page can rewrite the
+# page from it again, after a change to the gap list, without the suite.
+MATRIX_RECORD := $(CURDIR)/.testing-matrix/record.jsonl
+MATRIX_CHECK  := go test ./internal/repocheck/ -count=1 -run '^TestTheTestingMatrixIsCurrent$$' -args -matrix-record="$(MATRIX_RECORD)"
+
+.PHONY: testacc-matrix
+testacc-matrix: ## make testacc with the testing matrix recorder on, then check docs/testing-matrix.md against what it saw
+	@mkdir -p "$(dir $(MATRIX_RECORD))"
+	$(MAKE) --no-print-directory testacc TESTACC_ARGS='-args -matrix-record="$(MATRIX_RECORD)"'
+	$(MATRIX_CHECK)
+
+.PHONY: testing-matrix
+testing-matrix: ## Run the acceptance suite with the recorder on and rewrite docs/testing-matrix.md from what it saw
+	@mkdir -p "$(dir $(MATRIX_RECORD))"
+	$(MAKE) --no-print-directory testacc TESTACC_ARGS='-args -matrix-record="$(MATRIX_RECORD)"'
+	$(MATRIX_CHECK) -update-matrix
+
+.PHONY: testing-matrix-page
+testing-matrix-page: ## Rewrite docs/testing-matrix.md from the record the last testing-matrix or testacc-matrix left
+	$(MATRIX_CHECK) -update-matrix
 
 # The perpetual-diff check on its own, so the nightly can name it when it
 # fails: every managed resource applied, then planned, refreshed and planned
