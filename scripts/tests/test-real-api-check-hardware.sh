@@ -68,15 +68,37 @@ wait_for() {
   fail "the run never printed \"$2\""
 }
 
-# clusters_left prints the ids of the clusters a hardware run left on the
-# stand-in.
-clusters_left() {
-  local tok
+# left_on_standin <run id> prints "<kind> <id>" for each object the stand-in
+# still holds whose id starts with <run id>, the way the summary names them.
+left_on_standin() {
+  local tok kind
   tok="$(curl -sS -m 10 -X POST "$LAND/v1/regions/global/auth/token" -H 'Content-Type: application/json' \
     --data "{\"grant_type\":\"client_credentials\",\"client_id\":\"$FAKE_CLIENT_ID\",\"client_secret\":\"$FAKE_CLIENT_SECRET\"}" \
     | python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])')" || fail "no token from the stand-in"
-  printf 'Authorization: Bearer %s\n' "$tok" | curl -sS -m 10 -H @- "$LAND/v1/regions/us-texas-1/projects/demo/compute/clusters" \
-    | python3 -c 'import json,sys; [print(c["id"]) for c in json.load(sys.stdin).get("clusters") or [] if c["id"].startswith("rapi-hw-")]'
+  for kind in compute/clusters:clusters compute/instance-groups:instanceGroups storage/file-stores:fileStores \
+      networking/networks:networks networking/security-groups:securityGroups; do
+    printf 'Authorization: Bearer %s\n' "$tok" | curl -sS -m 10 -H @- "$LAND/v1/regions/us-texas-1/projects/demo/${kind%%:*}?limit=100" \
+      | python3 -c 'import json,sys; [print(sys.argv[1], o["id"]) for o in json.load(sys.stdin).get(sys.argv[2]) or [] if o["id"].startswith(sys.argv[3])]' \
+        "${kind#*/}" "${kind#*:}" "$1" | sed 's/:[^ ]* / /'
+  done
+}
+
+# says_what_is_left <output> <run dir>: the summary names every object the
+# stand-in still holds for the run, and says nothing is left only when that's
+# so. A create that a kill interrupts with its request in flight leaves an
+# object no state holds when its id is set in configuration, as the
+# walkthrough's file store is, so a killed run may leave one.
+says_what_is_left() {
+  local left kind id
+  left="$(left_on_standin "$(basename "$2")")"
+  if [ -z "$left" ]; then
+    has "$1" "nothing left on ${LAND#http://} from this run"
+    return
+  fi
+  has "$1" "the landscape still has, named for this run:"
+  while read -r kind id; do
+    grep -q "^ *$kind $id\$" "$1" || { cat "$1" >&2; fail "the stand-in still holds $kind $id, and the summary doesn't say so"; }
+  done <<< "$left"
 }
 
 # --- a run that passes writes the record --------------------------------------
@@ -91,6 +113,7 @@ for step in preflight build real/look real/full-everything-apply real/full-every
 done
 has "$out" "real/full-everything-apply: [0-9]*[sm] so far, still creating k0rdent_"
 has "$out" "nothing left on ${LAND#http://} from this run"
+[ -z "$(left_on_standin "$(basename "$run")")" ] || fail "a run that passed left $(left_on_standin "$(basename "$run")")"
 record="$repo/ci/real-api/hardware-record.json"
 [ -f "$record" ] || fail "a run that passed wrote no record"
 RECORD="$record" python3 -c '
@@ -108,7 +131,6 @@ if "127.0.0.1" in json.dumps(r):
     problems.append("the record names the host")
 if problems:
     sys.exit("; ".join(problems))' || fail "the record is wrong"
-[ -z "$(clusters_left)" ] || fail "a run that passed left clusters: $(clusters_left)"
 rm -f "$record"
 
 # --- a run killed while it creates cleans up ----------------------------------
@@ -126,8 +148,7 @@ rc=$?
 run="$(the_run "$out")"
 has "$run/results.txt" "^STOP  real/full-everything-apply"
 has "$run/results.txt" "^PASS  cleanup real/full-everything"
-has "$out" "nothing left on ${LAND#http://} from this run"
-[ -z "$(clusters_left)" ] || fail "a killed run left clusters: $(clusters_left)"
+says_what_is_left "$out" "$run"
 [ ! -f "$record" ] || fail "a killed run wrote a record"
 [ ! -d "$repo/.real-api/hardware/${LAND#http://}.lock" ] || fail "a killed run left its lock"
 
@@ -155,7 +176,7 @@ if grep -q 'Two interrupts received' "$run/real/full-everything-apply.log"; then
 fi
 has "$run/real/full-everything-apply.log" "Interrupt received"
 has "$run/results.txt" "^PASS  cleanup real/full-everything"
-[ -z "$(clusters_left)" ] || fail "a run stopped with ctrl-C left clusters: $(clusters_left)"
+says_what_is_left "$out" "$run"
 
 # --- a run whose landscape goes away lists what it left -----------------------
 
