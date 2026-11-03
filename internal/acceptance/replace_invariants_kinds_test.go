@@ -15,10 +15,11 @@ var (
 	// The cluster's refusal of an earlier version (known-limitations: "An
 	// earlier version fails the plan").
 	earlierVersion = regexp.MustCompile(`Cannot move the cluster to a different version of its ClusterType`)
-	// A region its project isn't in. Doc silent: the "What replaces it"
-	// paragraph says allow_replace permits a region change, and the region
-	// attribute says a resource can't move between regions. This pins the
-	// refusal.
+	// A region its project isn't in, refused even with allow_replace, since a
+	// project is locked to one region (known-limitations: "A refused plan
+	// stops `terraform destroy` too", and the region attribute: a resource
+	// can't move between regions). allow_replace permits a region change only
+	// with a project in that region.
 	regionNotProjects = regexp.MustCompile(`This resource's region isn't its project's`)
 	shrink            = regexp.MustCompile(`A file store cannot be shrunk`)
 	cantHoldProject   = regexp.MustCompile(`This region can't hold a project`)

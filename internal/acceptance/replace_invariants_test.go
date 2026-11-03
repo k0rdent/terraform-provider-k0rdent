@@ -350,11 +350,11 @@ func TestReplacementsFollowTheDocumentedRules(t *testing.T) {
 // runs first. terraform-plugin-testing's own destroy at the end passes
 // -refresh=false, so it never runs that plan (mistakes log, Class 1).
 //
-//   - Doc silent for the guard: a configuration whose change the guard
-//     refuses refuses `terraform destroy` too, since destroy runs that plan
-//     first. The guard's error text says so and that -refresh=false passes,
-//     and known-limitations says it for a refused cluster version. The
-//     test's own destroy, with -refresh=false, then has to remove it.
+//   - A configuration whose change the guard refuses refuses `terraform
+//     destroy` too, since destroy runs that plan first: "A refused plan stops
+//     `terraform destroy` too" in docs/known-limitations.md, and the guard's
+//     error text, which names -refresh=false. The test's own destroy, with
+//     -refresh=false, then has to remove it.
 //   - With the start's configuration the destroy passes, from every start
 //     (Class 1), except a tainted cluster with no create token, which the
 //     cluster description says refuses destroy until it's untainted.
