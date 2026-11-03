@@ -1,24 +1,5 @@
 [
   {
-    "operation": "GET /v1/regions/global/projects 200",
-    "field": "response $.limit",
-    "side": "real",
-    "reason": "Not read: ProjectPage.Limit has no use in internal/provider; readProjects (list_calls.go:175) reads only Projects and TotalCount and pages by its own offset and limit."
-  },
-  {
-    "operation": "GET /v1/regions/global/projects 200",
-    "field": "response $.offset",
-    "side": "real",
-    "reason": "Not read: ProjectPage.Offset has no use in internal/provider; readProjects (list_calls.go:175) reads only Projects and TotalCount."
-  },
-  {
-    "operation": "GET /v1/regions/global/projects 200",
-    "field": "response $.projects[].updatedAt",
-    "side": "real",
-    "reason": "Not read: Project.UpdatedAt has no use in internal/provider."
-  },
-
-  {
     "operation": "GET /v1/regions/{region}/compute/cluster-types/{id} 200",
     "field": "response $.createdAt",
     "side": "real",
@@ -92,12 +73,6 @@
   },
   {
     "operation": "GET /v1/regions/{region}/compute/cluster-types/{id} 200",
-    "field": "response $.description",
-    "side": "fake",
-    "reason": "Fixture data: optional, and the kind type rc5-ct-subnets has none. Read at datasource_cluster_types.go:366 through stringOrNull, so absent reads as null; the real leg of drift-proof.sh read it absent and its apply, replan, import and destroy passed. No named test reads it absent."
-  },
-  {
-    "operation": "GET /v1/regions/{region}/compute/cluster-types/{id} 200",
     "field": "response $.nodePools[].displayName",
     "side": "fake",
     "reason": "Fixture data: optional, and the kind type's one pool has none. Read at datasource_cluster_types.go:382 through stringOrNull; the real leg of drift-proof.sh read it absent and passed. No named test reads it absent."
@@ -113,13 +88,6 @@
     "field": "response $.nodePools[].nodeCountMax",
     "side": "type",
     "reason": "Fixture data: the kind type's pool has no upper bound (null). Read at datasource_cluster_types.go:387 through int64OrNull and in cluster_upgrade.go:112 and :121, both nil-checked; the real leg of drift-proof.sh read null and passed. No named test reads a null bound."
-  },
-
-  {
-    "operation": "GET /v1/regions/{region}/compute/cluster-types/{id}/versions 200",
-    "field": "response $.versions[].description",
-    "side": "fake",
-    "reason": "Fixture data: optional, and the kind type's version has none. Read at datasource_cluster_type_versions.go:214 through stringOrNull; the fake answers it absent too, for gpu-inference v1. No named test reads it absent."
   },
 
   {
@@ -193,12 +161,6 @@
     "field": "response $.nodePools[].versionIntroduced",
     "side": "real",
     "reason": "Not read: ClusterTypeNodePool.VersionIntroduced has no use in internal/provider."
-  },
-  {
-    "operation": "GET /v1/regions/{region}/compute/cluster-types/{id}/versions/{versionId} 200",
-    "field": "response $.description",
-    "side": "fake",
-    "reason": "Fixture data: optional, and the kind type has none. Read at datasource_cluster_type_versions.go:423 through stringOrNull; the real leg of drift-proof.sh read it absent and passed. No named test reads it absent."
   },
   {
     "operation": "GET /v1/regions/{region}/compute/cluster-types/{id}/versions/{versionId} 200",
@@ -326,5 +288,304 @@
     "field": "response $.serialConsole*",
     "side": "real",
     "reason": "Not read: InstanceGroup.SerialConsole and its fields have no use in internal/provider."
+  },
+
+  {
+    "operation": "GET /v1/regions/global/notifications/webhooks 200",
+    "field": "response $.subscriptions[].failing_since",
+    "side": "type",
+    "reason": "Landscape data: the walkthrough's subscription points at https://hooks.example.com/k0rdent (scripts/lib/walkthrough.sh:119), which kind's notifications service fails to reach, so the real list carries a failing_since time. The fake delivers nothing and answers null. Read at datasource_webhook_subscriptions.go:131 (WebhookSubscription.FailingSince, types.gen.go:12237). The fake answers a time for a subscription the platform disabled and for a churning one (webhooks.go:139-140, :461-462), and TestWebhookDisabledByThePlatform reads it."
+  },
+
+  {
+    "operation": "GET /v1/regions/global/organizations/{orgId}/quota 200",
+    "field": "response $.dimensions[]*",
+    "side": "fake",
+    "reason": "Landscape data: the kind stack's organization has no quota limits, so the real view is `dimensions: []` with no profile, which API v1.3.0-rc.5 leaves out when the target has no limits (services/organizations/internal/model/quota_view.go:151-159). Read at datasource_tenant_quota.go:262-293 (TenantQuotaView, types.gen.go:11808), which nil-checks the profile and loops over the rows, so an empty view reads as none. The fake's view is the one the acceptance tests read. No named test reads an empty view."
+  },
+  {
+    "operation": "GET /v1/regions/global/organizations/{orgId}/quota 200",
+    "field": "response $.profile*",
+    "side": "fake",
+    "reason": "Landscape data: the kind stack's organization has no quota limits, so the real view is `dimensions: []` with no profile, which API v1.3.0-rc.5 leaves out when the target has no limits (services/organizations/internal/model/quota_view.go:151-159). Read at datasource_tenant_quota.go:262-293 (TenantQuotaView, types.gen.go:11808), which nil-checks the profile and loops over the rows, so an empty view reads as none. The fake's view is the one the acceptance tests read. No named test reads an empty view."
+  },
+
+  {
+    "operation": "GET /v1/regions/global/organizations/{orgId}/projects/{id}/quota 200",
+    "field": "response $.dimensions[]*",
+    "side": "fake",
+    "reason": "Landscape data: the kind stack's organization has no quota limits, so the real view is `dimensions: []` with no profile, which API v1.3.0-rc.5 leaves out when the target has no limits (services/organizations/internal/model/quota_view.go:151-159). Read at datasource_tenant_quota.go:262-293 (TenantQuotaView, types.gen.go:11808), which nil-checks the profile and loops over the rows, so an empty view reads as none. The fake's view is the one the acceptance tests read. No named test reads an empty view."
+  },
+  {
+    "operation": "GET /v1/regions/global/organizations/{orgId}/projects/{id}/quota 200",
+    "field": "response $.profile*",
+    "side": "fake",
+    "reason": "Landscape data: the kind stack's organization has no quota limits, so the real view is `dimensions: []` with no profile, which API v1.3.0-rc.5 leaves out when the target has no limits (services/organizations/internal/model/quota_view.go:151-159). Read at datasource_tenant_quota.go:262-293 (TenantQuotaView, types.gen.go:11808), which nil-checks the profile and loops over the rows, so an empty view reads as none. The fake's view is the one the acceptance tests read. No named test reads an empty view."
+  },
+
+  {
+    "operation": "GET /v1/regions/{region}/compute/cluster-types 200",
+    "field": "response $.clusterTypes[].createdAt",
+    "side": "real",
+    "reason": "Not read: ClusterTypeSummary.CreatedAt (types.gen.go:5499) has no use in internal/provider."
+  },
+  {
+    "operation": "GET /v1/regions/{region}/compute/cluster-types 200",
+    "field": "response $.clusterTypes[].updatedAt",
+    "side": "real",
+    "reason": "Not read: ClusterTypeSummary.UpdatedAt (types.gen.go:5526) has no use in internal/provider."
+  },
+  {
+    "operation": "GET /v1/regions/{region}/compute/cluster-types 200",
+    "field": "response $.clusterTypes[].uid",
+    "side": "real",
+    "reason": "Not read: ClusterTypeSummary.Uid (types.gen.go:5525) has no use in internal/provider."
+  },
+  {
+    "operation": "GET /v1/regions/{region}/compute/cluster-types 200",
+    "field": "response $.clusterTypes[].versionId",
+    "side": "real",
+    "reason": "Not read: ClusterTypeSummary.VersionId (types.gen.go:5532) has no use in internal/provider."
+  },
+  {
+    "operation": "GET /v1/regions/{region}/compute/cluster-types 200",
+    "field": "response $.clusterTypes[].k8s*",
+    "side": "real",
+    "reason": "Not read: ClusterTypeSummary.K8s and its controlPlane.type (types.gen.go:5514-5516) have no use in internal/provider. The cluster types data source reads only id, displayName, description, selfLink, status and version (datasource_cluster_types.go:187-199)."
+  },
+
+  {
+    "operation": "GET /v1/regions/{region}/networking/address-pools 200",
+    "field": "response $.addressPools[].createdAt",
+    "side": "real",
+    "reason": "Not read: AddressPool.CreatedAt (types.gen.go:4388) has no use in internal/provider."
+  },
+  {
+    "operation": "GET /v1/regions/{region}/networking/address-pools 200",
+    "field": "response $.addressPools[].updatedAt",
+    "side": "real",
+    "reason": "Not read: AddressPool.UpdatedAt (types.gen.go:4437) has no use in internal/provider."
+  },
+  {
+    "operation": "GET /v1/regions/{region}/networking/address-pools 200",
+    "field": "response $.addressPools[].uid",
+    "side": "real",
+    "reason": "Not read: AddressPool.Uid (types.gen.go:4434) has no use in internal/provider."
+  },
+  {
+    "operation": "GET /v1/regions/{region}/networking/address-pools 200",
+    "field": "response $.addressPools[].excludeRanges[]",
+    "side": "fake",
+    "reason": "Fixture data: both sides answer the required excludeRanges array, and only the fake's `vip` pool excludes an address (networking.go:764). Every kind pool excludes none. Read at datasource_address_pools.go:319 (AddressPool.ExcludeRanges, types.gen.go:4397). The fake's 500 other pools answer `[]`, so the provider reads both shapes there."
+  },
+
+  {
+    "operation": "GET /v1/regions/{region}/networking/address-pools/{id} 200",
+    "field": "response $.createdAt",
+    "side": "real",
+    "reason": "Not read: AddressPool.CreatedAt (types.gen.go:4388) has no use in internal/provider."
+  },
+  {
+    "operation": "GET /v1/regions/{region}/networking/address-pools/{id} 200",
+    "field": "response $.updatedAt",
+    "side": "real",
+    "reason": "Not read: AddressPool.UpdatedAt (types.gen.go:4437) has no use in internal/provider."
+  },
+  {
+    "operation": "GET /v1/regions/{region}/networking/address-pools/{id} 200",
+    "field": "response $.uid",
+    "side": "real",
+    "reason": "Not read: AddressPool.Uid (types.gen.go:4434) has no use in internal/provider."
+  },
+
+  {
+    "operation": "GET /v1/regions/{region}/projects/{project}/compute/clusters/{clusterId}/kubeconfigs 200",
+    "field": "response $.kubeconfigs[].displayName",
+    "side": "real",
+    "reason": "Not read: Kubeconfig.DisplayName (types.gen.go:8503) has no use in internal/provider."
+  },
+  {
+    "operation": "GET /v1/regions/{region}/projects/{project}/compute/clusters/{clusterId}/kubeconfigs 200",
+    "field": "response $.kubeconfigs[].uid",
+    "side": "real",
+    "reason": "Not read: Kubeconfig.Uid (types.gen.go:8521) has no use in internal/provider."
+  },
+
+  {
+    "operation": "GET /v1/regions/{region}/projects/{project}/compute/clusters/{id} 200",
+    "field": "response $.operation.stages*",
+    "side": "real",
+    "reason": "Not read: Operation.Stages and every OperationStage field (types.gen.go:9834, 9901-9918) have no use in internal/provider."
+  },
+
+  {
+    "operation": "GET /v1/regions/{region}/projects/{project}/compute/instance-groups/{id} 200",
+    "field": "response $.nodePools[].readyCount",
+    "side": "fake",
+    "reason": "Landscape data: kind has no hosts, so the walkthrough group with hosts failed INSUFFICIENT_CAPACITY (the run's full-everything apply log) and never reserved a pool or reported progress. The fake's hosts provision. Read at datasource_instance_group.go:226, :234-235 and resource_instance_group.go:869. The fake answers neither counts nor progress on a pool created at 0 (TestAPoolCreatedAtZeroHasNoCountsAndNoProgress) and no progress once a group settles (TestAScaleHasProgressOnlyWhileUpdating)."
+  },
+  {
+    "operation": "GET /v1/regions/{region}/projects/{project}/compute/instance-groups/{id} 200",
+    "field": "response $.nodePools[].notReadyCount",
+    "side": "fake",
+    "reason": "Landscape data: kind has no hosts, so the walkthrough group with hosts failed INSUFFICIENT_CAPACITY (the run's full-everything apply log) and never reserved a pool or reported progress. The fake's hosts provision. Read at datasource_instance_group.go:226, :234-235 and resource_instance_group.go:869. The fake answers neither counts nor progress on a pool created at 0 (TestAPoolCreatedAtZeroHasNoCountsAndNoProgress) and no progress once a group settles (TestAScaleHasProgressOnlyWhileUpdating)."
+  },
+  {
+    "operation": "GET /v1/regions/{region}/projects/{project}/compute/instance-groups/{id} 200",
+    "field": "response $.progressUpdatedAt",
+    "side": "fake",
+    "reason": "Landscape data: kind has no hosts, so the walkthrough group with hosts failed INSUFFICIENT_CAPACITY (the run's full-everything apply log) and never reserved a pool or reported progress. The fake's hosts provision. Read at datasource_instance_group.go:226, :234-235 and resource_instance_group.go:869. The fake answers neither counts nor progress on a pool created at 0 (TestAPoolCreatedAtZeroHasNoCountsAndNoProgress) and no progress once a group settles (TestAScaleHasProgressOnlyWhileUpdating)."
+  },
+  {
+    "operation": "GET /v1/regions/{region}/projects/{project}/compute/instance-groups/{id} 200",
+    "field": "response $.stateMessage",
+    "side": "real",
+    "reason": "Landscape data: the real group failed INSUFFICIENT_CAPACITY because kind has no hosts, and the fake's walkthrough groups provision. API v1.3.0-rc.5 answers stateMessage and statusReason from one column beside stateReason (services/compute/internal/service/instance_group_db_store.go:1438-1440), and the fake answers all three for a group whose create fails (TestAFailedGroupCreateSaysWhy). stateMessage and stateReason are read at datasource_instance_group.go:221, :225 and resource_instance_group.go:1066. InstanceGroup.StatusReason (types.gen.go:8269) has no use."
+  },
+  {
+    "operation": "GET /v1/regions/{region}/projects/{project}/compute/instance-groups/{id} 200",
+    "field": "response $.stateReason",
+    "side": "real",
+    "reason": "Landscape data: the real group failed INSUFFICIENT_CAPACITY because kind has no hosts, and the fake's walkthrough groups provision. API v1.3.0-rc.5 answers stateMessage and statusReason from one column beside stateReason (services/compute/internal/service/instance_group_db_store.go:1438-1440), and the fake answers all three for a group whose create fails (TestAFailedGroupCreateSaysWhy). stateMessage and stateReason are read at datasource_instance_group.go:221, :225 and resource_instance_group.go:1066. InstanceGroup.StatusReason (types.gen.go:8269) has no use."
+  },
+  {
+    "operation": "GET /v1/regions/{region}/projects/{project}/compute/instance-groups/{id} 200",
+    "field": "response $.statusReason",
+    "side": "real",
+    "reason": "Landscape data: the real group failed INSUFFICIENT_CAPACITY because kind has no hosts, and the fake's walkthrough groups provision. API v1.3.0-rc.5 answers stateMessage and statusReason from one column beside stateReason (services/compute/internal/service/instance_group_db_store.go:1438-1440), and the fake answers all three for a group whose create fails (TestAFailedGroupCreateSaysWhy). stateMessage and stateReason are read at datasource_instance_group.go:221, :225 and resource_instance_group.go:1066. InstanceGroup.StatusReason (types.gen.go:8269) has no use."
+  },
+
+  {
+    "operation": "GET /v1/regions/{region}/projects/{project}/compute/instances 200",
+    "field": "response $.instances[]*",
+    "side": "fake",
+    "reason": "Landscape data: the real group failed before it held a host, so every real page was `instances: []`. Read at datasource_instances.go:181-201 (Instance, types.gen.go:7875). The fake's hosts are the ones the acceptance tests read."
+  },
+
+  {
+    "operation": "GET /v1/regions/{region}/projects/{project}/networking/networks 200",
+    "field": "response $.networks[].systemTags.managed-by",
+    "side": "fake",
+    "reason": "Deliberate hazard: the fake adds a server-owned tag beside the tenant's (networking.go networkJSON), so a provider that folded systemTags into tags would plan its removal. The real tenant network answers systemTags as {}. Not read: the systemTags of NetworkEVPN, NetworkInfiniBand and NetworkNVLink (types.gen.go:9093, 9193, 9284) have no use in internal/provider."
+  },
+  {
+    "operation": "GET /v1/regions/{region}/projects/{project}/networking/networks/{id} 200",
+    "field": "response $.systemTags.managed-by",
+    "side": "fake",
+    "reason": "Deliberate hazard: the fake adds a server-owned tag beside the tenant's (networking.go networkJSON), so a provider that folded systemTags into tags would plan its removal. The real tenant network answers systemTags as {}. Not read: the systemTags of NetworkEVPN, NetworkInfiniBand and NetworkNVLink (types.gen.go:9093, 9193, 9284) have no use in internal/provider."
+  },
+  {
+    "operation": "POST /v1/regions/{region}/projects/{project}/networking/networks 201",
+    "field": "response $.systemTags.managed-by",
+    "side": "fake",
+    "reason": "Deliberate hazard: the fake adds a server-owned tag beside the tenant's (networking.go networkJSON), so a provider that folded systemTags into tags would plan its removal. The real tenant network answers systemTags as {}. Not read: the systemTags of NetworkEVPN, NetworkInfiniBand and NetworkNVLink (types.gen.go:9093, 9193, 9284) have no use in internal/provider."
+  },
+
+  {
+    "operation": "GET /v1/regions/{region}/projects/{project}/networking/security-groups/{id} 200",
+    "field": "response $.ownerId",
+    "side": "real",
+    "reason": "Landscape data: the real leg read two VPC default groups by id, both of VPCs already in the kind project (the recorded paths end in -default), and only a platform-owned group answers these (services/compute/internal/model/security_group.go:181-187). The fake's walkthroughs read only tenant groups, and the fake answers both on a VPC's default group (security.go securityGroupJSON, TestEachVPCGetsItsOwnDefaultGroup). Read at datasource_managed_singulars.go:486-489."
+  },
+  {
+    "operation": "GET /v1/regions/{region}/projects/{project}/networking/security-groups/{id} 200",
+    "field": "response $.ownerKind",
+    "side": "real",
+    "reason": "Landscape data: the real leg read two VPC default groups by id, both of VPCs already in the kind project (the recorded paths end in -default), and only a platform-owned group answers these (services/compute/internal/model/security_group.go:181-187). The fake's walkthroughs read only tenant groups, and the fake answers both on a VPC's default group (security.go securityGroupJSON, TestEachVPCGetsItsOwnDefaultGroup). Read at datasource_managed_singulars.go:486-489."
+  },
+
+  {
+    "operation": "GET /v1/regions/{region}/projects/{project}/networking/security-groups-effective 200",
+    "field": "response $.vpcs[].securityGroupRules.*",
+    "side": "real",
+    "reason": "Not read: EffectiveSecurityGroupsVPC.SecurityGroupRules and its rules (types.gen.go:6759, 6610-6677) have no use in internal/provider. The fake answers both lists empty."
+  },
+
+  {
+    "operation": "GET /v1/regions/{region}/projects/{project}/networking/vpcs/{id} 200",
+    "field": "response $.createdAt",
+    "side": "real",
+    "reason": "Not read: VPC.CreatedAt (types.gen.go:11910) has no use in internal/provider."
+  },
+  {
+    "operation": "GET /v1/regions/{region}/projects/{project}/networking/vpcs/{id} 200",
+    "field": "response $.updatedAt",
+    "side": "real",
+    "reason": "Not read: VPC.UpdatedAt (types.gen.go:11997) has no use in internal/provider."
+  },
+  {
+    "operation": "GET /v1/regions/{region}/projects/{project}/networking/vpcs/{id} 200",
+    "field": "response $.projectId",
+    "side": "real",
+    "reason": "Not read: VPC.ProjectId (types.gen.go:11925) has no use in internal/provider."
+  },
+  {
+    "operation": "GET /v1/regions/{region}/projects/{project}/networking/vpcs/{id} 200",
+    "field": "response $.region",
+    "side": "real",
+    "reason": "Not read: VPC.Region (types.gen.go:11928) has no use in internal/provider."
+  },
+  {
+    "operation": "GET /v1/regions/{region}/projects/{project}/networking/vpcs/{id} 200",
+    "field": "response $.schemaEntryId",
+    "side": "real",
+    "reason": "Not read: VPC.SchemaEntryId (types.gen.go:11931) has no use in internal/provider."
+  },
+  {
+    "operation": "GET /v1/regions/{region}/projects/{project}/networking/vpcs/{id} 200",
+    "field": "response $.systemTags",
+    "side": "real",
+    "reason": "Not read: VPC.SystemTags (types.gen.go:11988) has no use in internal/provider."
+  },
+
+  {
+    "operation": "POST /v1/regions/{region}/projects/{project}/networking/vpcs/{id} 202",
+    "field": "response $.createdAt",
+    "side": "real",
+    "reason": "Not read: VPC.CreatedAt (types.gen.go:11910) has no use in internal/provider."
+  },
+  {
+    "operation": "POST /v1/regions/{region}/projects/{project}/networking/vpcs/{id} 202",
+    "field": "response $.updatedAt",
+    "side": "real",
+    "reason": "Not read: VPC.UpdatedAt (types.gen.go:11997) has no use in internal/provider."
+  },
+  {
+    "operation": "POST /v1/regions/{region}/projects/{project}/networking/vpcs/{id} 202",
+    "field": "response $.projectId",
+    "side": "real",
+    "reason": "Not read: VPC.ProjectId (types.gen.go:11925) has no use in internal/provider."
+  },
+  {
+    "operation": "POST /v1/regions/{region}/projects/{project}/networking/vpcs/{id} 202",
+    "field": "response $.region",
+    "side": "real",
+    "reason": "Not read: VPC.Region (types.gen.go:11928) has no use in internal/provider."
+  },
+  {
+    "operation": "POST /v1/regions/{region}/projects/{project}/networking/vpcs/{id} 202",
+    "field": "response $.schemaEntryId",
+    "side": "real",
+    "reason": "Not read: VPC.SchemaEntryId (types.gen.go:11931) has no use in internal/provider."
+  },
+  {
+    "operation": "POST /v1/regions/{region}/projects/{project}/networking/vpcs/{id} 202",
+    "field": "response $.systemTags",
+    "side": "real",
+    "reason": "Not read: VPC.SystemTags (types.gen.go:11988) has no use in internal/provider."
+  },
+
+  {
+    "operation": "GET /v1/regions/{region}/projects/{project}/networking/vpcs/{vpcId}/peerings 200",
+    "field": "response $.peerings[]*",
+    "side": "fake",
+    "reason": "Run gap: the real leg made no peering (its POST is recorded on the fake only). The walkthrough's peerings need the instance group's VPC (examples/walkthrough/full/main.tf:537-543), and the real group failed for want of hosts, so every real page was `peerings: []`. Read at datasource_security_groups.go:443-459 and datasource_managed_singulars.go:589-601."
+  },
+
+  {
+    "operation": "GET /v1/regions/{region}/storage/share-types 200",
+    "field": "response $.shareTypes[]*",
+    "side": "fake",
+    "reason": "Landscape data: the stack runs no storage service (the no-file-store gap the run names), so every real page was `shareTypes: []`. Read at datasource_share_types.go:160-312 (ShareType, types.gen.go:11476). The fake's catalog is what the acceptance tests read."
   }
 ]
