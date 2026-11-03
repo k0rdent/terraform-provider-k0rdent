@@ -32,6 +32,7 @@ getInstance
 getInstanceGroup
 getNetwork
 getOrganization
+getProjectCredential
 getProjectInOrg
 getProjectQuota
 getSecurityGroup

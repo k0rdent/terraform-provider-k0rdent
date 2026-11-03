@@ -34,6 +34,7 @@ import (
 var notAnIdentifier = map[string]string{
 	"description":            "free text, sent in a request body",
 	"display_name":           "free text, sent in a request body",
+	"ssh_public_key_refs":    "self-links sent in a request body, each checked against the contract's pattern at plan time",
 	"status":                 "a filter value from a fixed list, sent as a query parameter",
 	"state":                  "a filter value from a fixed list, sent as a query parameter or compared in the provider",
 	"display_name_regex":     "a regular expression, compared in the provider and never sent",

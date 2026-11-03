@@ -184,13 +184,25 @@ var stateHistories = map[string]stateHistory{
 				"their users.",
 			// What a plan does with a cluster the platform reports `failed`.
 			// A state the last release wrote reads null there, which means
-			// `wait`.
-			addedLater: map[string]string{"on_failed": `"string"`},
+			// `wait`. The write-only keys are never stored, and the
+			// references read null until the next refresh fills them.
+			addedLater: map[string]string{
+				"on_failed":                      `"string"`,
+				"ssh_public_keys_wo":             `["map",["list","string"]]`,
+				"ssh_access.ssh_public_key_refs": `["list","string"]`,
+			},
 		}},
 		formerNames: []formerName{preReleaseName(clusterResourceSuffix)},
 	},
 	instanceGroupResourceSuffix: {
-		steps:       []stateStep{versionDeclared},
+		steps: []stateStep{{
+			why: versionDeclared.why,
+			// Never stored, and read null until the next refresh.
+			addedLater: map[string]string{
+				"ssh_public_keys_wo":             `["map",["list","string"]]`,
+				"ssh_access.ssh_public_key_refs": `["list","string"]`,
+			},
+		}},
 		formerNames: []formerName{preReleaseName(instanceGroupResourceSuffix)},
 	},
 	networkResourceSuffix:           {steps: []stateStep{versionDeclared, tagsAllAdded}},

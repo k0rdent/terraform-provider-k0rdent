@@ -92,6 +92,66 @@ changes nothing on the platform:
 - **A tag set both in `tags` and in the provider's `default_tags`**, to the
   same value. The import gives it to the defaults.
 - **`allow_replace` and `timeouts`**, which never reach the platform.
+- **SSH keys written in a user's `ssh_public_keys`**, on a cluster or an
+  instance group. The platform answers references to the keys, not the keys,
+  so the import records the configured keys once it has checked them against
+  the platform (see below). Write the keys in `ssh_public_keys_wo` instead and
+  the plan is empty.
+
+`ssh_public_keys_wo` is write-only, so it needs Terraform 1.11 or OpenTofu
+1.11 or later.
+
+The provider checks the configured keys, in either attribute, against the
+keys on the nodes. After a create it has the keys it sent. After an import it
+reads each key's fingerprint from the platform. A different key plans a
+replacement, since the platform sets keys only when nodes are made.
+
+Reading a fingerprint needs `credentials.metadata.read` bound in the
+resource's project. Resources the account creates need nothing, since the
+provider checks them against the keys it sent. A binding across the
+organization doesn't reach its projects, because the platform passes only
+compute roles down. So an organization-scoped account, such as the one the
+walkthrough uses, needs the role bound in each project it imports into.
+
+The narrowest role holds only that permission, and can't read a credential's
+secret or change one. An organization admin creates it once, with
+`POST /v1/regions/global/organizations/<org>/iam/roles`:
+
+```json
+{
+  "id": "ssh-key-reader",
+  "displayName": "SSH key reader",
+  "permissions": ["credentials.metadata.read"],
+  "scopes": ["project"]
+}
+```
+
+Then binds it in each project, with
+`POST /v1/regions/global/organizations/<org>/iam/policies`:
+
+```json
+{
+  "role": "ssh-key-reader",
+  "principal": { "type": "serviceAccount", "id": "<service account id>" },
+  "scope": { "type": "project", "resource": "<project>" }
+}
+```
+
+The built-in `credentials-admin` also has the permission, but it can change
+and revoke credentials too.
+
+Without it:
+
+- The import warns that it can't check the keys.
+- A plan that sets keys warns and shows an update. The apply stops with an
+  error and changes nothing.
+- Leaving the keys out plans clean. `ssh_access` keeps the platform's users
+  and keys.
+- A destroy runs as usual.
+
+A key whose credential is revoked in the console warns on every plan. Revoking
+can't take a key off nodes that are running, so they still accept it. To
+remove it, change the key, which replaces the resource.
 
 A security group binding that holds only its VPC's default group imports as
 `security_groups = []`. Write it that way to plan clean. Naming the default

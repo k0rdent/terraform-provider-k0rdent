@@ -57,6 +57,7 @@ type instanceGroupModel struct {
 	Description         types.String `tfsdk:"description"`
 	NodePool            types.Map    `tfsdk:"node_pool"`
 	SSHAccess           types.Set    `tfsdk:"ssh_access"`
+	SSHPublicKeysWO     types.Map    `tfsdk:"ssh_public_keys_wo"`
 	// SSHAccessHeld is a read's note that it kept ssh_access the platform
 	// answered blank. Not stored in state: see teardown_read.go.
 	SSHAccessHeld bool           `tfsdk:"-"`
@@ -205,20 +206,25 @@ func (r *instanceGroupResource) Schema(ctx context.Context, _ resource.SchemaReq
 			},
 			"ssh_access": schema.SetNestedAttribute{
 				Optional: true,
+				Computed: true,
 				MarkdownDescription: "Linux users written onto every host in the group when it is provisioned, " +
 					"each with the public keys allowed to log in as that user. Up to " +
 					fmt.Sprint(k0rdent.InstanceGroupCreateRequestSshAccessMaxItems) + " users. Only public keys " +
 					"go here. The contract says the platform never stores or generates a private key.\n\n" +
-					"Set it. A group with no SSH keys can fail with `INVALID_CONFIGURATION`.\n\n" +
-					"**Changing it replaces the whole group**, unless it's left out or empty and the " +
+					"Set it on a create. A group with no SSH keys can fail with `INVALID_CONFIGURATION`. A " +
+					"user's keys can go in `ssh_public_keys_wo` in place of its `ssh_public_keys`, so an import " +
+					"with the same configuration plans clean.\n\n" +
+					"Left out, it's read from the platform and changes nothing, so an import without it plans " +
+					"clean. **Changing it replaces the whole group**, unless it's empty and the " +
 					"platform already reports no users. The platform returns the users sorted " +
 					"by username, so the order they are written in here makes no difference.",
 				Validators: []validator.Set{setvalidator.SizeAtMost(k0rdent.InstanceGroupCreateRequestSshAccessMaxItems)},
-				PlanModifiers: []planmodifier.Set{setplanmodifier.RequiresReplaceIf(sshAccessRequiresReplace,
+				PlanModifiers: []planmodifier.Set{setplanmodifier.UseStateForUnknown(), refsByUsername{}, setplanmodifier.RequiresReplaceIf(sshAccessRequiresReplace,
 					"replaced when it changes, unless the platform already reports none and none is configured",
 					"replaced when it changes, unless the platform already reports none and none is configured")},
 				NestedObject: sshUserNestedObject(),
 			},
+			"ssh_public_keys_wo": sshPublicKeysWOAttribute(),
 			"state": schema.StringAttribute{
 				Computed:            true,
 				MarkdownDescription: "Lifecycle state as last read from the platform.",
@@ -301,13 +307,17 @@ func (r *instanceGroupResource) ModifyPlan(ctx context.Context, req resource.Mod
 	if resp.Diagnostics.HasError() {
 		return
 	}
+	checkConfiguredKeys(ctx, req, &resp.Diagnostics)
+	planNoUsersWhenLeftOut(ctx, req, resp)
 
 	if req.State.Raw.IsNull() || req.Plan.Raw.IsNull() {
 		return
 	}
+	planNoChangeOverUnreadAttributes(req, resp)
 	// A create an earlier apply stopped waiting for plans an update that
 	// waits for it, though nothing in the configuration moved.
 	planResume(ctx, req, resp)
+	replaceOnChangedKeys(ctx, req, resp)
 	if resp.Plan.Raw.Equal(req.State.Raw) {
 		return
 	}
@@ -356,7 +366,9 @@ func (r *instanceGroupResource) Create(ctx context.Context, req resource.CreateR
 		addCreateKeyError(&resp.Diagnostics, "instance group", err)
 		return
 	}
-	sshAccess, diags := sshAccessRequest(ctx, plan.SSHAccess)
+	writeOnly, _, diags := configuredWriteOnlyKeys(ctx, req.Config)
+	resp.Diagnostics.Append(diags...)
+	sshAccess, diags := sshAccessRequest(ctx, plan.SSHAccess, writeOnly)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -426,11 +438,16 @@ func (r *instanceGroupResource) Create(ctx context.Context, req resource.CreateR
 				})
 		},
 		read: func(ctx context.Context, id string) (instanceGroupModel, bool, diag.Diagnostics) {
-			return r.read(ctx, target, id, plan)
+			m, found, diags := r.read(ctx, target, id, plan)
+			m.SSHAccess = sshAccessWithoutUnknownCredentials(ctx, m.SSHAccess, &diags)
+			return m, found, diags
 		},
 	}.run(ctx, create, req.Plan, &resp.State, resp.Private, &resp.Diagnostics)
 	if found {
 		resp.Diagnostics.Append(recordUID(ctx, resp.Private, created.uid)...)
+	}
+	if !resp.State.Raw.IsNull() {
+		resp.Diagnostics.Append(saveFingerprints(ctx, resp.Private, fingerprintsOf(sentKeys(sshAccess)))...)
 	}
 }
 
@@ -464,10 +481,15 @@ func (r *instanceGroupResource) Read(ctx context.Context, req resource.ReadReque
 	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 	resp.Diagnostics.Append(recordReleased(ctx, resp.Private, state.SSHAccessHeld)...)
+	resp.Diagnostics.Append(holdKeysInState(ctx, resp.Private, state.SSHAccess)...)
+	resp.Diagnostics.Append(holdPlatformFingerprints(ctx, r.meta, resp.Private, state.SSHAccess, prior.SSHAccess.IsNull())...)
 }
 
 func (r *instanceGroupResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
 	defer syncIdentity(ctx, r.meta, resp.Identity, &resp.Diagnostics, &resp.State)
+	if refuseUncheckedKeys(ctx, req.Private, &resp.Diagnostics) {
+		return
+	}
 	var plan, state instanceGroupModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
@@ -945,6 +967,8 @@ func instanceGroupStateFrom(ctx context.Context, g k0rdent.InstanceGroup, prior 
 		SelfLink:            stringOrNull(g.SelfLink),
 		ClusterTypeResolved: types.StringValue(g.ClusterType),
 		State:               types.StringNull(),
+		// Write-only: never held in state.
+		SSHPublicKeysWO: types.MapNull(types.ListType{ElemType: types.StringType}),
 	}
 	if g.State != nil {
 		out.State = types.StringValue(string(*g.State))

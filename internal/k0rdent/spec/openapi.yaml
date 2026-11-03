@@ -62,6 +62,14 @@ tags:
       access. Service accounts are independent principals with their own
       identity, role bindings, and credentials. They survive user
       off-boarding and are managed exclusively by tenant administrators.
+  - name: credentials
+    description: |
+      Credentials service. Manage the lifecycle of credentials the
+      platform issues and accepts — issue, read metadata, read material (a
+      separate permission), and delete. Rotate and revoke are declared but not
+      yet implemented and currently return 501. The administrator surface is
+      platform-scoped; the tenant surface is project-scoped and never exposes
+      platform/admin-owned credentials.
 paths:
   /v1/regions/{region}/compute/cluster-types:
     parameters:
@@ -6031,6 +6039,46 @@ paths:
           $ref: '#/components/responses/UnprocessableEntity'
         '500':
           $ref: '#/components/responses/InternalServerError'
+  /v1/regions/{region}/projects/{project}/credentials/{id}:
+    parameters:
+      - $ref: '#/components/parameters/RegionPathParam'
+      - $ref: '#/components/parameters/ProjectPathParam'
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Credential identifier.
+    get:
+      operationId: getProjectCredential
+      summary: Get project credential metadata
+      description: |
+        **Visibility:** `public` (x-visibility)
+
+        Return one project-scoped credential's metadata. Never returns
+        material. A credential outside this project's scope — including any
+        platform/admin-owned credential — returns 404 with no acknowledgement of its
+        existence.
+      tags:
+        - credentials
+      x-visibility:
+        - public
+      x-status: mvp
+      responses:
+        '200':
+          description: Credential metadata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CredentialRecord'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
 components:
   securitySchemes:
     bearerAuth:
@@ -9075,6 +9123,139 @@ components:
         created_at:
           type: string
           format: date-time
+    CredentialOperation:
+      type: object
+      description: |
+        In-flight or most recent lifecycle operation on a credential. Absent when the
+        credential has never had an operation.
+      properties:
+        type:
+          type: string
+          enum:
+            - rotation
+            - revocation
+            - resourcerevocation
+          example: rotation
+        generation:
+          type: integer
+          format: int64
+          description: Monotonic generation counter that keys the actuation workflow.
+          example: 1
+        status:
+          type: string
+          enum:
+            - ongoing
+            - failed
+            - ok
+          example: ok
+        failureReason:
+          type: string
+          description: Failure detail; present when status is `failed`.
+        startedAt:
+          type: string
+          format: date-time
+    CredentialRecord:
+      type: object
+      description: |
+        Credential metadata record. The stable, long-lived record for a
+        credential; its `id` never changes across rotations. Material never appears on
+        this resource — it is fetched only through the dedicated get-material operation.
+      required:
+        - id
+        - type
+        - scope
+        - state
+        - currentVersion
+        - placement
+      properties:
+        id:
+          type: string
+          description: Stable server-generated credential identifier, immutable across rotations.
+          readOnly: true
+          example: mcred-01j9x2a7f3k8m6q4r5t8v0w1y2
+        type:
+          type: string
+          description: Credential type from the compile-time type registry.
+          example: ssh_public_key
+        scope:
+          type: string
+          description: >-
+            Owning scope. `platform` credentials are administrator-only; `project` credentials belong to a tenant project.
+          enum:
+            - platform
+            - project
+          example: project
+        orgId:
+          type: string
+          description: Owning organization (derived from the project for project-scoped credentials).
+          example: acme
+        projectId:
+          type: string
+          description: Owning project, present for project-scoped credentials.
+          example: web
+        description:
+          type: string
+          description: Optional human-friendly description.
+          example: CI push token
+        state:
+          type: string
+          description: Lifecycle state. Monotonic; never regresses.
+          enum:
+            - PENDING
+            - ACTIVE
+            - REVOKED
+            - DELETED
+          example: ACTIVE
+        operation:
+          $ref: '#/components/schemas/CredentialOperation'
+        currentVersion:
+          type: integer
+          description: Current material version counter, incremented on rotation.
+          example: 1
+        lastRotatedAt:
+          type: string
+          format: date-time
+          description: Timestamp of the last successful rotation, if any.
+        rotationSchedule:
+          type: string
+          description: Rotation schedule — modeled but not enforced at this release.
+        expiresAt:
+          type: string
+          format: date-time
+          description: Expiry, for types that support it.
+        placement:
+          type: string
+          description: >-
+            Instance that stores and serves the credential — `global` or `region:<id>`. Set by the issuing instance and immutable thereafter.
+          readOnly: true
+          example: region:us-texas-1
+        materialAttributes:
+          type: object
+          description: Non-secret attributes derived from the material at issue time, present only for types that define them.
+          readOnly: true
+          additionalProperties:
+            type: string
+          properties:
+            fingerprint:
+              type: string
+              description: SHA256 fingerprint of the SSH public key.
+              example: SHA256:uNiVztksCsDhcc0u9e8BujQXVUpKZIDTMczCvj3tD2s
+            keyType:
+              type: string
+              description: SSH public key algorithm.
+              example: ssh-ed25519
+            comment:
+              type: string
+              description: Comment from the supplied SSH public key line, if any.
+              example: alice@laptop
+        createdAt:
+          type: string
+          format: date-time
+          readOnly: true
+        updatedAt:
+          type: string
+          format: date-time
+          readOnly: true
     EffectiveSecurityGroup:
       type: object
       description: |
@@ -17176,3 +17357,6 @@ x-tagGroups:
     tags:
       - roles
       - serviceaccounts
+  - name: Credentials
+    tags:
+      - credentials
