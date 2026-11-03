@@ -148,7 +148,11 @@ func TestALongEventLogSaysItStoppedReading(t *testing.T) {
 		api.events.lines = append(api.events.lines, eventAt(i, "error", fmt.Sprint("line ", i)))
 	}
 	resp := runUpgrade(t, api, 5, 2)
-	detail := resp.Diagnostics.Errors()[0].Detail()
+	errs := resp.Diagnostics.Errors()
+	if len(errs) == 0 {
+		t.Fatalf("an upgrade that fails reported success, with no error to quote the event log in: %v", resp.Diagnostics)
+	}
+	detail := errs[0].Detail()
 	last := runtimeEventPages*runtimeEventPageSize - 1
 	if !strings.Contains(detail, fmt.Sprint("line ", last)) || !strings.Contains(detail, "later ones may follow") {
 		t.Errorf("diagnostic:\n%s", detail)
@@ -163,7 +167,11 @@ func TestAQuietEventLogSaysSo(t *testing.T) {
 	api := &upgradeAPI{bound: 2, state: "active", workers: 2, failInto: 5}
 	api.events.lines = []map[string]any{eventAt(0, "info", "started")}
 	resp := runUpgrade(t, api, 5, 2)
-	if detail := resp.Diagnostics.Errors()[0].Detail(); !strings.Contains(detail, "records no warning or error") {
+	errs := resp.Diagnostics.Errors()
+	if len(errs) == 0 {
+		t.Fatalf("an upgrade that fails reported success, with no error to quote the event log in: %v", resp.Diagnostics)
+	}
+	if detail := errs[0].Detail(); !strings.Contains(detail, "records no warning or error") {
 		t.Errorf("diagnostic:\n%s", detail)
 	}
 }
