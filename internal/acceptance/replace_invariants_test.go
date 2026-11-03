@@ -525,9 +525,11 @@ func shortKind(typ string) string {
 // The rows name every attribute the docs say replaces each resource, and the
 // lists the rows are written from are the docs' own. The "What replaces it"
 // paragraph is generated from the schema, so a RequiresReplace added without
-// a row fails here, and one removed fails the rows that plan it.
+// a row fails here, and one removed fails the rows that plan it. The
+// paragraph names the attributes any change to replaces, then those only
+// some changes to do, and the list here is both.
 func TestReplacementRulesNameEveryDocumentedAttribute(t *testing.T) {
-	paragraph := regexp.MustCompile(`\*\*What replaces it\.\*\* Changing (.*?) cannot be done in place`)
+	paragraph := regexp.MustCompile(`\*\*What replaces it\.\*\*( Changing (.*?) cannot be done in place[^.]*\.)?( Some changes to (.*?) replace )?`)
 	quoted := regexp.MustCompile("`([a-z_]+)`")
 	for _, k := range invKinds() {
 		t.Run(k.typ, func(t *testing.T) {
@@ -536,13 +538,14 @@ func TestReplacementRulesNameEveryDocumentedAttribute(t *testing.T) {
 				t.Fatal(err)
 			}
 			m := paragraph.FindSubmatch(doc)
-			if m == nil {
+			if m == nil || len(m[2])+len(m[4]) == 0 {
 				t.Fatal("the doc has no \"What replaces it\" paragraph")
 			}
 			var documented []string
-			for _, a := range quoted.FindAllSubmatch(m[1], -1) {
+			for _, a := range quoted.FindAllSubmatch(append(append([]byte{}, m[2]...), m[4]...), -1) {
 				documented = append(documented, string(a[1]))
 			}
+			slices.Sort(documented)
 			if !slices.Equal(documented, k.replacing) {
 				t.Errorf("the doc says %v replace the %s, the rows are written from %v", documented, k.noun, k.replacing)
 			}

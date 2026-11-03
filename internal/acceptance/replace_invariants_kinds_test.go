@@ -65,8 +65,9 @@ func invKinds() []invKind {
 			changes: append(scopeRows(`id = "acc-inv-renamed"`),
 				invChange{label: "display_name", rule: changesInPlace, edit: set("display_name", q("display_name", "inv-renamed"))},
 				// known-limitations: pinning a later version upgrades in place.
-				// Doc silent for a failed cluster: the on_failed doc says the
-				// platform doesn't upgrade one, not that the plan refuses it.
+				// cluster_type doc, and on_failed's: while the platform reports
+				// the cluster `failed`, a plan that pins another version of its
+				// ClusterType fails, whatever on_failed and allow_replace say.
 				invChange{label: "cluster_type, the next version", rule: changesInPlace, whenFailed: earlierVersion,
 					edit: set("cluster_type", q("cluster_type", clusterTypeRef+"/versions/33333333-3333-3333-3333-333333333333"))},
 				// known-limitations: an earlier version fails the plan.
@@ -105,9 +106,10 @@ func invKinds() []invKind {
 			},
 			changes: append(scopeRows(`id = "acc-inv-renamed"`),
 				invChange{label: "display_name", rule: changesInPlace, edit: set("display_name", q("display_name", "inv-renamed"))},
-				// Doc silent: the doc lists node_pool with no exception. The API
-				// scales a group up only, so a larger size scales in place.
-				invChange{label: "node_pool, a larger size", rule: changesInPlace, silent: "growth is in place",
+				// node_pool doc and the "What replaces it" paragraph: node_pool
+				// is replaced when a pool shrinks, or when pools are added or
+				// removed, and scaled in place when a pool grows.
+				invChange{label: "node_pool, a larger size", rule: changesInPlace,
 					edit: set("node_pool", `node_pool = { "gpu-workers" = { size = 3 } }`)},
 				invChange{label: "node_pool, a smaller size", attr: "node_pool", rule: replaces,
 					edit: set("node_pool", `node_pool = { "gpu-workers" = { size = 1 } }`)},
@@ -310,10 +312,10 @@ resource %[1]q "other" {
 				invChange{label: "vpc", attr: "vpc", rule: replaces, edit: set("vpc", q("vpc", "vpc-elsewhere"))},
 				invChange{label: "remote_vpc, another VPC", attr: "remote_vpc", rule: replaces,
 					edit: set("remote_vpc", q("remote_vpc", "/v1/regions/us-texas-1/projects/other/networking/vpcs/vpc-training"))},
-				// remote_vpc: the same VPC spelled another way doesn't replace
-				// (remoteVPCRequiresReplace). Doc silent: the remote_vpc doc
-				// doesn't say it.
-				invChange{label: "remote_vpc, the same VPC as a URL", rule: changesInPlace, silent: "another spelling is in place",
+				// remote_vpc doc: moving between an id, a self_link, and a path
+				// or absolute URL that name the same VPC replaces nothing, and
+				// the plan is an in-place update.
+				invChange{label: "remote_vpc, the same VPC as a URL", rule: changesInPlace,
 					edit: func(b block) block {
 						return b.with("remote_vpc", q("remote_vpc", endpoint+"/v1/regions/us-texas-1/projects/other/networking/vpcs/vpc-inference"))
 					}},

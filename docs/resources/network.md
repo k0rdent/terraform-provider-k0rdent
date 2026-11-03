@@ -7,7 +7,7 @@ description: |-
   Exactly one of evpn, infiniband or nvlink must be set, and it is the one that decides the network's type. Everything except display_name, description and tags is immutable: the API offers no way to change a fabric in place, so a change anywhere else replaces the network.
   Networks created by a cluster are not managed here. They carry a cluster_id, and the tenant API answers 409 to any write against them.
   Requires region and project on the provider.
-  What replaces it. Changing evpn, id, infiniband, nvlink, project or region cannot be done in place and replaces the network. A network carries the subnets and interfaces tenant workloads attach to, and a replacement deletes it and allocates a new fabric segment. So a plan that would replace it fails and names the attribute, unless allow_replace = true is set on the resource. Everything else changes in place.
+  What replaces it. Changing id, nvlink, project or region cannot be done in place and replaces the network. Some changes to evpn or infiniband replace it too, and the others are made in place. evpn: replaces the network unless the only difference is a vlan_id the allocated id satisfies. infiniband: replaces the network, except for a pkey an import could not record. A network carries the subnets and interfaces tenant workloads attach to, and a replacement deletes it and allocates a new fabric segment. So a plan that would replace it fails and names the attribute, unless allow_replace = true is set on the resource. Everything else changes in place.
 ---
 
 # k0rdent_network (Resource)
@@ -20,7 +20,7 @@ Networks created by a cluster are not managed here. They carry a `cluster_id`, a
 
 Requires `region` and `project` on the provider.
 
-**What replaces it.** Changing `evpn`, `id`, `infiniband`, `nvlink`, `project` or `region` cannot be done in place and replaces the network. A network carries the subnets and interfaces tenant workloads attach to, and a replacement deletes it and allocates a new fabric segment. So a plan that would replace it fails and names the attribute, unless `allow_replace = true` is set on the resource. Everything else changes in place.
+**What replaces it.** Changing `id`, `nvlink`, `project` or `region` cannot be done in place and replaces the network. Some changes to `evpn` or `infiniband` replace it too, and the others are made in place. `evpn`: replaces the network unless the only difference is a `vlan_id` the allocated id satisfies. `infiniband`: replaces the network, except for a `pkey` an import could not record. A network carries the subnets and interfaces tenant workloads attach to, and a replacement deletes it and allocates a new fabric segment. So a plan that would replace it fails and names the attribute, unless `allow_replace = true` is set on the resource. Everything else changes in place.
 
 ## Example Usage
 

@@ -199,8 +199,8 @@ func (r *instanceGroupResource) Schema(ctx context.Context, _ resource.SchemaReq
 					mapplanmodifier.UseStateForUnknown(),
 					mapplanmodifier.RequiresReplaceIf(
 						instanceGroupPoolsRequireReplace,
-						"replaced when a pool shrinks, or when pools are added or removed",
-						"replaced when a pool shrinks, or when pools are added or removed",
+						"replaced when a pool shrinks, or when pools are added or removed, and scaled in place when a pool grows",
+						"replaced when a pool shrinks, or when pools are added or removed, and scaled in place when a pool grows",
 					),
 				},
 			},
