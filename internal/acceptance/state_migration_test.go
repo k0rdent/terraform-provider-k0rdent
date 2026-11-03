@@ -149,7 +149,7 @@ func (w *migrationWorkspace) run(args ...string) (int, string) {
 	w.t.Helper()
 	cmd := exec.Command(w.terraform, append(args, "-no-color")...) //nolint:gosec // the terraform under test
 	cmd.Dir = w.dir
-	cmd.Env = w.env
+	cmd.Env = append(append([]string(nil), w.env...), matrixTestEnv(w.t)...)
 	var out bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &out
 	err := cmd.Run()

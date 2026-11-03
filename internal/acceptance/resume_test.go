@@ -124,6 +124,7 @@ func (c *cliRun) command(args ...string) *exec.Cmd {
 	cmd.Dir = c.dir
 	cmd.Env = append(quietEnviron(), "TF_CLI_CONFIG_FILE="+c.rc, "TF_IN_AUTOMATION=1", "TF_INPUT=0",
 		"CHECKPOINT_DISABLE=1")
+	cmd.Env = append(cmd.Env, matrixTestEnv(c.t)...)
 	return cmd
 }
 

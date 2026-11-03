@@ -160,6 +160,7 @@ func TestAccAKilledCreateIsTakenBackByTheImportItsErrorGives(t *testing.T) {
 	apply.Dir = c.dir
 	apply.Env = append(quietEnviron(), "TF_CLI_CONFIG_FILE="+c.rc, "TF_IN_AUTOMATION=1", "TF_INPUT=0",
 		"CHECKPOINT_DISABLE=1")
+	apply.Env = append(apply.Env, matrixTestEnv(t)...)
 	if err := apply.Start(); err != nil {
 		t.Fatal(err)
 	}
