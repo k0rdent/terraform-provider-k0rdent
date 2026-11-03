@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"net/http"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -45,6 +46,7 @@ type fakeProject struct {
 	description string
 	status      string
 	createdAt   time.Time
+	updatedAt   time.Time // createdAt until a PATCH moves it
 	// Reads since the last DELETE while `deleting`. The teardown finishes on
 	// the teardownReads-th, which leaves room for a destroy to find the
 	// project still `deleting` after an earlier one gave up.
@@ -119,16 +121,65 @@ func seededOrganizations() map[string]bool {
 // listed its organization and an API key is listed none, and a service
 // account is unmeasured. The fake mints the same token for both grants, so it
 // models the credential the list includes.
+//
+// Every field API v1.3.0-rc.5 answers on a get and on a full list row
+// (services/organizations/internal/model/model.go:169-205): `description` and
+// `version` always, as "" and a number when there's nothing more to say, and
+// both counts, which only a row cut to its identity leaves out. The fake keeps
+// no members or invitations, so both counts are 0.
 func organizationBody(id string) map[string]any {
 	return map[string]any{
-		"id":          id,
-		"uid":         uidFor(scope{"global", ""}, "organization", id),
-		"displayName": strings.TrimPrefix(id, "org-"),
-		"status":      "active",
-		"labels":      map[string]any{},
-		"createdAt":   "2026-01-01T00:00:00Z",
-		"selfLink":    "/v1/regions/global/organizations/" + id,
+		"id":                 id,
+		"uid":                uidFor(scope{"global", ""}, "organization", id),
+		"displayName":        strings.TrimPrefix(id, "org-"),
+		"description":        organizationDescriptions[id],
+		"status":             "active",
+		"labels":             map[string]any{},
+		"version":            1,
+		"memberCount":        0,
+		"pendingInviteCount": 0,
+		"createdAt":          "2026-01-01T00:00:00Z",
+		"updatedAt":          "2026-01-01T00:00:00Z",
+		"selfLink":           "/v1/regions/global/organizations/" + id,
 	}
+}
+
+// organizationDescriptions: one organization with a description and one
+// answering "", as the real API does for an organization without one, so the
+// provider reads both.
+var organizationDescriptions = map[string]string{"org-demo": "The organization the fake's projects are in"}
+
+// projectSummaryPreview is how many projects a get previews, newest first
+// (model.go:314, ProjectSummaryPreviewLimit).
+const projectSummaryPreview = 5
+
+// projectSummary is an organization get's `projectSummary`: the counts and the
+// newest projects, as GetProjectSummary builds them (organization.go:920-975).
+// The caller holds s.mu.
+func (s *state) projectSummary(org string) map[string]any {
+	var mine []*fakeProject
+	active := 0
+	for _, p := range projectKind.under(s.global(), "") {
+		if p.org != org {
+			continue
+		}
+		mine = append(mine, p)
+		if p.status == "active" {
+			active++
+		}
+	}
+	// created_at DESC, then id DESC (orgs.sql:772-778).
+	slices.SortStableFunc(mine, func(a, b *fakeProject) int {
+		if c := b.createdAt.Compare(a.createdAt); c != 0 {
+			return c
+		}
+		return strings.Compare(b.id, a.id)
+	})
+	preview := []any{}
+	for _, p := range mine[:min(len(mine), projectSummaryPreview)] {
+		preview = append(preview, map[string]any{"id": p.id, "displayName": p.displayName, "status": p.status})
+	}
+	return map[string]any{"totalCount": len(mine), "activeCount": active, "projects": preview}
 }
 
 // listOrganizations serves offset paging one row a page, as listProjects does
@@ -170,7 +221,9 @@ func (s *state) getOrganization(w http.ResponseWriter, r *http.Request) {
 		apiError(w, http.StatusNotFound, "NOT_FOUND", "not found: organization \""+id+"\"")
 		return
 	}
-	writeJSON(w, http.StatusOK, organizationBody(id))
+	body := organizationBody(id)
+	body["projectSummary"] = s.projectSummary(id)
+	writeJSON(w, http.StatusOK, body)
 }
 
 func (p *fakeProject) body() map[string]any {
@@ -184,13 +237,24 @@ func (p *fakeProject) body() map[string]any {
 		"status":         p.status,
 		"displayName":    p.displayName,
 		"description":    p.description,
-		"createdAt":      p.createdAt.Format(time.RFC3339),
-		"selfLink":       "/v1/regions/global/organizations/" + p.org + "/projects/" + p.id,
+		// Both always answered (API v1.3.0-rc.5,
+		// services/organizations/internal/model/model.go:1774-1785).
+		"createdAt": p.createdAt.Format(time.RFC3339),
+		"updatedAt": p.updated().Format(time.RFC3339),
+		"selfLink":  "/v1/regions/global/organizations/" + p.org + "/projects/" + p.id,
 	}
 	if p.region != "" {
 		out["region"] = p.region
 	}
 	return out
+}
+
+// updated is when the project last changed: its create, until a PATCH.
+func (p *fakeProject) updated() time.Time {
+	if p.updatedAt.IsZero() {
+		return p.createdAt
+	}
+	return p.updatedAt
 }
 
 func generatedProjectID() string {
@@ -318,6 +382,7 @@ func (s *state) updateProjectInOrg(w http.ResponseWriter, r *http.Request) {
 	if body.Description != nil {
 		p.description = *body.Description
 	}
+	p.updatedAt = time.Now().UTC()
 	writeJSON(w, http.StatusOK, p.body())
 }
 
