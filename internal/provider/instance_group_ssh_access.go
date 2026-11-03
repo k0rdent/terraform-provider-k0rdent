@@ -122,6 +122,21 @@ func sshAccessRequiresReplace(ctx context.Context, req planmodifier.SetRequest, 
 	resp.RequiresReplace = !none || !wasReleased(ctx, req.Private)
 }
 
+// keysUnknown reports whether a user's keys aren't all known at plan: the
+// list, or any key in it, such as a key another resource makes in the same
+// apply. Either way there's nothing to compare yet.
+func keysUnknown(keys types.List) bool {
+	if keys.IsUnknown() {
+		return true
+	}
+	for _, k := range keys.Elements() {
+		if k.IsUnknown() {
+			return true
+		}
+	}
+	return false
+}
+
 // keysOnlyMoved reports whether only where the keys are written changed: keys
 // written over none after an import, moved between `ssh_public_keys` and
 // `ssh_public_keys_wo`, or left out. Keys are compared by fingerprint, and
@@ -168,8 +183,21 @@ func keysMoved(ctx context.Context, state, plan types.Set, writeOnly, madeWith m
 		if h.SSHPublicKeys.Equal(p.SSHPublicKeys) {
 			continue
 		}
-		if p.SSHPublicKeys.IsUnknown() || h.SSHPublicKeys.IsUnknown() {
-			return false
+		// What the nodes were made with: the fingerprints held from the create
+		// or the import, or the keys state holds. With neither, nothing can be
+		// compared, and planUncheckedKeys plans the update the apply stops,
+		// whether the configured key is known yet or not.
+		have, known := madeWith[name]
+		if !known && !keysUnknown(h.SSHPublicKeys) && len(h.SSHPublicKeys.Elements()) > 0 {
+			var keys []string
+			diags.Append(h.SSHPublicKeys.ElementsAs(ctx, &keys, false)...)
+			have, known = fingerprintList(keys), true
+		}
+		if keysUnknown(p.SSHPublicKeys) || keysUnknown(h.SSHPublicKeys) {
+			if !known {
+				continue
+			}
+			return false // not known until the apply, so it can't be the key held
 		}
 		want, ok := writeOnly[name]
 		if ok && want == nil {
@@ -177,12 +205,6 @@ func keysMoved(ctx context.Context, state, plan types.Set, writeOnly, madeWith m
 		}
 		if !ok {
 			diags.Append(p.SSHPublicKeys.ElementsAs(ctx, &want, false)...)
-		}
-		have, known := madeWith[name]
-		if !known && len(h.SSHPublicKeys.Elements()) > 0 {
-			var keys []string
-			diags.Append(h.SSHPublicKeys.ElementsAs(ctx, &keys, false)...)
-			have, known = fingerprintList(keys), true
 		}
 		if len(want) > 0 && known && !sameFingerprints(fingerprintList(want), have) {
 			return false

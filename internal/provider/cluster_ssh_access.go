@@ -239,7 +239,7 @@ func replaceOnChangedKeys(ctx context.Context, req resource.ModifyPlanRequest, r
 		}
 	}
 	for user, ks := range text {
-		if _, ok := held[user]; !ok && len(ks) > 0 && len(inState[user]) == 0 && referenced[user] &&
+		if _, ok := held[user]; !ok && (ks == nil || len(ks) > 0) && len(inState[user]) == 0 && referenced[user] &&
 			!slices.Contains(unchecked, user) {
 			unchecked = append(unchecked, user)
 		}
@@ -307,7 +307,7 @@ func usersWithConfiguredKeys(ctx context.Context, config interface {
 			continue
 		}
 		var ks []string
-		if !u.SSHPublicKeys.IsUnknown() && (u.SSHPublicKeys.ElementsAs(ctx, &ks, false).HasError() || len(ks) == 0) {
+		if !keysUnknown(u.SSHPublicKeys) && (u.SSHPublicKeys.ElementsAs(ctx, &ks, false).HasError() || len(ks) == 0) {
 			continue
 		}
 		out[u.Username.ValueString()] = ks
