@@ -243,6 +243,7 @@ func compare(args []string, w io.Writer) (bool, error) {
 	fakeFile := fs.String("fake", "", "the fake's recording")
 	realFile := fs.String("real", "", "the real API's recording")
 	acceptedFile := fs.String("accepted", "", "the differences accepted as data, not drift")
+	partial := fs.Bool("partial", false, "the recordings cover only some operations, so list the accepted lines they didn't show instead of failing on them")
 	if err := fs.Parse(args); err != nil {
 		return false, err
 	}
@@ -316,14 +317,23 @@ func compare(args []string, w io.Writer) (bool, error) {
 			fmt.Fprintf(w, "%s\n  %s: %s\n", op, d.field, d.what)
 		}
 	}
-	stale := 0
+	stale, unseen := 0, 0
 	for _, a := range accepted {
-		if !a.used {
+		switch {
+		case a.used:
+		case *partial:
+			unseen++
+			fmt.Fprintf(w, "not seen in this partial run: %s %s (%s)\n", a.Operation, a.Field, a.Side)
+		default:
 			stale++
 			fmt.Fprintf(w, "accepted, but no longer differs: %s %s (%s)\n", a.Operation, a.Field, a.Side)
 		}
 	}
-	fmt.Fprintf(w, "\n%d operations compared, %d unexcused differences, %d accepted, %d stale accepted lines\n", len(compared), unexcused, excused, stale)
+	fmt.Fprintf(w, "\n%d operations compared, %d unexcused differences, %d accepted, %d stale accepted lines", len(compared), unexcused, excused, stale)
+	if *partial {
+		fmt.Fprintf(w, ", %d not seen", unseen)
+	}
+	fmt.Fprintln(w)
 	if len(onlyReal) > 0 {
 		fmt.Fprintf(w, "recorded on the real API only, so not compared:\n  %s\n", strings.Join(onlyReal, "\n  "))
 	}

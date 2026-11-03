@@ -128,6 +128,31 @@ jobs:
       - name: the record check can still fail
         run: make real-api-check-test
 
+  # make real-api-check-hardware creates clusters and hosts on a landscape for
+  # hours, so CI runs it against a fake standing in for one: a run that
+  # passes, one killed while it creates, and one whose landscape goes away.
+  real-api-hardware:
+    name: real API check on hardware, against a stand-in
+    runs-on: ubuntu-latest
+    # Four runs of the walkthrough, each about four minutes on a laptop.
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e  # v4.0.1
+        with:
+          # Hardware mode refuses 1.16.0 to 1.16.4, which can empty the state
+          # file on an interrupt (hashicorp/terraform#39287).
+          terraform_version: "1.16.5"
+          terraform_wrapper: false
+      - name: hardware mode records, cleans up after a kill, and lists what it left
+        run: make real-api-check-hardware-test
+
   # gitleaks over the tracked tree, and over every commit this event adds, so
   # a secret added then removed inside one pull request is still caught. The
   # CLI, pinned and checksum-checked by scripts/check-secrets.sh, not

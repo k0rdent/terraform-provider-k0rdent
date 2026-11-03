@@ -44,6 +44,7 @@ terraform.rc
 # state for a run against a real landscape, and the PASS/FAIL results file. The
 # state in here describes real resources, so it must never be committed.
 .live/
+.real-api/
 
 # Go
 *.test
