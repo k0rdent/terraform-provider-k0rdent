@@ -710,7 +710,7 @@ hw_holds() {
   local list
   [ -f "$1/terraform.tfstate" ] || return 1
   list="$(cd "$1" && "$TF_BIN" state list 2> /dev/null)" || return 0
-  printf '%s\n' "$list" | grep -qv '^data\.'
+  [ -n "$list" ] && printf '%s\n' "$list" | grep -qv '^data\.'
 }
 
 # hw_held <dir> prints each managed resource <dir>'s state holds, with its id.
