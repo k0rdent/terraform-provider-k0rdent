@@ -117,8 +117,8 @@ func clusterTypeRefReplacement() planmodifier.String {
 // would destroy the cluster to change its version. Whether it is an upgrade or
 // a refusal needs the version list, so the resource's ModifyPlan decides.
 func clusterTypeVersionGuard() planmodifier.String {
-	const desc = "replaced only when the new reference names a different ClusterType; another " +
-		"version of the same one is upgraded in place or refused"
+	const desc = "replaced only when the new reference names a different ClusterType, and " +
+		"another version of the same one is upgraded in place or refused"
 	return stringplanmodifier.RequiresReplaceIf(func(ctx context.Context, req planmodifier.StringRequest, resp *stringplanmodifier.RequiresReplaceIfFuncResponse) {
 		clusterTypeRefRequiresReplace(ctx, req, resp)
 		if resp.RequiresReplace {
