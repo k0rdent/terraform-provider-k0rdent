@@ -59,13 +59,20 @@ hardware() {
 # the_run prints the run directory the output names.
 the_run() { sed -n 's|.*results in \(.*\)/results.txt$|\1|p' "$1" | head -1; }
 
-# wait_for <file> <text>: until the running check prints <text>, for up to
-# five minutes. The stand-in's apply takes about a minute, so a kill 15 s
-# after it starts lands while Terraform is creating.
+# wait_for <file> <text>: until <text> is in <file>, for up to five minutes.
 wait_for() {
   for _ in $(seq 1 300); do grep -qs -- "$2" "$1" && return 0; sleep 1; done
   cat "$1" >&2
   fail "the run never printed \"$2\""
+}
+
+# mid_create <output>: until the landscape side's apply has created its first
+# resource. The others take about a minute on the stand-in, so a kill or a
+# lost landscape then lands with something in state and creates in flight,
+# however slow the machine is.
+mid_create() {
+  wait_for "$1" "real/full-everything-apply started"
+  wait_for "$(the_run "$1")/real/full-everything-apply.log" "Creation complete"
 }
 
 # left_on_standin <run id> prints "<kind> <id>" for each object the stand-in
@@ -140,7 +147,7 @@ start_landscape 400ms
 out="$work/kill.out"
 ( hardware "$out" ) &
 check_pid=$!
-wait_for "$out" "real/full-everything-apply started"; sleep 15
+mid_create "$out"
 kill -TERM "$check_pid"
 wait "$check_pid"
 rc=$?
@@ -164,7 +171,7 @@ out="$work/ctrl-c.out"
 python3 -c 'import os, signal, sys; os.setpgrp(); signal.signal(signal.SIGINT, signal.SIG_DFL); os.execvp(sys.argv[1], sys.argv[1:])' \
   bash -c "$(declare -f hardware); LAND='$LAND' FAKE_CLIENT_ID='$FAKE_CLIENT_ID' FAKE_CLIENT_SECRET='$FAKE_CLIENT_SECRET' repo='$repo' hardware '$out'" &
 check_pid=$!
-wait_for "$out" "real/full-everything-apply started"; sleep 15
+mid_create "$out"
 kill -INT -- "-$check_pid"
 wait "$check_pid"
 rc=$?
@@ -183,7 +190,7 @@ says_what_is_left "$out" "$run"
 out="$work/gone.out"
 ( hardware "$out" ) &
 check_pid=$!
-wait_for "$out" "real/full-everything-apply started"; sleep 15
+mid_create "$out"
 kill "$land_pid"; wait "$land_pid" 2>/dev/null; land_pid=""
 wait "$check_pid"
 rc=$?
@@ -192,7 +199,9 @@ run="$(the_run "$out")"
 has "$out" "real/full-everything still holds, on ${LAND#http://}:"
 has "$out" "k0rdent_[a-z_]*\.this[^ ]*  id "
 has "$out" "cd $run/real/full-everything && TF_CLI_CONFIG_FILE=$run/terraform.rc .* destroy"
-has "$run/results.txt" "^FAIL  cleanup real/full-everything"
+# The apply fails once the landscape is gone, and the destroy after it fails
+# too: as the run's own step, or in the cleanup when the run ends first.
+has "$run/results.txt" "^FAIL  \(cleanup real/full-everything\|real/full-everything-destroy\)"
 has "$out" "could not read ${LAND#http://} to check what's left there, outside state"
 
 echo "real-api-check hardware test: ok"
