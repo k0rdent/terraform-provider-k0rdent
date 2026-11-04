@@ -124,7 +124,7 @@ How to read a row:
 | `ssh_access.ssh_public_keys` | optional+computed | sometimes replaces | **gap** | `TestAccAKeyUnknownAtPlanThatCantBeCheckedStopsTheApply` (update), `TestAccClusterSSHAccess` (replace), `TestReplacementsFollowTheDocumentedRules` (replace), `TestSSHKeyPlansFollowTheDocumentedRules` (update and replace) | **gap** |
 | `ssh_access.sudo` | optional | sometimes replaces | `TestAccImport` | **gap** | walkthrough `cluster`, walkthrough `full` |
 | `ssh_access.username` | required | sometimes replaces | `TestAccAKeyChangedAfterAnImportReplaces`, `TestAccAKeyUnknownAtPlanThatCantBeCheckedStopsTheApply`, `TestAccARevokedKeyIsStillCheckedAfterAnImport`, `TestAccImport`, `TestAccKeysThatCantBeCheckedStopTheApply`, `TestSSHKeyPlansFollowTheDocumentedRules` | `TestAccClusterSSHAccess` (replace), `TestReplacementsFollowTheDocumentedRules` (replace) | walkthrough `cluster`, walkthrough `full` |
-| `ssh_public_keys_wo` | write-only | in place | `TestAccAKeyChangedAfterAnImportReplaces`, `TestAccARevokedKeyIsStillCheckedAfterAnImport`, `TestAccImport` | `TestAccAKeyChangedAfterAnImportReplaces`, `TestAccAKeyUnknownAtPlanThatCantBeCheckedStopsTheApply`, `TestAccImport`, `TestAccKeysMovedToWriteOnlyPlanNoChange`, `TestAccKeysThatCantBeCheckedStopTheApply`, `TestSSHKeyPlansFollowTheDocumentedRules` | n/a (write-only, never stored) |
+| `ssh_public_keys_wo` | write-only | in place | `TestAccAKeyChangedAfterAnImportReplaces`, `TestAccARevokedKeyIsStillCheckedAfterAnImport`, `TestAccImport` | `TestAccAKeyChangedAfterAnImportReplaces`, `TestAccAKeyUnknownAtPlanThatCantBeCheckedStopsTheApply`, `TestAccKeysMovedToWriteOnlyPlanNoChange`, `TestAccKeysThatCantBeCheckedStopTheApply`, `TestSSHKeyPlansFollowTheDocumentedRules` | n/a (write-only, never stored) |
 | `state` | computed | n/a | `TestAccAKeyChangedAfterAnImportReplaces`, `TestAccAKeyUnknownAtPlanThatCantBeCheckedStopsTheApply`, `TestAccARevokedKeyIsStillCheckedAfterAnImport`, `TestAccCancelActionWithNothingToCancelSucceeds`, `TestAccImport`, `TestAccImportAPinToTheCurrentVersion`, `TestAccImportClusterSparsePools`, `TestAccImportForEachByIdentity`, `TestAccImportKeepsAnOlderClusterTypePin`, `TestAccKeysThatCantBeCheckedStopTheApply`, `TestAccQueryGeneratesConfigThatPlansClean`, `TestReplacementsFollowTheDocumentedRules`, `TestSSHKeyPlansFollowTheDocumentedRules` | n/a (computed only) | walkthrough `cluster`, walkthrough `cluster-own-project`, walkthrough `full` |
 | `storage_ceiling_gib` | optional+computed | in place | **gap** | `TestAccClusterStorageCeiling` | **gap** |
 | `tags` | optional | in place | **gap** | `TestAccAMetadataChangeToACancelledCluster`, `TestAccATagChangeKeepsTheCreateToken`, `TestAccATagChangeToAnActiveCluster` | **gap** |
@@ -264,15 +264,15 @@ How to read a row:
 
 | Attribute | Kind | Changes | Import | Update | Upgrade |
 | --- | --- | --- | --- | --- | --- |
-| `attached` | computed | n/a | `TestAccImport`, `TestAccImportABindingAtItsDefault` | n/a (computed only) | walkthrough `full` |
-| `project` | optional+computed | replaces | `TestAccImport`, `TestAccImportABindingAtItsDefault` | n/a (always replaces) | walkthrough `full` |
-| `region` | optional+computed | replaces | `TestAccImport`, `TestAccImportABindingAtItsDefault` | n/a (always replaces) | walkthrough `full` |
-| `security_groups` | required | in place | `TestAccImport`, `TestAccImportABindingAtItsDefault` | `TestAccVPCBindingChangePlansWhatIsAttached`, `TestAccVPCSecurityGroupsEmptyMeansDefault`, `TestAccVPCSecurityGroupsReplacedBeforeDestroyKeepsTheNewBinding`, `TestReplacementsFollowTheDocumentedRules` | walkthrough `full` |
-| `state` | computed | n/a | `TestAccImport`, `TestAccImportABindingAtItsDefault` | n/a (computed only) | walkthrough `full` |
+| `attached` | computed | n/a | `TestAccImport`, `TestAccImportABindingAtItsDefault`, `TestAccQueryGeneratesConfigThatPlansClean` | n/a (computed only) | walkthrough `full` |
+| `project` | optional+computed | replaces | `TestAccImport`, `TestAccImportABindingAtItsDefault`, `TestAccQueryGeneratesConfigThatPlansClean` | n/a (always replaces) | walkthrough `full` |
+| `region` | optional+computed | replaces | `TestAccImport`, `TestAccImportABindingAtItsDefault`, `TestAccQueryGeneratesConfigThatPlansClean` | n/a (always replaces) | walkthrough `full` |
+| `security_groups` | required | in place | `TestAccImport`, `TestAccImportABindingAtItsDefault`, `TestAccQueryGeneratesConfigThatPlansClean` | `TestAccVPCBindingChangePlansWhatIsAttached`, `TestAccVPCSecurityGroupsEmptyMeansDefault`, `TestAccVPCSecurityGroupsReplacedBeforeDestroyKeepsTheNewBinding`, `TestReplacementsFollowTheDocumentedRules` | walkthrough `full` |
+| `state` | computed | n/a | `TestAccImport`, `TestAccImportABindingAtItsDefault`, `TestAccQueryGeneratesConfigThatPlansClean` | n/a (computed only) | walkthrough `full` |
 | `timeouts.create` | optional | in place | **gap** | **gap** | **gap** |
 | `timeouts.delete` | optional | in place | **gap** | **gap** | **gap** |
 | `timeouts.update` | optional | in place | **gap** | **gap** | **gap** |
-| `vpc` | required | replaces | `TestAccImport`, `TestAccImportABindingAtItsDefault` | n/a (always replaces) | walkthrough `full` |
+| `vpc` | required | replaces | `TestAccImport`, `TestAccImportABindingAtItsDefault`, `TestAccQueryGeneratesConfigThatPlansClean` | n/a (always replaces) | walkthrough `full` |
 
 ## k0rdent_webhook_subscription
 
