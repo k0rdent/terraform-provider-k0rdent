@@ -36,8 +36,10 @@ func startMatrixRecord() error {
 	if err := os.WriteFile(file, nil, 0o600); err != nil {
 		return fmt.Errorf("starting the matrix record: %w", err)
 	}
-	if err := os.RemoveAll(file + ".memory"); err != nil {
-		return fmt.Errorf("clearing the last run's matrix memory: %w", err)
+	for _, dir := range []string{file + ".memory", file + ".facts"} {
+		if err := os.RemoveAll(dir); err != nil {
+			return fmt.Errorf("clearing the last run's matrix memory: %w", err)
+		}
 	}
 	if err := os.Setenv(testmatrix.RecordEnv, file); err != nil {
 		return err
@@ -52,6 +54,22 @@ func startMatrixRecord() error {
 			return s, err
 		}
 		return testmatrix.Wrap(s, file, test)
+	}
+	return nil
+}
+
+// finishMatrixRecord writes the record's import, update and replace lines
+// from what every provider the run started saw. See testmatrix.Finish.
+func finishMatrixRecord() error {
+	if *matrixRecord == "" {
+		return nil
+	}
+	file, err := filepath.Abs(*matrixRecord)
+	if err != nil {
+		return err
+	}
+	if err := testmatrix.Finish(file); err != nil {
+		return fmt.Errorf("finishing the matrix record: %w", err)
 	}
 	return nil
 }
