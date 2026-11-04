@@ -171,7 +171,10 @@ under the current directory, or `--out DIR`, and it holds:
   with that command's part of the transcript, and `crash.log` when Terraform
   wrote one.
 - `command.txt` and `environment.txt`: the command, the versions it ran with,
-  and the `K0RDENT_*` and `TF_*` variables, secret values replaced.
+  and the `K0RDENT_*` and `TF_*` variables, secret values replaced. `run.json`
+  is the same for tools, with the git commit and branch the run came from:
+  the current directory's checkout, or the `provider/` worktree in a run
+  folder from `walkthrough.sh setup`.
 
 `TF_LOG` defaults to `DEBUG` for the wrapped commands and goes to each step's
 `terraform.log` rather than the terminal. `--tf-log TRACE` adds the plugin
@@ -183,7 +186,9 @@ sharing it all the same: the transcript holds whatever the run printed.
 
 A wrapped command's stdout isn't a terminal while it's recorded, so Terraform
 prints it without colour. `--wrap ""` records the transcript alone, and
-`--wrap "terraform tofu curl"` files other commands the same way. The header
+`--wrap "terraform tofu curl"` files other commands the same way. `--after CMD`,
+or `RECORD_AFTER` in the shell, runs a command of your own with the finished
+directory as its argument, which is how a run reaches a dashboard. The header
 of `scripts/record.sh` has the rest.
 
 ### `make upgrade-test`

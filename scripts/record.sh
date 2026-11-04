@@ -28,6 +28,9 @@
 #   index.md          every wrapped command: what, where, how long, its exit
 #                     code, the files below, and its first error lines
 #   steps.jsonl       the same, one JSON object per line, for tools
+#   run.json          the run for tools: the command, where and when it ran,
+#                     its exit code, the git commit and branch it ran from,
+#                     and the tool versions
 #   steps/NNN-<tool>-<subcommand>/
 #     command.txt     argv, working directory, start, end, duration, exit code
 #     meta.json       the same, for tools
@@ -65,6 +68,15 @@
 #                    has stdout and stderr merged and no colour, and a
 #                    command that checks for a terminal sees none.
 #                                                                RECORD_NO_PTY
+#   --after CMD      run CMD with the directory as its argument once the
+#                    directory is complete, for a publisher. CMD is split on
+#                    spaces. Its exit code is reported, and the run's is
+#                    still the one returned.                     RECORD_AFTER
+#
+# The git commit and branch in run.json come from the current directory's
+# checkout, or, when it isn't one, from the provider/ worktree beside the
+# terraform.rc that TF_CLI_CONFIG_FILE names, which is how walkthrough.sh
+# setup lays out a run folder.
 #
 # Needs bash, python3 and `script` (util-linux or BSD; --no-pty needs none).
 # Works in bash 3.2, so it runs on a Mac as shipped.
@@ -98,6 +110,7 @@ each terraform or tofu command it ran, that command's output and logs.
   --fake-log FILE  the fake control plane's log (default .demo/fake.log)
   --wrap NAMES     commands to file by invocation (default "terraform tofu")
   --no-pty         no pseudo-terminal; stdout and stderr merge
+  --after CMD      run CMD with the directory as its argument at the end
   -h, --help       this text
 
 The header of scripts/record.sh describes every file it writes.
@@ -355,48 +368,87 @@ for k in sorted(os.environ):
 PY
 }
 
+# git_probe sets GIT_DIR_USED, GIT_COMMIT, GIT_BRANCH and GIT_DIRTY from the
+# current directory's checkout, else from the provider/ worktree beside the
+# terraform.rc TF_CLI_CONFIG_FILE names, else leaves them empty.
+git_probe() {
+  local d
+  GIT_DIR_USED="" GIT_COMMIT="" GIT_BRANCH="" GIT_DIRTY=""
+  command -v git >/dev/null 2>&1 || return 0
+  for d in "$PWD" "${TF_CLI_CONFIG_FILE:+$(dirname "$TF_CLI_CONFIG_FILE")/provider}"; do
+    [ -n "$d" ] && [ -d "$d" ] || continue
+    GIT_DIR_USED="$(git -C "$d" rev-parse --show-toplevel 2>/dev/null)" || continue
+    GIT_COMMIT="$(git -C "$d" rev-parse HEAD 2>/dev/null)" || GIT_COMMIT=""
+    GIT_BRANCH="$(git -C "$d" rev-parse --abbrev-ref HEAD 2>/dev/null)" || GIT_BRANCH=""
+    if [ -z "$(git -C "$d" status --porcelain 2>/dev/null)" ]; then GIT_DIRTY=no; else GIT_DIRTY=yes; fi
+    return 0
+  done
+}
+
+# tool_versions sets TOOL_VERSIONS, one "name=first line of `name version`"
+# per line for each wrapped command found, then go.
+tool_versions() {
+  local name real version
+  TOOL_VERSIONS=""
+  for name in $RECORD_WRAP; do
+    real="$(real_binary "$name" 2>/dev/null)" || continue
+    version="$("$real" version 2>/dev/null)" || version=""
+    TOOL_VERSIONS="$TOOL_VERSIONS$name=${version%%
+*}${version:+, }$real
+"
+  done
+  if command -v go >/dev/null 2>&1; then
+    TOOL_VERSIONS="${TOOL_VERSIONS}go=$(go version 2>/dev/null)
+"
+  fi
+}
+
 # write_command writes command.txt: the command, where and when it runs, and
 # what it runs with. The exit code and end time are appended afterwards.
 write_command() {
-  local name real version
+  local line
   {
     printf 'command:    '
     local a
     for a in "${COMMAND[@]}"; do printf "'%s' " "$a"; done
     printf '\ncwd:        %s\n' "$PWD"
-    printf 'started:    %s\n' "$(utc_now)"
+    printf 'started:    %s\n' "$STARTED_AT"
     printf 'recorder:   %s\n' "$self"
     printf 'pty:        %s\n' "$([ "$NO_PTY" = 1 ] && echo no || echo "yes ($SCRIPT_FLAVOUR script)")"
     printf 'TF_LOG:     %s\n' "${TF_LOG:-${RECORD_TF_LOG:-off}}${TF_LOG:+ (from the shell)}"
     printf 'fake log:   %s\n' "${RECORD_FAKE_LOG:-none}"
     printf 'wrapped:    %s\n' "${RECORD_WRAP:-nothing}"
     printf 'host:       %s\n' "$(uname -srm 2>/dev/null || echo unknown)"
-    if git rev-parse --show-toplevel >/dev/null 2>&1; then
-      printf 'git:        %s %s%s\n' "$(git rev-parse --short HEAD 2>/dev/null)" \
-        "$(git rev-parse --abbrev-ref HEAD 2>/dev/null)" \
-        "$([ -z "$(git status --porcelain 2>/dev/null)" ] || echo ' (uncommitted changes)')"
+    if [ -n "$GIT_COMMIT" ]; then
+      printf 'git:        %s %s%s, in %s\n' "$(printf '%s' "$GIT_COMMIT" | cut -c1-12)" "$GIT_BRANCH" \
+        "$([ "$GIT_DIRTY" = yes ] && echo ' (uncommitted changes)')" "$GIT_DIR_USED"
     fi
-    for name in $RECORD_WRAP; do
-      real="$(real_binary "$name" 2>/dev/null)" || continue
-      version="$("$real" version 2>/dev/null)" || version=""
-      printf '%-11s %s\n' "$name:" "${version%%
-*}${version:+, }$real"
+    printf '%s' "$TOOL_VERSIONS" | while IFS= read -r line; do
+      printf '%-11s %s\n' "${line%%=*}:" "${line#*=}"
     done
-    if command -v go >/dev/null 2>&1; then
-      printf 'go:         %s\n' "$(go version 2>/dev/null)"
-    fi
   } > "$RECORD_DIR/command.txt"
 }
 
 # finalize reads the steps back, slices the transcript per step, strips the
-# control codes, redacts and writes index.md and steps.jsonl.
+# control codes, redacts and writes index.md, steps.jsonl and run.json.
+# The command's argv follows the directory in its arguments.
 finalize() {
-  local status="$1"
-  printf 'ended:      %s\nexit code:  %s\n' "$(utc_now)" "$status" >> "$RECORD_DIR/command.txt"
+  local status="$1" ended finished=yes
+  shift
+  ended="$(utc_now)"
+  printf 'ended:      %s\nexit code:  %s\n' "$ended" "$status" >> "$RECORD_DIR/command.txt"
+  [ "$EXIT_CODE_SEEN" = yes ] || finished=no
   redact_dir "$RECORD_DIR"
-  python3 - "$RECORD_DIR" <<'PY'
-import glob, json, os, re, sys
+  RUN_STATUS="$status" RUN_STARTED="$STARTED_AT" RUN_ENDED="$ended" RUN_FINISHED="$finished" \
+    RUN_PTY="$([ "$NO_PTY" = 1 ] && echo no || echo yes)" RUN_TF_LOG="${TF_LOG:-${RECORD_TF_LOG:-}}" \
+    RUN_FAKE_LOG="${RECORD_FAKE_LOG:-}" RUN_WRAP="$RECORD_WRAP" RUN_HOST="$(uname -srm 2>/dev/null || echo unknown)" \
+    RUN_GIT_DIR="$GIT_DIR_USED" RUN_GIT_COMMIT="$GIT_COMMIT" RUN_GIT_BRANCH="$GIT_BRANCH" RUN_GIT_DIRTY="$GIT_DIRTY" \
+    RUN_VERSIONS="$TOOL_VERSIONS" RUN_RECORDER="$self" \
+    python3 - "$RECORD_DIR" "$@" <<'PY'
+import glob, json, os, re, shlex, sys
 out = sys.argv[1]
+argv = sys.argv[2:]
+e = os.environ
 
 ansi = re.compile(rb"\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(\x07|\x1b\\)|\x1b[()][0-9A-Za-z]|\x1b[@-Z\\-_]")
 
@@ -444,6 +496,43 @@ with open(os.path.join(out, "steps.jsonl"), "w") as f:
     for s in steps:
         f.write(json.dumps(s, sort_keys=True) + "\n")
 
+versions = {}
+for line in e["RUN_VERSIONS"].splitlines():
+    if "=" in line:
+        k, v = line.split("=", 1)
+        versions[k] = v
+git = None
+if e["RUN_GIT_COMMIT"]:
+    git = {"dir": e["RUN_GIT_DIR"], "commit": e["RUN_GIT_COMMIT"], "branch": e["RUN_GIT_BRANCH"],
+           "dirty": e["RUN_GIT_DIRTY"] == "yes"}
+def parse_time(t):
+    import calendar, time
+    return calendar.timegm(time.strptime(t, "%Y-%m-%dT%H:%M:%SZ"))
+run = {
+    "schema": "k0rdent.record-run/1",
+    "recorder": e["RUN_RECORDER"],
+    "argv": argv,
+    "command_line": " ".join(shlex.quote(a) for a in argv),
+    "cwd": os.getcwd(),
+    "started": e["RUN_STARTED"],
+    "ended": e["RUN_ENDED"],
+    "duration_seconds": max(0, parse_time(e["RUN_ENDED"]) - parse_time(e["RUN_STARTED"])),
+    "exit_code": int(e["RUN_STATUS"]),
+    "finished": e["RUN_FINISHED"] == "yes",
+    "pty": e["RUN_PTY"] == "yes",
+    "tf_log": e["RUN_TF_LOG"] if e["RUN_TF_LOG"] not in ("", "off") else None,
+    "fake_log": e["RUN_FAKE_LOG"] or None,
+    "wrapped": e["RUN_WRAP"].split(),
+    "host": e["RUN_HOST"],
+    "git": git,
+    "versions": versions,
+    "steps": len(steps),
+    "steps_failed": len([s for s in steps if s["exit_code"] != 0]),
+}
+with open(os.path.join(out, "run.json"), "w") as f:
+    json.dump(run, f, indent=2, sort_keys=True)
+    f.write("\n")
+
 with open(os.path.join(out, "command.txt")) as f:
     command = f.read()
 exit_code = "?"
@@ -456,7 +545,7 @@ except OSError:
 lines = ["# Recorded run", ""]
 lines += ["```text", command.rstrip(), "```", ""]
 lines += ["Files: `terminal.txt` is the whole terminal, `terminal.log` the raw recording, "
-          "`environment.txt` the variables, `steps.jsonl` this index for tools.", ""]
+          "`environment.txt` the variables, `run.json` and `steps.jsonl` the run and this index for tools.", ""]
 failed = [s for s in steps if s["exit_code"] != 0]
 lines += ["## Steps", ""]
 if not steps:
@@ -494,7 +583,7 @@ PY
 
 main() {
   local out="${RECORD_OUT:-}" tf_log="${RECORD_TF_LOG-DEBUG}" fake_log="${RECORD_FAKE_LOG:-}"
-  local wrap="${RECORD_WRAP-terraform tofu}" no_pty="${RECORD_NO_PTY:-0}"
+  local wrap="${RECORD_WRAP-terraform tofu}" no_pty="${RECORD_NO_PTY:-0}" after="${RECORD_AFTER:-}"
 
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -507,6 +596,8 @@ main() {
       --wrap) [ $# -ge 2 ] || { usage >&2; exit 2; }; wrap="$2"; shift 2 ;;
       --wrap=*) wrap="${1#--wrap=}"; shift ;;
       --no-pty) no_pty=1; shift ;;
+      --after) [ $# -ge 2 ] || { usage >&2; exit 2; }; after="$2"; shift 2 ;;
+      --after=*) after="${1#--after=}"; shift ;;
       -h | --help) usage; exit 0 ;;
       --) shift; break ;;
       -*) printf 'record: unknown option %s\n' "$1" >&2; usage >&2; exit 2 ;;
@@ -560,6 +651,9 @@ main() {
     fi
   fi
 
+  STARTED_AT="$(utc_now)"
+  git_probe
+  tool_versions
   write_environment
   write_command
 
@@ -585,18 +679,31 @@ main() {
       fi ;;
   esac
   trap - INT TERM
+  EXIT_CODE_SEEN=yes
   if [ -s "$out/exit-code" ]; then
     status="$(cat "$out/exit-code")"
   else
     status=1
+    EXIT_CODE_SEEN=no
     printf '%s\n' "$status" > "$out/exit-code"
     printf 'record: the command left no exit code, so it did not finish; recorded as 1\n' >&2
   fi
   rm -f "$out/.command"
 
   local summary
-  summary="$(finalize "$status")"
+  summary="$(finalize "$status" "${COMMAND[@]}")"
   printf '\nrecord: %s\nrecord: %s\n' "$summary" "$out" >&2
+
+  # The publisher, or whatever --after names, gets the finished directory.
+  # It's split on spaces so it can carry options. Its exit code is said and
+  # the run's is the one returned.
+  if [ -n "$after" ]; then
+    local after_status=0
+    printf 'record: running %s %s\n' "$after" "$out" >&2
+    # shellcheck disable=SC2086 # split on purpose, see above
+    $after "$out" || after_status=$?
+    [ "$after_status" = 0 ] || printf 'record: %s exited %s\n' "${after%% *}" "$after_status" >&2
+  fi
   exit "$status"
 }
 

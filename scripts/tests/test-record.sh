@@ -183,6 +183,55 @@ grep -q 'stub terraform plan' "$out/steps/001-terraform-plan/terminal.txt" || fa
 grep -q '^pty:        no' "$out/command.txt" || fail "command.txt does not say there was no pty"
 pass "--no-pty works the same way without a terminal"
 
+# --- run.json, the git probe and --after ---------------------------------------
+
+out="$work/run1"
+python3 - "$out/run.json" "$work/project" <<'EOF' || fail "run.json is wrong"
+import json, sys
+r = json.load(open(sys.argv[1]))
+want = {"schema": "k0rdent.record-run/1", "argv": ["./drive.sh", "a b'c"], "cwd": sys.argv[2],
+        "exit_code": 3, "finished": True, "pty": True, "tf_log": "DEBUG", "wrapped": ["terraform", "tofu"],
+        "steps": 4, "steps_failed": 1, "git": None}
+for k, v in want.items():
+    assert r.get(k) == v, (k, r.get(k), v)
+assert r["versions"]["terraform"].startswith("Terraform v9.9.9-stub, "), r["versions"]
+assert r["started"].endswith("Z") and r["ended"] >= r["started"] and r["duration_seconds"] >= 0, r
+assert r["fake_log"].endswith("/fake.log"), r["fake_log"]
+EOF
+pass "run.json describes the run for tools, with git null outside a checkout"
+
+# A walkthrough.sh run folder: the provider worktree beside the terraform.rc
+# that TF_CLI_CONFIG_FILE names, and the walkthrough copy, which is no
+# checkout, as the current directory.
+mkdir -p "$work/runfolder/provider" "$work/runfolder/walkthrough/cluster"
+( cd "$work/runfolder/provider" && git init -q && git -c user.name=t -c user.email=t@example.com commit -q --allow-empty -m init )
+sha="$(git -C "$work/runfolder/provider" rev-parse HEAD)"
+printf 'provider_installation {}\n' > "$work/runfolder/terraform.rc"
+out="$work/run7"
+( cd "$work/runfolder/walkthrough/cluster" && TF_CLI_CONFIG_FILE="$work/runfolder/terraform.rc" "$record" --out "$out" -- terraform plan ) \
+  > /dev/null 2>&1 </dev/null || fail "run7 failed"
+[ "$(python3 -c 'import json,sys; g=json.load(open(sys.argv[1]))["git"]; print(g["commit"], g["dirty"], g["dir"])' "$out/run.json")" = "$sha False $work/runfolder/provider" ] \
+  || fail "the git probe did not find the provider worktree beside terraform.rc: $(grep -A5 '"git"' "$out/run.json")"
+grep -q "^git:        $(printf '%s' "$sha" | cut -c1-12) [^ ]*, in $work/runfolder/provider$" "$out/command.txt" || fail "command.txt lacks the git line: $(grep git: "$out/command.txt")"
+pass "the git commit comes from the provider worktree beside TF_CLI_CONFIG_FILE"
+
+cat > "$work/bin/after.sh" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" > "$AFTER_LOG"
+[ -f "$2/index.md" ] || { echo "no index.md yet" >> "$AFTER_LOG"; exit 9; }
+exit 5
+EOF
+chmod +x "$work/bin/after.sh"
+out="$work/run8"
+status=0
+( cd "$work/project" && AFTER_LOG="$work/after.log" "$record" --out "$out" --after "after.sh --flag" -- ./drive.sh x ) \
+  > /dev/null 2> "$work/run8.stderr" </dev/null || status=$?
+[ "$status" = 3 ] || fail "--after changed the exit code to $status"
+[ "$(cat "$work/after.log")" = "--flag $out" ] || fail "--after got the wrong arguments: $(cat "$work/after.log")"
+grep -q '^record: after.sh exited 5$' "$work/run8.stderr" || fail "--after's exit code was not reported: $(grep record: "$work/run8.stderr")"
+grep -q "^record: $out\$" "$work/run8.stderr" || fail "the directory was not named before --after ran"
+pass "--after runs with the finished directory, split on spaces, and its exit code is reported"
+
 # --- the arguments --------------------------------------------------------------
 
 status=0
