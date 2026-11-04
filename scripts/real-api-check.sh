@@ -703,10 +703,14 @@ hw_preflight() {
   result PASS preflight
 }
 
-# hw_holds <dir> is true when <dir>'s state still holds a managed resource.
+# hw_holds <dir> is true when <dir>'s state still holds a managed resource,
+# or when its state can't be read: a destroy of an empty state does nothing,
+# and a skipped one can leave hardware running.
 hw_holds() {
+  local list
   [ -f "$1/terraform.tfstate" ] || return 1
-  ( cd "$1" && "$TF_BIN" state list 2> /dev/null ) | grep -qv '^data\.'
+  list="$(cd "$1" && "$TF_BIN" state list 2> /dev/null)" || return 0
+  printf '%s\n' "$list" | grep -qv '^data\.'
 }
 
 # hw_held <dir> prints each managed resource <dir>'s state holds, with its id.
@@ -743,6 +747,9 @@ hw_cleanup() {
     say "stopping Terraform in $TF_STEP before the cleanup. Ctrl-C again leaves everything in place."
     kill -INT "$TF_PID" 2> /dev/null
     wait "$TF_PID" 2> /dev/null
+    # Terraform writes the state as it exits, and the check below reads it,
+    # so the cleanup waits for the process itself to be gone.
+    while kill -0 "$TF_PID" 2> /dev/null; do sleep 1; done
     result STOP "$TF_STEP" "interrupted"
   fi
   if [ "${REAL_API_KEEP:-0}" != 1 ]; then
