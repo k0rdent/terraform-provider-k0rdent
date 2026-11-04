@@ -108,7 +108,7 @@ paths:
 
 // compareFiles writes the spec, both recordings and the accepted list, and
 // runs compare on them.
-func compareFiles(t *testing.T, fake, real []exchange, accepted []acceptedDiff) (bool, string, error) {
+func compareFiles(t *testing.T, fake, real []exchange, accepted []acceptedDiff, flags ...string) (bool, string, error) {
 	t.Helper()
 	dir := t.TempDir()
 	write := func(name string, data []byte) string {
@@ -141,6 +141,7 @@ func compareFiles(t *testing.T, fake, real []exchange, accepted []acceptedDiff) 
 		}
 		args = append(args, "-accepted", write("accepted.json", raw))
 	}
+	args = append(args, flags...)
 	var out bytes.Buffer
 	clean, err := compare(args, &out)
 	return clean, out.String(), err
@@ -232,6 +233,31 @@ func TestAStaleAcceptedLineFails(t *testing.T) {
 	}
 	if clean || !strings.Contains(out, "1 stale accepted lines") {
 		t.Errorf("a line that excuses nothing passed:\n%s", out)
+	}
+}
+
+// A run that covers only some operations, such as hardware mode's, lists the
+// accepted lines it didn't see without failing on them: the full run on kind
+// is what keeps the list from going stale. A difference still fails it.
+func TestAPartialRunListsAcceptedLinesItDidNotSeeAndPasses(t *testing.T) {
+	same := []exchange{get("/v1/clusters/a", "$ object", "$.id string")}
+	accepted := []acceptedDiff{{Operation: getCluster, Field: "response $.uid", Side: "real", Reason: "was a difference once"}}
+	clean, out, err := compareFiles(t, same, same, accepted, "-partial")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !clean || !strings.Contains(out, "not seen in this partial run: "+getCluster+" response $.uid (real)") ||
+		!strings.Contains(out, "0 stale accepted lines, 1 not seen") {
+		t.Errorf("a partial run failed on, or didn't list, a line it didn't see:\n%s", out)
+	}
+
+	differs := []exchange{get("/v1/clusters/a", "$ object", "$.id string", "$.extra string")}
+	clean, out, err = compareFiles(t, same, differs, accepted, "-partial")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if clean || !strings.Contains(out, "1 unexcused differences") {
+		t.Errorf("a partial run passed with a difference:\n%s", out)
 	}
 }
 

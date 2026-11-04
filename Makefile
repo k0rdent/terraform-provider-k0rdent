@@ -206,6 +206,16 @@ doctor: ## Check this machine can run the tests, before anything long fails half
 real-api-check: ## On a local kind stack: fake drift, then make live. Writes the record CI checks
 	./scripts/real-api-check.sh run
 
+# `real-api-check-hardware` creates real clusters and hosts on a landscape with
+# hardware, for hours, and writes ci/real-api/hardware-record.json.
+.PHONY: real-api-check-hardware
+real-api-check-hardware: ## On a landscape with hardware: what kind can't run, against the fake and the landscape
+	./scripts/real-api-check.sh hardware
+
+.PHONY: real-api-check-hardware-test
+real-api-check-hardware-test: ## Run hardware mode against a fake standing in for a landscape, then kill one
+	./scripts/tests/test-real-api-check-hardware.sh
+
 .PHONY: real-api-record-check
 real-api-record-check: ## Fail unless ci/real-api/record.json covers this tree's fake and API version
 	./scripts/real-api-check.sh verify

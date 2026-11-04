@@ -321,12 +321,72 @@ does.
 | `K0RDENT_CLIENT_ID`, `K0RDENT_CLIENT_SECRET` | A service account scoped to that project, with `compute-admin` and `credentials-admin`, so an import can check SSH keys |
 | `REAL_API_ORG_CLIENT_ID`, `REAL_API_ORG_CLIENT_SECRET` | A service account scoped to the organization, with `compute-admin`, `organizations-admin` and `iam-viewer`, for the walkthroughs, as `docs/walkthrough-hardware.md` lists them |
 | `REAL_API_CLUSTER_TYPE` | A cluster type in the region with a worker pool and two or more `available` versions. `make live` uses it too, and a skipped step fails the check |
-| `REAL_API_WALKTHROUGH_GAPS` | What the stack can't do that a walkthrough asks for. `subnet-cidr`: the stack answers a subnet's CIDR without allocating it from the pool, so `full/` doesn't check it. `no-file-store`: no storage service, so `full-everything` leaves `file_store` off. `no-hosts`: no server for an instance group's host, so `full-everything` leaves `instance_group` and `vpc_peering` off. A kind stack needs all three. The record lists them. Default none |
+| `REAL_API_WALKTHROUGH_GAPS` | What the stack can't do that a walkthrough asks for. `subnet-cidr`: the stack answers a subnet's CIDR without allocating it from the pool, so `full/` doesn't check it. `no-file-store`: no storage service, so `full-everything` leaves `file_store` off. `no-hosts`: no server for an instance group's host, so `full-everything` leaves `instance_group` and `vpc_peering` off. A kind stack needs all three. The record lists them, and a release names the resources they leave to `make real-api-check-hardware`. Default none |
 | `REAL_API_KUBE_CONTEXT` | The stack's kube context. The API version is read from its images. Default `kind-k0rdent-rc5` |
 
 ```sh
 make real-api-check
 git add ci/real-api/record.json
+```
+
+### `make real-api-check-hardware`
+
+A kind stack can't do everything the walkthroughs ask for, so some resources
+never meet the real API in `make real-api-check`. This runs them on a
+landscape with hardware: `look/`, then `full/` with the switches for what kind
+can't do turned on, against the fake and against the landscape, through the
+same recorder, then `fakedrift compare`. It creates real clusters and hosts.
+
+It refuses to start unless `REAL_API_CONFIRM` names the endpoint's host, and it
+refuses localhost, where `make real-api-check` runs. Before it creates
+anything, a preflight reads the landscape: the credential's token, the region,
+the project, the cluster type and its versions, the address pool and, with
+file stores on, a share type. A missing piece fails there, in seconds.
+
+| Build switch in `full/` | Here | Why |
+| --- | --- | --- |
+| `network`, `security_group`, `vpc_security_groups` | On | Subnets allocated from a real pool, and groups on a real VPC |
+| `instance_group`, `vpc_peering` | On | Kind has no host for a group |
+| `file_store` | On | Kind runs no storage service |
+| `webhook`, `own_project` | Off | Kind covers both. A webhook to an address nobody serves gets turned off partway through a long run, and a project of its own needs `organizations-admin` |
+
+A cluster with hosts can take two hours to create and as long to destroy. Each
+Terraform command prints a line when it starts, with its log file, and one when
+it ends, with how long it took. In between, a line every five minutes names
+what Terraform is still creating or destroying. `results.txt` gets a line as
+each step ends, so a killed run still leaves one.
+
+On any exit, ctrl-C included, the run destroys what it made. With
+`REAL_API_KEEP=1` it leaves everything in place and prints how to destroy it.
+When a destroy fails, the summary lists what each directory's state still holds
+and the command that removes it. Every name starts with the run's id,
+`rapi-hw-<number>`, so what a killed run left is easy to find.
+
+When every step passes, it writes `ci/real-api/hardware-record.json`: the
+landscape's label, the API version and where it came from, the code hash, the
+build switches and the resources covered. `scripts/real-api-check.sh
+verify-release` prints it. When it doesn't cover the release's code, or a
+resource kind can't run isn't in it, the release check says so plainly, such as
+`kind only, no hardware for: k0rdent_file_store`.
+
+| Variable | Value |
+| --- | --- |
+| `K0RDENT_ENDPOINT` | The landscape's gateway, https |
+| `REAL_API_CONFIRM` | The endpoint's host, to confirm the landscape |
+| `K0RDENT_REGION`, `K0RDENT_PROJECT` | Where to build. The walkthrough takes them from here, not from what `look/` lists first |
+| `K0RDENT_CLIENT_ID`, `K0RDENT_CLIENT_SECRET` | A service account scoped to the organization, with `compute-admin`, `organizations-viewer` and `iam-viewer` |
+| `REAL_API_CLUSTER_TYPE` | A cluster type in the region with a worker pool and hardware free for one control plane, its workers and one host |
+| `REAL_API_VERSION` or `REAL_API_KUBE_CONTEXT` | The landscape's API version, stated, or a kube context to read it from the API's images. The record says which |
+| `REAL_API_LANDSCAPE` | A label for the record, never a host name. Default `hardware` |
+| `REAL_API_ORGANIZATION` | The organization the quota checks read. Default: the first `look/` lists |
+| `REAL_API_ADDRESS_POOL` | A pool that isn't routable. Default: the first active one |
+| `REAL_API_BUILD_OFF` | Switches to turn off as well, such as `file_store` when the landscape's storage is down. The record lists what they leave uncovered |
+| `REAL_API_KEEP` | `1` leaves everything in place |
+
+```sh
+set -a; . ./hardware.env; set +a
+REAL_API_CONFIRM=api.example.com make real-api-check-hardware
+git add ci/real-api/hardware-record.json
 ```
 
 ### Seed a cluster type
