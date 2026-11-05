@@ -42,8 +42,7 @@ Fastest first:
 | `make plan-fake` | Credential handling and configuration errors work |
 | `make drift` | No resource plans a change after an apply or a refresh |
 | `make walkthrough-api-test` | The API walkthrough's commands work as the page shows them |
-| `make testacc` | Each resource's lifecycle works through real Terraform |
-| `make testacc-matrix` | The same, and `docs/testing-matrix.md` is what those tests do |
+| `make testacc` | Each resource's lifecycle works through real Terraform, and `docs/testing-matrix.md` is what those tests do |
 | `make plan-quality` | Refresh-only plans find nothing, and plans stay within the unknown budget |
 | `make walkthrough-test` | The hardware walkthrough's directories work as the page says |
 | `make upgrade-test` | State from the previous release plans empty under this tree, but for accepted changes |
@@ -68,10 +67,12 @@ None of these prove the real API behaves like the fake.
 ### `make testacc`
 
 Real Terraform against the fake, one lifecycle per resource. Each case checks
-its resources are gone after the destroy.
+its resources are gone after the destroy. CI runs the same command, so a
+local run sees what CI sees.
 
-- Runs under `terraform`. `make testacc TF_BIN=tofu` runs it under OpenTofu,
-  and CI runs both.
+- Runs under `terraform`, then checks the [testing matrix](#the-testing-matrix).
+  `make testacc TF_BIN=tofu` runs it under OpenTofu, without the matrix
+  check, and CI runs both.
 - Under OpenTofu, a test that needs something only Terraform has skips and
   says why. `skipUnderOpenTofu` in `internal/acceptance/cli_test.go` holds
   the reasons:
@@ -88,14 +89,15 @@ its resources are gone after the destroy.
   `10.0.0.31` without quotes, then can't read it back. The step fails once
   OpenTofu fixes that.
 
-### `make testacc-matrix` and the testing matrix
+### The testing matrix
 
 [docs/testing-matrix.md](docs/testing-matrix.md) names, for every attribute
 of every resource, the acceptance tests that import it, change it and upgrade
-it. No test declares what it covers. `make testacc-matrix` runs
-`make testacc` with a recorder around the provider, which writes down what
-each test made the provider do, then checks the page against that record. CI
-runs it in place of `make testacc`.
+it. No test declares what it covers. `make testacc` runs the suite with a
+recorder around the provider, which writes down what each test made the
+provider do, then checks the page against that record. The page is
+terraform's run: under OpenTofu, the tests it can't run skip, so
+`make testacc TF_BIN=tofu` doesn't check it.
 
 - A gap is a cell no test covers yet. The page shows it as gap, and each one
   is a line in `internal/repocheck/testdata/testing-matrix-gaps.txt`. A cell
@@ -117,6 +119,8 @@ make testing-matrix
 
 After a change to the gap list alone, `make testing-matrix-page` rewrites
 the page from the last run's record in `.testing-matrix/`, without the suite.
+Both refuse a record from a run that stopped early, which can't name the
+import, update and replace cells.
 
 ### `make demo`
 

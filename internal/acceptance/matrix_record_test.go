@@ -15,7 +15,7 @@ import (
 	"github.com/k0rdent/terraform-provider-k0rdent/internal/testmatrix"
 )
 
-// The testing matrix's recorder. `make testacc-matrix` passes -matrix-record,
+// The testing matrix's recorder. `make testacc` passes -matrix-record,
 // and every provider server a test starts, in process through protoV6 or as a
 // built binary under the CLI, records the matrix cells the test exercised.
 // See internal/testmatrix and docs/testing-matrix.md.

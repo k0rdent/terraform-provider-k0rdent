@@ -150,7 +150,7 @@ Full steps: [docs/build-from-source.md](docs/build-from-source.md).
 | Command | What it does |
 | --- | --- |
 | `make check` | Format, vet, lint and unit tests |
-| `make testacc` | Each resource's lifecycle through real Terraform, against the fake |
+| `make testacc` | Each resource's lifecycle through real Terraform, against the fake, and the testing matrix check |
 | `make demo` | The whole lifecycle against the fake |
 | `make help` | Every target |
 

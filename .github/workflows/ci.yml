@@ -230,15 +230,16 @@ jobs:
         with:
           terraform_version: "1.16.5"
           terraform_wrapper: false
-      # The acceptance suite with the testing matrix recorder on, then the
-      # check that docs/testing-matrix.md is what it saw.
+      # The acceptance suite, the same command as a local run: it records
+      # what each test did and checks docs/testing-matrix.md against it.
       - name: acceptance, and the testing matrix is current
-        run: make testacc-matrix
+        run: make testacc
 
   # The same suite under OpenTofu, in a job of its own because the one above
   # already takes most of its time limit. It's where write-only attributes,
   # import blocks and generated configuration meet OpenTofu. The tests
-  # OpenTofu can't run skip with a reason TESTING.md lists.
+  # OpenTofu can't run skip with a reason TESTING.md lists, so this run
+  # doesn't check the testing matrix, which is terraform's run.
   testacc-opentofu:
     name: acceptance under OpenTofu
     runs-on: ubuntu-latest

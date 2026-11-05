@@ -94,39 +94,38 @@ install: build ## Install into the local plugin mirror for dev_overrides
 test: ## Unit tests
 	go test -race -count=1 ./...
 
-# TF_BIN=tofu runs it under OpenTofu. A TF_BIN that isn't on PATH fails here,
-# because an empty TF_ACC_TERRAFORM_PATH would quietly run terraform instead.
-.PHONY: testacc
-testacc: ## Acceptance tests: each resource's own lifecycle against the local fake. TF_BIN=tofu for OpenTofu
-	@tf="$$(command -v $(TF_BIN))" || { echo "testacc: $(TF_BIN) is not on PATH" >&2; exit 1; }; \
-	echo "testacc: $$("$$tf" version | head -1) at $$tf"; \
-	TF_ACC=1 TF_ACC_TERRAFORM_PATH="$$tf" go test ./internal/acceptance/ -count=1 -timeout 20m $(TESTACC_ARGS)
-
-# The testing matrix, docs/testing-matrix.md: for every resource attribute,
-# the tests that import it, change it and upgrade it. The acceptance suite
-# runs with the recorder in internal/testmatrix on, which writes down what
-# each test made the provider do, and the check in internal/repocheck builds
-# the page from that record. testacc-matrix is CI's acceptance step: it fails
-# when the page isn't what the run saw. testing-matrix rewrites the page. The
-# record stays in .testing-matrix/, so testing-matrix-page can rewrite the
-# page from it again, after a change to the gap list, without the suite.
+# The acceptance suite, the same command locally and in CI. TESTACC_FLAGS is
+# every go test flag it takes, for make drift too.
+#
+# Under terraform it runs with the recorder in internal/testmatrix on, and
+# the check in internal/repocheck fails when docs/testing-matrix.md isn't
+# what the run saw. The page describes terraform's run: under OpenTofu the
+# tests it can't run skip, so TF_BIN=tofu neither records nor checks.
+# testing-matrix rewrites the page instead of checking it, and
+# testing-matrix-page rewrites it from the record in .testing-matrix/
+# without the suite, after a change to the gap list.
+#
+# A TF_BIN that isn't on PATH fails here, because an empty
+# TF_ACC_TERRAFORM_PATH would quietly run terraform instead.
+TESTACC_FLAGS := -count=1 -timeout 20m
 MATRIX_RECORD := $(CURDIR)/.testing-matrix/record.jsonl
 MATRIX_CHECK  := go test ./internal/repocheck/ -count=1 -run '^TestTheTestingMatrixIsCurrent$$' -args -matrix-record="$(MATRIX_RECORD)"
+MATRIX_ON      = $(filter terraform,$(notdir $(TF_BIN)))
 
-.PHONY: testacc-matrix
-testacc-matrix: ## make testacc with the testing matrix recorder on, then check docs/testing-matrix.md against what it saw
-	@mkdir -p "$(dir $(MATRIX_RECORD))"
-	$(MAKE) --no-print-directory testacc TESTACC_ARGS='-args -matrix-record="$(MATRIX_RECORD)"'
-	$(MATRIX_CHECK)
+.PHONY: testacc
+testacc: ## Acceptance tests against the local fake, then the check that docs/testing-matrix.md is what they did. TF_BIN=tofu for OpenTofu, which skips the check
+	@tf="$$(command -v $(TF_BIN))" || { echo "testacc: $(TF_BIN) is not on PATH" >&2; exit 1; }; \
+	echo "testacc: $$("$$tf" version | head -1) at $$tf"; \
+	mkdir -p "$(dir $(MATRIX_RECORD))"; \
+	TF_ACC=1 TF_ACC_TERRAFORM_PATH="$$tf" go test ./internal/acceptance/ $(TESTACC_FLAGS) $(if $(MATRIX_ON),-args -matrix-record="$(MATRIX_RECORD)")
+	$(if $(MATRIX_ON),$(MATRIX_CHECK) $(MATRIX_UPDATE),@echo "testacc: docs/testing-matrix.md describes terraform's run, so $(TF_BIN)'s isn't checked against it")
 
 .PHONY: testing-matrix
-testing-matrix: ## Run the acceptance suite with the recorder on and rewrite docs/testing-matrix.md from what it saw
-	@mkdir -p "$(dir $(MATRIX_RECORD))"
-	$(MAKE) --no-print-directory testacc TESTACC_ARGS='-args -matrix-record="$(MATRIX_RECORD)"'
-	$(MATRIX_CHECK) -update-matrix
+testing-matrix: ## make testacc, rewriting docs/testing-matrix.md from what it saw instead of checking it
+	@$(MAKE) --no-print-directory testacc TF_BIN=terraform MATRIX_UPDATE=-update-matrix
 
 .PHONY: testing-matrix-page
-testing-matrix-page: ## Rewrite docs/testing-matrix.md from the record the last testing-matrix or testacc-matrix left
+testing-matrix-page: ## Rewrite docs/testing-matrix.md from the record the last make testacc left
 	$(MATRIX_CHECK) -update-matrix
 
 # The perpetual-diff check on its own, so the nightly can name it when it
@@ -135,7 +134,7 @@ testing-matrix-page: ## Rewrite docs/testing-matrix.md from the record the last 
 # `make testacc` runs it too.
 .PHONY: drift
 drift: ## The perpetual-diff check alone: every resource, plan and refresh against a fake that moves what the platform moves
-	TF_ACC=1 TF_ACC_TERRAFORM_PATH="$$(command -v $(TF_BIN))" go test ./internal/acceptance/ -count=1 -timeout 20m -v \
+	TF_ACC=1 TF_ACC_TERRAFORM_PATH="$$(command -v $(TF_BIN))" go test ./internal/acceptance/ $(TESTACC_FLAGS) -v \
 		-run '^(TestAccPerpetualDiff|TestPerpetualDiffCoversEveryResource)$$'
 
 # The performance benchmark: plan, refresh-only plan, apply and destroy at each
