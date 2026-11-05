@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -491,4 +492,38 @@ type noIdentityServer struct {
 
 func (noIdentityServer) GetResourceIdentitySchemas(context.Context, *tfprotov6.GetResourceIdentitySchemasRequest) (*tfprotov6.GetResourceIdentitySchemasResponse, error) {
 	return &tfprotov6.GetResourceIdentitySchemasResponse{}, nil
+}
+
+// versionedServer is bindingServer at schema version 1.
+type versionedServer struct {
+	bindingServer
+}
+
+func (versionedServer) GetProviderSchema(context.Context, *tfprotov6.GetProviderSchemaRequest) (*tfprotov6.GetProviderSchemaResponse, error) {
+	s := *bindingSchema
+	s.Version = 1
+	return &tfprotov6.GetProviderSchemaResponse{ResourceSchemas: map[string]*tfprotov6.Schema{bindingType: &s}}, nil
+}
+
+func (versionedServer) UpgradeResourceState(context.Context, *tfprotov6.UpgradeResourceStateRequest) (*tfprotov6.UpgradeResourceStateResponse, error) {
+	return &tfprotov6.UpgradeResourceStateResponse{UpgradedState: binding("vpc-a", "", "default")}, nil
+}
+
+// Terraform asks the provider to upgrade every state it reads, at the
+// current version too. Only a state from an older version is an upgrade.
+func TestOnlyAStateFromAnOlderVersionIsAnUpgrade(t *testing.T) {
+	for version, want := range map[int64][]string{
+		0: {"upgrade project", "upgrade region", "upgrade security_groups", "upgrade vpc"},
+		1: nil,
+	} {
+		file := filepath.Join(t.TempDir(), "record.jsonl")
+		s, err := Wrap(versionedServer{}, file, "TestBindings")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.UpgradeResourceState(context.Background(), &tfprotov6.UpgradeResourceStateRequest{TypeName: bindingType, Version: version}); err != nil {
+			t.Fatal(err)
+		}
+		expect(t, fmt.Sprintf("from version %d", version), recorded(t, file), want...)
+	}
 }
