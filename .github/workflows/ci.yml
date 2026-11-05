@@ -216,8 +216,10 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
-          # The testing matrix reads the previous release's walkthrough and
-          # state schemas from its tag.
+          # make testacc's upgrade coverage summary picks the previous
+          # release from the tags, as the upgrade job does, and reads its
+          # walkthrough and state schemas from its tag. It's information:
+          # without them it says so and passes.
           fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
@@ -231,7 +233,8 @@ jobs:
           terraform_version: "1.16.5"
           terraform_wrapper: false
       # The acceptance suite, the same command as a local run: it records
-      # what each test did and checks docs/testing-matrix.md against it.
+      # what each test did and checks docs/testing-matrix.md against it,
+      # then writes upgrade coverage to the job summary, as information.
       - name: acceptance, and the testing matrix is current
         run: make testacc
 

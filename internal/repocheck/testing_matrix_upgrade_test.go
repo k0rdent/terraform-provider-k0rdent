@@ -1,14 +1,21 @@
 package repocheck
 
-// What the testing matrix knows about the previous release: which tag it is,
-// what its walkthrough sets, and what its state holds.
+// Upgrade coverage: which upgrade cells the tests and the previous release's
+// walkthrough cover. It isn't on docs/testing-matrix.md and fails nothing,
+// since it depends on which release came before and not only on the commit.
+// make upgrade-test is what gates upgrades. After the matrix check,
+// make testacc writes this summary to a file, and in GitHub Actions to the
+// job summary, as information.
 //
-// The upgrade job (ci/upgrade-against-fake.sh) applies the previous release's
-// examples/walkthrough with that release and plans it with this build. The
-// recorder can't see into it, so an attribute a resource block sets there,
-// directly, through a local, or inside a for expression, counts as an upgrade
-// cell that directory covers. The reader doesn't evaluate `count`, so a block
-// switched off in a directory still counts there.
+// The previous release is the one make upgrade-test upgrades from, as
+// ci/upgrade-against-fake.sh --previous prints it, so there's one rule.
+//
+// The upgrade job applies the previous release's examples/walkthrough with
+// that release and plans it with this build. The recorder can't see into it,
+// so an attribute a resource block sets there, directly, through a local, or
+// inside a for expression, counts as an upgrade cell that directory covers.
+// The reader doesn't evaluate `count`, so a block switched off in a directory
+// still counts there.
 //
 // An attribute the previous release never stored has no upgrade to test. Its
 // stored shape is the state schema snapshot for the version it declared
@@ -17,14 +24,18 @@ package repocheck
 // to a version's shape without a snapshot of its own.
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
+	"flag"
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -35,7 +46,14 @@ import (
 	"github.com/k0rdent/terraform-provider-k0rdent/internal/provider"
 )
 
-const stateSchemaDir = "internal/provider/testdata/state-schemas"
+var upgradeSummary = flag.String("upgrade-summary", "",
+	"where make testacc writes upgrade coverage, as information. Needs -matrix-record")
+
+const (
+	stateSchemaDir = "internal/provider/testdata/state-schemas"
+	// previousRule prints the release make upgrade-test upgrades from.
+	previousRule = "ci/upgrade-against-fake.sh"
+)
 
 // walkthroughSource prefixes a walkthrough directory among a cell's tests.
 const walkthroughSource = "walkthrough "
@@ -48,159 +66,108 @@ type previousRelease struct {
 	shapes map[string]map[string]bool
 	// addedLater is every path any of its state histories lists in
 	// addedLater, for every resource: a path two resources share is taken as
-	// stored by both, so the check asks for an upgrade test rather than
-	// excusing one.
+	// stored by both, so the summary counts it rather than leaving it out.
 	addedLater map[string]bool
 }
 
-func git(t *testing.T, root string, args ...string) string {
-	t.Helper()
+func git(root string, args ...string) (string, error) {
 	out, err := exec.Command("git", append([]string{"-C", root}, args...)...).Output()
 	if err != nil {
 		msg := ""
 		if ee, ok := err.(*exec.ExitError); ok {
-			msg = string(ee.Stderr)
+			msg = strings.TrimSpace(string(ee.Stderr))
 		}
-		t.Fatalf("git %s: %v %s. The matrix reads the previous release from its tag: git fetch --tags",
-			strings.Join(args, " "), err, msg)
+		return "", fmt.Errorf("git %s: %v %s", strings.Join(args, " "), err, msg)
 	}
-	return string(out)
+	return string(out), nil
 }
 
-var releaseTag = regexp.MustCompile(`^v(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?$`)
+var releaseTag = regexp.MustCompile(`^v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$`)
 
-// releaseLess orders release tags the way ci/upgrade-against-fake.sh does: a
-// release after its pre-releases, and rc.10 after rc.2.
-func releaseLess(a, b string) bool {
-	ma, mb := releaseTag.FindStringSubmatch(a), releaseTag.FindStringSubmatch(b)
-	for i := 1; i <= 3; i++ {
-		// The pattern only matches digits here.
-		x, errX := strconv.Atoi(ma[i])
-		y, errY := strconv.Atoi(mb[i])
-		if errX == nil && errY == nil && x != y {
-			return x < y
-		}
-	}
-	if (ma[4] == "") != (mb[4] == "") {
-		return ma[4] != ""
-	}
-	pa, pb := strings.Split(ma[4], "."), strings.Split(mb[4], ".")
-	for i := 0; i < len(pa) && i < len(pb); i++ {
-		x, errX := strconv.Atoi(pa[i])
-		y, errY := strconv.Atoi(pb[i])
+// upgradeFrom runs the rule make upgrade-test uses, and returns the tag it
+// picks and the releases it skipped as not yet published.
+func upgradeFrom(root string) (tag string, skipped []string, err error) {
+	return upgradeFromEnv(root, nil)
+}
+
+// upgradeFromEnv is upgradeFrom with env as the script's environment, or
+// this process's when it's nil.
+func upgradeFromEnv(root string, env []string) (tag string, skipped []string, err error) {
+	var stdout, stderr bytes.Buffer
+	cmd := exec.Command("bash", filepath.Join(root, previousRule), "--previous")
+	cmd.Env = env
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	runErr := cmd.Run()
+	var last string
+	for _, l := range strings.Split(stderr.String(), "\n") {
+		l = strings.TrimSpace(l)
 		switch {
-		case errX == nil && errY == nil && x != y:
-			return x < y
-		case (errX == nil) != (errY == nil):
-			return errX == nil
-		case errX != nil && pa[i] != pb[i]:
-			return pa[i] < pb[i]
+		case strings.HasPrefix(l, "::"):
+		case strings.Contains(l, " is tagged but "):
+			skipped = append(skipped, strings.TrimSpace(strings.TrimPrefix(l, "!")))
+		case strings.HasPrefix(l, "upgrade: FAIL - "):
+			last = strings.TrimPrefix(l, "upgrade: FAIL - ")
+		case l != "" && last == "":
+			last = strings.TrimSpace(strings.TrimPrefix(l, "✗"))
 		}
 	}
-	return len(pa) < len(pb)
+	if runErr != nil {
+		if last == "" {
+			last = runErr.Error()
+		}
+		return "", skipped, errors.New(last)
+	}
+	tag = "v" + strings.TrimSpace(stdout.String())
+	if !releaseTag.MatchString(tag) {
+		return "", skipped, fmt.Errorf("%s --previous printed %q, not a version", previousRule, stdout.String())
+	}
+	return tag, skipped, nil
 }
 
-// releaseLine is X.Y on a release-vX.Y.x branch, as the upgrade job works it
-// out, and empty on main.
-func releaseLine(t *testing.T, root string) string {
-	t.Helper()
-	branch := os.Getenv("GITHUB_BASE_REF")
-	if branch == "" && os.Getenv("GITHUB_ACTIONS") == "true" {
-		branch = os.Getenv("GITHUB_REF_NAME")
-	}
-	if branch == "" {
-		// Locally: the release branch HEAD has commits from, if any.
-		var lines []string
-		for _, b := range strings.Fields(git(t, root, "for-each-ref", "--format=%(refname:short)", "refs/remotes/origin/release-v*.x")) {
-			line := strings.TrimSuffix(strings.TrimPrefix(b, "origin/release-v"), ".x")
-			base, err := exec.Command("git", "-C", root, "merge-base", "HEAD", b).Output()
-			if err != nil {
-				continue
-			}
-			count := strings.TrimSpace(git(t, root, "rev-list", "--count", "origin/main.."+strings.TrimSpace(string(base))))
-			if count != "0" {
-				lines = append(lines, line)
-			}
-		}
-		if len(lines) > 1 {
-			t.Fatalf("HEAD has commits from more than one release branch (%v). Set PREVIOUS", lines)
-		}
-		if len(lines) == 1 {
-			return lines[0]
-		}
-		return ""
-	}
-	if m := regexp.MustCompile(`^release-v(\d+\.\d+)\.x$`).FindStringSubmatch(branch); m != nil {
-		return m[1]
-	}
-	return ""
-}
-
-// previousTag is the release to upgrade from: PREVIOUS when set, as for the
-// upgrade job, or else the newest release tag not on HEAD, up to the release
-// line on a release branch. The upgrade job also skips a tag a registry
-// doesn't serve yet, which needs the network, so for the day a release is
-// still being published the two can differ.
-func previousTag(t *testing.T, root string) string {
-	t.Helper()
-	if v := os.Getenv("PREVIOUS"); v != "" {
-		return "v" + strings.TrimPrefix(v, "v")
-	}
-	onHead := map[string]bool{}
-	for _, tag := range strings.Fields(git(t, root, "tag", "--points-at", "HEAD", "-l", "v*")) {
-		onHead[tag] = true
-	}
-	line := releaseLine(t, root)
-	var tags []string
-	for _, tag := range strings.Fields(git(t, root, "tag", "-l", "v*")) {
-		m := releaseTag.FindStringSubmatch(tag)
-		if m == nil || onHead[tag] {
-			continue
-		}
-		if line != "" && releaseLess("v"+line+".999999", "v"+m[1]+"."+m[2]+".0") {
-			continue
-		}
-		tags = append(tags, tag)
-	}
-	if len(tags) == 0 {
-		t.Fatal("no release tag to upgrade from. git fetch --tags, or set PREVIOUS")
-	}
-	sort.Slice(tags, func(i, j int) bool { return releaseLess(tags[i], tags[j]) })
-	return tags[len(tags)-1]
-}
-
-func readPreviousRelease(t *testing.T, root string) previousRelease {
-	t.Helper()
-	tag := previousTag(t, root)
+// readPreviousRelease reads tag's walkthrough, state schema snapshots and
+// state history from git.
+func readPreviousRelease(root, tag string) (previousRelease, error) {
 	p := previousRelease{tag: tag, walkthrough: map[string][]*hclsyntax.Body{},
 		shapes: map[string]map[string]bool{}, addedLater: map[string]bool{}}
 
-	for _, f := range strings.Fields(git(t, root, "ls-tree", "-r", "--name-only", tag, "examples/walkthrough")) {
+	files, err := git(root, "ls-tree", "-r", "--name-only", tag, "examples/walkthrough")
+	if err != nil {
+		return p, err
+	}
+	for _, f := range strings.Fields(files) {
 		if !strings.HasSuffix(f, ".tf") {
 			continue
 		}
-		parsed, diags := hclsyntax.ParseConfig([]byte(git(t, root, "show", tag+":"+f)), f, hcl.InitialPos)
+		src, showErr := git(root, "show", tag+":"+f)
+		if showErr != nil {
+			return p, showErr
+		}
+		parsed, diags := hclsyntax.ParseConfig([]byte(src), f, hcl.InitialPos)
 		if diags.HasErrors() {
-			t.Fatalf("%s at %s: %v", f, tag, diags)
+			return p, fmt.Errorf("%s at %s: %v", f, tag, diags)
 		}
 		dir := strings.Split(f, "/")[2]
 		body, ok := parsed.Body.(*hclsyntax.Body)
 		if !ok {
-			t.Fatalf("%s at %s: a body of type %T", f, tag, parsed.Body)
+			return p, fmt.Errorf("%s at %s: a body of type %T", f, tag, parsed.Body)
 		}
 		p.walkthrough[dir] = append(p.walkthrough[dir], body)
 	}
 
 	// The highest version each resource has a snapshot for is the version
 	// the release declared.
+	files, err = git(root, "ls-tree", "-r", "--name-only", tag, stateSchemaDir)
+	if err != nil {
+		return p, err
+	}
 	newest := map[string]int{}
-	for _, f := range strings.Fields(git(t, root, "ls-tree", "-r", "--name-only", tag, stateSchemaDir)) {
+	for _, f := range strings.Fields(files) {
 		parts := strings.Split(strings.TrimPrefix(f, stateSchemaDir+"/"), "/")
 		if len(parts) != 2 || !strings.HasPrefix(parts[1], "v") || !strings.HasSuffix(parts[1], ".json") {
 			continue
 		}
-		v, err := strconv.Atoi(strings.TrimSuffix(strings.TrimPrefix(parts[1], "v"), ".json"))
-		if err != nil {
+		v, atoiErr := strconv.Atoi(strings.TrimSuffix(strings.TrimPrefix(parts[1], "v"), ".json"))
+		if atoiErr != nil {
 			continue
 		}
 		if cur, ok := newest[parts[0]]; !ok || v > cur {
@@ -210,8 +177,12 @@ func readPreviousRelease(t *testing.T, root string) previousRelease {
 	for suffix, v := range newest {
 		var typ any
 		file := stateSchemaDir + "/" + suffix + "/v" + strconv.Itoa(v) + ".json"
-		if err := json.Unmarshal([]byte(git(t, root, "show", tag+":"+file)), &typ); err != nil {
-			t.Fatalf("%s at %s: %v", file, tag, err)
+		src, showErr := git(root, "show", tag+":"+file)
+		if showErr != nil {
+			return p, showErr
+		}
+		if jsonErr := json.Unmarshal([]byte(src), &typ); jsonErr != nil {
+			return p, fmt.Errorf("%s at %s: %v", file, tag, jsonErr)
 		}
 		paths := map[string]bool{}
 		stateTypePaths(typ, "", paths)
@@ -219,33 +190,39 @@ func readPreviousRelease(t *testing.T, root string) previousRelease {
 	}
 
 	history := "internal/provider/state_history.go"
-	if strings.TrimSpace(git(t, root, "ls-tree", "--name-only", tag, history)) != "" {
-		file, err := parser.ParseFile(token.NewFileSet(), history, git(t, root, "show", tag+":"+history), 0)
-		if err != nil {
-			t.Fatalf("%s at %s: %v", history, tag, err)
+	listed, err := git(root, "ls-tree", "--name-only", tag, history)
+	if err != nil || strings.TrimSpace(listed) == "" {
+		return p, err
+	}
+	src, err := git(root, "show", tag+":"+history)
+	if err != nil {
+		return p, err
+	}
+	file, err := parser.ParseFile(token.NewFileSet(), history, src, 0)
+	if err != nil {
+		return p, fmt.Errorf("%s at %s: %v", history, tag, err)
+	}
+	ast.Inspect(file, func(n ast.Node) bool {
+		kv, ok := n.(*ast.KeyValueExpr)
+		if !ok {
+			return true
 		}
-		ast.Inspect(file, func(n ast.Node) bool {
-			kv, ok := n.(*ast.KeyValueExpr)
-			if !ok {
-				return true
-			}
-			if id, ok := kv.Key.(*ast.Ident); ok && id.Name == "addedLater" {
-				if lit, ok := kv.Value.(*ast.CompositeLit); ok {
-					for _, el := range lit.Elts {
-						if e, ok := el.(*ast.KeyValueExpr); ok {
-							if s, ok := e.Key.(*ast.BasicLit); ok {
-								if path, err := strconv.Unquote(s.Value); err == nil {
-									p.addedLater[path] = true
-								}
+		if id, ok := kv.Key.(*ast.Ident); ok && id.Name == "addedLater" {
+			if lit, ok := kv.Value.(*ast.CompositeLit); ok {
+				for _, el := range lit.Elts {
+					if e, ok := el.(*ast.KeyValueExpr); ok {
+						if s, ok := e.Key.(*ast.BasicLit); ok {
+							if path, err := strconv.Unquote(s.Value); err == nil {
+								p.addedLater[path] = true
 							}
 						}
 					}
 				}
 			}
-			return true
-		})
-	}
-	return p
+		}
+		return true
+	})
+	return p, nil
 }
 
 // stateTypePaths collects the attribute paths in a type written in
@@ -385,4 +362,142 @@ func (p previousRelease) walkthroughCoverage(resourceType string, attrs []matrix
 		}
 	}
 	return cov
+}
+
+// upgradeSummaryFile is where make testacc writes the summary, for the page
+// to name. The Makefile passes it as -upgrade-summary.
+const upgradeSummaryFile = ".testing-matrix/upgrade-coverage.md"
+
+const upgradeSummaryTitle = "## Upgrade coverage\n\n"
+
+// notShown is the summary when it can't be worked out: one line, and no
+// failure.
+func notShown(why string) (text, headline string) {
+	headline = "upgrade coverage isn't shown: " + why
+	return upgradeSummaryTitle + "Upgrade coverage isn't shown: " + why + "\n", headline
+}
+
+// upgradeSummaryText works out the summary from the record's coverage. pick
+// is upgradeFrom, or a stand-in in a test. It never fails: what it can't work
+// out, it says in one line.
+func upgradeSummaryText(root string, pick func(string) (string, []string, error),
+	types []string, attrs map[string][]matrixAttr, cov coverage,
+) (text, headline string) {
+	tag, skipped, err := pick(root)
+	if err != nil {
+		return notShown(fmt.Sprintf("%s couldn't pick the release make upgrade-test upgrades from: %v", previousRule, err))
+	}
+	if _, tagErr := git(root, "rev-parse", "-q", "--verify", "refs/tags/"+tag); tagErr != nil {
+		return notShown(fmt.Sprintf("%s, the release make upgrade-test upgrades from, isn't a tag in this clone. "+
+			"git fetch --tags to see it", tag))
+	}
+	prev, err := readPreviousRelease(root, tag)
+	if err != nil {
+		return notShown(fmt.Sprintf("reading %s: %v", tag, err))
+	}
+	return renderUpgradeSummary(prev, skipped, types, attrs, cov)
+}
+
+// renderUpgradeSummary counts, for each resource, the upgrade cells of the
+// attributes prev stored, which of them a test or a directory of prev's
+// walkthrough covers, and lists each cell's sources.
+func renderUpgradeSummary(prev previousRelease, skipped, types []string, attrs map[string][]matrixAttr,
+	cov coverage,
+) (text, headline string) {
+	for _, typ := range types {
+		for k, names := range prev.walkthroughCoverage(typ, attrs[typ]) {
+			for _, n := range names {
+				cov.add(k, n, "")
+			}
+		}
+	}
+	var rows, covered, uncovered []string
+	totals := [4]int{}
+	for _, typ := range types {
+		n := [4]int{}
+		for _, a := range attrs[typ] {
+			k := cellKey{typ, a.Path, cellUpgrade}
+			switch {
+			case !a.Needs[cellUpgrade]:
+			case !prev.stored(typ, a.Path) && len(cov[k]) == 0:
+				n[3]++
+			case len(cov[k]) > 0:
+				n[0]++
+				n[1]++
+				covered = append(covered, fmt.Sprintf("| `%s` | `%s` | %s |", typ, a.Path, sourceNames(cov, k)))
+			default:
+				n[0]++
+				n[2]++
+				uncovered = append(uncovered, fmt.Sprintf("| `%s` | `%s` |", typ, a.Path))
+			}
+		}
+		for i := range n {
+			totals[i] += n[i]
+		}
+		rows = append(rows, fmt.Sprintf("| `%s` | %d | %d | %d | %d |", typ, n[0], n[1], n[2], n[3]))
+	}
+
+	headline = fmt.Sprintf("upgrade coverage from %s, information only: %d of %d cells covered, %d not",
+		prev.tag, totals[1], totals[0], totals[2])
+	var b strings.Builder
+	b.WriteString(upgradeSummaryTitle)
+	fmt.Fprintf(&b, "Information only, and it fails nothing: `make upgrade-test` is what gates upgrades. "+
+		"From %s, the release `make upgrade-test` upgrades from, %d of %d upgrade cells are covered and %d aren't.\n\n",
+		prev.tag, totals[1], totals[0], totals[2])
+	for _, s := range skipped {
+		b.WriteString(s + ".\n\n")
+	}
+	fmt.Fprintf(&b, "A test covers a cell when it upgrades a state from an older schema version holding the attribute, "+
+		"and a directory of %s's walkthrough covers it when it sets the attribute, since the upgrade job applies that "+
+		"directory with %s and plans it with this build. An attribute %s didn't store has no upgrade, so no cell.\n\n",
+		prev.tag, prev.tag, prev.tag)
+	fmt.Fprintf(&b, "| Resource | Cells | Covered | Not covered | Not in %s |\n| --- | --- | --- | --- | --- |\n", prev.tag)
+	b.WriteString(strings.Join(rows, "\n") + "\n")
+	fmt.Fprintf(&b, "| All | %d | %d | %d | %d |\n", totals[0], totals[1], totals[2], totals[3])
+	if len(uncovered) > 0 {
+		fmt.Fprintf(&b, "\n<details><summary>Not covered (%d)</summary>\n\n| Resource | Attribute |\n| --- | --- |\n%s\n\n</details>\n",
+			len(uncovered), strings.Join(uncovered, "\n"))
+	}
+	if len(covered) > 0 {
+		fmt.Fprintf(&b, "\n<details><summary>Covered (%d)</summary>\n\n| Resource | Attribute | By |\n| --- | --- | --- |\n%s\n\n</details>\n",
+			len(covered), strings.Join(covered, "\n"))
+	}
+	return b.String(), headline
+}
+
+// TestTheUpgradeCoverageSummary writes the summary make testacc reports after
+// the matrix check. It never fails the run.
+func TestTheUpgradeCoverageSummary(t *testing.T) {
+	if *upgradeSummary == "" || *matrixRecord == "" {
+		t.Skip("no -upgrade-summary and -matrix-record: `make testacc` runs this after the matrix check")
+	}
+	root := repoRoot(t)
+	types, attrs, record := matrixInputs(t)
+	var text, headline string
+	if cov, _, err := readRecord(record, attrs); err != nil {
+		text, headline = notShown(err.Error())
+	} else {
+		text, headline = upgradeSummaryText(root, upgradeFrom, types, attrs, cov)
+	}
+	if err := os.WriteFile(*upgradeSummary, []byte(text), 0o600); err != nil {
+		t.Logf("writing %s: %v", *upgradeSummary, err)
+	}
+	if file := os.Getenv("GITHUB_STEP_SUMMARY"); file != "" {
+		if err := appendFile(file, text); err != nil {
+			t.Logf("writing the job summary: %v", err)
+		}
+	}
+	fmt.Printf("testacc: %s. All of it: %s\n", headline, *upgradeSummary)
+}
+
+func appendFile(file, text string) error {
+	f, err := os.OpenFile(file, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	if _, err := f.WriteString("\n" + text); err != nil {
+		_ = f.Close()
+		return err
+	}
+	return f.Close()
 }

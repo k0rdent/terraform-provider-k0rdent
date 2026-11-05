@@ -1,14 +1,15 @@
 package repocheck
 
 // The testing matrix, docs/testing-matrix.md: for every attribute of every
-// resource, the tests that import it, change it and upgrade it.
+// resource, the tests that import it and change it.
 //
 // Nothing in a test declares what it covers. `make testacc` runs the
 // acceptance suite with the recorder in internal/testmatrix around every
 // provider server, in process and in the built binaries the CLI tests run,
-// and this check reads that record. Upgrade cells also come from the previous
-// release's walkthrough (testing_matrix_upgrade_test.go), which the upgrade
-// job applies with that release, since the recorder can't see into it.
+// and this check reads that record. The page and the check depend only on
+// the commit, never on a tag. Upgrades aren't on the page: make upgrade-test
+// gates them, and testing_matrix_upgrade_test.go reports their coverage
+// without failing.
 //
 // The check fails on a cell the schema needs that no test covers and the gap
 // list doesn't name, on a gap a test now covers, on a gap for a cell the
@@ -20,11 +21,13 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -57,7 +60,9 @@ const (
 	cellUpgrade cell = testmatrix.CellUpgrade
 )
 
-var allCells = []cell{cellImport, cellUpdate, cellUpgrade}
+// pageCells are the cells the page shows and the check gates. Upgrade cells
+// are only in the upgrade coverage summary.
+var pageCells = []cell{cellImport, cellUpdate}
 
 // cellKey names one cell: a resource type, an attribute path with nested
 // names joined by dots, and the cell. Its string form is the gap list's line.
@@ -107,7 +112,7 @@ func matrixResources(t *testing.T) []string {
 // matrixAttributes walks a resource's schema, nested attributes and blocks
 // included, and says which cells each attribute needs. Import always. Update
 // unless it's computed only or always replaced, itself or through a parent.
-// Upgrade unless it's write-only, which is never stored.
+// Upgrade, for the summary, unless it's write-only, which is never stored.
 func matrixAttributes(t *testing.T, resourceType string) []matrixAttr {
 	t.Helper()
 	s, ok := resourceSchema(resourceType)
@@ -214,8 +219,8 @@ func replacementOf(a rschema.Attribute) replaces {
 	return r
 }
 
-// source is one thing that covers a cell: a test, or the previous release's
-// walkthrough directory. how is "update" or "replace" for a change to an
+// source is one thing that covers a cell: a test, or, for an upgrade, the
+// previous release's walkthrough directory. how is "update" or "replace" for a change to an
 // attribute that sometimes replaces, and empty otherwise.
 type source struct {
 	name string
@@ -252,12 +257,12 @@ func (c coverage) names(k cellKey) []string {
 // A recorded update to a computed attribute is the platform moving it, so it
 // fills no cell, and a replacement counts as a change only to an attribute that
 // sometimes replaces. unnamed is the cells recorded from a test the recorder
-// couldn't name.
-func readRecord(t *testing.T, file string, attrs map[string][]matrixAttr) (cov coverage, unnamed []string) {
-	t.Helper()
+// couldn't name. It returns an error rather than failing, since the upgrade
+// coverage summary reads the record too, and that never fails.
+func readRecord(file string, attrs map[string][]matrixAttr) (cov coverage, unnamed []string, err error) {
 	f, err := os.Open(file)
 	if err != nil {
-		t.Fatalf("reading the matrix record: %v", err)
+		return nil, nil, fmt.Errorf("reading the matrix record: %w", err)
 	}
 	defer func() { _ = f.Close() }()
 	byPath := map[string]matrixAttr{}
@@ -276,7 +281,7 @@ func readRecord(t *testing.T, file string, attrs map[string][]matrixAttr) (cov c
 		lines++
 		var l testmatrix.Line
 		if err := json.Unmarshal(sc.Bytes(), &l); err != nil {
-			t.Fatalf("%s line %d: %v", file, lines, err)
+			return nil, nil, fmt.Errorf("%s line %d: %w", file, lines, err)
 		}
 		if l.Cell == testmatrix.CellFinished {
 			finished = true
@@ -310,16 +315,16 @@ func readRecord(t *testing.T, file string, attrs map[string][]matrixAttr) (cov c
 		cov.add(cellKey{l.Resource, l.Path, c}, l.Test, how)
 	}
 	if err := sc.Err(); err != nil {
-		t.Fatal(err)
+		return nil, nil, err
 	}
 	if lines == 0 {
-		t.Fatalf("%s is empty, so the suite recorded nothing. Did it run with -matrix-record?", file)
+		return nil, nil, fmt.Errorf("%s is empty, so the suite recorded nothing. Did it run with -matrix-record?", file)
 	}
 	if !finished {
-		t.Fatal(unfinished(file, skipped))
+		return nil, nil, errors.New(unfinished(file, skipped))
 	}
 	sort.Strings(unnamed)
-	return cov, unnamed
+	return cov, unnamed, nil
 }
 
 // unfinished says why a record with no finished line isn't the suite's.
@@ -332,33 +337,29 @@ func unfinished(file string, skipped []string) string {
 		"so its cells aren't the suite's. Run make testacc", file, testmatrix.CellFinished)
 }
 
-// readGaps reads the gap list: one cell per line, as cellKey writes it, with
-// # comments and blank lines.
-func readGaps(t *testing.T, file string) map[cellKey]bool {
-	t.Helper()
-	b, err := os.ReadFile(file)
-	if err != nil {
-		t.Fatalf("reading the gap list: %v", err)
-	}
+// parseGaps reads the gap list: one cell per line, as cellKey writes it, with
+// # comments and blank lines. It takes only the page's cells: upgrade
+// coverage isn't gated, so a gap line for it would excuse nothing.
+func parseGaps(text string) (map[cellKey]bool, error) {
 	gaps := map[cellKey]bool{}
-	for i, line := range strings.Split(string(b), "\n") {
+	for i, line := range strings.Split(text, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
 		f := strings.Fields(line)
-		if len(f) != 3 {
-			t.Fatalf("%s line %d: want `<resource> <attribute path> <import|update|upgrade>`, got %q", matrixGapsFile, i+1, line)
+		if len(f) != 3 || !slices.Contains(pageCells, cell(f[2])) {
+			return nil, fmt.Errorf("%s line %d: want `<resource> <attribute path> <import|update>`, got %q. "+
+				"Upgrade coverage takes no gap line: make upgrade-test gates upgrades, and make testacc only reports them",
+				matrixGapsFile, i+1, line)
 		}
 		gaps[cellKey{f[0], f[1], cell(f[2])}] = true
 	}
-	return gaps
+	return gaps, nil
 }
 
-// matrixProblems is the check. added is the upgrade cells of attributes
-// previous, the release upgraded from, didn't store, which need no test and
-// take no gap.
-func matrixProblems(attrs map[string][]matrixAttr, cov coverage, gaps, added map[cellKey]bool, unnamed []string, previous string) []string {
+// matrixProblems is the check, over the page's cells.
+func matrixProblems(attrs map[string][]matrixAttr, cov coverage, gaps map[cellKey]bool, unnamed []string) []string {
 	var problems []string
 	for _, r := range unnamed {
 		problems = append(problems, fmt.Sprintf("a provider binary recorded %s cells without being told its test: "+
@@ -367,7 +368,7 @@ func matrixProblems(attrs map[string][]matrixAttr, cov coverage, gaps, added map
 	needed := map[cellKey]bool{}
 	for typ, as := range attrs {
 		for _, a := range as {
-			for _, c := range allCells {
+			for _, c := range pageCells {
 				k := cellKey{typ, a.Path, c}
 				if !a.Needs[c] {
 					continue
@@ -375,15 +376,12 @@ func matrixProblems(attrs map[string][]matrixAttr, cov coverage, gaps, added map
 				needed[k] = true
 				tests := cov.names(k)
 				switch {
-				case len(tests) == 0 && !gaps[k] && !added[k]:
+				case len(tests) == 0 && !gaps[k]:
 					problems = append(problems, fmt.Sprintf("%s: no test covers it and %s doesn't list it. "+
 						"Write a test that does, or add the line `%s` there", k, matrixGapsFile, k))
 				case len(tests) > 0 && gaps[k]:
 					problems = append(problems, fmt.Sprintf("%s: listed as a gap, but %s covers it: drop its line from %s",
 						k, strings.Join(tests, ", "), matrixGapsFile))
-				case gaps[k] && added[k]:
-					problems = append(problems, fmt.Sprintf("%s: listed as a gap, but %s, the release the matrix upgrades from, "+
-						"never stored it, so there's no upgrade to test: drop its line from %s", k, previous, matrixGapsFile))
 				}
 			}
 		}
@@ -398,35 +396,59 @@ func matrixProblems(attrs map[string][]matrixAttr, cov coverage, gaps, added map
 	return problems
 }
 
+// sourceNames is a covered cell's text: its sources, and for an attribute
+// that sometimes replaces, which change each one saw.
+func sourceNames(cov coverage, k cellKey) string {
+	var names []string
+	for _, n := range cov.names(k) {
+		s := cov[k][n]
+		text := "`" + n + "`"
+		if dir, ok := strings.CutPrefix(n, walkthroughSource); ok {
+			text = "walkthrough `" + dir + "`"
+		}
+		if len(s.how) > 0 {
+			var how []string
+			for _, h := range []string{"update", "replace"} {
+				if s.how[h] {
+					how = append(how, h)
+				}
+			}
+			text += " (" + strings.Join(how, " and ") + ")"
+		}
+		names = append(names, text)
+	}
+	return strings.Join(names, ", ")
+}
+
 // renderMatrix writes the page.
-func renderMatrix(types []string, attrs map[string][]matrixAttr, cov coverage, gaps, added map[cellKey]bool, previous string) string {
+func renderMatrix(types []string, attrs map[string][]matrixAttr, cov coverage, gaps map[cellKey]bool) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, `# Testing matrix
 
 Generated by `+"`%s`"+`. Don't edit it by hand.
 
-For every attribute of every resource, this page names the acceptance tests that import it, change it and upgrade it. No test declares what it covers. The acceptance suite runs with a recorder around the provider, in process and in the built binary the CLI tests run, and the recorder writes down what each test made the provider do. `+"`make testacc`"+` runs the suite that way, in CI and locally, and fails when this page isn't what the run saw.
+For every attribute of every resource, this page names the acceptance tests that import it and change it. No test declares what it covers. The acceptance suite runs with a recorder around the provider, in process and in the built binary the CLI tests run, and the recorder writes down what each test made the provider do. `+"`make testacc`"+` runs the suite that way, in CI and locally, and fails when this page isn't what the run saw. The page depends only on the commit, so a new release tag changes nothing here.
+
+Upgrades aren't on this page. `+"`make upgrade-test`"+` is what gates them: state the previous published release wrote has to plan empty under this build. After its check, `+"`make testacc`"+` also reports which attributes the tests and that release's walkthrough upgrade, as information that fails nothing: in the job summary of CI's acceptance job, and in `+"`%s`"+` after a local run.
 
 How to read a row:
 
 - Import names the tests whose plan right after an import keeps the imported value of the attribute.
 - Update names the tests that change the attribute in their configuration and plan the change in place. For an attribute that sometimes replaces, a test that plans a replacement for the change counts too, and the cell says which it saw.
-- Upgrade names the tests that upgrade a state from an older schema version holding the attribute, and the directories of %s's walkthrough that set it. The upgrade job applies those with %s and plans them with this build.
 - gap means no test covers the cell yet. Each gap is a line in `+"`%s`"+`. Once a test covers it, the check fails until the line goes.
-- n/a means the cell can't happen. A computed attribute isn't set by configuration, one that always replaces has no update, and a write-only attribute is never stored.
-- not in %s means that release's state schema snapshot doesn't hold the attribute, so no state it wrote does either.
+- n/a means the cell can't happen. A computed attribute isn't set by configuration, and one that always replaces has no update.
 
-`, matrixRegenerate, previous, previous, matrixGapsFile, previous)
+`, matrixRegenerate, upgradeSummaryFile, matrixGapsFile)
 
 	b.WriteString("| Resource | Attributes | Cells | Covered | Gaps |\n| --- | --- | --- | --- | --- |\n")
 	totals := [4]int{}
 	for _, typ := range types {
 		n := [4]int{len(attrs[typ]), 0, 0, 0}
 		for _, a := range attrs[typ] {
-			for _, c := range allCells {
+			for _, c := range pageCells {
 				k := cellKey{typ, a.Path, c}
 				switch {
-				case !a.Needs[c] || (added[k] && len(cov[k]) == 0):
+				case !a.Needs[c]:
 				case len(cov[k]) > 0:
 					n[1]++
 					n[2]++
@@ -445,42 +467,22 @@ How to read a row:
 
 	changesText := map[replaces]string{replacesNever: "in place", replacesSometimes: "sometimes replaces", replacesAlways: "replaces"}
 	for _, typ := range types {
-		fmt.Fprintf(&b, "\n## %s\n\n| Attribute | Kind | Changes | Import | Update | Upgrade |\n| --- | --- | --- | --- | --- | --- |\n", typ)
+		fmt.Fprintf(&b, "\n## %s\n\n| Attribute | Kind | Changes | Import | Update |\n| --- | --- | --- | --- | --- |\n", typ)
 		for _, a := range attrs[typ] {
 			changes := changesText[a.Replaces]
 			if a.Kind == "computed" {
 				changes = "n/a"
 			}
 			row := []string{"`" + a.Path + "`", a.Kind, changes}
-			for _, c := range allCells {
+			for _, c := range pageCells {
 				k := cellKey{typ, a.Path, c}
 				switch {
 				case !a.Needs[c]:
 					row = append(row, "n/a ("+a.whyNoCell[c]+")")
 				case len(cov[k]) > 0:
-					var names []string
-					for _, n := range cov.names(k) {
-						s := cov[k][n]
-						text := "`" + n + "`"
-						if dir, ok := strings.CutPrefix(n, walkthroughSource); ok {
-							text = "walkthrough `" + dir + "`"
-						}
-						if len(s.how) > 0 {
-							var how []string
-							for _, h := range []string{"update", "replace"} {
-								if s.how[h] {
-									how = append(how, h)
-								}
-							}
-							text += " (" + strings.Join(how, " and ") + ")"
-						}
-						names = append(names, text)
-					}
-					row = append(row, strings.Join(names, ", "))
+					row = append(row, sourceNames(cov, k))
 				case gaps[k]:
 					row = append(row, "**gap**")
-				case added[k]:
-					row = append(row, "not in "+previous)
 				default:
 					row = append(row, "**missing**")
 				}
@@ -515,13 +517,12 @@ func pageDiff(committed, generated string) string {
 	return strings.Join(out, "\n")
 }
 
-func TestTheTestingMatrixIsCurrent(t *testing.T) {
-	if *matrixRecord == "" {
-		t.Skip("no -matrix-record: `make testacc` runs this after the acceptance suite")
-	}
-	root := repoRoot(t)
-	types := matrixResources(t)
-	attrs := map[string][]matrixAttr{}
+// matrixInputs is what the check and the upgrade summary both read: every
+// resource type, its attributes, and the record's coverage.
+func matrixInputs(t *testing.T) (types []string, attrs map[string][]matrixAttr, record string) {
+	t.Helper()
+	types = matrixResources(t)
+	attrs = map[string][]matrixAttr{}
 	for _, typ := range types {
 		attrs[typ] = matrixAttributes(t, typ)
 	}
@@ -529,27 +530,32 @@ func TestTheTestingMatrixIsCurrent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cov, unnamed := readRecord(t, record, attrs)
-	up := readPreviousRelease(t, root)
-	added := map[cellKey]bool{}
-	for _, typ := range types {
-		for k, names := range up.walkthroughCoverage(typ, attrs[typ]) {
-			for _, n := range names {
-				cov.add(k, n, "")
-			}
-		}
-		for _, a := range attrs[typ] {
-			if a.Needs[cellUpgrade] && !up.stored(typ, a.Path) {
-				added[cellKey{typ, a.Path, cellUpgrade}] = true
-			}
-		}
+	return types, attrs, record
+}
+
+func TestTheTestingMatrixIsCurrent(t *testing.T) {
+	if *matrixRecord == "" {
+		t.Skip("no -matrix-record: `make testacc` runs this after the acceptance suite")
 	}
-	gaps := readGaps(t, filepath.Join(root, matrixGapsFile))
-	for _, p := range matrixProblems(attrs, cov, gaps, added, unnamed, up.tag) {
+	root := repoRoot(t)
+	types, attrs, record := matrixInputs(t)
+	cov, unnamed, err := readRecord(record, attrs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gapText, err := os.ReadFile(filepath.Join(root, matrixGapsFile))
+	if err != nil {
+		t.Fatalf("reading the gap list: %v", err)
+	}
+	gaps, err := parseGaps(string(gapText))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range matrixProblems(attrs, cov, gaps, unnamed) {
 		t.Error(p)
 	}
 
-	page := renderMatrix(types, attrs, cov, gaps, added, up.tag)
+	page := renderMatrix(types, attrs, cov, gaps)
 	file := filepath.Join(root, matrixPage)
 	if *updateMatrix {
 		if err := os.WriteFile(file, []byte(page), 0o644); err != nil { //nolint:gosec // a committed doc, readable by all

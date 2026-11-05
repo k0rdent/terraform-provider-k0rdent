@@ -106,12 +106,18 @@ test: ## Unit tests
 # instead of checking it, and testing-matrix-page rewrites it from the record
 # in .testing-matrix/ without the suite, after a change to the gap list.
 #
+# After the check, a whole run also writes upgrade coverage against the
+# release make upgrade-test upgrades from, to .testing-matrix/ and in GitHub
+# Actions to the job summary. It's information: it never fails the run, and
+# says in one line what it couldn't work out.
+#
 # A TF_BIN that isn't on PATH fails here, because an empty
 # TF_ACC_TERRAFORM_PATH would quietly run terraform instead.
 TESTACC_FLAGS := -count=1 -timeout 20m
 RUN           :=
 MATRIX_RECORD := $(CURDIR)/.testing-matrix/record.jsonl
 MATRIX_CHECK  := go test ./internal/repocheck/ -count=1 -run '^TestTheTestingMatrixIsCurrent$$' -args -matrix-record="$(MATRIX_RECORD)"
+UPGRADE_SUMMARY := go test ./internal/repocheck/ -count=1 -v -run '^TestTheUpgradeCoverageSummary$$' -args -matrix-record="$(MATRIX_RECORD)" -upgrade-summary="$(dir $(MATRIX_RECORD))upgrade-coverage.md"
 MATRIX_OFF     = $(if $(filter tofu,$(notdir $(TF_BIN))),OpenTofu skips some tests,$(if $(RUN)$(filter -run -run=% -skip -skip=%,$(TESTACC_FLAGS)),only some tests ran))
 
 .PHONY: testacc
@@ -121,6 +127,7 @@ testacc: ## Acceptance tests against the local fake, then the check that docs/te
 	mkdir -p "$(dir $(MATRIX_RECORD))"; \
 	TF_ACC=1 TF_ACC_TERRAFORM_PATH="$$tf" go test ./internal/acceptance/ $(TESTACC_FLAGS) $(if $(RUN),-run '$(RUN)') $(if $(MATRIX_OFF),,-args -matrix-record="$(MATRIX_RECORD)")
 	$(if $(MATRIX_OFF),@echo "testacc: docs/testing-matrix.md not checked or recorded: $(MATRIX_OFF)",$(MATRIX_CHECK) $(MATRIX_UPDATE))
+	$(if $(MATRIX_OFF),,@$(UPGRADE_SUMMARY) | grep -v -e '^=== RUN' -e '^--- PASS' -e '^PASS$$' -e '^ok ' || true)
 
 .PHONY: testing-matrix
 testing-matrix: ## make testacc, rewriting docs/testing-matrix.md from what it saw instead of checking it

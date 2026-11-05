@@ -95,12 +95,13 @@ local run sees what CI sees.
 ### The testing matrix
 
 [docs/testing-matrix.md](docs/testing-matrix.md) names, for every attribute
-of every resource, the acceptance tests that import it, change it and upgrade
-it. No test declares what it covers. `make testacc` runs the suite with a
-recorder around the provider, which writes down what each test made the
-provider do, then checks the page against that record. The page is
-terraform's run: under OpenTofu, the tests it can't run skip, so
-`make testacc TF_BIN=tofu` doesn't check it.
+of every resource, the acceptance tests that import it and change it. No
+test declares what it covers. `make testacc` runs the suite with a recorder
+around the provider, which writes down what each test made the provider do,
+then checks the page against that record. The page is terraform's run: under
+OpenTofu, the tests it can't run skip, so `make testacc TF_BIN=tofu` doesn't
+check it. The page and the check depend only on the commit, so a release tag
+changes neither.
 
 - A gap is a cell no test covers yet. The page shows it as gap, and each one
   is a line in `internal/repocheck/testdata/testing-matrix-gaps.txt`. A cell
@@ -109,10 +110,18 @@ terraform's run: under OpenTofu, the tests it can't run skip, so
 - A change to an attribute that only sometimes replaces, such as
   `ssh_access`, counts for its update cell whether the plan updates it in
   place or replaces the resource. The page says which it saw.
-- An attribute the previous release didn't store needs no upgrade test. The
-  check reads that from the release's state schema snapshot.
 - A test that runs a built provider binary has to add `matrixTestEnv(t)` to
   the command's environment, or the check fails.
+
+Upgrades aren't on the page and the check doesn't gate them.
+[`make upgrade-test`](#make-upgrade-test) is what gates upgrades. After the
+check, `make testacc` reports upgrade coverage as information: which
+attributes the tests upgrade from an older schema version, and which the
+previous release's walkthrough sets, for the release `make upgrade-test`
+upgrades from. It's in the job summary of CI's acceptance job, and in
+`.testing-matrix/upgrade-coverage.md` after a local run. It never fails the
+run. Without that release's tag, or without the network the release rule
+needs, it says so in one line.
 
 When the check says the page isn't current, regenerate it and commit it:
 
