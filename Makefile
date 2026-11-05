@@ -95,30 +95,32 @@ test: ## Unit tests
 	go test -race -count=1 ./...
 
 # The acceptance suite, the same command locally and in CI. TESTACC_FLAGS is
-# every go test flag it takes, for make drift too.
+# every go test flag it takes, for make drift too. RUN=<regexp> runs only the
+# tests it matches.
 #
-# Under terraform it runs with the recorder in internal/testmatrix on, and
-# the check in internal/repocheck fails when docs/testing-matrix.md isn't
-# what the run saw. The page describes terraform's run: under OpenTofu the
-# tests it can't run skip, so TF_BIN=tofu neither records nor checks.
-# testing-matrix rewrites the page instead of checking it, and
-# testing-matrix-page rewrites it from the record in .testing-matrix/
-# without the suite, after a change to the gap list.
+# A whole run records what each test did (internal/testmatrix) and checks
+# docs/testing-matrix.md against it (internal/repocheck). The page is
+# terraform's run, so TF_BIN=tofu, where some tests skip, neither records nor
+# checks, and nor does a run that RUN or a -run or -skip flag narrows, which
+# leaves the last whole run's record alone. testing-matrix rewrites the page
+# instead of checking it, and testing-matrix-page rewrites it from the record
+# in .testing-matrix/ without the suite, after a change to the gap list.
 #
 # A TF_BIN that isn't on PATH fails here, because an empty
 # TF_ACC_TERRAFORM_PATH would quietly run terraform instead.
 TESTACC_FLAGS := -count=1 -timeout 20m
+RUN           :=
 MATRIX_RECORD := $(CURDIR)/.testing-matrix/record.jsonl
 MATRIX_CHECK  := go test ./internal/repocheck/ -count=1 -run '^TestTheTestingMatrixIsCurrent$$' -args -matrix-record="$(MATRIX_RECORD)"
-MATRIX_ON      = $(filter terraform,$(notdir $(TF_BIN)))
+MATRIX_OFF     = $(if $(filter tofu,$(notdir $(TF_BIN))),OpenTofu skips some tests,$(if $(RUN)$(filter -run -run=% -skip -skip=%,$(TESTACC_FLAGS)),only some tests ran))
 
 .PHONY: testacc
-testacc: ## Acceptance tests against the local fake, then the check that docs/testing-matrix.md is what they did. TF_BIN=tofu for OpenTofu, which skips the check
+testacc: ## Acceptance tests against the local fake, then the check that docs/testing-matrix.md is what they did. RUN=<regexp> for some, TF_BIN=tofu for OpenTofu, neither checked
 	@tf="$$(command -v $(TF_BIN))" || { echo "testacc: $(TF_BIN) is not on PATH" >&2; exit 1; }; \
 	echo "testacc: $$("$$tf" version | head -1) at $$tf"; \
 	mkdir -p "$(dir $(MATRIX_RECORD))"; \
-	TF_ACC=1 TF_ACC_TERRAFORM_PATH="$$tf" go test ./internal/acceptance/ $(TESTACC_FLAGS) $(if $(MATRIX_ON),-args -matrix-record="$(MATRIX_RECORD)")
-	$(if $(MATRIX_ON),$(MATRIX_CHECK) $(MATRIX_UPDATE),@echo "testacc: docs/testing-matrix.md describes terraform's run, so $(TF_BIN)'s isn't checked against it")
+	TF_ACC=1 TF_ACC_TERRAFORM_PATH="$$tf" go test ./internal/acceptance/ $(TESTACC_FLAGS) $(if $(RUN),-run '$(RUN)') $(if $(MATRIX_OFF),,-args -matrix-record="$(MATRIX_RECORD)")
+	$(if $(MATRIX_OFF),@echo "testacc: docs/testing-matrix.md not checked or recorded: $(MATRIX_OFF)",$(MATRIX_CHECK) $(MATRIX_UPDATE))
 
 .PHONY: testing-matrix
 testing-matrix: ## make testacc, rewriting docs/testing-matrix.md from what it saw instead of checking it

@@ -73,6 +73,9 @@ local run sees what CI sees.
 - Runs under `terraform`, then checks the [testing matrix](#the-testing-matrix).
   `make testacc TF_BIN=tofu` runs it under OpenTofu, without the matrix
   check, and CI runs both.
+- `make testacc RUN=TestAccImport` runs only the tests the regexp matches.
+  It doesn't record or check the matrix, so the last whole run's record
+  stays.
 - Under OpenTofu, a test that needs something only Terraform has skips and
   says why. `skipUnderOpenTofu` in `internal/acceptance/cli_test.go` holds
   the reasons:
@@ -119,8 +122,8 @@ make testing-matrix
 
 After a change to the gap list alone, `make testing-matrix-page` rewrites
 the page from the last run's record in `.testing-matrix/`, without the suite.
-Both refuse a record from a run that stopped early, which can't name the
-import, update and replace cells.
+Both refuse a record from a run that failed, ran only some tests or stopped
+early.
 
 ### `make demo`
 

@@ -311,7 +311,7 @@ func readRecord(t *testing.T, file string, attrs map[string][]matrixAttr) (cov c
 		t.Fatalf("%s is empty, so the suite recorded nothing. Did it run with -matrix-record?", file)
 	}
 	if !finished {
-		t.Fatalf("%s has no %q line, so the suite stopped before it could write its import, update and replace cells. Run it again", file, testmatrix.CellFinished)
+		t.Fatalf("%s has no %q line: the run that wrote it failed, ran only some tests or stopped early, so its cells aren't the suite's. Run make testacc", file, testmatrix.CellFinished)
 	}
 	sort.Strings(unnamed)
 	return cov, unnamed

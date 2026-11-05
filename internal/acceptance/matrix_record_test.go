@@ -57,8 +57,10 @@ func startMatrixRecord() error {
 }
 
 // finishMatrixRecord writes the record's import, update and replace lines
-// from what every provider the run started saw. See testmatrix.Finish.
-func finishMatrixRecord() error {
+// from what every provider the run started saw. Only a run of the whole
+// suite that passed marks the record finished, which the check needs. See
+// testmatrix.Finish.
+func finishMatrixRecord(code int) error {
 	if *matrixRecord == "" {
 		return nil
 	}
@@ -66,7 +68,13 @@ func finishMatrixRecord() error {
 	if err != nil {
 		return err
 	}
-	if err := testmatrix.Finish(file); err != nil {
+	whole := true
+	for _, name := range []string{"test.run", "test.skip"} {
+		if f := flag.Lookup(name); f != nil && f.Value.String() != "" {
+			whole = false
+		}
+	}
+	if err := testmatrix.Finish(file, whole && code == 0); err != nil {
 		return fmt.Errorf("finishing the matrix record: %w", err)
 	}
 	return nil

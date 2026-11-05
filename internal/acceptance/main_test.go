@@ -78,7 +78,7 @@ func TestMain(m *testing.M) {
 	}
 	code, err := run(m)
 	if err == nil {
-		err = finishMatrixRecord()
+		err = finishMatrixRecord(code)
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "acceptance:", err)
