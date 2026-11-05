@@ -76,8 +76,15 @@ type server interface {
 	tfprotov6.ProviderServerWithActions      //nolint:staticcheck // what tf6server asserts today
 }
 
-// Wrap returns s with the recorder around it, appending to file under test.
+// Wrap returns s with the recorder around it, recording to file under test.
+// It keeps its facts in memory for Finish, in this process.
 func Wrap(s tfprotov6.ProviderServer, file, test string) (tfprotov6.ProviderServer, error) {
+	return wrap(s, file, test, false)
+}
+
+// wrap is Wrap, writing the facts to files when toFile says Finish runs in
+// another process: a built binary's.
+func wrap(s tfprotov6.ProviderServer, file, test string, toFile bool) (*recorder, error) {
 	full, ok := s.(server)
 	if !ok {
 		return nil, fmt.Errorf("the provider server %T doesn't serve list resources and actions, so the recorder can't wrap it", s)
@@ -96,6 +103,7 @@ func Wrap(s tfprotov6.ProviderServer, file, test string) (tfprotov6.ProviderServ
 		file:     file,
 		started:  started,
 		dir:      dir,
+		toFile:   toFile,
 		instance: fmt.Sprintf("%d-%d-%d", os.Getpid(), started, instances.Add(1)),
 	}, nil
 }
@@ -115,11 +123,11 @@ func Serve(address string, newProvider func() fwprovider.Provider, file, test st
 	}
 	// Wrapped once up front, so a server the recorder can't wrap stops the
 	// binary rather than serving it unrecorded.
-	if _, err := Wrap(providerserver.NewProtocol6(newProvider())(), file, test); err != nil {
+	if _, err := wrap(providerserver.NewProtocol6(newProvider())(), file, test, true); err != nil {
 		return err
 	}
 	return tf6server.Serve(address, func() tfprotov6.ProviderServer {
-		s, err := Wrap(providerserver.NewProtocol6(newProvider())(), file, test)
+		s, err := wrap(providerserver.NewProtocol6(newProvider())(), file, test, true)
 		if err != nil {
 			panic(err) // the same wrap as above, which succeeded
 		}
@@ -136,13 +144,24 @@ type recorder struct {
 	// dir is the provider's working directory: a built binary's is its
 	// workspace. In process it's the test's, the same for every workspace,
 	// so there the rules that compare directories can't tell them apart.
-	dir string
+	dir    string
+	toFile bool
 
-	mu         sync.Mutex
-	loaded     bool
+	mu    sync.Mutex
+	shape *shape
+}
+
+// shape is what the recorder needs of a provider's schemas: each resource's,
+// and the names of its identity attributes, sorted.
+type shape struct {
 	schemas    map[string]*tfprotov6.Schema
 	identities map[string][]string
 }
+
+// shapes holds a shape by server type. Every provider a process serves of
+// one type is the same build, and asking each one for its schemas was most
+// of the recorder's cost.
+var shapes sync.Map
 
 // recordMu keeps the recorders in one process from interleaving lines.
 var recordMu sync.Mutex
@@ -177,8 +196,20 @@ func (r *recorder) note(ctx context.Context, typ string, st map[string]string, f
 		return err
 	}
 	f.Instance, f.Started, f.Dir, f.Test, f.Resource, f.Object = r.instance, r.started, r.dir, r.test, typ, object
-	return appendJSON(filepath.Join(factsDir(r.file), r.instance+".jsonl"), []any{f})
+	if r.toFile {
+		return appendJSON(filepath.Join(factsDir(r.file), r.instance+".jsonl"), []any{f})
+	}
+	keptMu.Lock()
+	defer keptMu.Unlock()
+	kept[r.file] = append(kept[r.file], f)
+	return nil
 }
+
+// kept is the facts of the providers in this process, by record file.
+var (
+	keptMu sync.Mutex
+	kept   = map[string][]fact{}
+)
 
 func (r *recorder) emit(typ, cell string, paths []string) error {
 	sort.Strings(paths)
@@ -227,45 +258,47 @@ func failed[T any](resp T, err, recordErr error) (T, error) {
 	return resp, err
 }
 
-// load asks the provider for its resource schemas and identity schemas, once.
-func (r *recorder) load(ctx context.Context) {
+// load gives the provider's shape, asking a server of its type only once.
+func (r *recorder) load(ctx context.Context) *shape {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.loaded {
-		return
+	if r.shape != nil {
+		return r.shape
+	}
+	key := fmt.Sprintf("%T", r.server)
+	if s, ok := shapes.Load(key); ok {
+		if s, ok := s.(*shape); ok {
+			r.shape = s
+			return s
+		}
 	}
 	resp, err := r.GetProviderSchema(ctx, &tfprotov6.GetProviderSchemaRequest{})
 	if err != nil || resp == nil {
-		return
+		return &shape{}
 	}
 	ids, err := r.GetResourceIdentitySchemas(ctx, &tfprotov6.GetResourceIdentitySchemasRequest{})
 	if err != nil || ids == nil {
-		return
+		return &shape{}
 	}
-	r.schemas = resp.ResourceSchemas
-	r.identities = map[string][]string{}
-	for typ, s := range ids.IdentitySchemas {
-		for _, a := range s.IdentityAttributes {
-			r.identities[typ] = append(r.identities[typ], a.Name)
+	s := &shape{schemas: resp.ResourceSchemas, identities: map[string][]string{}}
+	for typ, is := range ids.IdentitySchemas {
+		for _, a := range is.IdentityAttributes {
+			s.identities[typ] = append(s.identities[typ], a.Name)
 		}
-		sort.Strings(r.identities[typ])
+		sort.Strings(s.identities[typ])
 	}
-	r.loaded = true
+	shapes.Store(key, s)
+	r.shape = s
+	return s
 }
 
 func (r *recorder) schema(ctx context.Context, typ string) *tfprotov6.Schema {
-	r.load(ctx)
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return r.schemas[typ]
+	return r.load(ctx).schemas[typ]
 }
 
 // identity is the names of typ's identity attributes, sorted.
 func (r *recorder) identity(ctx context.Context, typ string) []string {
-	r.load(ctx)
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return r.identities[typ]
+	return r.load(ctx).identities[typ]
 }
 
 func (r *recorder) decode(ctx context.Context, typ string, v *tfprotov6.DynamicValue) (map[string]string, bool) {

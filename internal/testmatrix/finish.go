@@ -65,43 +65,31 @@ type touch struct {
 func Finish(file string, complete bool) error {
 	type key struct{ test, resource, object string }
 	objects := map[key]map[string]*touch{}
-	entries, err := os.ReadDir(factsDir(file))
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+	facts, err := readFacts(file)
+	if err != nil {
 		return err
 	}
-	for _, e := range entries {
-		name := filepath.Join(factsDir(file), e.Name())
-		b, err := os.ReadFile(name)
-		if err != nil {
-			return err
+	for _, f := range facts {
+		k := key{f.Test, f.Resource, f.Object}
+		if objects[k] == nil {
+			objects[k] = map[string]*touch{}
 		}
-		dec := json.NewDecoder(bytes.NewReader(b))
-		for dec.More() {
-			var f fact
-			if err := dec.Decode(&f); err != nil {
-				return fmt.Errorf("reading %s: %w", name, err)
+		t := objects[k][f.Instance]
+		if t == nil {
+			t = &touch{started: f.Started, dir: f.Dir}
+			objects[k][f.Instance] = t
+		}
+		switch {
+		case f.Import:
+			t.imported = true
+		case f.Read:
+			t.read = true
+		default:
+			if !slices.ContainsFunc(t.configs, func(c map[string]string) bool { return maps.Equal(c, f.Config) }) {
+				t.configs = append(t.configs, f.Config)
 			}
-			k := key{f.Test, f.Resource, f.Object}
-			if objects[k] == nil {
-				objects[k] = map[string]*touch{}
-			}
-			t := objects[k][f.Instance]
-			if t == nil {
-				t = &touch{started: f.Started, dir: f.Dir}
-				objects[k][f.Instance] = t
-			}
-			switch {
-			case f.Import:
-				t.imported = true
-			case f.Read:
-				t.read = true
-			default:
-				if !slices.ContainsFunc(t.configs, func(c map[string]string) bool { return maps.Equal(c, f.Config) }) {
-					t.configs = append(t.configs, f.Config)
-				}
-				if f.Prior {
-					t.plans = append(t.plans, f)
-				}
+			if f.Prior {
+				t.plans = append(t.plans, f)
 			}
 		}
 	}
@@ -160,6 +148,35 @@ func lastIn(earlier []*touch, dir string) *touch {
 		}
 	}
 	return nil
+}
+
+// readFacts is the facts this process kept for file, then the ones built
+// binaries wrote beside it.
+func readFacts(file string) ([]fact, error) {
+	keptMu.Lock()
+	facts := kept[file]
+	delete(kept, file)
+	keptMu.Unlock()
+	entries, err := os.ReadDir(factsDir(file))
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return nil, err
+	}
+	for _, e := range entries {
+		name := filepath.Join(factsDir(file), e.Name())
+		b, err := os.ReadFile(name)
+		if err != nil {
+			return nil, err
+		}
+		dec := json.NewDecoder(bytes.NewReader(b))
+		for dec.More() {
+			var f fact
+			if err := dec.Decode(&f); err != nil {
+				return nil, fmt.Errorf("reading %s: %w", name, err)
+			}
+			facts = append(facts, f)
+		}
+	}
+	return facts, nil
 }
 
 // keptByAll is the import paths every plan keeps.
