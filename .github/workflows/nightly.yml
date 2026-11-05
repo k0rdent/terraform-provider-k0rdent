@@ -50,7 +50,7 @@ jobs:
         id: setup-terraform
         if: matrix.cli == 'terraform'
         with:
-          terraform_version: "1.16.3"
+          terraform_version: "1.16.5"
           terraform_wrapper: false
       - uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4  # v2.0.2
         if: matrix.cli == 'tofu'

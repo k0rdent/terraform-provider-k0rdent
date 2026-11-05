@@ -152,7 +152,7 @@ expect_fail "a setup-opentofu with no version was accepted" "doesn't pin tofu_ve
 
 # A range is no pin either.
 setup
-edit workflows/ci.yml 's{terraform_version: "1\.16\.3"}{terraform_version: "~1.16"}'
+edit workflows/ci.yml 's{terraform_version: "[0-9][^"]*"}{terraform_version: "~1.16"}'
 expect_fail "a terraform_version range was accepted" "doesn't pin terraform_version"
 
 # Two jobs on two versions measure two different things under one name.
