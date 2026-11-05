@@ -170,6 +170,11 @@ branch, `release-vMAJOR.MINOR.x`, so `main` can take new work meanwhile.
 
    `release-validate` builds an unsigned snapshot and checks its files.
 
+   Then run `make real-api-check` on that commit, against a kind stack
+   running the API version `ci/real-api/api-version` names, and merge the
+   `ci/real-api/record.json` it writes. "Validate release tag" refuses a tag
+   whose code the record doesn't cover.
+
 4. **Tag the merged commit and push the tag.** `-s` signs the tag. `BRANCH`
    is the release branch for a candidate, the final version and its patches.
    It's `main` only for a version released straight from `main`, with no
