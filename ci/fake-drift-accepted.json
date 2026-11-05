@@ -291,13 +291,6 @@
   },
 
   {
-    "operation": "GET /v1/regions/global/notifications/webhooks 200",
-    "field": "response $.subscriptions[].failing_since",
-    "side": "type",
-    "reason": "Landscape data: the walkthrough's subscription points at https://hooks.example.com/k0rdent (scripts/lib/walkthrough.sh:119), which kind's notifications service fails to reach, so the real list carries a failing_since time. The fake delivers nothing and answers null. Read at datasource_webhook_subscriptions.go:131 (WebhookSubscription.FailingSince, types.gen.go:12237). The fake answers a time for a subscription the platform disabled and for a churning one (webhooks.go:139-140, :461-462), and TestWebhookDisabledByThePlatform reads it."
-  },
-
-  {
     "operation": "GET /v1/regions/global/organizations/{orgId}/quota 200",
     "field": "response $.dimensions[]*",
     "side": "fake",

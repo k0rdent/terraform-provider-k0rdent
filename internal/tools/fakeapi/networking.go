@@ -215,6 +215,38 @@ func (o *objects) dropVPC(id string) {
 	delete(o.vpcs, at{id: id})
 }
 
+// dropOwnerNetwork takes away the network and subnet vpcForOwner made for an
+// owner's VPC. On API v1.3.0-rc.7 on kind, the project's network list holds
+// none for a cluster or an instance group once it's gone. Only the platform's
+// own subnets go. A tenant's can't be there, since createSubnet refuses one under
+// an owner's network. The caller holds s.mu.
+func (o *objects) dropOwnerNetwork(vpc string) {
+	network := vpc + "-net"
+	n, ok := o.networks[at{id: network}]
+	if !ok || n.clusterID == "" {
+		return
+	}
+	for k, sub := range o.subnets {
+		if k.parent == network && sub.clusterID != "" {
+			delete(o.subnets, k)
+		}
+	}
+	if len(subnetKind.under(o, network)) == 0 {
+		delete(o.networks, at{id: network})
+	}
+}
+
+// refusePlatformWrite writes v1.3.0-rc.7's 409 for a tenant write to a network
+// or subnet a cluster made, and reports whether it did. Those are the
+// platform's: the cluster's workflow makes and removes them.
+func refusePlatformWrite(w http.ResponseWriter, clusterID, message string) bool {
+	if clusterID == "" {
+		return false
+	}
+	recordedConflict(w, "immutable field: "+message, "CONFLICT_IMMUTABLE")
+	return true
+}
+
 func ptr[T any](v T) *T { return &v }
 
 func (s *state) listNetworks(w http.ResponseWriter, r *http.Request) {
@@ -351,7 +383,8 @@ func (s *state) updateNetwork(w http.ResponseWriter, r *http.Request) {
 	defer s.mu.Unlock()
 	o := s.in(r)
 	n, _, ok := networkKind.find(w, r, o)
-	if !ok {
+	if !ok || refusePlatformWrite(w, n.clusterID,
+		fmt.Sprintf("network %q is provisioned by a cluster and cannot be modified", n.id)) {
 		return
 	}
 	// ASSUMPTION: updateNetwork is a PATCH like updateSecurityGroup, whose
@@ -377,7 +410,9 @@ func (s *state) deleteNetwork(w http.ResponseWriter, r *http.Request) {
 	o := s.in(r)
 
 	n, where, ok := networkKind.find(w, r, o)
-	if !ok || !networkKind.admitDelete(w, where, n) {
+	if !ok || refusePlatformWrite(w, n.clusterID,
+		fmt.Sprintf("network %q is provisioned by a cluster and cannot be deleted", n.id)) ||
+		!networkKind.admitDelete(w, where, n) {
 		return
 	}
 	// A network with subnets in it is not deletable. A silent cascade would
@@ -458,6 +493,10 @@ func (s *state) createSubnet(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if n := o.networks[at{id: network}]; n != nil && refusePlatformWrite(w, n.clusterID,
+		fmt.Sprintf("network %q is cluster-provisioned and does not accept tenant subnets", network)) {
+		return
+	}
 	id, ok := subnetKind.claim(s, w, o, network, body.ID)
 	if !ok {
 		return
@@ -513,7 +552,9 @@ func (s *state) deleteSubnet(w http.ResponseWriter, r *http.Request) {
 	o := s.in(r)
 
 	sub, where, ok := subnetKind.find(w, r, o)
-	if !ok || !subnetKind.admitDelete(w, where, sub) {
+	if !ok || refusePlatformWrite(w, sub.clusterID,
+		fmt.Sprintf("subnet %q is cluster-provisioned and cannot be deleted by tenants", sub.id)) ||
+		!subnetKind.admitDelete(w, where, sub) {
 		return
 	}
 	subnetKind.tearDown(o, where, sub)

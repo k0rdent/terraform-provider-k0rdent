@@ -248,6 +248,94 @@ func TestADefaultGroupGoesWithItsVPC(t *testing.T) {
 	}
 }
 
+// Recorded on v1.3.0-rc.7 on kind: a deleted cluster's networks leave the
+// project's list with it.
+func TestAClusterNetworkGoesWithTheCluster(t *testing.T) {
+	s := newState()
+	clusterNamed(t, s, "c")
+	o := s.scopes[scope{"r", "p"}]
+	if len(o.networks) != 1 || len(o.subnets) != 1 {
+		t.Fatalf("cluster c made %d networks and %d subnets, want 1 and 1", len(o.networks), len(o.subnets))
+	}
+	s.mu.Lock()
+	clusterKind.gone(o, o.clusters[at{id: "c"}])
+	s.mu.Unlock()
+	if len(o.networks) != 0 || len(o.subnets) != 0 {
+		t.Errorf("after the cluster went: %d networks and %d subnets left, want none", len(o.networks), len(o.subnets))
+	}
+}
+
+// On v1.3.0-rc.7 on kind, the project's network list holds no network for an
+// instance group once the group is gone. The fake makes a network and a subnet
+// for a group's VPC, as it does for a cluster's, so it has to drop both with
+// the group for that list to match.
+func TestAGroupNetworkGoesWithTheGroup(t *testing.T) {
+	s := newState()
+	activeGroup(t, s, "g")
+	o := s.scopes[scope{"r", "p"}]
+	if len(o.networks) != 1 || len(o.subnets) != 1 {
+		t.Fatalf("group x made %d networks and %d subnets, want 1 and 1", len(o.networks), len(o.subnets))
+	}
+	s.mu.Lock()
+	instanceGroupKind.gone(o, o.groups[at{id: "x"}])
+	s.mu.Unlock()
+	if len(o.networks) != 0 || len(o.subnets) != 0 {
+		t.Errorf("after the group went: %d networks and %d subnets left, want none", len(o.networks), len(o.subnets))
+	}
+}
+
+// Only the platform's own subnet goes with a cluster. A tenant's subnet,
+// which createSubnet refuses under a cluster's network, would keep the
+// network too, as a tenant network with a subnet in it is kept.
+func TestAClusterTakesOnlyItsOwnSubnet(t *testing.T) {
+	s := newState()
+	clusterNamed(t, s, "c")
+	o := s.scopes[scope{"r", "p"}]
+	o.subnets[at{"vpc-c-net", "mine"}] = &fakeSubnet{id: "mine", network: "vpc-c-net", state: "active"}
+	s.mu.Lock()
+	clusterKind.gone(o, o.clusters[at{id: "c"}])
+	s.mu.Unlock()
+	if _, ok := o.subnets[at{"vpc-c-net", "mine"}]; !ok || len(o.subnets) != 1 {
+		t.Errorf("after the cluster went: %d subnets, want only the tenant's", len(o.subnets))
+	}
+	if len(o.networks) != 1 {
+		t.Errorf("after the cluster went: %d networks, want the one still holding a subnet", len(o.networks))
+	}
+}
+
+// v1.3.0-rc.7: a cluster's network and subnet are the platform's, and every
+// tenant write to them is a 409 CONFLICT_IMMUTABLE.
+func TestATenantCantWriteToAClusterNetwork(t *testing.T) {
+	s := newState()
+	clusterNamed(t, s, "c")
+	for name, tt := range map[string]struct {
+		h    http.HandlerFunc
+		verb string
+		path map[string]string
+		body string
+		want string
+	}{
+		"create a subnet": {s.createSubnet, http.MethodPost, map[string]string{"networkId": "vpc-c-net"},
+			`{"id":"mine","addressPool":"tenant","prefixLength":28}`, "does not accept tenant subnets"},
+		"delete its subnet": {s.deleteSubnet, http.MethodDelete, map[string]string{"networkId": "vpc-c-net", "id": "vpc-c-net-sub"},
+			"", "cannot be deleted by tenants"},
+		"update the network": {s.updateNetwork, http.MethodPatch, map[string]string{"id": "vpc-c-net"},
+			`{"description":"x"}`, "cannot be modified"},
+		"delete the network": {s.deleteNetwork, http.MethodDelete, map[string]string{"id": "vpc-c-net"},
+			"", "cannot be deleted"},
+	} {
+		code, out := in(t, tt.h, tt.verb, "r", "p", tt.path, tt.body)
+		if got := jsonOf(t, out["error"]); code != http.StatusConflict || detailReason(out) != "CONFLICT_IMMUTABLE" ||
+			!strings.Contains(got, tt.want) {
+			t.Errorf("%s: %d %s, want 409 CONFLICT_IMMUTABLE saying %q", name, code, got, tt.want)
+		}
+	}
+	o := s.scopes[scope{"r", "p"}]
+	if len(o.networks) != 1 || len(o.subnets) != 1 {
+		t.Errorf("after the refused writes: %d networks and %d subnets, want 1 and 1", len(o.networks), len(o.subnets))
+	}
+}
+
 // Recorded on v1.3.0-rc.3: a default group can't be changed or deleted, and
 // the delete is refused as immutable even though its VPC holds it.
 func TestADefaultGroupRefusesWrites(t *testing.T) {
