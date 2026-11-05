@@ -13,9 +13,10 @@
 #     with each id and the command that removes it.
 #
 # The four runs go at once, each in its own copy of the tree against its own
-# stand-in. The provider polls every second, and every 5s in the run that
-# passes, so a create there outlasts the 10s Terraform waits before it says
-# "Still creating".
+# stand-in. The provider polls every 5s, so a create in the run that passes
+# outlasts the 10s Terraform waits before it says "Still creating", and a kill
+# has a poll to land in, as mid_create says. The run whose landscape goes away
+# polls every second.
 #
 # The stand-in fake is on loopback, so the run sets
 # REAL_API_HARDWARE_TEST_LOOPBACK, which only this test uses.
@@ -23,14 +24,32 @@ set -uo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 work="$(mktemp -d)"
-# stop_all stops the runs and stand-ins still going. REAL_API_TEST_KEEP=1
-# keeps the work directory, for a failure's logs.
+pids=()
+
+# below <pid> prints the pid of every process under <pid>. Terraform runs in
+# a process group of its own, so a group's kill misses it.
+below() {
+  local c
+  for c in $(pgrep -P "$1"); do echo "$c"; below "$c"; done
+}
+
+# stop_all stops the runs still going, with every process under them, their
+# stand-ins included. On a failure it prints the end of each run's output.
+# REAL_API_TEST_KEEP=1 keeps the work directory, for a failure's logs.
 stop_all() {
-  local p
-  # shellcheck disable=SC2046 # a list of pids
-  kill $(jobs -p) 2> /dev/null
-  for p in "$work"/*/land.pid; do [ -f "$p" ] && kill "$(cat "$p")" 2> /dev/null; done
+  local rc=$? pid out
+  for pid in "${pids[@]}"; do
+    # shellcheck disable=SC2046 # a list of pids
+    [ -z "$pid" ] || kill -KILL $(below "$pid") "$pid" 2> /dev/null
+  done
   wait 2> /dev/null
+  if [ "$rc" != 0 ]; then
+    for out in "$work"/*/out; do
+      [ -f "$out" ] || continue
+      echo "--- the end of the $(basename "${out%/out}") run's output:" >&2
+      tail -n 20 "$out" >&2
+    done
+  fi
   [ "${REAL_API_TEST_KEEP:-}" = 1 ] && echo "kept $work" >&2 || rm -rf "$work"
 }
 trap stop_all EXIT
@@ -48,7 +67,8 @@ git -C "$here" ls-files -z --cached --others --exclude-standard \
 git -C "$tree" init -q && git -C "$tree" add -A || fail "could not make the copy a repository"
 rm -f "$tree/ci/real-api/hardware-record.json"
 (cd "$tree" && go build -o "$work/fakeapi" ./internal/tools/fakeapi) || fail "could not build the fake"
-# Compiled once here, so the four runs' own builds only link.
+# Compiled once here, so the four runs' own builds compile only this
+# module's packages.
 (cd "$tree" && go build . ./internal/tools/fakedrift ./internal/tools/nameaudit) || fail "could not build the provider"
 
 # start_landscape <latency> starts the run's stand-in in $dir and sets
@@ -56,7 +76,6 @@ rm -f "$tree/ci/real-api/hardware-record.json"
 start_landscape() {
   "$work/fakeapi" -secrets-file "$dir/land.env" -latency "$1" > "$dir/land.url" 2> "$dir/land.log" &
   land_pid=$!
-  echo "$land_pid" > "$dir/land.pid"
   for _ in $(seq 1 100); do [ -s "$dir/land.url" ] && [ -s "$dir/land.env" ] && break; sleep 0.1; done
   LAND="$(cat "$dir/land.url")"
   [ -n "$LAND" ] || fail "the stand-in fake did not start: $(cat "$dir/land.log")"
@@ -65,8 +84,11 @@ start_landscape() {
 }
 
 # scenario <name> <latency> <poll>: a run's own directory, copy of the tree
-# and stand-in. Call it in the subshell the run goes in.
+# and stand-in. Call it in the subshell the run goes in: when that ends,
+# everything it started stops, the check and Terraform included.
 scenario() {
+  # shellcheck disable=SC2064 # the subshell's pid, now
+  trap "kill -KILL \$(below $BASHPID) 2> /dev/null" EXIT
   scenario="$1" dir="$work/$1" poll="$3"
   repo="$dir/repo"
   record="$repo/ci/real-api/hardware-record.json"
@@ -96,12 +118,12 @@ wait_for() {
 }
 
 # mid_create <output>: until the landscape side's apply has created its first
-# resource, the instance group. The network and security group still being
-# created take one more poll, and the subnets start after them, so a kill
-# then lands with something in state and creates in flight. A run killed with
-# a subnet the stand-in still reads `creating` can't clean it up: the delete
-# answers 409 until it's active. The stand-in's 1.5s latency keeps that
-# window about four seconds wide, and this looks every 0.2s.
+# resource, the instance group. The network and security group take one more
+# 5s poll, and the subnets and the cluster start after them, so a kill then
+# lands with something in state and creates in flight. A kill after those
+# start can't be cleaned up: the stand-in answers a delete of a subnet still
+# `creating` with a 409, and the network and security group are in use. A
+# kill up to 4s late still passed, 5s late failed.
 mid_create() {
   wait_for "$1" "real/full-everything-apply started"
   wait_for "$(the_run "$1")/real/full-everything-apply.log" "Creation complete"
@@ -140,6 +162,11 @@ says_what_is_left() {
   done <<< "$left"
 }
 
+# unlocked: the run took away its lock on the stand-in.
+unlocked() {
+  [ ! -d "$repo/.real-api/hardware/${LAND#http://}.lock" ] || fail "the run left its lock"
+}
+
 # cleaned_up <output> <run dir>: the cleanup passed and left nothing in state.
 cleaned_up() {
   has "$2/results.txt" "^PASS  cleanup real/full-everything"
@@ -176,12 +203,13 @@ if "127.0.0.1" in json.dumps(r):
     problems.append("the record names the host")
 if problems:
     sys.exit("; ".join(problems))' || fail "the record is wrong"
+  unlocked
 }
 
 # --- a run killed while it creates cleans up ----------------------------------
 
 killed() {
-  scenario kill 1500ms 1s
+  scenario kill 400ms 5s
   out="$dir/out"
   ( hardware "$out" ) &
   check_pid=$!
@@ -196,7 +224,7 @@ killed() {
   cleaned_up "$out" "$run"
   says_what_is_left "$out" "$run"
   [ ! -f "$record" ] || fail "a killed run wrote a record"
-  [ ! -d "$repo/.real-api/hardware/${LAND#http://}.lock" ] || fail "a killed run left its lock"
+  unlocked
 }
 
 # --- ctrl-C stops Terraform with one interrupt, not two -----------------------
@@ -206,7 +234,7 @@ killed() {
 # it. Two interrupts make Terraform exit at once, which can lose the state of
 # a resource it's creating.
 ctrl_c() {
-  scenario ctrl-c 1500ms 1s
+  scenario ctrl-c 400ms 5s
   out="$dir/out"
   # A job started with & has SIGINT ignored, and bash can't trap a signal
   # ignored on entry, so the wrapper sets it back, as a terminal would have it.
@@ -226,6 +254,7 @@ ctrl_c() {
   has "$run/real/full-everything-apply.log" "Interrupt received"
   cleaned_up "$out" "$run"
   says_what_is_left "$out" "$run"
+  unlocked
 }
 
 # --- a run whose landscape goes away lists what it left -----------------------
@@ -236,7 +265,7 @@ gone() {
   ( hardware "$out" ) &
   check_pid=$!
   mid_create "$out"
-  kill "$land_pid"; wait "$land_pid" 2>/dev/null; rm -f "$dir/land.pid"
+  kill "$land_pid"; wait "$land_pid" 2>/dev/null
   wait "$check_pid"
   rc=$?
   [ "$rc" != 0 ] || { cat "$out" >&2; fail "a run whose landscape went away passed"; }
@@ -252,19 +281,37 @@ gone() {
   # too: as the run's own step, or in the cleanup when the run ends first.
   has "$run/results.txt" "^FAIL  \(cleanup real/full-everything\|real/full-everything-destroy\)"
   has "$out" "could not read ${LAND#http://} to check what's left there, outside state"
+  unlocked
 }
 
 # --- all four at once ---------------------------------------------------------
 
+# Each run prints a line as it ends. One still going after ten minutes,
+# inside CI's fifteen, fails the test.
 runs=(passes killed ctrl_c gone)
-pids=()
 for r in "${runs[@]}"; do
   ( "$r" ) 2> "$work/$r.err" &
   pids+=($!)
 done
-failed=0
-for i in "${!runs[@]}"; do
-  wait "${pids[$i]}" || { failed=1; cat "$work/${runs[$i]}.err" >&2; }
+start=$SECONDS failed=0 going=${#runs[@]}
+while [ "$going" -gt 0 ]; do
+  for i in "${!runs[@]}"; do
+    [ -n "${pids[$i]}" ] && ! kill -0 "${pids[$i]}" 2> /dev/null || continue
+    if wait "${pids[$i]}"; then
+      echo "real-api-check hardware test: ${runs[$i]} passed after $((SECONDS - start))s"
+    else
+      failed=1
+      cat "$work/${runs[$i]}.err" >&2
+    fi
+    pids[i]="" going=$((going - 1))
+  done
+  if [ "$going" -gt 0 ] && [ $((SECONDS - start)) -ge 600 ]; then
+    for i in "${!runs[@]}"; do
+      [ -z "${pids[$i]}" ] || echo "real-api-check hardware test: FAIL - ${runs[$i]} still going after 10 minutes" >&2
+    done
+    exit 1
+  fi
+  sleep 1
 done
 [ "$failed" = 0 ] || exit 1
 echo "real-api-check hardware test: ok"
