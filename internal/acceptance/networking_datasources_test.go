@@ -114,8 +114,8 @@ data %q "read" {
 				resource.TestCheckResourceAttr(securityGroupDataAddr, "egress.0.destination_prefix", "0.0.0.0/0"),
 
 				resource.TestCheckResourceAttr(defaultGroupDataAddr, "owner_kind", "vpc"),
-				resource.TestCheckResourceAttrWith(defaultGroupDataAddr, "owner_id", isUIDOf("vpc-"+cluster)),
-				resource.TestCheckResourceAttrWith(defaultGroupDataAddr, "id", isDefaultGroupOf("vpc-"+cluster)),
+				resource.TestCheckResourceAttrWith(defaultGroupDataAddr, "owner_id", isUIDOf("demo", "vpc-"+cluster)),
+				resource.TestCheckResourceAttrWith(defaultGroupDataAddr, "id", isDefaultGroupOf("demo", "vpc-"+cluster)),
 				resource.TestMatchResourceAttr(defaultGroupDataAddr, "id", regexp.MustCompile(`^vpc-`+cluster+`-[0-9a-f]{8}-default$`)),
 				resource.TestCheckResourceAttr(defaultGroupDataAddr, "display_name", "Default (vpc-"+cluster+")"),
 				resource.TestMatchResourceAttr(defaultGroupDataAddr, "description", regexp.MustCompile(`^Platform-managed default security group for VPC vpc-`+cluster+`\. `)),

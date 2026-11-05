@@ -71,10 +71,9 @@ func checkGone(resourceType string, pathOf func(attrs map[string]string) string)
 // reverted, and it is asked at a step where the VPC's owning cluster is still
 // standing. After a full destroy the VPC has gone with its owner and there is
 // nothing left to read.
-func checkVPCCarriesOnlyDefault(vpc string) resource.TestCheckFunc {
+func checkVPCCarriesOnlyDefault(project, vpc string) resource.TestCheckFunc {
 	return func(*terraform.State) error {
-		status, body, err := readFake(fmt.Sprintf(
-			"/v1/regions/us-texas-1/projects/demo/networking/vpcs/%s", vpc))
+		status, body, err := readFake(vpcAPIPath(project, vpc))
 		if err != nil {
 			return err
 		}
@@ -88,7 +87,7 @@ func checkVPCCarriesOnlyDefault(vpc string) resource.TestCheckFunc {
 		if err = json.Unmarshal(body, &read); err != nil {
 			return err
 		}
-		def, err := defaultGroupOf(vpc)
+		def, err := defaultGroupOf(project, vpc)
 		if err != nil {
 			return err
 		}
@@ -104,12 +103,12 @@ func checkVPCCarriesOnlyDefault(vpc string) resource.TestCheckFunc {
 // defaultGroupOf finds a VPC's default security group the way the contract
 // identifies one: the group whose ownerKind is `vpc` and whose ownerId is the
 // VPC's uid. Its id is random, so a test can't write it out.
-func defaultGroupOf(vpc string) (string, error) {
-	uid, err := vpcUID(vpc)
+func defaultGroupOf(project, vpc string) (string, error) {
+	uid, err := vpcUID(project, vpc)
 	if err != nil {
 		return "", err
 	}
-	status, body, err := readFake("/v1/regions/us-texas-1/projects/demo/networking/security-groups?limit=500")
+	status, body, err := readFake("/v1/regions/us-texas-1/projects/" + project + "/networking/security-groups?limit=500")
 	if err != nil {
 		return "", err
 	}
@@ -135,9 +134,14 @@ func defaultGroupOf(vpc string) (string, error) {
 	return found[0], nil
 }
 
+// vpcAPIPath is where the fake serves vpc in project.
+func vpcAPIPath(project, vpc string) string {
+	return "/v1/regions/us-texas-1/projects/" + project + "/networking/vpcs/" + vpc
+}
+
 // vpcUID reads a VPC's uid, which no data source reports.
-func vpcUID(vpc string) (string, error) {
-	status, body, err := readFake("/v1/regions/us-texas-1/projects/demo/networking/vpcs/" + vpc)
+func vpcUID(project, vpc string) (string, error) {
+	status, body, err := readFake(vpcAPIPath(project, vpc))
 	if err != nil {
 		return "", err
 	}
@@ -151,9 +155,9 @@ func vpcUID(vpc string) (string, error) {
 }
 
 // isUIDOf checks an attribute is a VPC's uid.
-func isUIDOf(vpc string) func(string) error {
+func isUIDOf(project, vpc string) func(string) error {
 	return func(value string) error {
-		uid, err := vpcUID(vpc)
+		uid, err := vpcUID(project, vpc)
 		if err != nil {
 			return err
 		}
@@ -165,9 +169,9 @@ func isUIDOf(vpc string) func(string) error {
 }
 
 // isDefaultGroupOf checks an attribute names a VPC's default group.
-func isDefaultGroupOf(vpc string) func(string) error {
+func isDefaultGroupOf(project, vpc string) func(string) error {
 	return func(value string) error {
-		def, err := defaultGroupOf(vpc)
+		def, err := defaultGroupOf(project, vpc)
 		if err != nil {
 			return err
 		}

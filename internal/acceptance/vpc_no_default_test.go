@@ -32,8 +32,9 @@ func TestAccABindingOnAVPCWithNoDefaultGroupDestroysInOneRun(t *testing.T) {
 		t.Skip("the CLI sequence runs on unix")
 	}
 	const cluster, group = "acc-nodef-no-subnets", "acc-nodef-filter"
+	project := ownProject(t, "acc-nodef-destroys")
 	c := newCLIRun(t)
-	c.write(noDefaultBindingConfig(cluster, group))
+	c.write(inProject(project, noDefaultBindingConfig(cluster, group)))
 	destroyed := false
 	t.Cleanup(func() {
 		if !destroyed {
@@ -54,7 +55,7 @@ func TestAccABindingOnAVPCWithNoDefaultGroupDestroysInOneRun(t *testing.T) {
 		t.Errorf("the plan after the apply isn't empty:\n%s", out)
 	}
 
-	vpcPath := "/v1/regions/us-texas-1/projects/demo/networking/vpcs/vpc-" + cluster
+	vpcPath := vpcAPIPath(project, "vpc-"+cluster)
 	written, err := fakeServed(http.MethodPost, vpcPath)
 	if err != nil {
 		t.Fatal(err)
@@ -77,9 +78,9 @@ func TestAccABindingOnAVPCWithNoDefaultGroupDestroysInOneRun(t *testing.T) {
 		t.Errorf("state isn't empty after the destroy:\n%s", listed)
 	}
 	for _, path := range []string{
-		"/v1/regions/us-texas-1/projects/demo/compute/clusters/" + cluster,
-		"/v1/regions/us-texas-1/projects/demo/networking/vpcs/vpc-" + cluster,
-		"/v1/regions/us-texas-1/projects/demo/networking/security-groups/" + group,
+		clusterPath(map[string]string{"region": "us-texas-1", "project": project, "id": cluster}),
+		vpcPath,
+		securityGroupPath(map[string]string{"region": "us-texas-1", "project": project, "id": group}),
 	} {
 		if status, _, err := readFake(path); err != nil || status != http.StatusNotFound {
 			t.Errorf("%s is still there after the destroy: %d %v", path, status, err)
@@ -157,18 +158,19 @@ func TestAccAPlanWarnsBeforeBindingAVPCWithNoDefaultGroup(t *testing.T) {
 	} {
 		t.Run(tc.cluster, func(t *testing.T) {
 			group := tc.cluster + "-filter"
+			project := ownProject(t, "acc-own-"+strings.TrimPrefix(tc.cluster, "acc-"))
 			c := newCLIRun(t)
-			c.write(clusterConfig(tc.cluster, 1) + securityGroupConfig(group, false))
+			c.write(inProject(project, clusterConfig(tc.cluster, 1)+securityGroupConfig(group, false)))
 			t.Cleanup(func() { c.run("destroy", "-auto-approve") })
 			if out, ok := c.run("apply", "-auto-approve"); !ok {
 				t.Fatalf("the apply failed:\n%s", out)
 			}
-			c.write(clusterConfig(tc.cluster, 1) + securityGroupConfig(group, false) + fmt.Sprintf(`
+			c.write(inProject(project, clusterConfig(tc.cluster, 1)+securityGroupConfig(group, false)+fmt.Sprintf(`
 resource %q "test" {
   vpc             = "vpc-%s"
   security_groups = [%s.test.id]
 }
-`, vpcBindingType, tc.cluster, securityGroupType))
+`, vpcBindingType, tc.cluster, securityGroupType)))
 			out, ok := c.run("plan")
 			if !ok {
 				t.Fatalf("the plan failed:\n%s", out)

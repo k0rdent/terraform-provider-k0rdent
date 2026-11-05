@@ -38,6 +38,9 @@ type perpetualDiffCase struct {
 	read func(attrs map[string]string) string
 	// gone is the CheckDestroy for the resource under test.
 	gone resource.TestCheckFunc
+	// project, when set, is a project of the case's own, which ownProject
+	// makes. A binding lists every security group in its project.
+	project string
 }
 
 // perpetualDiffCases is every managed resource the provider registers. A
@@ -98,7 +101,7 @@ func perpetualDiffCases() []perpetualDiffCase {
 			// Its destroy is a write rather than a delete, and the cluster that
 			// owns the VPC is what checkGone can ask about.
 			kind: "vpc_security_groups", config: vpcBindingConfig(binding, binding+"-sg", true), addr: vpcBindingAddr,
-			read: vpcPath, gone: checkGone(clusterType, clusterPath),
+			read: vpcPath, gone: checkGone(clusterType, clusterPath), project: "acc-perpetual-binding",
 		},
 		{
 			kind: "project", config: projectConfig(project, "acceptance", "perpetual diff"), addr: projectAddr,
@@ -149,24 +152,28 @@ func TestAccPerpetualDiff(t *testing.T) {
 					PostApplyPostRefresh: empty,
 				},
 			}
+			steps := []resource.TestStep{
+				{
+					Config: c.config,
+					Check:  resource.ComposeAggregateTestCheckFunc(checkChurns(c.addr, c.read), unchanged.record),
+					ConfigPlanChecks: resource.ConfigPlanChecks{
+						PostApplyPreRefresh:  empty,
+						PostApplyPostRefresh: empty,
+					},
+				},
+				replan,
+				{RefreshState: true, Check: unchanged.compare},
+				replan,
+				{RefreshState: true, Check: unchanged.compare},
+				replan,
+			}
+			if c.project != "" {
+				steps = stepsInProject(ownProject(t, c.project), steps)
+			}
 			resource.Test(t, resource.TestCase{
 				ProtoV6ProviderFactories: protoV6,
 				CheckDestroy:             c.gone,
-				Steps: []resource.TestStep{
-					{
-						Config: c.config,
-						Check:  resource.ComposeAggregateTestCheckFunc(checkChurns(c.addr, c.read), unchanged.record),
-						ConfigPlanChecks: resource.ConfigPlanChecks{
-							PostApplyPreRefresh:  empty,
-							PostApplyPostRefresh: empty,
-						},
-					},
-					replan,
-					{RefreshState: true, Check: unchanged.compare},
-					replan,
-					{RefreshState: true, Check: unchanged.compare},
-					replan,
-				},
+				Steps:                    steps,
 			})
 		})
 	}

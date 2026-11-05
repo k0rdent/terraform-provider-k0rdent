@@ -11,9 +11,8 @@ import (
 )
 
 // The plural data sources' `tags`, `display_name_regex` and `state` filters,
-// read through Terraform against the fake. Each test tags what it creates
-// with a value no other test uses, because the suite shares one fake and a
-// list of a project's networks holds every test's networks.
+// read through Terraform against the fake. The tests that list a whole
+// project's networks or groups do it in a project of their own.
 
 var (
 	securityGroupsType = provider.ResourceName("security_groups")
@@ -41,10 +40,11 @@ resource %q %q {
 func TestAccNetworksDataSourceFiltersOnTagsNameAndState(t *testing.T) {
 	t.Parallel()
 	list := "data." + networksType + ".prod"
+	project := ownProject(t, "acc-networks-filtered")
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: protoV6,
 		CheckDestroy:             checkGone(networkType, networkPath),
-		Steps: []resource.TestStep{{
+		Steps: stepsInProject(project, []resource.TestStep{{
 			Config: filterNetworkConfig("a", "acc-filter-net-a", "prod-a", "prod") +
 				filterNetworkConfig("b", "acc-filter-net-b", "lab-b", "prod") +
 				filterNetworkConfig("c", "acc-filter-net-c", "prod-c", "lab") + fmt.Sprintf(`
@@ -73,7 +73,7 @@ data %q "none" {
 				resource.TestCheckResourceAttr(list, "networks.0.tags.suite", "acc-filters"),
 				resource.TestCheckResourceAttr("data."+networksType+".none", "networks.#", "0"),
 			),
-		}},
+		}}),
 	})
 }
 
@@ -84,10 +84,11 @@ data %q "none" {
 func TestAccSecurityGroupsDataSourceFiltersOnTagsNameAndState(t *testing.T) {
 	t.Parallel()
 	list := "data." + securityGroupsType + ".mine"
+	project := ownProject(t, "acc-groups-filtered")
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: protoV6,
 		CheckDestroy:             checkGone(securityGroupType, securityGroupPath),
-		Steps: []resource.TestStep{{
+		Steps: stepsInProject(project, []resource.TestStep{{
 			Config: fmt.Sprintf(`
 resource %[1]q "kept" {
   id           = "acc-filter-sg-kept"
@@ -133,7 +134,7 @@ data %[2]q "failed" {
 				resource.TestCheckResourceAttr(list, "security_groups.0.state", "active"),
 				resource.TestCheckResourceAttr("data."+securityGroupsType+".failed", "security_groups.#", "0"),
 			),
-		}},
+		}}),
 	})
 }
 

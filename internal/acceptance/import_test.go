@@ -67,6 +67,9 @@ type importCase struct {
 	// OpenTofu the generating step expects that error. When OpenTofu quotes
 	// it, the step fails and this goes.
 	unquotedKeyUnderOpenTofu bool
+	// project, when set, is a project of the case's own, which ownProject
+	// makes. A binding lists every security group in its project.
+	project string
 }
 
 func (c importCase) addr() string { return c.resourceType + ".test" }
@@ -177,37 +180,41 @@ func (c importCase) run(t *testing.T) {
 		generate.ExpectError = openTofuUnquotedMapKey
 	}
 
+	steps := []resource.TestStep{
+		create,
+		{
+			Config:                               c.imported(),
+			ResourceName:                         c.addr(),
+			ImportState:                          true,
+			ImportStateIdFunc:                    importID,
+			ImportStateVerify:                    true,
+			ImportStateVerifyIgnore:              c.verifyIgnore,
+			ImportStateVerifyIdentifierAttribute: c.verifyBy,
+		},
+		{
+			Config:            c.imported(),
+			ResourceName:      c.addr(),
+			ImportState:       true,
+			ImportStateIdFunc: importID,
+			ImportStateKind:   resource.ImportBlockWithID,
+		},
+		{
+			Config:          c.imported(),
+			ResourceName:    c.addr(),
+			ImportState:     true,
+			ImportStateKind: resource.ImportBlockWithResourceIdentity,
+		},
+		generate,
+		adoption,
+		{Config: c.adopted(), PlanOnly: true},
+	}
+	if c.project != "" {
+		steps = stepsInProject(ownProject(t, c.project), steps)
+	}
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: protoV6,
 		CheckDestroy:             c.checkDestroy,
-		Steps: []resource.TestStep{
-			create,
-			{
-				Config:                               c.imported(),
-				ResourceName:                         c.addr(),
-				ImportState:                          true,
-				ImportStateIdFunc:                    importID,
-				ImportStateVerify:                    true,
-				ImportStateVerifyIgnore:              c.verifyIgnore,
-				ImportStateVerifyIdentifierAttribute: c.verifyBy,
-			},
-			{
-				Config:            c.imported(),
-				ResourceName:      c.addr(),
-				ImportState:       true,
-				ImportStateIdFunc: importID,
-				ImportStateKind:   resource.ImportBlockWithID,
-			},
-			{
-				Config:          c.imported(),
-				ResourceName:    c.addr(),
-				ImportState:     true,
-				ImportStateKind: resource.ImportBlockWithResourceIdentity,
-			},
-			generate,
-			adoption,
-			{Config: c.adopted(), PlanOnly: true},
-		},
+		Steps:                    steps,
 	})
 }
 
@@ -331,12 +338,13 @@ resource %q "test" {
 			}
 		},
 		vpcBindingType: func() importCase {
-			const cluster, group = "acc-import-bind-owner", "acc-import-bind-filter"
+			const cluster, group, project = "acc-import-bind-owner", "acc-import-bind-filter", "acc-import-binding"
 			return importCase{
+				project:      project,
 				config:       vpcBindingConfig(cluster, group, true),
 				resourceType: vpcBindingType,
-				importID:     "us-texas-1/demo/vpc-" + cluster,
-				identity:     map[string]string{"region": "us-texas-1", "project": "demo", "vpc": "vpc-" + cluster},
+				importID:     "us-texas-1/" + project + "/vpc-" + cluster,
+				identity:     map[string]string{"region": "us-texas-1", "project": project, "vpc": "vpc-" + cluster},
 				verifyBy:     "vpc",
 				checkDestroy: checkGone(clusterType, clusterPath),
 			}
@@ -626,12 +634,13 @@ resource %q "test" {
 // owner, so it records `[]` and that configuration plans clean.
 func TestAccImportABindingAtItsDefault(t *testing.T) {
 	t.Parallel()
-	const cluster, group = "acc-import-default-owner", "acc-import-default-filter"
+	const cluster, group, project = "acc-import-default-owner", "acc-import-default-filter", "acc-import-default"
 	importCase{
+		project:      project,
 		config:       vpcBindingConfig(cluster, group, false),
 		resourceType: vpcBindingType,
-		importID:     "us-texas-1/demo/vpc-" + cluster,
-		identity:     map[string]string{"region": "us-texas-1", "project": "demo", "vpc": "vpc-" + cluster},
+		importID:     "us-texas-1/" + project + "/vpc-" + cluster,
+		identity:     map[string]string{"region": "us-texas-1", "project": project, "vpc": "vpc-" + cluster},
 		verifyBy:     "vpc",
 		checkDestroy: checkGone(clusterType, clusterPath),
 	}.run(t)

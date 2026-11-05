@@ -8,7 +8,6 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/plancheck"
-	"github.com/hashicorp/terraform-plugin-testing/terraform"
 
 	"github.com/k0rdent/terraform-provider-k0rdent/internal/provider"
 )
@@ -199,6 +198,7 @@ func TestAccSubnetWithoutMetadataStaysNull(t *testing.T) {
 func TestAccVPCsDataSource(t *testing.T) {
 	t.Parallel()
 	const name = "acc-vpc-owner"
+	project := ownProject(t, "acc-vpcs-list")
 	// `depends_on` is load-bearing, not decoration. Nothing in this data
 	// source's arguments refers to the cluster, so without it Terraform reads
 	// the collection during plan, before the workflow that creates the
@@ -212,38 +212,19 @@ data %q "all" {
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: protoV6,
 		CheckDestroy:             checkGone(clusterType, clusterPath),
-		Steps: []resource.TestStep{
+		Steps: stepsInProject(project, []resource.TestStep{
 			{
 				Config: config,
-				Check: listedVPC("vpc-"+name, func(row string) resource.TestCheckFunc {
-					return resource.ComposeAggregateTestCheckFunc(
-						resource.TestCheckResourceAttr(vpcsAddr, row+"owner_kind", "cluster"),
-						resource.TestCheckResourceAttr(vpcsAddr, row+"backend", "nico"),
-						// The default binding is always reported, never an empty list.
-						resource.TestCheckResourceAttrWith(vpcsAddr, row+"security_groups.0", isDefaultGroupOf("vpc-"+name)),
-					)
-				}),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr(vpcsAddr, "vpcs.0.id", "vpc-"+name),
+					resource.TestCheckResourceAttr(vpcsAddr, "vpcs.0.owner_kind", "cluster"),
+					resource.TestCheckResourceAttr(vpcsAddr, "vpcs.0.backend", "nico"),
+					// The default binding is always reported, never an empty list.
+					resource.TestCheckResourceAttrWith(vpcsAddr, "vpcs.0.security_groups.0", isDefaultGroupOf(project, "vpc-"+name)),
+				),
 			},
-		},
+		}),
 	})
-}
-
-// listedVPC runs check on vpc's row of the list, which holds the VPCs of the
-// tests running beside this one too. check gets the row's prefix, such as
-// `vpcs.2.`.
-func listedVPC(vpc string, check func(row string) resource.TestCheckFunc) resource.TestCheckFunc {
-	return func(s *terraform.State) error {
-		rs, ok := s.RootModule().Resources[vpcsAddr]
-		if !ok {
-			return fmt.Errorf("%s isn't in state", vpcsAddr)
-		}
-		for key, value := range rs.Primary.Attributes {
-			if value == vpc && strings.HasPrefix(key, "vpcs.") && strings.Count(key, ".") == 2 && strings.HasSuffix(key, ".id") {
-				return check(strings.TrimSuffix(key, "id"))(s)
-			}
-		}
-		return fmt.Errorf("%s doesn't list %s", vpcsAddr, vpc)
-	}
 }
 
 // A peering or binding names the cluster's VPC through `vpc`, which stays known
@@ -252,6 +233,7 @@ func listedVPC(vpc string, check func(row string) resource.TestCheckFunc) resour
 func TestAccClusterVPCSurvivesAClusterChange(t *testing.T) {
 	t.Parallel()
 	const name = "acc-vpc-stable"
+	project := ownProject(t, "acc-vpc-survives")
 	config := func(nodes int) string {
 		return clusterConfig(name, nodes) + fmt.Sprintf(`
 resource %q "test" {
@@ -263,7 +245,7 @@ resource %q "test" {
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: protoV6,
 		CheckDestroy:             checkGone(clusterType, clusterPath),
-		Steps: []resource.TestStep{
+		Steps: stepsInProject(project, []resource.TestStep{
 			{
 				Config: config(1),
 				Check:  resource.TestCheckResourceAttr(clusterType+".test", "vpc", "vpc-"+name),
@@ -274,7 +256,7 @@ resource %q "test" {
 					plancheck.ExpectResourceAction(vpcBindingAddr, plancheck.ResourceActionNoop),
 				}},
 			},
-		},
+		}),
 	})
 }
 

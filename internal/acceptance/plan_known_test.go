@@ -315,10 +315,11 @@ func TestAccPeeringTimeoutsPlanOnlyTheTimeouts(t *testing.T) {
 func TestAccVPCBindingChangePlansWhatIsAttached(t *testing.T) {
 	t.Parallel()
 	const cluster, group = "acc-known-bind", "acc-known-bind-sg"
+	project := ownProject(t, "acc-known-binding")
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: protoV6,
 		CheckDestroy:             checkGone(clusterType, clusterPath),
-		Steps: []resource.TestStep{
+		Steps: stepsInProject(project, []resource.TestStep{
 			{Config: vpcBindingConfig(cluster, group, false)},
 			{
 				// The groups sent are the groups the platform reports.
@@ -338,7 +339,7 @@ func TestAccVPCBindingChangePlansWhatIsAttached(t *testing.T) {
 					known(vpcBindingAddr, "state", knownvalue.StringExact("active")),
 				),
 			},
-		},
+		}),
 	})
 }
 

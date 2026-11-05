@@ -12,6 +12,7 @@ linters:
     - makezero
     - misspell
     - nilerr
+    - nolintlint
     - paralleltest
     - staticcheck
     - unconvert
@@ -55,6 +56,10 @@ linters:
     # unless it says why it can't. Subtests stay as each test wants them.
     paralleltest:
       ignore-missing-subtests: true
+    # For internal/acceptance only, so a nolint:paralleltest gives its reason.
+    nolintlint:
+      require-explanation: true
+      require-specific: true
 
   exclusions:
     generated: lax
@@ -86,11 +91,17 @@ linters:
         path-except: ^internal/
       - linters: [paralleltest]
         path-except: ^internal/acceptance/
-      # Each waits out the built provider's two-minute provisional window.
-      # Serial until that window is cut for the suite.
+      # It waits out the built provider's two-minute provisional window, so
+      # it stays serial until that window is cut for the suite.
       - linters: [paralleltest]
         path: ^internal/acceptance/
-        text: (TestAccAFailedClusterPlansAnUpdateThatWaitsForIt|TestAccADestroyRunsPastACreateThePlatformFailed) missing
+        text: ^Function TestAccAFailedClusterPlansAnUpdateThatWaitsForIt missing
+      # It counts every create the fake serves to every test.
+      - linters: [paralleltest]
+        path: ^internal/acceptance/
+        text: ^Function TestAccADestroyRunsPastACreateThePlatformFailed missing
+      - linters: [nolintlint]
+        path-except: ^internal/acceptance/
 
 formatters:
   enable:

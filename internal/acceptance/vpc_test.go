@@ -177,13 +177,14 @@ resource %q "test" {
 func TestAccVPCSecurityGroupsEmptyMeansDefault(t *testing.T) {
 	t.Parallel()
 	const cluster, group = "acc-bind-owner", "acc-bind-filter"
+	project := ownProject(t, "acc-bind-default")
 
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: protoV6,
 		// Only the cluster is left for the final destroy. The last step drops
 		// the binding and the group, and checks the VPC's filter instead.
 		CheckDestroy: checkGone(clusterType, clusterPath),
-		Steps: []resource.TestStep{
+		Steps: stepsInProject(project, []resource.TestStep{
 			{
 				Config: vpcBindingConfig(cluster, group, true),
 				Check: resource.ComposeAggregateTestCheckFunc(
@@ -202,7 +203,7 @@ func TestAccVPCSecurityGroupsEmptyMeansDefault(t *testing.T) {
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr(vpcBindingAddr, "security_groups.#", "0"),
 					// Not empty. The default came back, explicitly.
-					resource.TestCheckResourceAttrWith(vpcBindingAddr, "attached.0", isDefaultGroupOf("vpc-"+cluster)),
+					resource.TestCheckResourceAttrWith(vpcBindingAddr, "attached.0", isDefaultGroupOf(project, "vpc-"+cluster)),
 				),
 			},
 			{
@@ -213,7 +214,7 @@ func TestAccVPCSecurityGroupsEmptyMeansDefault(t *testing.T) {
 				Config:            vpcBindingConfig(cluster, group, false),
 				ResourceName:      vpcBindingAddr,
 				ImportState:       true,
-				ImportStateId:     "us-texas-1/demo/vpc-" + cluster,
+				ImportStateId:     "us-texas-1/" + project + "/vpc-" + cluster,
 				ImportStateVerify: true,
 				// The binding has no id attribute. It is named by its VPC.
 				// Nothing is ignored: a binding holding only the VPC's default
@@ -227,9 +228,9 @@ func TestAccVPCSecurityGroupsEmptyMeansDefault(t *testing.T) {
 				// CheckDestroy runs after the cluster has gone too, and the VPC
 				// goes with it.
 				Config: clusterConfig(cluster, 1),
-				Check:  checkVPCCarriesOnlyDefault("vpc-" + cluster),
+				Check:  checkVPCCarriesOnlyDefault(project, "vpc-"+cluster),
 			},
-		},
+		}),
 	})
 }
 
@@ -241,6 +242,7 @@ func TestAccVPCSecurityGroupsEmptyMeansDefault(t *testing.T) {
 func TestAccVPCSecurityGroupsDetectsOutOfBandChange(t *testing.T) {
 	t.Parallel()
 	const cluster, group = "acc-drift-owner", "acc-drift-filter"
+	project := ownProject(t, "acc-bind-drift")
 	config := vpcBindingConfig(cluster, group, true)
 
 	resource.Test(t, resource.TestCase{
@@ -249,14 +251,14 @@ func TestAccVPCSecurityGroupsDetectsOutOfBandChange(t *testing.T) {
 			checkGone(securityGroupType, securityGroupPath),
 			checkGone(clusterType, clusterPath),
 		),
-		Steps: []resource.TestStep{
+		Steps: stepsInProject(project, []resource.TestStep{
 			{
 				Config: config,
 				Check:  resource.TestCheckResourceAttr(vpcBindingAddr, "attached.0", group),
 			},
 			{
 				PreConfig: func() {
-					if err := setVPCGroupsOutOfBand(t, "vpc-"+cluster, []string{}); err != nil {
+					if err := setVPCGroupsOutOfBand(t, project, "vpc-"+cluster, []string{}); err != nil {
 						t.Fatalf("could not change the binding out of band: %v", err)
 					}
 				},
@@ -269,13 +271,13 @@ func TestAccVPCSecurityGroupsDetectsOutOfBandChange(t *testing.T) {
 				Config: config,
 				Check:  resource.TestCheckResourceAttr(vpcBindingAddr, "attached.0", group),
 			},
-		},
+		}),
 	})
 }
 
 // setVPCGroupsOutOfBand goes straight at the fake: through the API, not
 // through Terraform, because that is the whole point.
-func setVPCGroupsOutOfBand(t *testing.T, vpc string, groups []string) error {
+func setVPCGroupsOutOfBand(t *testing.T, project, vpc string, groups []string) error {
 	t.Helper()
 
 	token, err := mintFakeToken()
@@ -287,7 +289,7 @@ func setVPCGroupsOutOfBand(t *testing.T, vpc string, groups []string) error {
 		return err
 	}
 
-	url := fmt.Sprintf("%s/v1/regions/us-texas-1/projects/demo/networking/vpcs/%s", endpoint, vpc)
+	url := endpoint + vpcAPIPath(project, vpc)
 	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(payload))
 	if err != nil {
 		return err
@@ -308,7 +310,7 @@ func setVPCGroupsOutOfBand(t *testing.T, vpc string, groups []string) error {
 		}
 		return fmt.Errorf("the fake answered %s: %s", resp.Status, body)
 	}
-	return awaitVPCSettled(vpc)
+	return awaitVPCSettled(project, vpc)
 }
 
 // awaitVPCSettled reads the VPC until its binding change has rendered, the
@@ -316,9 +318,9 @@ func setVPCGroupsOutOfBand(t *testing.T, vpc string, groups []string) error {
 // anyone runs Terraform. The fake refuses a second change while one renders,
 // as the contract does, and it settles a VPC by being read, so a test that
 // went straight on would race its own out-of-band write.
-func awaitVPCSettled(vpc string) error {
+func awaitVPCSettled(project, vpc string) error {
 	for range 20 {
-		status, body, err := readFake("/v1/regions/us-texas-1/projects/demo/networking/vpcs/" + vpc)
+		status, body, err := readFake(vpcAPIPath(project, vpc))
 		if err != nil {
 			return err
 		}
@@ -364,8 +366,9 @@ func mintFakeToken() (string, error) {
 func TestAccVPCSecurityGroupsEmptyStillReportsDrift(t *testing.T) {
 	t.Parallel()
 	const cluster, group = "acc-bind-quiet", "acc-bind-quiet-filter"
+	project := ownProject(t, "acc-bind-quiet-drift")
 	attach := func() {
-		if err := setVPCGroupsOutOfBand(t, "vpc-"+cluster, []string{group}); err != nil {
+		if err := setVPCGroupsOutOfBand(t, project, "vpc-"+cluster, []string{group}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -375,17 +378,17 @@ func TestAccVPCSecurityGroupsEmptyStillReportsDrift(t *testing.T) {
 			checkGone(securityGroupType, securityGroupPath),
 			checkGone(clusterType, clusterPath),
 		),
-		Steps: []resource.TestStep{
+		Steps: stepsInProject(project, []resource.TestStep{
 			{Config: vpcBindingConfig(cluster, group, false)},
 			{Config: vpcBindingConfig(cluster, group, false), PlanOnly: true},
 			{PreConfig: attach, RefreshState: true, ExpectNonEmptyPlan: true},
 			{Config: vpcBindingConfig(cluster, group, false), PlanOnly: true, ExpectNonEmptyPlan: true},
 			{
 				Config: vpcBindingConfig(cluster, group, false),
-				Check:  resource.TestCheckResourceAttrWith(vpcBindingAddr, "attached.0", isDefaultGroupOf("vpc-"+cluster)),
+				Check:  resource.TestCheckResourceAttrWith(vpcBindingAddr, "attached.0", isDefaultGroupOf(project, "vpc-"+cluster)),
 			},
 			{Config: vpcBindingConfig(cluster, group, false), PlanOnly: true},
-		},
+		}),
 	})
 }
 
@@ -427,6 +430,7 @@ func TestAccVPCPeeringTimeoutsChangeInPlace(t *testing.T) {
 func TestAccVPCSecurityGroupsRefusedOnTheWrongBackend(t *testing.T) {
 	t.Parallel()
 	const cluster, group = "acc-on-ufo-owner", "acc-ufo-filter"
+	project := ownProject(t, "acc-bind-ufo")
 
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: protoV6,
@@ -434,10 +438,10 @@ func TestAccVPCSecurityGroupsRefusedOnTheWrongBackend(t *testing.T) {
 			checkGone(securityGroupType, securityGroupPath),
 			checkGone(clusterType, clusterPath),
 		),
-		Steps: []resource.TestStep{{
+		Steps: stepsInProject(project, []resource.TestStep{{
 			Config:      vpcBindingConfig(cluster, group, true),
 			ExpectError: regexp.MustCompile(`(?s)attach the security groups to the VPC`),
-		}},
+		}}),
 	})
 }
 
@@ -477,6 +481,7 @@ func TestAccVPCSecurityGroupsReplacedBeforeDestroyKeepsTheNewBinding(t *testing.
 	t.Parallel()
 	const cluster, first, second = "acc-cbd-owner", "acc-cbd-first", "acc-cbd-second"
 	vpc := "vpc-" + cluster
+	project := ownProject(t, "acc-bind-cbd")
 	replaced := resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{
 		plancheck.ExpectResourceAction(vpcBindingAddr, plancheck.ResourceActionCreateBeforeDestroy),
 	}}
@@ -484,17 +489,17 @@ func TestAccVPCSecurityGroupsReplacedBeforeDestroyKeepsTheNewBinding(t *testing.
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: protoV6,
 		CheckDestroy:             checkGone(clusterType, clusterPath),
-		Steps: []resource.TestStep{
+		Steps: stepsInProject(project, []resource.TestStep{
 			{
 				Config: vpcBindingReplacedConfig(cluster, first, second, first, "1"),
-				Check:  checkVPCHolds(vpc, first),
+				Check:  checkVPCHolds(project, vpc, first),
 			},
 			{
 				// Other groups.
 				Config:           vpcBindingReplacedConfig(cluster, first, second, second, "2"),
 				ConfigPlanChecks: replaced,
 				Check: resource.ComposeAggregateTestCheckFunc(
-					checkVPCHolds(vpc, second),
+					checkVPCHolds(project, vpc, second),
 					resource.TestCheckResourceAttr(vpcBindingAddr, "attached.0", second),
 				),
 			},
@@ -503,23 +508,23 @@ func TestAccVPCSecurityGroupsReplacedBeforeDestroyKeepsTheNewBinding(t *testing.
 				// The same groups, written again by the new instance.
 				Config:           vpcBindingReplacedConfig(cluster, first, second, second, "3"),
 				ConfigPlanChecks: replaced,
-				Check:            checkVPCHolds(vpc, second),
+				Check:            checkVPCHolds(project, vpc, second),
 			},
 			{Config: vpcBindingReplacedConfig(cluster, first, second, second, "3"), PlanOnly: true},
 			{
 				// And a plain destroy still hands the VPC back to DEFAULT.
 				Config: clusterConfig(cluster, 1),
-				Check:  checkVPCCarriesOnlyDefault(vpc),
+				Check:  checkVPCCarriesOnlyDefault(project, vpc),
 			},
-		},
+		}),
 	})
 }
 
 // checkVPCHolds asks the fake, not Terraform, what the VPC's binding is, in
 // order, so a destroy that cleared it after the state was written shows.
-func checkVPCHolds(vpc string, want ...string) resource.TestCheckFunc {
+func checkVPCHolds(project, vpc string, want ...string) resource.TestCheckFunc {
 	return func(*terraform.State) error {
-		status, body, err := readFake("/v1/regions/us-texas-1/projects/demo/networking/vpcs/" + vpc)
+		status, body, err := readFake(vpcAPIPath(project, vpc))
 		if err != nil {
 			return err
 		}

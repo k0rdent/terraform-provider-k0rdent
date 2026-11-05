@@ -249,8 +249,7 @@ func terraformForQuery(t *testing.T) string {
 
 // TestAccQueryGeneratesConfigThatPlansClean is the import guide's bulk
 // adoption, for every managed resource.
-func TestAccQueryGeneratesConfigThatPlansClean(t *testing.T) {
-	t.Parallel()
+func TestAccQueryGeneratesConfigThatPlansClean(t *testing.T) { //nolint:paralleltest // it lists every project, which tests beside it make and delete
 	if os.Getenv("TF_ACC") == "" {
 		t.Skip("TF_ACC is not set")
 	}

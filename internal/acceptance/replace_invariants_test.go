@@ -156,6 +156,9 @@ type invKind struct {
 	replaceRefused map[invStart]*regexp.Regexp
 	// unexercised are the doc's replacing attributes no row replaces, and why.
 	unexercised map[string]string
+	// ownProject puts each start in a project of its own, which ownProject
+	// makes. A binding lists every security group in its project.
+	ownProject bool
 }
 
 // wantReplacePlan is the rule for one combination: the plans it allows, of
@@ -336,6 +339,9 @@ func TestReplacementsFollowTheDocumentedRules(t *testing.T) {
 						n, what := len(steps)+1, d.what
 						d.step.PreConfig = func() { t.Logf("step %d: terraform destroy, %s, %s", n, start, what) }
 						steps = append(steps, d.step)
+					}
+					if k.ownProject {
+						steps = stepsInProject(ownProject(t, name+"-project"), steps)
 					}
 					resource.Test(t, resource.TestCase{
 						ProtoV6ProviderFactories: protoV6,
