@@ -202,6 +202,12 @@ doctor: ## Check this machine can run the tests, before anything long fails half
 real-api-check: ## On a local kind stack: fake drift, then make live. Writes the record CI checks
 	./scripts/real-api-check.sh run
 
+# `real-api-stack` builds that kind stack from the platform API's source, at
+# REAL_API_SOURCE, and writes the env file real-api-check sources.
+.PHONY: real-api-stack
+real-api-stack: ## Build or refresh the local kind stack real-api-check runs against. Needs REAL_API_SOURCE
+	./scripts/real-api-kind-setup.sh
+
 .PHONY: real-api-record-check
 real-api-record-check: ## Fail unless ci/real-api/record.json covers this tree's fake and API version
 	./scripts/real-api-check.sh verify

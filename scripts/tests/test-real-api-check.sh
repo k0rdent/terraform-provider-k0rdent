@@ -15,13 +15,19 @@
 #     matches no file.
 #   * the hashes of a fixed tree stay what they were for this HASHING, so a
 #     change to how a hash is made can't land without a bump.
+#   * run refuses a stack holding an earlier run's objects, and a stack whose
+#     lists it can't read, before it builds anything.
 #   * run refuses an endpoint that isn't on localhost before it builds or
 #     creates anything.
+#   * real-api-kind-setup.sh takes an API source whose HEAD is the tag's
+#     commit, whatever other tag is on it, and REAL_API_FRESH=1 deletes only a
+#     kind cluster the script made.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 work="$(mktemp -d)"
-trap 'rm -rf "$work"' EXIT
+api_pid=
+trap '[ -z "$api_pid" ] || kill "$api_pid" 2>/dev/null; rm -rf "$work"' EXIT
 
 fail() { echo "real-api-check test: FAIL - $1" >&2; exit 1; }
 
@@ -29,7 +35,7 @@ repo="$work/repo"
 mkdir -p "$repo/scripts" "$repo/ci/real-api/lifecycle" "$repo/internal/tools/fakeapi" \
   "$repo/internal/provider" "$repo/internal/acceptance" "$repo/internal/k0rdent" \
   "$repo/internal/tools/fakedrift" "$repo/internal/repocheck" "$repo/examples/live" "$repo/examples/walkthrough/look"
-cp "$here/scripts/real-api-check.sh" "$here/scripts/live.sh" "$repo/scripts/"
+cp "$here/scripts/real-api-check.sh" "$here/scripts/real-api-kind-setup.sh" "$here/scripts/live.sh" "$repo/scripts/"
 cp -R "$here/scripts/lib" "$repo/scripts/"
 echo v1.3.0-rc.5 > "$repo/ci/real-api/api-version"
 cp "$here/ci/real-api/paths" "$repo/ci/real-api/paths"
@@ -218,5 +224,161 @@ for endpoint in https://api.example.com http://localhost.example.com http://10.0
     env -i PATH="$work/bin:$PATH" HOME="$work" TF_BIN="$work/bin/tf" K0RDENT_ENDPOINT="$endpoint" \
     "$check" run
 done
+
+# --- run refuses a stack it can't show is clean -------------------------------
+
+# A stand-in for the stack's gateway. Every list is empty unless API_ANSWERS
+# names a path ending and the status and body to answer it with.
+cat > "$work/api.py" <<'PY'
+import http.server, os
+answers = dict(a.split("=", 1) for a in os.environ.get("API_ANSWERS", "").split())
+class H(http.server.BaseHTTPRequestHandler):
+    def log_message(self, *a): pass
+    def send(self, code, body):
+        b = body.encode()
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(b)))
+        self.end_headers()
+        self.wfile.write(b)
+    def do_POST(self):
+        self.rfile.read(int(self.headers.get("Content-Length", 0)))
+        self.send(200, '{"access_token":"t"}')
+    def do_GET(self):
+        for end, answer in answers.items():
+            if self.path.endswith(end):
+                code, _, body = answer.partition(":")
+                return self.send(int(code), body)
+        if self.path.endswith("/organizations"):
+            return self.send(200, '{"organizations":[{"id":"o"}]}')
+        if self.path.endswith("/organizations/o/projects"):
+            return self.send(200, '{"projects":[{"id":"p"}]}')
+        self.send(200, '{"items":[]}')
+s = http.server.HTTPServer(("127.0.0.1", 0), H)
+print(s.server_address[1], flush=True)
+s.serve_forever()
+PY
+mkdir -p "$work/stackbin"
+cp "$work/bin/go" "$work/bin/tf" "$work/bin/ssh-keygen" "$work/stackbin/"
+printf '#!/usr/bin/env bash\necho ghcr.io/example/k0r-compute:v1.3.0-rc.5\n' > "$work/stackbin/kubectl"
+chmod +x "$work/stackbin/kubectl"
+record v1.3.0-rc.5 PASS
+
+# leftovers <API_ANSWERS> runs run against the stand-in, which answers so.
+leftovers() {
+  local port
+  API_ANSWERS="$1" python3 "$work/api.py" > "$work/api.port" &
+  api_pid=$!
+  for _ in $(seq 1 50); do [ -s "$work/api.port" ] && break; sleep 0.1; done
+  port="$(cat "$work/api.port")"
+  env -i PATH="$work/stackbin:$PATH" HOME="$work" TF_BIN="$work/stackbin/tf" K0RDENT_ENDPOINT="http://127.0.0.1:$port" \
+    K0RDENT_REGION=r K0RDENT_PROJECT=p K0RDENT_CLIENT_ID=id K0RDENT_CLIENT_SECRET=secret \
+    REAL_API_ORG_CLIENT_ID=oid REAL_API_ORG_CLIENT_SECRET=osecret REAL_API_CLUSTER_TYPE=ct \
+    "$check" run > "$work/out" 2>&1 || true
+  kill "$api_pid" 2>/dev/null; wait "$api_pid" 2>/dev/null || true
+  api_pid=
+  : > "$work/api.port"
+  return 0
+}
+clean_stack() {
+  grep -q "the stack holds nothing from an earlier run" "$work/out" || { cat "$work/out" >&2; fail "$1: not taken as a clean stack"; }
+}
+refused() {
+  grep -q "$2" "$work/out" || { cat "$work/out" >&2; fail "$1: no \"$2\" in the output"; }
+  grep -q "the stack holds nothing from an earlier run" "$work/out" && { cat "$work/out" >&2; fail "$1: taken as a clean stack"; }
+  return 0
+}
+leftovers ""
+clean_stack "a stack with nothing on it"
+leftovers 'compute/clusters=200:{"clusters":[{"id":"c1"}]}'
+refused "a stack with a cluster on it" "the stack holds what an earlier run left: clusters c1"
+leftovers 'organizations/o/projects=200:{"projects":[{"id":"p"},{"id":"p2"}]}'
+refused "a stack with another project" "the stack holds what an earlier run left: project p2"
+for answer in "networking/vpcs=403:{}" "notifications/webhooks=500:{}" "storage/file-stores=404:{}" \
+    "networking/networks=200:nope" "/organizations=403:{}"; do
+  case "$answer" in *=200:*) want="answered 200 with no JSON object" ;; *) want="answered ${answer#*=}" want="${want%%:*}, not 200" ;; esac
+  leftovers "$answer"
+  refused "a stack answering $answer" "$want"
+done
+
+# --- the stack setup takes the tagged source and deletes only its own cluster --
+
+src="$work/src"
+mkdir -p "$src/chart" "$src/env"
+cat > "$src/Makefile" <<'MK'
+HELM_UMBRELLA = chart
+KIND_VALUES ?= $(HELM_UMBRELLA)/values-kind.yaml
+kind-install:
+	@true
+helm-dep-build:
+	@echo "the test's source stops here" >&2; exit 1
+MK
+echo 'name: chart' > "$src/chart/Chart.yaml"
+echo '{}' > "$src/chart/values-kind.yaml"
+printf 'users:\n  - id: usr-kind-admin\n    email: admin@kind.test\n    principalType: operator\npolicies:\n  - role: r\n' \
+  > "$src/env/manifest.yaml"
+git -C "$src" init -q
+git -C "$src" add -A
+git -C "$src" -c user.name=t -c user.email=t@example.com commit -q -m tagged
+git -C "$src" tag v1.3.0-rc.5
+# Another tag on the same commit, which git describe prefers.
+git -C "$src" -c user.name=t -c user.email=t@example.com tag -a -m other aa-other
+mkdir -p "$work/setupbin"
+cp "$work/bin/go" "$work/setupbin/"
+for t in helm docker; do
+  printf '#!/usr/bin/env bash\necho "%s must not run" >&2\nexit 1\n' "$t" > "$work/setupbin/$t"
+done
+cat > "$work/setupbin/kind" <<'SH'
+#!/usr/bin/env bash
+case "$*" in
+  "get clusters") [ -z "${STUB_CLUSTER:-}" ] || echo "$STUB_CLUSTER" ;;
+  "delete cluster --name "*) echo "$*" >> "$STUB_LOG" ;;
+  *) echo "kind $* must not run" >&2; exit 1 ;;
+esac
+SH
+cat > "$work/setupbin/kubectl" <<'SH'
+#!/usr/bin/env bash
+case "$*" in
+  *"get configmap real-api-kind-setup -o jsonpath={.data.made-by}") printf '%s' "${STUB_MADE:-}" ;;
+  *"get configmap real-api-kind-setup -o jsonpath={.data.reused}") printf '%s' "${STUB_REUSED:-}" ;;
+  *"get deploy"*) [ -z "${STUB_COMPUTE:-}" ] || echo deployment.apps/compute ;;
+  *) echo "kubectl $* must not run" >&2; exit 1 ;;
+esac
+SH
+chmod +x "$work/setupbin/"*
+
+# setup [VAR=value...] runs the setup script against the test's source.
+setup() {
+  : > "$work/kind.log"
+  env -i PATH="$work/setupbin:$PATH" HOME="$work" REAL_API_SOURCE="$src" STUB_LOG="$work/kind.log" "$@" \
+    "$repo/scripts/real-api-kind-setup.sh" > "$work/out" 2>&1 && { cat "$work/out" >&2; fail "setup $*: passed"; }
+  return 0
+}
+reached_install() {
+  grep -q "API source at v1.3.0-rc.5" "$work/out" && grep -q "helm-deps failed" "$work/out" \
+    || { cat "$work/out" >&2; fail "$1: didn't reach the install"; }
+}
+setup
+reached_install "a source at the tag, with another tag on its commit"
+git -C "$src" -c user.name=t -c user.email=t@example.com commit -q --allow-empty -m later
+setup
+grep -q "is at [0-9a-f]*, not at v1.3.0-rc.5" "$work/out" || { cat "$work/out" >&2; fail "a source past the tag: not refused"; }
+git -C "$src" checkout -q v1.3.0-rc.5
+for stub in "STUB_COMPUTE=1" "STUB_MADE=x STUB_REUSED=true"; do
+  # shellcheck disable=SC2086 # the stub's variables, split on purpose
+  setup STUB_CLUSTER=k0rdent-rc5 REAL_API_FRESH=1 $stub
+  grep -q "REAL_API_FRESH=1 deletes only a kind cluster this script made" "$work/out" && [ ! -s "$work/kind.log" ] \
+    || { cat "$work/out" "$work/kind.log" >&2; fail "REAL_API_FRESH=1 with a cluster it didn't make ($stub): not refused"; }
+done
+for stub in "STUB_MADE=x" "STUB_MADE=x STUB_REUSED=false"; do
+  # shellcheck disable=SC2086 # the stub's variables, split on purpose
+  setup STUB_CLUSTER=k0rdent-rc5 REAL_API_FRESH=1 $stub
+  reached_install "REAL_API_FRESH=1 with its own cluster ($stub)"
+  grep -qx "delete cluster --name k0rdent-rc5" "$work/kind.log" \
+    || { cat "$work/out" "$work/kind.log" >&2; fail "REAL_API_FRESH=1 with its own cluster ($stub): not deleted"; }
+done
+setup STUB_CLUSTER=k0rdent-rc5
+grep -q "this script didn't make it, and it runs no platform API" "$work/out" \
+  || { cat "$work/out" >&2; fail "a cluster it didn't make, running no API: not refused"; }
 
 echo "real-api-check test: ok"

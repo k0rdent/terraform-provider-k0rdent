@@ -173,7 +173,9 @@ branch, `release-vMAJOR.MINOR.x`, so `main` can take new work meanwhile.
    Then run `make real-api-check` on that commit, against a kind stack
    running the API version `ci/real-api/api-version` names, and merge the
    `ci/real-api/record.json` it writes. "Validate release tag" refuses a tag
-   whose code the record doesn't cover.
+   whose code the record doesn't cover. `make real-api-stack` builds the
+   stack. [Set up the stack](TESTING.md#set-up-the-stack) in TESTING.md has
+   the steps and the access it needs.
 
 4. **Tag the merged commit and push the tag.** `-s` signs the tag. `BRANCH`
    is the release branch for a candidate, the final version and its patches.

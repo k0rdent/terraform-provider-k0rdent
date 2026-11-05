@@ -353,8 +353,56 @@ lifecycle_passed() {
   return 1
 }
 
+# stack_leftovers <endpoint> prints, one a line, the objects in the project
+# and the organization that look/ or the walkthroughs would read: clusters,
+# groups, VPCs, networks, security groups, file stores, webhook subscriptions
+# and other projects. A passing run removes its own, so on a stack only this
+# check uses, each came from an interrupted run, and would turn up as a
+# difference the fake has no part in. It reads with the organization's
+# service account, and fails on any answer but a 200 with JSON, so a list it
+# can't read never passes as an empty one.
+stack_leftovers() {
+  local endpoint="$1" tok org p region project out
+  region="$(eval printf '%s' "\"\${${ENV_PREFIX}REGION}\"")"
+  project="$(eval printf '%s' "\"\${${ENV_PREFIX}PROJECT}\"")"
+  tok="$(token_request_body "$REAL_API_ORG_CLIENT_ID" "$REAL_API_ORG_CLIENT_SECRET" "" \
+    | curl -sS -m 15 -X POST "$endpoint/v1/regions/global/auth/token" -H 'Content-Type: application/json' --data-binary @- 2>/dev/null \
+    | jq -r '.access_token // empty' 2>/dev/null)"
+  [ -n "$tok" ] || die "REAL_API_ORG_CLIENT_ID and REAL_API_ORG_CLIENT_SECRET don't mint a token on $endpoint. The env file make real-api-stack writes sets them."
+  # read_list <path> prints the answer's body, and dies unless it's a 200
+  # with a JSON object.
+  read_list() {
+    local resp code body
+    resp="$(curl_bearer "$tok" -sS -m 15 -w '\n%{http_code}' "$endpoint$1" 2>/dev/null)"
+    code="${resp##*$'\n'}" body="${resp%$'\n'*}"
+    [ "$code" = 200 ] || die "reading $1 to check the stack is clean answered ${code:-nothing}, not 200, so what an earlier run left can't be counted. Check REAL_API_ORG_CLIENT_ID's roles and the stack, then run this again."
+    printf '%s' "$body" | jq -e 'type == "object"' >/dev/null 2>&1 \
+      || die "reading $1 to check the stack is clean answered 200 with no JSON object, so what an earlier run left can't be counted."
+    printf '%s' "$body"
+  }
+  # ids <path> <label> prints "<label> <id>" for each item of the answer's
+  # lists.
+  ids() {
+    local body
+    body="$(read_list "$1")" || exit 1
+    printf '%s' "$body" | jq -r --arg l "$2" '.[] | arrays | .[] | .id // empty | "\($l) \(.)"'
+  }
+  for p in compute/clusters compute/instance-groups networking/vpcs networking/networks \
+      networking/security-groups storage/file-stores; do
+    ids "/v1/regions/$region/projects/$project/$p" "${p#*/}"
+  done
+  ids /v1/regions/global/notifications/webhooks webhook
+  out="$(read_list /v1/regions/global/organizations)" || exit 1
+  org="$(printf '%s' "$out" | jq -r '.organizations[0].id // empty')"
+  [ -n "$org" ] || die "the organization's service account sees no organization on $endpoint."
+  out="$(ids "/v1/regions/global/organizations/$org/projects" project)" || exit 1
+  [ -z "$out" ] || printf '%s\n' "$out" | grep -vx "project $project" || true
+  unset -f ids read_list
+  return 0
+}
+
 cmd_run() {
-  local endpoint want have fake code work fake_url proxy_pid fake_pid recorder steps_drift steps_live
+  local endpoint want have fake code work fake_url proxy_pid fake_pid recorder steps_drift steps_live leftovers
   need kubectl; need go; need python3; need ssh-keygen
   read_names
   find_terraform
@@ -381,6 +429,9 @@ cmd_run() {
   fake="$(tree_hash fake "$REPO")" || die "could not hash the tree"
   code="$(tree_hash code "$REPO")" || die "could not hash the tree"
   good "the stack runs API $have"
+  leftovers="$(stack_leftovers "$endpoint")" || exit 1
+  [ -z "$leftovers" ] || die "the stack holds what an earlier run left: $(printf '%s' "$leftovers" | paste -sd, - | sed 's/,/, /g'). look/ would read it, and the comparison would count it. Rebuild the stack clean with REAL_API_FRESH=1 make real-api-stack, source the env file it writes, and run this again."
+  good "the stack holds nothing from an earlier run"
 
   work="$(private_tmpdir)" || exit 1
   trap '[ -n "${proxy_pid:-}" ] && kill $proxy_pid 2>/dev/null; [ -n "${fake_pid:-}" ] && kill "$fake_pid" 2>/dev/null' EXIT
