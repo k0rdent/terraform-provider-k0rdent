@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -59,14 +60,46 @@ type uiOperationFile struct {
 // uiProbe is one call in the walk. Auth is the authenticated status.
 // AuthSkipped says why the authenticated call was not sent. Err is a
 // transport failure. The body of the response is discarded.
+//
+// UnauthUs and AuthUs are the local fake's round trip for that call,
+// in microseconds, from the send until the body has been drained.
+// UnauthBytes and AuthBytes are how many body bytes were drained.
+// A skipped authenticated write has no AuthUs.
 type uiProbe struct {
 	OperationID string `json:"operationId"`
 	Method      string `json:"method"`
 	Path        string `json:"path"`
 	Unauth      int    `json:"unauth"`
+	UnauthUs    int64  `json:"unauthUs"`
+	UnauthBytes int64  `json:"unauthBytes"`
 	Auth        int    `json:"auth,omitempty"`
+	AuthUs      int64  `json:"authUs,omitempty"`
+	AuthBytes   int64  `json:"authBytes,omitempty"`
 	AuthSkipped string `json:"authSkipped,omitempty"`
 	Err         string `json:"err,omitempty"`
+}
+
+// uiLatency is one sample of round trips. Times are microseconds.
+type uiLatency struct {
+	N     int   `json:"n"`
+	MinUs int64 `json:"minUs"`
+	P50Us int64 `json:"p50Us"`
+	P95Us int64 `json:"p95Us"`
+	MaxUs int64 `json:"maxUs"`
+	SumUs int64 `json:"sumUs"`
+	Bytes int64 `json:"bytes"`
+}
+
+// uiWalkReport is what the walk writes. Target is the acceptance fake
+// on loopback. The demo probe is not in Results.
+type uiWalkReport struct {
+	Target     string    `json:"target"`
+	Operations int       `json:"operations"`
+	Calls      int       `json:"calls"`
+	WallUs     int64     `json:"wallUs"`
+	Unauth     uiLatency `json:"unauth"`
+	Auth       uiLatency `json:"auth"`
+	Results    []uiProbe `json:"results"`
 }
 
 func TestUISpecWalkInventory(t *testing.T) {
@@ -135,20 +168,29 @@ func TestAccUISpecWalk(t *testing.T) {
 	}
 
 	results := make([]uiProbe, 0, len(ops))
-	var skipped, notOnFake, transport int
+	unauthSample := make([]int64, 0, len(ops))
+	authSample := make([]int64, 0, len(ops))
+	var unauthBytes, authBytes int64
+	var skipped, notOnFake, transport, calls int
+	wallStart := time.Now()
 	for _, op := range ops {
 		path, absent := fillUIPath(op.Path)
 		row := uiProbe{OperationID: op.OperationID, Method: op.Method, Path: op.Path}
-		code, callErr := probeUI(op.Method, endpoint+path, "")
-		if callErr != nil {
+		call := probeUI(op.Method, endpoint+path, "")
+		calls++
+		row.UnauthUs = call.us
+		row.UnauthBytes = call.bytes
+		if call.err != nil {
 			transport++
-			row.Err = callErr.Error()
+			row.Err = call.err.Error()
 			results = append(results, row)
-			t.Errorf("%s %s: %v", op.Method, op.Path, callErr)
+			t.Errorf("%s %s: %v", op.Method, op.Path, call.err)
 			continue
 		}
-		row.Unauth = code
-		if code == http.StatusNotFound {
+		row.Unauth = call.code
+		unauthSample = append(unauthSample, call.us)
+		unauthBytes += call.bytes
+		if call.code == http.StatusNotFound {
 			notOnFake++
 		}
 		if skipAuthWrite(op.Method, op.Path, absent) {
@@ -157,23 +199,43 @@ func TestAccUISpecWalk(t *testing.T) {
 			results = append(results, row)
 			continue
 		}
-		code, callErr = probeUI(op.Method, endpoint+path, token)
-		if callErr != nil {
+		call = probeUI(op.Method, endpoint+path, token)
+		calls++
+		row.AuthUs = call.us
+		row.AuthBytes = call.bytes
+		if call.err != nil {
 			transport++
-			row.Err = callErr.Error()
+			row.Err = call.err.Error()
 			results = append(results, row)
-			t.Errorf("%s %s authenticated: %v", op.Method, op.Path, callErr)
+			t.Errorf("%s %s authenticated: %v", op.Method, op.Path, call.err)
 			continue
 		}
-		row.Auth = code
+		row.Auth = call.code
+		authSample = append(authSample, call.us)
+		authBytes += call.bytes
 		results = append(results, row)
 	}
+	wallUs := time.Since(wallStart).Microseconds()
 	if len(results) != len(ops) {
 		t.Errorf("recorded %d results for %d operations", len(results), len(ops))
 	}
-	t.Logf("ui spec walk: %d operations, %d not on the fake, %d authenticated writes skipped, %d transport errors",
-		len(ops), notOnFake, skipped, transport)
-	writeUIWalk(t, results)
+	unauth := summarizeUILatency(unauthSample, unauthBytes)
+	auth := summarizeUILatency(authSample, authBytes)
+	t.Logf("ui spec walk: %d operations, %d calls, wall %dus, %d not on the fake, %d authenticated writes skipped, %d transport errors",
+		len(ops), calls, wallUs, notOnFake, skipped, transport)
+	t.Logf("ui spec walk unauth latency µs: n=%d min=%d p50=%d p95=%d max=%d sum=%d bytes=%d",
+		unauth.N, unauth.MinUs, unauth.P50Us, unauth.P95Us, unauth.MaxUs, unauth.SumUs, unauth.Bytes)
+	t.Logf("ui spec walk auth latency µs: n=%d min=%d p50=%d p95=%d max=%d sum=%d bytes=%d",
+		auth.N, auth.MinUs, auth.P50Us, auth.P95Us, auth.MaxUs, auth.SumUs, auth.Bytes)
+	writeUIWalk(t, uiWalkReport{
+		Target:     "acceptance-fake",
+		Operations: len(ops),
+		Calls:      calls,
+		WallUs:     wallUs,
+		Unauth:     unauth,
+		Auth:       auth,
+		Results:    results,
+	})
 }
 
 // TestDemoThrowawayLiveTyping is a throwaway. It is excluded from the
@@ -188,7 +250,20 @@ func TestDemoThrowawayLiveTyping(t *testing.T) {
 		t.Log("demo probe: no endpoint")
 		return
 	}
-	_, _ = probeUI(http.MethodGet, endpoint+"/v1/regions", "")
+	_ = probeUI(http.MethodGet, endpoint+"/v1/regions", "")
+}
+
+// TestUILatencySummaryRanksTheSample checks the percentile ranks the
+// walk logs. The sample is fixed, so the fake is not involved.
+func TestUILatencySummaryRanksTheSample(t *testing.T) {
+	got := summarizeUILatency([]int64{40, 10, 100, 20, 30}, 9)
+	want := uiLatency{N: 5, MinUs: 10, P50Us: 30, P95Us: 100, MaxUs: 100, SumUs: 200, Bytes: 9}
+	if got != want {
+		t.Fatalf("summarizeUILatency = %+v, want %+v", got, want)
+	}
+	if zero := summarizeUILatency(nil, 0); zero != (uiLatency{}) {
+		t.Fatalf("empty sample = %+v", zero)
+	}
 }
 
 func loadUIOperations(t *testing.T) []uiOperation {
@@ -332,9 +407,20 @@ func skipAuthWrite(method, template string, absent bool) bool {
 	return !strings.HasSuffix(template, "/auth/token")
 }
 
-// probeUI sends one request and drops the body. A non-nil error is a
-// transport failure. The status is returned as the server sent it.
-func probeUI(method, rawURL, token string) (int, error) {
+// uiCall is one probeUI round trip. us is microseconds. bytes is the
+// drained body. err is a transport failure, and the status is then 0.
+type uiCall struct {
+	code  int
+	us    int64
+	bytes int64
+	err   error
+}
+
+// probeUI sends one request and drops the body. The clock starts
+// before the send and stops after the body is drained, so us is the
+// whole round trip against whatever URL it was given. This walk gives
+// it the acceptance fake.
+func probeUI(method, rawURL, token string) uiCall {
 	var body io.Reader
 	if !safeUIMethod(method) {
 		body = strings.NewReader("{}")
@@ -343,7 +429,7 @@ func probeUI(method, rawURL, token string) (int, error) {
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, method, rawURL, body)
 	if err != nil {
-		return 0, err
+		return uiCall{err: err}
 	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
@@ -351,18 +437,53 @@ func probeUI(method, rawURL, token string) (int, error) {
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
+	start := time.Now()
 	resp, err := harnessHTTP.Do(req)
 	if err != nil {
-		return 0, err
+		return uiCall{us: time.Since(start).Microseconds(), err: err}
 	}
 	defer func() { _ = resp.Body.Close() }()
-	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20))
-	return resp.StatusCode, nil
+	n, _ := io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20))
+	return uiCall{code: resp.StatusCode, us: time.Since(start).Microseconds(), bytes: n}
 }
 
-func writeUIWalk(t *testing.T, results []uiProbe) {
+// summarizeUILatency ranks a sample. p50 and p95 use the nearest rank
+// at or above the percentile. An empty sample is the zero value.
+func summarizeUILatency(sample []int64, bytes int64) uiLatency {
+	if len(sample) == 0 {
+		return uiLatency{}
+	}
+	sorted := append([]int64(nil), sample...)
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i] < sorted[j] })
+	var sum int64
+	for _, v := range sorted {
+		sum += v
+	}
+	return uiLatency{
+		N:     len(sorted),
+		MinUs: sorted[0],
+		P50Us: uiPercentile(sorted, 0.50),
+		P95Us: uiPercentile(sorted, 0.95),
+		MaxUs: sorted[len(sorted)-1],
+		SumUs: sum,
+		Bytes: bytes,
+	}
+}
+
+func uiPercentile(sorted []int64, p float64) int64 {
+	i := int(math.Ceil(p*float64(len(sorted)))) - 1
+	if i < 0 {
+		i = 0
+	}
+	if i >= len(sorted) {
+		i = len(sorted) - 1
+	}
+	return sorted[i]
+}
+
+func writeUIWalk(t *testing.T, report uiWalkReport) {
 	t.Helper()
-	raw, err := json.MarshalIndent(results, "", "  ")
+	raw, err := json.MarshalIndent(report, "", "  ")
 	if err != nil {
 		t.Fatalf("encoding the walk: %v", err)
 	}
