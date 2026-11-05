@@ -1,0 +1,2375 @@
+{
+  "source": "k0rdent-ui packages/client-ts/specs/openapi.enriched.yaml",
+  "operations": [
+    {
+      "operationId": "searchAuditEventsAggregate",
+      "method": "GET",
+      "path": "/v1/audit-events",
+      "deprecated": false
+    },
+    {
+      "operationId": "listRegions",
+      "method": "GET",
+      "path": "/v1/regions",
+      "deprecated": false
+    },
+    {
+      "operationId": "getJWKS",
+      "method": "GET",
+      "path": "/v1/regions/global/auth/.well-known/jwks.json",
+      "deprecated": false
+    },
+    {
+      "operationId": "getOIDCDiscovery",
+      "method": "GET",
+      "path": "/v1/regions/global/auth/.well-known/openid-configuration",
+      "deprecated": false
+    },
+    {
+      "operationId": "oidcAuthorize",
+      "method": "GET",
+      "path": "/v1/regions/global/auth/authorize",
+      "deprecated": false
+    },
+    {
+      "operationId": "checkPermissions",
+      "method": "POST",
+      "path": "/v1/regions/global/auth/check",
+      "deprecated": false
+    },
+    {
+      "operationId": "introspectToken",
+      "method": "POST",
+      "path": "/v1/regions/global/auth/introspect",
+      "deprecated": false
+    },
+    {
+      "operationId": "initiateLogin",
+      "method": "POST",
+      "path": "/v1/regions/global/auth/login/initiate",
+      "deprecated": false
+    },
+    {
+      "operationId": "logoutSession",
+      "method": "POST",
+      "path": "/v1/regions/global/auth/logout",
+      "deprecated": false
+    },
+    {
+      "operationId": "terminatePlatformUserSessions",
+      "method": "POST",
+      "path": "/v1/regions/global/auth/platform/sessions/terminate",
+      "deprecated": false
+    },
+    {
+      "operationId": "revokeToken",
+      "method": "POST",
+      "path": "/v1/regions/global/auth/revoke",
+      "deprecated": false
+    },
+    {
+      "operationId": "mintToken",
+      "method": "POST",
+      "path": "/v1/regions/global/auth/token",
+      "deprecated": false
+    },
+    {
+      "operationId": "listApiKeys",
+      "method": "GET",
+      "path": "/v1/regions/global/iam/apikeys",
+      "deprecated": false
+    },
+    {
+      "operationId": "createApiKey",
+      "method": "POST",
+      "path": "/v1/regions/global/iam/apikeys",
+      "deprecated": false
+    },
+    {
+      "operationId": "listGrantableApiKeyRoles",
+      "method": "GET",
+      "path": "/v1/regions/global/iam/apikeys/grantable-roles",
+      "deprecated": false
+    },
+    {
+      "operationId": "deleteApiKey",
+      "method": "DELETE",
+      "path": "/v1/regions/global/iam/apikeys/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "getApiKey",
+      "method": "GET",
+      "path": "/v1/regions/global/iam/apikeys/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "updateApiKey",
+      "method": "PATCH",
+      "path": "/v1/regions/global/iam/apikeys/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "rotateApiKey",
+      "method": "POST",
+      "path": "/v1/regions/global/iam/apikeys/{id}/rotate",
+      "deprecated": false
+    },
+    {
+      "operationId": "listPlatformApiKeys",
+      "method": "GET",
+      "path": "/v1/regions/global/iam/platform/apikeys",
+      "deprecated": false
+    },
+    {
+      "operationId": "revokePlatformApiKey",
+      "method": "DELETE",
+      "path": "/v1/regions/global/iam/platform/apikeys/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "deletePlatformCiamProvider",
+      "method": "DELETE",
+      "path": "/v1/regions/global/iam/platform/ciam-provider",
+      "deprecated": false
+    },
+    {
+      "operationId": "getPlatformCiamProvider",
+      "method": "GET",
+      "path": "/v1/regions/global/iam/platform/ciam-provider",
+      "deprecated": false
+    },
+    {
+      "operationId": "updatePlatformCiamProvider",
+      "method": "PATCH",
+      "path": "/v1/regions/global/iam/platform/ciam-provider",
+      "deprecated": false
+    },
+    {
+      "operationId": "createPlatformCiamProvider",
+      "method": "POST",
+      "path": "/v1/regions/global/iam/platform/ciam-provider",
+      "deprecated": false
+    },
+    {
+      "operationId": "rotatePlatformCiamProviderSecret",
+      "method": "POST",
+      "path": "/v1/regions/global/iam/platform/ciam-provider/rotate-secret",
+      "deprecated": false
+    },
+    {
+      "operationId": "cancelPlatformCiamProviderSecretRotation",
+      "method": "POST",
+      "path": "/v1/regions/global/iam/platform/ciam-provider/rotate-secret/cancel",
+      "deprecated": false
+    },
+    {
+      "operationId": "confirmPlatformCiamProviderSecretRotation",
+      "method": "POST",
+      "path": "/v1/regions/global/iam/platform/ciam-provider/rotate-secret/confirm",
+      "deprecated": false
+    },
+    {
+      "operationId": "reissuePlatformCiamProviderRotationVerification",
+      "method": "POST",
+      "path": "/v1/regions/global/iam/platform/ciam-provider/rotate-secret/verify",
+      "deprecated": false
+    },
+    {
+      "operationId": "startPlatformCiamProviderSignInTest",
+      "method": "POST",
+      "path": "/v1/regions/global/iam/platform/ciam-provider/test-signin",
+      "deprecated": false
+    },
+    {
+      "operationId": "listPlatformCiamProviders",
+      "method": "GET",
+      "path": "/v1/regions/global/iam/platform/ciam-providers",
+      "deprecated": false
+    },
+    {
+      "operationId": "createPlatformCiamProviderRow",
+      "method": "POST",
+      "path": "/v1/regions/global/iam/platform/ciam-providers",
+      "deprecated": false
+    },
+    {
+      "operationId": "deletePlatformCiamProviderRow",
+      "method": "DELETE",
+      "path": "/v1/regions/global/iam/platform/ciam-providers/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "getPlatformCiamProviderRow",
+      "method": "GET",
+      "path": "/v1/regions/global/iam/platform/ciam-providers/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "updatePlatformCiamProviderRow",
+      "method": "PATCH",
+      "path": "/v1/regions/global/iam/platform/ciam-providers/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "activatePlatformCiamProvider",
+      "method": "POST",
+      "path": "/v1/regions/global/iam/platform/ciam-providers/{id}/activate",
+      "deprecated": false
+    },
+    {
+      "operationId": "startPlatformCiamProviderRowSignInTest",
+      "method": "POST",
+      "path": "/v1/regions/global/iam/platform/ciam-providers/{id}/test-signin",
+      "deprecated": false
+    },
+    {
+      "operationId": "listPlatformPolicies",
+      "method": "GET",
+      "path": "/v1/regions/global/iam/platform/policies",
+      "deprecated": false
+    },
+    {
+      "operationId": "createPlatformPolicy",
+      "method": "POST",
+      "path": "/v1/regions/global/iam/platform/policies",
+      "deprecated": false
+    },
+    {
+      "operationId": "deletePlatformPolicy",
+      "method": "DELETE",
+      "path": "/v1/regions/global/iam/platform/policies/{policyId}",
+      "deprecated": false
+    },
+    {
+      "operationId": "getPlatformPolicy",
+      "method": "GET",
+      "path": "/v1/regions/global/iam/platform/policies/{policyId}",
+      "deprecated": false
+    },
+    {
+      "operationId": "listPlatformRoles",
+      "method": "GET",
+      "path": "/v1/regions/global/iam/platform/roles",
+      "deprecated": false
+    },
+    {
+      "operationId": "createPlatformRole",
+      "method": "POST",
+      "path": "/v1/regions/global/iam/platform/roles",
+      "deprecated": false
+    },
+    {
+      "operationId": "deletePlatformRole",
+      "method": "DELETE",
+      "path": "/v1/regions/global/iam/platform/roles/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "getPlatformRole",
+      "method": "GET",
+      "path": "/v1/regions/global/iam/platform/roles/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "updatePlatformRole",
+      "method": "PATCH",
+      "path": "/v1/regions/global/iam/platform/roles/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "listPlatformServiceAccounts",
+      "method": "GET",
+      "path": "/v1/regions/global/iam/platform/service-accounts",
+      "deprecated": false
+    },
+    {
+      "operationId": "listPlatformServiceAccountCredentials",
+      "method": "GET",
+      "path": "/v1/regions/global/iam/platform/service-accounts/{saId}/credentials",
+      "deprecated": false
+    },
+    {
+      "operationId": "revokePlatformServiceAccountCredential",
+      "method": "DELETE",
+      "path": "/v1/regions/global/iam/platform/service-accounts/{saId}/credentials/{credentialId}",
+      "deprecated": false
+    },
+    {
+      "operationId": "disablePlatformUser",
+      "method": "POST",
+      "path": "/v1/regions/global/iam/platform/users/{id}/disable",
+      "deprecated": false
+    },
+    {
+      "operationId": "enablePlatformUser",
+      "method": "POST",
+      "path": "/v1/regions/global/iam/platform/users/{id}/enable",
+      "deprecated": false
+    },
+    {
+      "operationId": "getUserProfile",
+      "method": "GET",
+      "path": "/v1/regions/global/iam/users/profile",
+      "deprecated": false
+    },
+    {
+      "operationId": "updateUserProfile",
+      "method": "PATCH",
+      "path": "/v1/regions/global/iam/users/profile",
+      "deprecated": false
+    },
+    {
+      "operationId": "deletePlatformInvitationEmailTemplate",
+      "method": "DELETE",
+      "path": "/v1/regions/global/invitations/settings/email-template",
+      "deprecated": false
+    },
+    {
+      "operationId": "getPlatformInvitationEmailTemplate",
+      "method": "GET",
+      "path": "/v1/regions/global/invitations/settings/email-template",
+      "deprecated": false
+    },
+    {
+      "operationId": "putPlatformInvitationEmailTemplate",
+      "method": "PUT",
+      "path": "/v1/regions/global/invitations/settings/email-template",
+      "deprecated": false
+    },
+    {
+      "operationId": "previewPlatformInvitationEmailTemplate",
+      "method": "POST",
+      "path": "/v1/regions/global/invitations/settings/email-template/preview",
+      "deprecated": false
+    },
+    {
+      "operationId": "listNotificationCatalog",
+      "method": "GET",
+      "path": "/v1/regions/global/notifications/catalog",
+      "deprecated": false
+    },
+    {
+      "operationId": "createNotificationCatalogEntry",
+      "method": "POST",
+      "path": "/v1/regions/global/notifications/catalog",
+      "deprecated": false
+    },
+    {
+      "operationId": "disableNotificationCatalogEntry",
+      "method": "DELETE",
+      "path": "/v1/regions/global/notifications/catalog/{event_type}",
+      "deprecated": false
+    },
+    {
+      "operationId": "getNotificationCatalogEntry",
+      "method": "GET",
+      "path": "/v1/regions/global/notifications/catalog/{event_type}",
+      "deprecated": false
+    },
+    {
+      "operationId": "updateNotificationCatalogEntry",
+      "method": "PATCH",
+      "path": "/v1/regions/global/notifications/catalog/{event_type}",
+      "deprecated": false
+    },
+    {
+      "operationId": "listDeliveryStatus",
+      "method": "GET",
+      "path": "/v1/regions/global/notifications/deliveries",
+      "deprecated": false
+    },
+    {
+      "operationId": "listPlatformEvents",
+      "method": "GET",
+      "path": "/v1/regions/global/notifications/events",
+      "deprecated": false
+    },
+    {
+      "operationId": "listInboxNotifications",
+      "method": "GET",
+      "path": "/v1/regions/global/notifications/inbox",
+      "deprecated": false
+    },
+    {
+      "operationId": "markAllInboxNotificationsRead",
+      "method": "POST",
+      "path": "/v1/regions/global/notifications/inbox/read-all",
+      "deprecated": false
+    },
+    {
+      "operationId": "streamInboxNotifications",
+      "method": "GET",
+      "path": "/v1/regions/global/notifications/inbox/stream",
+      "deprecated": false
+    },
+    {
+      "operationId": "deleteInboxNotification",
+      "method": "DELETE",
+      "path": "/v1/regions/global/notifications/inbox/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "getInboxNotification",
+      "method": "GET",
+      "path": "/v1/regions/global/notifications/inbox/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "markInboxNotificationUnread",
+      "method": "DELETE",
+      "path": "/v1/regions/global/notifications/inbox/{id}/read",
+      "deprecated": false
+    },
+    {
+      "operationId": "markInboxNotificationRead",
+      "method": "POST",
+      "path": "/v1/regions/global/notifications/inbox/{id}/read",
+      "deprecated": false
+    },
+    {
+      "operationId": "getInboxNotificationStatus",
+      "method": "GET",
+      "path": "/v1/regions/global/notifications/inbox/{id}/status",
+      "deprecated": false
+    },
+    {
+      "operationId": "listNotificationRoutingRules",
+      "method": "GET",
+      "path": "/v1/regions/global/notifications/routing-rules",
+      "deprecated": false
+    },
+    {
+      "operationId": "createNotificationRoutingRule",
+      "method": "POST",
+      "path": "/v1/regions/global/notifications/routing-rules",
+      "deprecated": false
+    },
+    {
+      "operationId": "deleteNotificationRoutingRule",
+      "method": "DELETE",
+      "path": "/v1/regions/global/notifications/routing-rules/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "getNotificationRoutingRule",
+      "method": "GET",
+      "path": "/v1/regions/global/notifications/routing-rules/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "updateNotificationRoutingRule",
+      "method": "PATCH",
+      "path": "/v1/regions/global/notifications/routing-rules/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "getNotificationSandbox",
+      "method": "GET",
+      "path": "/v1/regions/global/notifications/sandbox",
+      "deprecated": false
+    },
+    {
+      "operationId": "injectNotificationBurst",
+      "method": "POST",
+      "path": "/v1/regions/global/notifications/sandbox/bursts",
+      "deprecated": false
+    },
+    {
+      "operationId": "injectNotificationEvent",
+      "method": "POST",
+      "path": "/v1/regions/global/notifications/sandbox/events",
+      "deprecated": false
+    },
+    {
+      "operationId": "dropNotificationStreams",
+      "method": "POST",
+      "path": "/v1/regions/global/notifications/sandbox/stream-drops",
+      "deprecated": false
+    },
+    {
+      "operationId": "clearWebhookDeliveryFailure",
+      "method": "DELETE",
+      "path": "/v1/regions/global/notifications/sandbox/webhook-failures",
+      "deprecated": false
+    },
+    {
+      "operationId": "setWebhookDeliveryFailure",
+      "method": "PUT",
+      "path": "/v1/regions/global/notifications/sandbox/webhook-failures",
+      "deprecated": false
+    },
+    {
+      "operationId": "listTemplates",
+      "method": "GET",
+      "path": "/v1/regions/global/notifications/templates",
+      "deprecated": false
+    },
+    {
+      "operationId": "createTemplate",
+      "method": "POST",
+      "path": "/v1/regions/global/notifications/templates",
+      "deprecated": false
+    },
+    {
+      "operationId": "previewTemplate",
+      "method": "POST",
+      "path": "/v1/regions/global/notifications/templates/preview",
+      "deprecated": false
+    },
+    {
+      "operationId": "deactivateTemplate",
+      "method": "DELETE",
+      "path": "/v1/regions/global/notifications/templates/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "getTemplate",
+      "method": "GET",
+      "path": "/v1/regions/global/notifications/templates/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "unsubscribe",
+      "method": "GET",
+      "path": "/v1/regions/global/notifications/unsubscribe/{token}",
+      "deprecated": false
+    },
+    {
+      "operationId": "unsubscribeOneClick",
+      "method": "POST",
+      "path": "/v1/regions/global/notifications/unsubscribe/{token}",
+      "deprecated": false
+    },
+    {
+      "operationId": "listNotificationCategories",
+      "method": "GET",
+      "path": "/v1/regions/global/notifications/users/me/categories",
+      "deprecated": false
+    },
+    {
+      "operationId": "deleteNotificationMute",
+      "method": "DELETE",
+      "path": "/v1/regions/global/notifications/users/me/mutes",
+      "deprecated": false
+    },
+    {
+      "operationId": "listNotificationMutes",
+      "method": "GET",
+      "path": "/v1/regions/global/notifications/users/me/mutes",
+      "deprecated": false
+    },
+    {
+      "operationId": "createNotificationMute",
+      "method": "POST",
+      "path": "/v1/regions/global/notifications/users/me/mutes",
+      "deprecated": false
+    },
+    {
+      "operationId": "listNotificationPreferences",
+      "method": "GET",
+      "path": "/v1/regions/global/notifications/users/me/preferences",
+      "deprecated": false
+    },
+    {
+      "operationId": "upsertNotificationPreference",
+      "method": "PATCH",
+      "path": "/v1/regions/global/notifications/users/me/preferences",
+      "deprecated": false
+    },
+    {
+      "operationId": "testNotification",
+      "method": "POST",
+      "path": "/v1/regions/global/notifications/users/me/preferences/test",
+      "deprecated": false
+    },
+    {
+      "operationId": "listNotificationSubscriptions",
+      "method": "GET",
+      "path": "/v1/regions/global/notifications/users/me/subscriptions",
+      "deprecated": false
+    },
+    {
+      "operationId": "createNotificationSubscription",
+      "method": "POST",
+      "path": "/v1/regions/global/notifications/users/me/subscriptions",
+      "deprecated": false
+    },
+    {
+      "operationId": "listNotificationSubscriptionScopes",
+      "method": "GET",
+      "path": "/v1/regions/global/notifications/users/me/subscriptions/scopes",
+      "deprecated": false
+    },
+    {
+      "operationId": "deleteNotificationSubscription",
+      "method": "DELETE",
+      "path": "/v1/regions/global/notifications/users/me/subscriptions/{category}",
+      "deprecated": false
+    },
+    {
+      "operationId": "getUserNotificationPreferencesSupport",
+      "method": "GET",
+      "path": "/v1/regions/global/notifications/users/{userId}/preferences",
+      "deprecated": false
+    },
+    {
+      "operationId": "upsertUserNotificationPreferenceSupport",
+      "method": "PATCH",
+      "path": "/v1/regions/global/notifications/users/{userId}/preferences",
+      "deprecated": false
+    },
+    {
+      "operationId": "listWebhookSubscriptions",
+      "method": "GET",
+      "path": "/v1/regions/global/notifications/webhooks",
+      "deprecated": false
+    },
+    {
+      "operationId": "createWebhookSubscription",
+      "method": "POST",
+      "path": "/v1/regions/global/notifications/webhooks",
+      "deprecated": false
+    },
+    {
+      "operationId": "deleteWebhookSubscription",
+      "method": "DELETE",
+      "path": "/v1/regions/global/notifications/webhooks/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "updateWebhookSubscription",
+      "method": "PATCH",
+      "path": "/v1/regions/global/notifications/webhooks/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "listWebhookDeliveries",
+      "method": "GET",
+      "path": "/v1/regions/global/notifications/webhooks/{id}/deliveries",
+      "deprecated": false
+    },
+    {
+      "operationId": "rotateWebhookSubscriptionSecret",
+      "method": "POST",
+      "path": "/v1/regions/global/notifications/webhooks/{id}/rotate",
+      "deprecated": false
+    },
+    {
+      "operationId": "listOrganizations",
+      "method": "GET",
+      "path": "/v1/regions/global/organizations",
+      "deprecated": false
+    },
+    {
+      "operationId": "createOrganization",
+      "method": "POST",
+      "path": "/v1/regions/global/organizations",
+      "deprecated": false
+    },
+    {
+      "operationId": "listQuotaScopeUsage",
+      "method": "GET",
+      "path": "/v1/regions/global/organizations/quota-usage",
+      "deprecated": false
+    },
+    {
+      "operationId": "getOrganizationStats",
+      "method": "GET",
+      "path": "/v1/regions/global/organizations/stats",
+      "deprecated": false
+    },
+    {
+      "operationId": "deleteOrganization",
+      "method": "DELETE",
+      "path": "/v1/regions/global/organizations/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "getOrganization",
+      "method": "GET",
+      "path": "/v1/regions/global/organizations/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "updateOrganization",
+      "method": "PATCH",
+      "path": "/v1/regions/global/organizations/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "listOrganizationInvitations",
+      "method": "GET",
+      "path": "/v1/regions/global/organizations/{id}/invitations",
+      "deprecated": false
+    },
+    {
+      "operationId": "createOrganizationInvitation",
+      "method": "POST",
+      "path": "/v1/regions/global/organizations/{id}/invitations",
+      "deprecated": false
+    },
+    {
+      "operationId": "bulkCreateOrganizationInvitations",
+      "method": "POST",
+      "path": "/v1/regions/global/organizations/{id}/invitations/bulk",
+      "deprecated": false
+    },
+    {
+      "operationId": "getInvitationSettings",
+      "method": "GET",
+      "path": "/v1/regions/global/organizations/{id}/invitations/settings",
+      "deprecated": false
+    },
+    {
+      "operationId": "updateInvitationSettings",
+      "method": "PATCH",
+      "path": "/v1/regions/global/organizations/{id}/invitations/settings",
+      "deprecated": false
+    },
+    {
+      "operationId": "deleteInvitationEmailTemplate",
+      "method": "DELETE",
+      "path": "/v1/regions/global/organizations/{id}/invitations/settings/email-template",
+      "deprecated": false
+    },
+    {
+      "operationId": "getInvitationEmailTemplate",
+      "method": "GET",
+      "path": "/v1/regions/global/organizations/{id}/invitations/settings/email-template",
+      "deprecated": false
+    },
+    {
+      "operationId": "putInvitationEmailTemplate",
+      "method": "PUT",
+      "path": "/v1/regions/global/organizations/{id}/invitations/settings/email-template",
+      "deprecated": false
+    },
+    {
+      "operationId": "previewInvitationEmailTemplate",
+      "method": "POST",
+      "path": "/v1/regions/global/organizations/{id}/invitations/settings/email-template/preview",
+      "deprecated": false
+    },
+    {
+      "operationId": "revokeOrganizationInvitation",
+      "method": "DELETE",
+      "path": "/v1/regions/global/organizations/{id}/invitations/{invitationId}",
+      "deprecated": false
+    },
+    {
+      "operationId": "acceptOrganizationInvitation",
+      "method": "POST",
+      "path": "/v1/regions/global/organizations/{id}/invitations/{invitationId}/accept",
+      "deprecated": false
+    },
+    {
+      "operationId": "resendOrganizationInvitation",
+      "method": "POST",
+      "path": "/v1/regions/global/organizations/{id}/invitations/{invitationId}/resend",
+      "deprecated": false
+    },
+    {
+      "operationId": "listOrganizationMembers",
+      "method": "GET",
+      "path": "/v1/regions/global/organizations/{id}/members",
+      "deprecated": false
+    },
+    {
+      "operationId": "removeOrganizationMember",
+      "method": "DELETE",
+      "path": "/v1/regions/global/organizations/{id}/members/{memberId}",
+      "deprecated": false
+    },
+    {
+      "operationId": "getOrganizationMember",
+      "method": "GET",
+      "path": "/v1/regions/global/organizations/{id}/members/{memberId}",
+      "deprecated": false
+    },
+    {
+      "operationId": "reconcileOrganizationMemberRoles",
+      "method": "PUT",
+      "path": "/v1/regions/global/organizations/{id}/members/{memberId}/roles",
+      "deprecated": false
+    },
+    {
+      "operationId": "resumeOrganization",
+      "method": "POST",
+      "path": "/v1/regions/global/organizations/{id}/resume",
+      "deprecated": false
+    },
+    {
+      "operationId": "suspendOrganization",
+      "method": "POST",
+      "path": "/v1/regions/global/organizations/{id}/suspend",
+      "deprecated": false
+    },
+    {
+      "operationId": "getOrgCallbackURL",
+      "method": "GET",
+      "path": "/v1/regions/global/organizations/{orgId}/auth/callback-url",
+      "deprecated": false
+    },
+    {
+      "operationId": "listGroups",
+      "method": "GET",
+      "path": "/v1/regions/global/organizations/{orgId}/iam/groups",
+      "deprecated": false
+    },
+    {
+      "operationId": "createGroup",
+      "method": "POST",
+      "path": "/v1/regions/global/organizations/{orgId}/iam/groups",
+      "deprecated": false
+    },
+    {
+      "operationId": "listGroupMembers",
+      "method": "GET",
+      "path": "/v1/regions/global/organizations/{orgId}/iam/groups/{groupId}/members",
+      "deprecated": false
+    },
+    {
+      "operationId": "addGroupMember",
+      "method": "POST",
+      "path": "/v1/regions/global/organizations/{orgId}/iam/groups/{groupId}/members",
+      "deprecated": false
+    },
+    {
+      "operationId": "removeGroupMember",
+      "method": "DELETE",
+      "path": "/v1/regions/global/organizations/{orgId}/iam/groups/{groupId}/members/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "getGroupMember",
+      "method": "GET",
+      "path": "/v1/regions/global/organizations/{orgId}/iam/groups/{groupId}/members/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "deleteGroup",
+      "method": "DELETE",
+      "path": "/v1/regions/global/organizations/{orgId}/iam/groups/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "getGroup",
+      "method": "GET",
+      "path": "/v1/regions/global/organizations/{orgId}/iam/groups/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "updateGroup",
+      "method": "PATCH",
+      "path": "/v1/regions/global/organizations/{orgId}/iam/groups/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "listPolicies",
+      "method": "GET",
+      "path": "/v1/regions/global/organizations/{orgId}/iam/policies",
+      "deprecated": false
+    },
+    {
+      "operationId": "createPolicy",
+      "method": "POST",
+      "path": "/v1/regions/global/organizations/{orgId}/iam/policies",
+      "deprecated": false
+    },
+    {
+      "operationId": "deletePolicy",
+      "method": "DELETE",
+      "path": "/v1/regions/global/organizations/{orgId}/iam/policies/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "getPolicy",
+      "method": "GET",
+      "path": "/v1/regions/global/organizations/{orgId}/iam/policies/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "updatePolicy",
+      "method": "PATCH",
+      "path": "/v1/regions/global/organizations/{orgId}/iam/policies/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "listProviders",
+      "method": "GET",
+      "path": "/v1/regions/global/organizations/{orgId}/iam/providers",
+      "deprecated": false
+    },
+    {
+      "operationId": "createProvider",
+      "method": "POST",
+      "path": "/v1/regions/global/organizations/{orgId}/iam/providers",
+      "deprecated": false
+    },
+    {
+      "operationId": "validateProvider",
+      "method": "POST",
+      "path": "/v1/regions/global/organizations/{orgId}/iam/providers/validate",
+      "deprecated": false
+    },
+    {
+      "operationId": "deleteProvider",
+      "method": "DELETE",
+      "path": "/v1/regions/global/organizations/{orgId}/iam/providers/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "getProvider",
+      "method": "GET",
+      "path": "/v1/regions/global/organizations/{orgId}/iam/providers/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "updateProvider",
+      "method": "PATCH",
+      "path": "/v1/regions/global/organizations/{orgId}/iam/providers/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "rotateProviderSecret",
+      "method": "POST",
+      "path": "/v1/regions/global/organizations/{orgId}/iam/providers/{id}/rotate-secret",
+      "deprecated": false
+    },
+    {
+      "operationId": "cancelProviderSecretRotation",
+      "method": "POST",
+      "path": "/v1/regions/global/organizations/{orgId}/iam/providers/{id}/rotate-secret/cancel",
+      "deprecated": false
+    },
+    {
+      "operationId": "confirmProviderSecretRotation",
+      "method": "POST",
+      "path": "/v1/regions/global/organizations/{orgId}/iam/providers/{id}/rotate-secret/confirm",
+      "deprecated": false
+    },
+    {
+      "operationId": "reissueProviderRotationVerification",
+      "method": "POST",
+      "path": "/v1/regions/global/organizations/{orgId}/iam/providers/{id}/rotate-secret/verify",
+      "deprecated": false
+    },
+    {
+      "operationId": "startProviderSignInTest",
+      "method": "POST",
+      "path": "/v1/regions/global/organizations/{orgId}/iam/providers/{id}/test-signin",
+      "deprecated": false
+    },
+    {
+      "operationId": "validateProviderById",
+      "method": "POST",
+      "path": "/v1/regions/global/organizations/{orgId}/iam/providers/{id}/validate",
+      "deprecated": false
+    },
+    {
+      "operationId": "listRoles",
+      "method": "GET",
+      "path": "/v1/regions/global/organizations/{orgId}/iam/roles",
+      "deprecated": false
+    },
+    {
+      "operationId": "createRole",
+      "method": "POST",
+      "path": "/v1/regions/global/organizations/{orgId}/iam/roles",
+      "deprecated": false
+    },
+    {
+      "operationId": "deleteRole",
+      "method": "DELETE",
+      "path": "/v1/regions/global/organizations/{orgId}/iam/roles/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "getRole",
+      "method": "GET",
+      "path": "/v1/regions/global/organizations/{orgId}/iam/roles/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "updateRole",
+      "method": "PATCH",
+      "path": "/v1/regions/global/organizations/{orgId}/iam/roles/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "listServiceAccounts",
+      "method": "GET",
+      "path": "/v1/regions/global/organizations/{orgId}/iam/service-accounts",
+      "deprecated": false
+    },
+    {
+      "operationId": "createServiceAccount",
+      "method": "POST",
+      "path": "/v1/regions/global/organizations/{orgId}/iam/service-accounts",
+      "deprecated": false
+    },
+    {
+      "operationId": "deleteServiceAccount",
+      "method": "DELETE",
+      "path": "/v1/regions/global/organizations/{orgId}/iam/service-accounts/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "getServiceAccount",
+      "method": "GET",
+      "path": "/v1/regions/global/organizations/{orgId}/iam/service-accounts/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "updateServiceAccount",
+      "method": "PATCH",
+      "path": "/v1/regions/global/organizations/{orgId}/iam/service-accounts/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "listServiceAccountCredentials",
+      "method": "GET",
+      "path": "/v1/regions/global/organizations/{orgId}/iam/service-accounts/{serviceAccountId}/credentials",
+      "deprecated": false
+    },
+    {
+      "operationId": "createServiceAccountCredential",
+      "method": "POST",
+      "path": "/v1/regions/global/organizations/{orgId}/iam/service-accounts/{serviceAccountId}/credentials",
+      "deprecated": false
+    },
+    {
+      "operationId": "deleteServiceAccountCredential",
+      "method": "DELETE",
+      "path": "/v1/regions/global/organizations/{orgId}/iam/service-accounts/{serviceAccountId}/credentials/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "getServiceAccountCredential",
+      "method": "GET",
+      "path": "/v1/regions/global/organizations/{orgId}/iam/service-accounts/{serviceAccountId}/credentials/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "listUsers",
+      "method": "GET",
+      "path": "/v1/regions/global/organizations/{orgId}/iam/users",
+      "deprecated": false
+    },
+    {
+      "operationId": "deleteUser",
+      "method": "DELETE",
+      "path": "/v1/regions/global/organizations/{orgId}/iam/users/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "getUser",
+      "method": "GET",
+      "path": "/v1/regions/global/organizations/{orgId}/iam/users/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "updateUser",
+      "method": "PATCH",
+      "path": "/v1/regions/global/organizations/{orgId}/iam/users/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "disableOrgUser",
+      "method": "POST",
+      "path": "/v1/regions/global/organizations/{orgId}/iam/users/{id}/disable",
+      "deprecated": false
+    },
+    {
+      "operationId": "enableOrgUser",
+      "method": "POST",
+      "path": "/v1/regions/global/organizations/{orgId}/iam/users/{id}/enable",
+      "deprecated": false
+    },
+    {
+      "operationId": "listProjectsInOrg",
+      "method": "GET",
+      "path": "/v1/regions/global/organizations/{orgId}/projects",
+      "deprecated": false
+    },
+    {
+      "operationId": "createProjectInOrg",
+      "method": "POST",
+      "path": "/v1/regions/global/organizations/{orgId}/projects",
+      "deprecated": false
+    },
+    {
+      "operationId": "deleteProjectInOrg",
+      "method": "DELETE",
+      "path": "/v1/regions/global/organizations/{orgId}/projects/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "getProjectInOrg",
+      "method": "GET",
+      "path": "/v1/regions/global/organizations/{orgId}/projects/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "updateProjectInOrg",
+      "method": "PATCH",
+      "path": "/v1/regions/global/organizations/{orgId}/projects/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "listProjectMembers",
+      "method": "GET",
+      "path": "/v1/regions/global/organizations/{orgId}/projects/{id}/members",
+      "deprecated": false
+    },
+    {
+      "operationId": "removeProjectMember",
+      "method": "DELETE",
+      "path": "/v1/regions/global/organizations/{orgId}/projects/{id}/members/{memberId}",
+      "deprecated": false
+    },
+    {
+      "operationId": "reconcileProjectMemberRoles",
+      "method": "PUT",
+      "path": "/v1/regions/global/organizations/{orgId}/projects/{id}/members/{memberId}/roles",
+      "deprecated": false
+    },
+    {
+      "operationId": "getProjectQuota",
+      "method": "GET",
+      "path": "/v1/regions/global/organizations/{orgId}/projects/{id}/quota",
+      "deprecated": false
+    },
+    {
+      "operationId": "getProjectQuotaHistory",
+      "method": "GET",
+      "path": "/v1/regions/global/organizations/{orgId}/projects/{id}/quota-history",
+      "deprecated": false
+    },
+    {
+      "operationId": "getOrganizationQuota",
+      "method": "GET",
+      "path": "/v1/regions/global/organizations/{orgId}/quota",
+      "deprecated": false
+    },
+    {
+      "operationId": "requestQuotaAllowance",
+      "method": "POST",
+      "path": "/v1/regions/global/organizations/{orgId}/quota-allowance-requests",
+      "deprecated": false
+    },
+    {
+      "operationId": "deleteQuotaAssignmentInOrg",
+      "method": "DELETE",
+      "path": "/v1/regions/global/organizations/{orgId}/quota-assignments",
+      "deprecated": false
+    },
+    {
+      "operationId": "listQuotaAssignmentsInOrg",
+      "method": "GET",
+      "path": "/v1/regions/global/organizations/{orgId}/quota-assignments",
+      "deprecated": false
+    },
+    {
+      "operationId": "putQuotaAssignmentInOrg",
+      "method": "PUT",
+      "path": "/v1/regions/global/organizations/{orgId}/quota-assignments",
+      "deprecated": false
+    },
+    {
+      "operationId": "getOrganizationQuotaHistory",
+      "method": "GET",
+      "path": "/v1/regions/global/organizations/{orgId}/quota-history",
+      "deprecated": false
+    },
+    {
+      "operationId": "listQuotaLimitChanges",
+      "method": "GET",
+      "path": "/v1/regions/global/organizations/{orgId}/quota-limit-changes",
+      "deprecated": false
+    },
+    {
+      "operationId": "listQuotaOverrides",
+      "method": "GET",
+      "path": "/v1/regions/global/organizations/{orgId}/quota-overrides",
+      "deprecated": false
+    },
+    {
+      "operationId": "createQuotaOverride",
+      "method": "POST",
+      "path": "/v1/regions/global/organizations/{orgId}/quota-overrides",
+      "deprecated": false
+    },
+    {
+      "operationId": "revokeQuotaOverride",
+      "method": "DELETE",
+      "path": "/v1/regions/global/organizations/{orgId}/quota-overrides/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "listQuotaProfilesInOrg",
+      "method": "GET",
+      "path": "/v1/regions/global/organizations/{orgId}/quota-profiles",
+      "deprecated": false
+    },
+    {
+      "operationId": "createQuotaProfileInOrg",
+      "method": "POST",
+      "path": "/v1/regions/global/organizations/{orgId}/quota-profiles",
+      "deprecated": false
+    },
+    {
+      "operationId": "deleteQuotaProfileInOrg",
+      "method": "DELETE",
+      "path": "/v1/regions/global/organizations/{orgId}/quota-profiles/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "getQuotaProfileInOrg",
+      "method": "GET",
+      "path": "/v1/regions/global/organizations/{orgId}/quota-profiles/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "updateQuotaProfileInOrg",
+      "method": "PATCH",
+      "path": "/v1/regions/global/organizations/{orgId}/quota-profiles/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "listProjects",
+      "method": "GET",
+      "path": "/v1/regions/global/projects",
+      "deprecated": false
+    },
+    {
+      "operationId": "listQuotaDimensions",
+      "method": "GET",
+      "path": "/v1/regions/global/quota-dimensions",
+      "deprecated": false
+    },
+    {
+      "operationId": "updateQuotaDimensionEnforcement",
+      "method": "PUT",
+      "path": "/v1/regions/global/quota-dimensions/{dimension}/enforcement",
+      "deprecated": false
+    },
+    {
+      "operationId": "listGlobalQuotaProfiles",
+      "method": "GET",
+      "path": "/v1/regions/global/quota-profiles",
+      "deprecated": false
+    },
+    {
+      "operationId": "createGlobalQuotaProfile",
+      "method": "POST",
+      "path": "/v1/regions/global/quota-profiles",
+      "deprecated": false
+    },
+    {
+      "operationId": "deleteGlobalQuotaProfile",
+      "method": "DELETE",
+      "path": "/v1/regions/global/quota-profiles/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "getGlobalQuotaProfile",
+      "method": "GET",
+      "path": "/v1/regions/global/quota-profiles/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "updateGlobalQuotaProfile",
+      "method": "PATCH",
+      "path": "/v1/regions/global/quota-profiles/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "listQuotaProfileAssignments",
+      "method": "GET",
+      "path": "/v1/regions/global/quota-profiles/{id}/assignments",
+      "deprecated": false
+    },
+    {
+      "operationId": "designateDefaultQuotaProfile",
+      "method": "PUT",
+      "path": "/v1/regions/global/quota-profiles/{id}/default",
+      "deprecated": false
+    },
+    {
+      "operationId": "searchAuditEvents",
+      "method": "GET",
+      "path": "/v1/regions/{region}/audit-events",
+      "deprecated": false
+    },
+    {
+      "operationId": "verifyAuditEvents",
+      "method": "GET",
+      "path": "/v1/regions/{region}/audit-events/verify",
+      "deprecated": false
+    },
+    {
+      "operationId": "listClusterTypes",
+      "method": "GET",
+      "path": "/v1/regions/{region}/compute/cluster-types",
+      "deprecated": false
+    },
+    {
+      "operationId": "createClusterType",
+      "method": "POST",
+      "path": "/v1/regions/{region}/compute/cluster-types",
+      "deprecated": false
+    },
+    {
+      "operationId": "deleteClusterType",
+      "method": "DELETE",
+      "path": "/v1/regions/{region}/compute/cluster-types/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "getClusterType",
+      "method": "GET",
+      "path": "/v1/regions/{region}/compute/cluster-types/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "listClusterTypeVersions",
+      "method": "GET",
+      "path": "/v1/regions/{region}/compute/cluster-types/{id}/versions",
+      "deprecated": false
+    },
+    {
+      "operationId": "addClusterTypeVersion",
+      "method": "POST",
+      "path": "/v1/regions/{region}/compute/cluster-types/{id}/versions",
+      "deprecated": false
+    },
+    {
+      "operationId": "getClusterTypeVersion",
+      "method": "GET",
+      "path": "/v1/regions/{region}/compute/cluster-types/{id}/versions/{versionId}",
+      "deprecated": false
+    },
+    {
+      "operationId": "setClusterTypeVersionStatus",
+      "method": "PATCH",
+      "path": "/v1/regions/{region}/compute/cluster-types/{id}/versions/{versionId}",
+      "deprecated": false
+    },
+    {
+      "operationId": "listControlPlatforms",
+      "method": "GET",
+      "path": "/v1/regions/{region}/compute/control-platforms",
+      "deprecated": false
+    },
+    {
+      "operationId": "createControlPlatform",
+      "method": "POST",
+      "path": "/v1/regions/{region}/compute/control-platforms",
+      "deprecated": false
+    },
+    {
+      "operationId": "deleteControlPlatform",
+      "method": "DELETE",
+      "path": "/v1/regions/{region}/compute/control-platforms/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "getControlPlatform",
+      "method": "GET",
+      "path": "/v1/regions/{region}/compute/control-platforms/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "updateControlPlatform",
+      "method": "PATCH",
+      "path": "/v1/regions/{region}/compute/control-platforms/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "cancelControlPlatform",
+      "method": "POST",
+      "path": "/v1/regions/{region}/compute/control-platforms/{id}/cancel",
+      "deprecated": false
+    },
+    {
+      "operationId": "getControlPlatformCluster",
+      "method": "GET",
+      "path": "/v1/regions/{region}/compute/control-platforms/{id}/cluster",
+      "deprecated": false
+    },
+    {
+      "operationId": "listControlPlatformClusterInstances",
+      "method": "GET",
+      "path": "/v1/regions/{region}/compute/control-platforms/{id}/cluster/instances",
+      "deprecated": false
+    },
+    {
+      "operationId": "getControlPlatformClusterInstance",
+      "method": "GET",
+      "path": "/v1/regions/{region}/compute/control-platforms/{id}/cluster/instances/{instanceId}",
+      "deprecated": false
+    },
+    {
+      "operationId": "listControlPlatformClusterRuntimeEvents",
+      "method": "GET",
+      "path": "/v1/regions/{region}/compute/control-platforms/{id}/cluster/runtime/events",
+      "deprecated": false
+    },
+    {
+      "operationId": "downloadControlPlatformClusterRuntimeEvents",
+      "method": "GET",
+      "path": "/v1/regions/{region}/compute/control-platforms/{id}/cluster/runtime/events/download",
+      "deprecated": false
+    },
+    {
+      "operationId": "listControlPlatformClusterSshAccess",
+      "method": "GET",
+      "path": "/v1/regions/{region}/compute/control-platforms/{id}/cluster/ssh-access",
+      "deprecated": false
+    },
+    {
+      "operationId": "getControlPlatformClusterStorageUsage",
+      "method": "GET",
+      "path": "/v1/regions/{region}/compute/control-platforms/{id}/cluster/storage/usage",
+      "deprecated": false
+    },
+    {
+      "operationId": "listControlPlatformClusterStorageVolumes",
+      "method": "GET",
+      "path": "/v1/regions/{region}/compute/control-platforms/{id}/cluster/storage/volumes",
+      "deprecated": false
+    },
+    {
+      "operationId": "scaleControlPlatform",
+      "method": "POST",
+      "path": "/v1/regions/{region}/compute/control-platforms/{id}/scale",
+      "deprecated": false
+    },
+    {
+      "operationId": "upgradeControlPlatform",
+      "method": "POST",
+      "path": "/v1/regions/{region}/compute/control-platforms/{id}/upgrade",
+      "deprecated": false
+    },
+    {
+      "operationId": "listHCPConfigs",
+      "method": "GET",
+      "path": "/v1/regions/{region}/compute/hcp-configs",
+      "deprecated": false
+    },
+    {
+      "operationId": "createHCPConfig",
+      "method": "POST",
+      "path": "/v1/regions/{region}/compute/hcp-configs",
+      "deprecated": false
+    },
+    {
+      "operationId": "deleteHCPConfig",
+      "method": "DELETE",
+      "path": "/v1/regions/{region}/compute/hcp-configs/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "getHCPConfig",
+      "method": "GET",
+      "path": "/v1/regions/{region}/compute/hcp-configs/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "updateHCPConfig",
+      "method": "PATCH",
+      "path": "/v1/regions/{region}/compute/hcp-configs/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "retryHCPConfigRollout",
+      "method": "POST",
+      "path": "/v1/regions/{region}/compute/hcp-configs/{id}/retry-rollout",
+      "deprecated": false
+    },
+    {
+      "operationId": "listHostedControlPlanes",
+      "method": "GET",
+      "path": "/v1/regions/{region}/compute/hosted-control-planes",
+      "deprecated": false
+    },
+    {
+      "operationId": "getHostedControlPlane",
+      "method": "GET",
+      "path": "/v1/regions/{region}/compute/hosted-control-planes/{clusterUid}",
+      "deprecated": false
+    },
+    {
+      "operationId": "listComputeQuotaCapacity",
+      "method": "GET",
+      "path": "/v1/regions/{region}/compute/quota-capacity",
+      "deprecated": false
+    },
+    {
+      "operationId": "listPlatformCredentials",
+      "method": "GET",
+      "path": "/v1/regions/{region}/credentials",
+      "deprecated": false
+    },
+    {
+      "operationId": "issuePlatformCredential",
+      "method": "POST",
+      "path": "/v1/regions/{region}/credentials",
+      "deprecated": false
+    },
+    {
+      "operationId": "deletePlatformCredential",
+      "method": "DELETE",
+      "path": "/v1/regions/{region}/credentials/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "getPlatformCredential",
+      "method": "GET",
+      "path": "/v1/regions/{region}/credentials/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "listPlatformCredentialDistributions",
+      "method": "GET",
+      "path": "/v1/regions/{region}/credentials/{id}/distributions",
+      "deprecated": false
+    },
+    {
+      "operationId": "readPlatformCredentialMaterial",
+      "method": "GET",
+      "path": "/v1/regions/{region}/credentials/{id}/material",
+      "deprecated": false
+    },
+    {
+      "operationId": "previewPlatformCredentialRevocation",
+      "method": "POST",
+      "path": "/v1/regions/{region}/credentials/{id}/preview-revocation",
+      "deprecated": false
+    },
+    {
+      "operationId": "previewPlatformCredentialRotation",
+      "method": "POST",
+      "path": "/v1/regions/{region}/credentials/{id}/preview-rotation",
+      "deprecated": false
+    },
+    {
+      "operationId": "revokePlatformCredential",
+      "method": "POST",
+      "path": "/v1/regions/{region}/credentials/{id}/revoke",
+      "deprecated": false
+    },
+    {
+      "operationId": "rotatePlatformCredential",
+      "method": "POST",
+      "path": "/v1/regions/{region}/credentials/{id}/rotate",
+      "deprecated": false
+    },
+    {
+      "operationId": "listMachineTypes",
+      "method": "GET",
+      "path": "/v1/regions/{region}/infrastructure/machine-types",
+      "deprecated": false
+    },
+    {
+      "operationId": "createMachineType",
+      "method": "POST",
+      "path": "/v1/regions/{region}/infrastructure/machine-types",
+      "deprecated": false
+    },
+    {
+      "operationId": "getMachineTypeInventoryOptions",
+      "method": "POST",
+      "path": "/v1/regions/{region}/infrastructure/machine-types/getInventoryOptions",
+      "deprecated": false
+    },
+    {
+      "operationId": "deleteMachineType",
+      "method": "DELETE",
+      "path": "/v1/regions/{region}/infrastructure/machine-types/{name}",
+      "deprecated": false
+    },
+    {
+      "operationId": "getMachineType",
+      "method": "GET",
+      "path": "/v1/regions/{region}/infrastructure/machine-types/{name}",
+      "deprecated": false
+    },
+    {
+      "operationId": "updateMachineType",
+      "method": "PUT",
+      "path": "/v1/regions/{region}/infrastructure/machine-types/{name}",
+      "deprecated": false
+    },
+    {
+      "operationId": "listReservations",
+      "method": "GET",
+      "path": "/v1/regions/{region}/infrastructure/reservations",
+      "deprecated": false
+    },
+    {
+      "operationId": "createReservation",
+      "method": "POST",
+      "path": "/v1/regions/{region}/infrastructure/reservations",
+      "deprecated": false
+    },
+    {
+      "operationId": "getReservation",
+      "method": "GET",
+      "path": "/v1/regions/{region}/infrastructure/reservations/{reservationId}",
+      "deprecated": false
+    },
+    {
+      "operationId": "addReservationServers",
+      "method": "POST",
+      "path": "/v1/regions/{region}/infrastructure/reservations/{reservationId}/addServers",
+      "deprecated": false
+    },
+    {
+      "operationId": "deprovisionReservationServers",
+      "method": "POST",
+      "path": "/v1/regions/{region}/infrastructure/reservations/{reservationId}/deprovisionServers",
+      "deprecated": false
+    },
+    {
+      "operationId": "forceTeardownReservation",
+      "method": "POST",
+      "path": "/v1/regions/{region}/infrastructure/reservations/{reservationId}/force-teardown",
+      "deprecated": false
+    },
+    {
+      "operationId": "getReservationProviderSpecificData",
+      "method": "GET",
+      "path": "/v1/regions/{region}/infrastructure/reservations/{reservationId}/providerSpecificData",
+      "deprecated": false
+    },
+    {
+      "operationId": "patchReservationProviderSpecificData",
+      "method": "PATCH",
+      "path": "/v1/regions/{region}/infrastructure/reservations/{reservationId}/providerSpecificData",
+      "deprecated": false
+    },
+    {
+      "operationId": "getReservationProvision",
+      "method": "GET",
+      "path": "/v1/regions/{region}/infrastructure/reservations/{reservationId}/provision",
+      "deprecated": false
+    },
+    {
+      "operationId": "provisionReservation",
+      "method": "POST",
+      "path": "/v1/regions/{region}/infrastructure/reservations/{reservationId}/provision",
+      "deprecated": false
+    },
+    {
+      "operationId": "releaseReservation",
+      "method": "POST",
+      "path": "/v1/regions/{region}/infrastructure/reservations/{reservationId}/release",
+      "deprecated": false
+    },
+    {
+      "operationId": "removeReservationServers",
+      "method": "POST",
+      "path": "/v1/regions/{region}/infrastructure/reservations/{reservationId}/removeServers",
+      "deprecated": false
+    },
+    {
+      "operationId": "deleteReservationSshAccessPublicKeys",
+      "method": "DELETE",
+      "path": "/v1/regions/{region}/infrastructure/reservations/{reservationId}/sshAccessPublicKeys",
+      "deprecated": false
+    },
+    {
+      "operationId": "getReservationSshAccessPublicKeys",
+      "method": "GET",
+      "path": "/v1/regions/{region}/infrastructure/reservations/{reservationId}/sshAccessPublicKeys",
+      "deprecated": false
+    },
+    {
+      "operationId": "setReservationSshAccessPublicKeys",
+      "method": "POST",
+      "path": "/v1/regions/{region}/infrastructure/reservations/{reservationId}/sshAccessPublicKeys",
+      "deprecated": false
+    },
+    {
+      "operationId": "listServerBatches",
+      "method": "GET",
+      "path": "/v1/regions/{region}/infrastructure/server-batches",
+      "deprecated": false
+    },
+    {
+      "operationId": "getServerBatch",
+      "method": "GET",
+      "path": "/v1/regions/{region}/infrastructure/server-batches/{batchId}",
+      "deprecated": false
+    },
+    {
+      "operationId": "listServers",
+      "method": "GET",
+      "path": "/v1/regions/{region}/infrastructure/servers",
+      "deprecated": false
+    },
+    {
+      "operationId": "registerServer",
+      "method": "POST",
+      "path": "/v1/regions/{region}/infrastructure/servers",
+      "deprecated": false
+    },
+    {
+      "operationId": "batchCreateServers",
+      "method": "POST",
+      "path": "/v1/regions/{region}/infrastructure/servers/batchCreate",
+      "deprecated": false
+    },
+    {
+      "operationId": "getServersSummary",
+      "method": "GET",
+      "path": "/v1/regions/{region}/infrastructure/servers/summary",
+      "deprecated": false
+    },
+    {
+      "operationId": "decommissionServer",
+      "method": "DELETE",
+      "path": "/v1/regions/{region}/infrastructure/servers/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "getServer",
+      "method": "GET",
+      "path": "/v1/regions/{region}/infrastructure/servers/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "updateServer",
+      "method": "PATCH",
+      "path": "/v1/regions/{region}/infrastructure/servers/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "deleteServerCloudConfig",
+      "method": "DELETE",
+      "path": "/v1/regions/{region}/infrastructure/servers/{id}/cloudConfig",
+      "deprecated": false
+    },
+    {
+      "operationId": "getServerCloudConfig",
+      "method": "GET",
+      "path": "/v1/regions/{region}/infrastructure/servers/{id}/cloudConfig",
+      "deprecated": false
+    },
+    {
+      "operationId": "setServerCloudConfig",
+      "method": "POST",
+      "path": "/v1/regions/{region}/infrastructure/servers/{id}/cloudConfig",
+      "deprecated": false
+    },
+    {
+      "operationId": "setServerEffectiveHostname",
+      "method": "POST",
+      "path": "/v1/regions/{region}/infrastructure/servers/{id}/effectiveHostname",
+      "deprecated": false
+    },
+    {
+      "operationId": "reportServerExternalState",
+      "method": "POST",
+      "path": "/v1/regions/{region}/infrastructure/servers/{id}/externalState",
+      "deprecated": false
+    },
+    {
+      "operationId": "getServerLogs",
+      "method": "GET",
+      "path": "/v1/regions/{region}/infrastructure/servers/{id}/logs",
+      "deprecated": false
+    },
+    {
+      "operationId": "getServerProviderSpecificData",
+      "method": "GET",
+      "path": "/v1/regions/{region}/infrastructure/servers/{id}/providerSpecificData",
+      "deprecated": false
+    },
+    {
+      "operationId": "patchServerProviderSpecificData",
+      "method": "PATCH",
+      "path": "/v1/regions/{region}/infrastructure/servers/{id}/providerSpecificData",
+      "deprecated": false
+    },
+    {
+      "operationId": "provisionSingleServer",
+      "method": "POST",
+      "path": "/v1/regions/{region}/infrastructure/servers/{id}/provision",
+      "deprecated": false
+    },
+    {
+      "operationId": "releaseServerExternalManagement",
+      "method": "POST",
+      "path": "/v1/regions/{region}/infrastructure/servers/{id}/releaseExternalManagement",
+      "deprecated": false
+    },
+    {
+      "operationId": "deleteServerSshAccessPublicKeys",
+      "method": "DELETE",
+      "path": "/v1/regions/{region}/infrastructure/servers/{id}/sshAccessPublicKeys",
+      "deprecated": false
+    },
+    {
+      "operationId": "getServerSshAccessPublicKeys",
+      "method": "GET",
+      "path": "/v1/regions/{region}/infrastructure/servers/{id}/sshAccessPublicKeys",
+      "deprecated": false
+    },
+    {
+      "operationId": "setServerSshAccessPublicKeys",
+      "method": "POST",
+      "path": "/v1/regions/{region}/infrastructure/servers/{id}/sshAccessPublicKeys",
+      "deprecated": false
+    },
+    {
+      "operationId": "validateServer",
+      "method": "POST",
+      "path": "/v1/regions/{region}/infrastructure/servers/{id}/validate",
+      "deprecated": false
+    },
+    {
+      "operationId": "executeServerAction",
+      "method": "POST",
+      "path": "/v1/regions/{region}/infrastructure/servers/{id}/{action}",
+      "deprecated": false
+    },
+    {
+      "operationId": "listAddressPools",
+      "method": "GET",
+      "path": "/v1/regions/{region}/networking/address-pools",
+      "deprecated": false
+    },
+    {
+      "operationId": "createAddressPool",
+      "method": "POST",
+      "path": "/v1/regions/{region}/networking/address-pools",
+      "deprecated": false
+    },
+    {
+      "operationId": "deleteAddressPool",
+      "method": "DELETE",
+      "path": "/v1/regions/{region}/networking/address-pools/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "getAddressPool",
+      "method": "GET",
+      "path": "/v1/regions/{region}/networking/address-pools/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "updateAddressPool",
+      "method": "PATCH",
+      "path": "/v1/regions/{region}/networking/address-pools/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "getAddressPoolCapacity",
+      "method": "GET",
+      "path": "/v1/regions/{region}/networking/address-pools/{id}/capacity",
+      "deprecated": false
+    },
+    {
+      "operationId": "addAddressPoolPrefix",
+      "method": "POST",
+      "path": "/v1/regions/{region}/networking/address-pools/{id}/prefixes",
+      "deprecated": false
+    },
+    {
+      "operationId": "removeAddressPoolPrefix",
+      "method": "POST",
+      "path": "/v1/regions/{region}/networking/address-pools/{id}/prefixes/remove",
+      "deprecated": false
+    },
+    {
+      "operationId": "listOrganizationStorageConsumption",
+      "method": "GET",
+      "path": "/v1/regions/{region}/organizations/{orgId}/storage/consumption",
+      "deprecated": false
+    },
+    {
+      "operationId": "listClusters",
+      "method": "GET",
+      "path": "/v1/regions/{region}/projects/{project}/compute/clusters",
+      "deprecated": false
+    },
+    {
+      "operationId": "createCluster",
+      "method": "POST",
+      "path": "/v1/regions/{region}/projects/{project}/compute/clusters",
+      "deprecated": false
+    },
+    {
+      "operationId": "getClusterKubeconfig",
+      "method": "GET",
+      "path": "/v1/regions/{region}/projects/{project}/compute/clusters/{clusterId}/kubeconfig",
+      "deprecated": false
+    },
+    {
+      "operationId": "getClusterExecKubeconfig",
+      "method": "GET",
+      "path": "/v1/regions/{region}/projects/{project}/compute/clusters/{clusterId}/kubeconfig/exec",
+      "deprecated": false
+    },
+    {
+      "operationId": "listKubeconfigs",
+      "method": "GET",
+      "path": "/v1/regions/{region}/projects/{project}/compute/clusters/{clusterId}/kubeconfigs",
+      "deprecated": true
+    },
+    {
+      "operationId": "getKubeconfig",
+      "method": "GET",
+      "path": "/v1/regions/{region}/projects/{project}/compute/clusters/{clusterId}/kubeconfigs/{id}",
+      "deprecated": true
+    },
+    {
+      "operationId": "downloadKubeconfig",
+      "method": "GET",
+      "path": "/v1/regions/{region}/projects/{project}/compute/clusters/{clusterId}/kubeconfigs/{id}/download",
+      "deprecated": true
+    },
+    {
+      "operationId": "listClusterSshAccess",
+      "method": "GET",
+      "path": "/v1/regions/{region}/projects/{project}/compute/clusters/{clusterId}/ssh-access",
+      "deprecated": false
+    },
+    {
+      "operationId": "deleteCluster",
+      "method": "DELETE",
+      "path": "/v1/regions/{region}/projects/{project}/compute/clusters/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "getCluster",
+      "method": "GET",
+      "path": "/v1/regions/{region}/projects/{project}/compute/clusters/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "updateCluster",
+      "method": "PATCH",
+      "path": "/v1/regions/{region}/projects/{project}/compute/clusters/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "cancelCluster",
+      "method": "POST",
+      "path": "/v1/regions/{region}/projects/{project}/compute/clusters/{id}/cancel",
+      "deprecated": false
+    },
+    {
+      "operationId": "listClusterRuntimeEvents",
+      "method": "GET",
+      "path": "/v1/regions/{region}/projects/{project}/compute/clusters/{id}/runtime/events",
+      "deprecated": false
+    },
+    {
+      "operationId": "downloadClusterRuntimeEvents",
+      "method": "GET",
+      "path": "/v1/regions/{region}/projects/{project}/compute/clusters/{id}/runtime/events/download",
+      "deprecated": false
+    },
+    {
+      "operationId": "scaleCluster",
+      "method": "POST",
+      "path": "/v1/regions/{region}/projects/{project}/compute/clusters/{id}/scale",
+      "deprecated": false
+    },
+    {
+      "operationId": "getClusterStorageUsage",
+      "method": "GET",
+      "path": "/v1/regions/{region}/projects/{project}/compute/clusters/{id}/storage/usage",
+      "deprecated": false
+    },
+    {
+      "operationId": "listClusterStorageVolumes",
+      "method": "GET",
+      "path": "/v1/regions/{region}/projects/{project}/compute/clusters/{id}/storage/volumes",
+      "deprecated": false
+    },
+    {
+      "operationId": "upgradeCluster",
+      "method": "POST",
+      "path": "/v1/regions/{region}/projects/{project}/compute/clusters/{id}/upgrade",
+      "deprecated": false
+    },
+    {
+      "operationId": "listInstanceGroups",
+      "method": "GET",
+      "path": "/v1/regions/{region}/projects/{project}/compute/instance-groups",
+      "deprecated": false
+    },
+    {
+      "operationId": "createInstanceGroup",
+      "method": "POST",
+      "path": "/v1/regions/{region}/projects/{project}/compute/instance-groups",
+      "deprecated": false
+    },
+    {
+      "operationId": "deleteInstanceGroup",
+      "method": "DELETE",
+      "path": "/v1/regions/{region}/projects/{project}/compute/instance-groups/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "getInstanceGroup",
+      "method": "GET",
+      "path": "/v1/regions/{region}/projects/{project}/compute/instance-groups/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "updateInstanceGroup",
+      "method": "PATCH",
+      "path": "/v1/regions/{region}/projects/{project}/compute/instance-groups/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "deprovisionInstanceGroupInstances",
+      "method": "POST",
+      "path": "/v1/regions/{region}/projects/{project}/compute/instance-groups/{id}/deprovision",
+      "deprecated": false
+    },
+    {
+      "operationId": "scaleInstanceGroup",
+      "method": "POST",
+      "path": "/v1/regions/{region}/projects/{project}/compute/instance-groups/{id}/scale",
+      "deprecated": false
+    },
+    {
+      "operationId": "listInstanceGroupSshAccess",
+      "method": "GET",
+      "path": "/v1/regions/{region}/projects/{project}/compute/instance-groups/{id}/ssh-access",
+      "deprecated": false
+    },
+    {
+      "operationId": "listInstances",
+      "method": "GET",
+      "path": "/v1/regions/{region}/projects/{project}/compute/instances",
+      "deprecated": false
+    },
+    {
+      "operationId": "getInstance",
+      "method": "GET",
+      "path": "/v1/regions/{region}/projects/{project}/compute/instances/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "executeInstancePowerAction",
+      "method": "POST",
+      "path": "/v1/regions/{region}/projects/{project}/compute/instances/{id}/{action}",
+      "deprecated": false
+    },
+    {
+      "operationId": "listProjectCredentials",
+      "method": "GET",
+      "path": "/v1/regions/{region}/projects/{project}/credentials",
+      "deprecated": false
+    },
+    {
+      "operationId": "issueProjectCredential",
+      "method": "POST",
+      "path": "/v1/regions/{region}/projects/{project}/credentials",
+      "deprecated": false
+    },
+    {
+      "operationId": "deleteProjectCredential",
+      "method": "DELETE",
+      "path": "/v1/regions/{region}/projects/{project}/credentials/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "getProjectCredential",
+      "method": "GET",
+      "path": "/v1/regions/{region}/projects/{project}/credentials/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "listProjectCredentialDistributions",
+      "method": "GET",
+      "path": "/v1/regions/{region}/projects/{project}/credentials/{id}/distributions",
+      "deprecated": false
+    },
+    {
+      "operationId": "readProjectCredentialMaterial",
+      "method": "GET",
+      "path": "/v1/regions/{region}/projects/{project}/credentials/{id}/material",
+      "deprecated": false
+    },
+    {
+      "operationId": "previewProjectCredentialRevocation",
+      "method": "POST",
+      "path": "/v1/regions/{region}/projects/{project}/credentials/{id}/preview-revocation",
+      "deprecated": false
+    },
+    {
+      "operationId": "previewProjectCredentialRotation",
+      "method": "POST",
+      "path": "/v1/regions/{region}/projects/{project}/credentials/{id}/preview-rotation",
+      "deprecated": false
+    },
+    {
+      "operationId": "revokeProjectCredential",
+      "method": "POST",
+      "path": "/v1/regions/{region}/projects/{project}/credentials/{id}/revoke",
+      "deprecated": false
+    },
+    {
+      "operationId": "rotateProjectCredential",
+      "method": "POST",
+      "path": "/v1/regions/{region}/projects/{project}/credentials/{id}/rotate",
+      "deprecated": false
+    },
+    {
+      "operationId": "listNetworks",
+      "method": "GET",
+      "path": "/v1/regions/{region}/projects/{project}/networking/networks",
+      "deprecated": false
+    },
+    {
+      "operationId": "createNetwork",
+      "method": "POST",
+      "path": "/v1/regions/{region}/projects/{project}/networking/networks",
+      "deprecated": false
+    },
+    {
+      "operationId": "deleteNetwork",
+      "method": "DELETE",
+      "path": "/v1/regions/{region}/projects/{project}/networking/networks/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "getNetwork",
+      "method": "GET",
+      "path": "/v1/regions/{region}/projects/{project}/networking/networks/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "updateNetwork",
+      "method": "PATCH",
+      "path": "/v1/regions/{region}/projects/{project}/networking/networks/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "listSubnets",
+      "method": "GET",
+      "path": "/v1/regions/{region}/projects/{project}/networking/networks/{networkId}/subnets",
+      "deprecated": false
+    },
+    {
+      "operationId": "createSubnet",
+      "method": "POST",
+      "path": "/v1/regions/{region}/projects/{project}/networking/networks/{networkId}/subnets",
+      "deprecated": false
+    },
+    {
+      "operationId": "deleteSubnet",
+      "method": "DELETE",
+      "path": "/v1/regions/{region}/projects/{project}/networking/networks/{networkId}/subnets/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "getSubnet",
+      "method": "GET",
+      "path": "/v1/regions/{region}/projects/{project}/networking/networks/{networkId}/subnets/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "listSecurityGroups",
+      "method": "GET",
+      "path": "/v1/regions/{region}/projects/{project}/networking/security-groups",
+      "deprecated": false
+    },
+    {
+      "operationId": "createSecurityGroup",
+      "method": "POST",
+      "path": "/v1/regions/{region}/projects/{project}/networking/security-groups",
+      "deprecated": false
+    },
+    {
+      "operationId": "listSecurityGroupsEffective",
+      "method": "GET",
+      "path": "/v1/regions/{region}/projects/{project}/networking/security-groups-effective",
+      "deprecated": false
+    },
+    {
+      "operationId": "deleteSecurityGroup",
+      "method": "DELETE",
+      "path": "/v1/regions/{region}/projects/{project}/networking/security-groups/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "getSecurityGroup",
+      "method": "GET",
+      "path": "/v1/regions/{region}/projects/{project}/networking/security-groups/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "updateSecurityGroup",
+      "method": "PATCH",
+      "path": "/v1/regions/{region}/projects/{project}/networking/security-groups/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "listSecurityGroupAttachments",
+      "method": "GET",
+      "path": "/v1/regions/{region}/projects/{project}/networking/security-groups/{id}/attachments",
+      "deprecated": false
+    },
+    {
+      "operationId": "listVPCs",
+      "method": "GET",
+      "path": "/v1/regions/{region}/projects/{project}/networking/vpcs",
+      "deprecated": false
+    },
+    {
+      "operationId": "getVPC",
+      "method": "GET",
+      "path": "/v1/regions/{region}/projects/{project}/networking/vpcs/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "setVPCSecurityGroups",
+      "method": "POST",
+      "path": "/v1/regions/{region}/projects/{project}/networking/vpcs/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "listVPCPeerings",
+      "method": "GET",
+      "path": "/v1/regions/{region}/projects/{project}/networking/vpcs/{vpcId}/peerings",
+      "deprecated": false
+    },
+    {
+      "operationId": "createVPCPeering",
+      "method": "POST",
+      "path": "/v1/regions/{region}/projects/{project}/networking/vpcs/{vpcId}/peerings",
+      "deprecated": false
+    },
+    {
+      "operationId": "deleteVPCPeering",
+      "method": "DELETE",
+      "path": "/v1/regions/{region}/projects/{project}/networking/vpcs/{vpcId}/peerings/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "getVPCPeering",
+      "method": "GET",
+      "path": "/v1/regions/{region}/projects/{project}/networking/vpcs/{vpcId}/peerings/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "listProjectStorageConsumption",
+      "method": "GET",
+      "path": "/v1/regions/{region}/projects/{project}/storage/consumption",
+      "deprecated": false
+    },
+    {
+      "operationId": "listFileStores",
+      "method": "GET",
+      "path": "/v1/regions/{region}/projects/{project}/storage/file-stores",
+      "deprecated": false
+    },
+    {
+      "operationId": "createFileStore",
+      "method": "POST",
+      "path": "/v1/regions/{region}/projects/{project}/storage/file-stores",
+      "deprecated": false
+    },
+    {
+      "operationId": "deleteFileStore",
+      "method": "DELETE",
+      "path": "/v1/regions/{region}/projects/{project}/storage/file-stores/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "getFileStore",
+      "method": "GET",
+      "path": "/v1/regions/{region}/projects/{project}/storage/file-stores/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "updateFileStore",
+      "method": "PATCH",
+      "path": "/v1/regions/{region}/projects/{project}/storage/file-stores/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "confirmFileStoreRemoval",
+      "method": "POST",
+      "path": "/v1/regions/{region}/projects/{project}/storage/file-stores/{id}/confirm-removal",
+      "deprecated": false
+    },
+    {
+      "operationId": "listStorageBackends",
+      "method": "GET",
+      "path": "/v1/regions/{region}/storage/backends",
+      "deprecated": false
+    },
+    {
+      "operationId": "createStorageBackend",
+      "method": "POST",
+      "path": "/v1/regions/{region}/storage/backends",
+      "deprecated": false
+    },
+    {
+      "operationId": "deleteStorageBackend",
+      "method": "DELETE",
+      "path": "/v1/regions/{region}/storage/backends/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "getStorageBackend",
+      "method": "GET",
+      "path": "/v1/regions/{region}/storage/backends/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "updateStorageBackend",
+      "method": "PATCH",
+      "path": "/v1/regions/{region}/storage/backends/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "getStorageBackendCapacity",
+      "method": "GET",
+      "path": "/v1/regions/{region}/storage/backends/{id}/capacity",
+      "deprecated": false
+    },
+    {
+      "operationId": "listShareTypes",
+      "method": "GET",
+      "path": "/v1/regions/{region}/storage/share-types",
+      "deprecated": false
+    },
+    {
+      "operationId": "createShareType",
+      "method": "POST",
+      "path": "/v1/regions/{region}/storage/share-types",
+      "deprecated": false
+    },
+    {
+      "operationId": "deleteShareType",
+      "method": "DELETE",
+      "path": "/v1/regions/{region}/storage/share-types/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "getShareType",
+      "method": "GET",
+      "path": "/v1/regions/{region}/storage/share-types/{id}",
+      "deprecated": false
+    },
+    {
+      "operationId": "updateShareType",
+      "method": "PATCH",
+      "path": "/v1/regions/{region}/storage/share-types/{id}",
+      "deprecated": false
+    }
+  ]
+}
