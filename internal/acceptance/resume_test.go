@@ -215,10 +215,6 @@ func TestAccACreateThatTimesOutIsWaitedForAfterAnUntaint(t *testing.T) {
 //  2. `terraform plan` plans to replace it, not a refusal: nothing is being
 //     built
 //  3. `terraform destroy` runs without an untaint and leaves state empty
-//
-// The CLI runs its own build of the provider, which holds a cluster's `failed`
-// for the full provisional window before reporting it, so the cluster's run
-// takes that long.
 func TestAccADestroyRunsPastACreateThePlatformFailed(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("the CLI sequence runs on unix")
