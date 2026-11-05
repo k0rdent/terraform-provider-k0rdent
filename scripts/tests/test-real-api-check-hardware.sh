@@ -22,6 +22,12 @@
 # REAL_API_HARDWARE_TEST_LOOPBACK, which only this test uses.
 set -uo pipefail
 
+# BASHPID, below, needs bash 4. macOS's /bin/bash is 3.2.
+if [ "${BASH_VERSINFO[0]}" -lt 4 ]; then
+  echo "real-api-check hardware test: needs bash 4 or later, this is $BASH_VERSION. On macOS, put Homebrew's bash first on PATH" >&2
+  exit 1
+fi
+
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 work="$(mktemp -d)"
 pids=()
@@ -53,6 +59,10 @@ stop_all() {
   [ "${REAL_API_TEST_KEEP:-}" = 1 ] && echo "kept $work" >&2 || rm -rf "$work"
 }
 trap stop_all EXIT
+# In an EXIT trap a signal leaves $? at 0, so these give stop_all the
+# failure to print each run's output for.
+trap 'exit 143' TERM
+trap 'exit 130' INT
 
 scenario=setup
 fail() { echo "real-api-check hardware test: FAIL - $scenario: $1" >&2; exit 1; }
@@ -110,9 +120,18 @@ hardware() {
 # the_run prints the run directory the output names.
 the_run() { sed -n 's|.*results in \(.*\)/results.txt$|\1|p' "$1" | head -1; }
 
-# wait_for <file> <text>: until <text> is in <file>, for up to five minutes.
+# wait_for <file> <text>: until <text> is in <file>, for up to five minutes,
+# or until the check in $check_pid exits without printing it.
 wait_for() {
-  for _ in $(seq 1 1500); do grep -qs -- "$2" "$1" && return 0; sleep 0.2; done
+  for _ in $(seq 1 1500); do
+    grep -qs -- "$2" "$1" && return 0
+    if [ -n "${check_pid:-}" ] && ! kill -0 "$check_pid" 2> /dev/null; then
+      grep -qs -- "$2" "$1" && return 0
+      cat "$1" >&2
+      fail "the check exited before it printed \"$2\""
+    fi
+    sleep 0.2
+  done
   cat "$1" >&2
   fail "the run never printed \"$2\""
 }
