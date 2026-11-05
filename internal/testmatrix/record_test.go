@@ -2,6 +2,7 @@ package testmatrix
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"os"
@@ -16,9 +17,11 @@ import (
 
 // bindingServer answers like a resource with no id attribute, such as the
 // VPC security groups binding: its objects are told apart by vpc, project and
-// region. secret_wo is write-only.
+// region. secret_wo is write-only. With replace, a change of security_groups
+// replaces it. A plan to attach "bad" fails.
 type bindingServer struct {
 	server
+	replace bool
 }
 
 const bindingType = "test_binding"
@@ -53,8 +56,15 @@ func (bindingServer) ReadResource(_ context.Context, req *tfprotov6.ReadResource
 	return &tfprotov6.ReadResourceResponse{NewState: req.CurrentState}, nil
 }
 
-func (bindingServer) PlanResourceChange(_ context.Context, req *tfprotov6.PlanResourceChangeRequest) (*tfprotov6.PlanResourceChangeResponse, error) {
-	return &tfprotov6.PlanResourceChangeResponse{PlannedState: req.ProposedNewState}, nil
+func (b bindingServer) PlanResourceChange(_ context.Context, req *tfprotov6.PlanResourceChangeRequest) (*tfprotov6.PlanResourceChangeResponse, error) {
+	resp := &tfprotov6.PlanResourceChangeResponse{PlannedState: req.ProposedNewState}
+	if b.replace {
+		resp.RequiresReplace = []*tftypes.AttributePath{tftypes.NewAttributePath().WithAttributeName("security_groups")}
+	}
+	if bytes.Equal(req.ProposedNewState.MsgPack, binding("vpc-a", "", "bad").MsgPack) {
+		resp.Diagnostics = []*tfprotov6.Diagnostic{{Severity: tfprotov6.DiagnosticSeverityError, Summary: "bad"}}
+	}
+	return resp, nil
 }
 
 func (bindingServer) ApplyResourceChange(_ context.Context, req *tfprotov6.ApplyResourceChangeRequest) (*tfprotov6.ApplyResourceChangeResponse, error) {
@@ -92,7 +102,12 @@ type command struct {
 
 func start(t *testing.T, file string) command {
 	t.Helper()
-	s, err := Wrap(bindingServer{}, file, "TestBindings")
+	return startWith(t, file, bindingServer{})
+}
+
+func startWith(t *testing.T, file string, b bindingServer) command {
+	t.Helper()
+	s, err := Wrap(b, file, "TestBindings")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,7 +163,7 @@ func (c command) apply(vpc, secret, group string) {
 // recorded finishes the record and gives its cells, as "cell path", sorted.
 func recorded(t *testing.T, file string) []string {
 	t.Helper()
-	if err := Finish(file); err != nil {
+	if err := Finish(file, true); err != nil {
 		t.Fatal(err)
 	}
 	f, err := os.Open(file)
@@ -253,7 +268,8 @@ func TestAdoptingAnObjectIsNoChangeToTheConfigurationThatMadeIt(t *testing.T) {
 }
 
 // Two working directories that both hold the object each keep their own
-// configuration: a plan in one is measured against that one's last.
+// configuration: a plan in one is measured against that one's last. Only a
+// built binary runs in its workspace, as t.Chdir has these do.
 func TestEachWorkingDirectoryKeepsItsOwnConfiguration(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "record.jsonl")
 	a, b := t.TempDir(), t.TempDir()
@@ -268,6 +284,87 @@ func TestEachWorkingDirectoryKeepsItsOwnConfiguration(t *testing.T) {
 	again.read("vpc-a")
 	again.plan("vpc-a", "one")
 	expect(t, "two directories", recorded(t, file))
+}
+
+// An import in another working directory isn't this one's: a plan here
+// with -refresh=false doesn't follow it.
+func TestAnImportInAnotherDirectoryIsNotThisOnes(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "record.jsonl")
+	a, b := t.TempDir(), t.TempDir()
+	t.Chdir(a)
+	start(t, file).apply("vpc-a", "", "default")
+	t.Chdir(b)
+	imp := start(t, file)
+	imp.importBinding("vpc-a")
+	imp.read("vpc-a")
+	t.Chdir(a)
+	start(t, file).plan("vpc-a", "")
+	expect(t, "other directory", recorded(t, file))
+}
+
+// A plan that moves an imported value doesn't keep it, so it isn't credited
+// with importing it.
+func TestAnImportedValueThePlanMovesIsNoImport(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "record.jsonl")
+	c := start(t, file)
+	c.importBinding("vpc-a")
+	c.read("vpc-a")
+	c.planGroup("vpc-a", "", "web", "web")
+	expect(t, "moved", recorded(t, file), "import project", "import region", "import vpc")
+}
+
+// A plan after an import is an import, never an update, even when its
+// configuration differs from the one before.
+func TestAPlanAfterAnImportIsNoUpdate(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "record.jsonl")
+	start(t, file).apply("vpc-a", "one", "default")
+	c := start(t, file)
+	c.importBinding("vpc-a")
+	c.read("vpc-a")
+	c.plan("vpc-a", "two")
+	expect(t, "imported", recorded(t, file), append([]string{"import secret_wo"}, importedBinding...)...)
+}
+
+// A change the RequiresReplace paths cover is a replace.
+func TestAChangeThatReplacesIsAReplace(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "record.jsonl")
+	start(t, file).apply("vpc-a", "", "default")
+	startWith(t, file, bindingServer{replace: true}).planGroup("vpc-a", "", "web", "web")
+	expect(t, "replace", recorded(t, file), "replace security_groups")
+}
+
+// A plan that fails, as an ExpectError step's does, credits nothing.
+func TestAPlanThatFailsCreditsNothing(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "record.jsonl")
+	start(t, file).apply("vpc-a", "", "default")
+	start(t, file).planGroup("vpc-a", "", "bad", "bad")
+	expect(t, "failed", recorded(t, file))
+}
+
+// A plan is measured against the last command's configuration, not every
+// earlier one: changing a value back is a change.
+func TestChangingAValueBackIsAnUpdate(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "record.jsonl")
+	start(t, file).apply("vpc-a", "", "default")
+	start(t, file).planGroup("vpc-a", "", "web", "default") // a change the plan doesn't move
+	start(t, file).planGroup("vpc-a", "", "default", "web")
+	expect(t, "back", recorded(t, file), "update security_groups")
+}
+
+// Only a whole run that passed ends the record with the line the check needs.
+func TestOnlyACompleteRunIsFinished(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "record.jsonl")
+	start(t, file).apply("vpc-a", "", "default")
+	if err := Finish(file, false); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(file)
+	if err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(b), CellFinished) {
+		t.Errorf("an incomplete run's record is finished:\n%s", b)
+	}
 }
 
 // Every plan of one command is measured against the commands before it,

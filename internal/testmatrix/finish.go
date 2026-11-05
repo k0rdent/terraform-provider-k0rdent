@@ -48,20 +48,21 @@ type touch struct {
 }
 
 // Finish turns the facts every provider wrote into the record's import,
-// update and replace lines, then a CellFinished line. Run it once the suite
-// is done. For each object, over the providers that touched it in the order
-// they started:
+// update and replace lines. Run it once the suite is done. complete says the
+// whole suite ran and passed, and only then does the record end with a
+// CellFinished line, which the check needs. For each object, over the
+// providers that touched it in the order they started:
 //
 //   - A provider follows an import when it made the import, or the one
-//     before did and this one doesn't read the object again (`terraform
-//     import`, then a plan with -refresh=false). Its plans credit the import
+//     before it in the same working directory did and this one doesn't read
+//     the object again (`terraform import`, then a plan with -refresh=false). Its plans credit the import
 //     cells every one of them keeps: in plugin-testing's generate step it
 //     also plans the copy it keeps in state, and the two can't be told apart.
 //   - Any other provider credits update or replace cells for what its plans
 //     move, where the configuration differs from every one the object had in
 //     the same working directory, back to the last provider there that
 //     didn't follow an import.
-func Finish(file string) error {
+func Finish(file string, complete bool) error {
 	type key struct{ test, resource, object string }
 	objects := map[key]map[string]*touch{}
 	entries, err := os.ReadDir(factsDir(file))
@@ -114,7 +115,8 @@ func Finish(file string) error {
 		}
 		touches := slices.SortedFunc(maps.Values(byInstance), func(a, b *touch) int { return cmp.Compare(a.started, b.started) })
 		for i, t := range touches {
-			t.afterImport = t.imported || i > 0 && touches[i-1].imported && !t.read
+			prev := lastIn(touches[:i], t.dir)
+			t.afterImport = t.imported || prev != nil && prev.imported && !t.read
 			if t.afterImport {
 				add(CellImport, keptByAll(t.plans)...)
 				continue
@@ -144,7 +146,20 @@ func Finish(file string) error {
 	for _, l := range sorted {
 		values = append(values, l)
 	}
-	return appendJSON(file, append(values, Line{Cell: CellFinished}))
+	if complete {
+		values = append(values, Line{Cell: CellFinished})
+	}
+	return appendJSON(file, values)
+}
+
+// lastIn is the last of earlier in dir, or nil.
+func lastIn(earlier []*touch, dir string) *touch {
+	for i := len(earlier) - 1; i >= 0; i-- {
+		if earlier[i].dir == dir {
+			return earlier[i]
+		}
+	}
+	return nil
 }
 
 // keptByAll is the import paths every plan keeps.

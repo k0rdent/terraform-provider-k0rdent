@@ -133,8 +133,9 @@ type recorder struct {
 	test, file string
 	instance   string
 	started    int64
-	// dir is the provider's working directory. A built binary runs in the
-	// directory Terraform does. In process, every provider shares the test's.
+	// dir is the provider's working directory: a built binary's is its
+	// workspace. In process it's the test's, the same for every workspace,
+	// so there the rules that compare directories can't tell them apart.
 	dir string
 
 	mu         sync.Mutex
