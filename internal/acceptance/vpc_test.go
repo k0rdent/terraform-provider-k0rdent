@@ -49,6 +49,7 @@ resource %q "test" {
 // a provider that waited for reachability would hang here and on a real
 // landscape.
 func TestAccVPCPeeringIsOneSided(t *testing.T) {
+	t.Parallel()
 	const cluster, name = "acc-peer-owner", "acc-to-inference"
 	const remote = "/v1/regions/us-texas-1/projects/other/networking/vpcs/vpc-inference"
 
@@ -95,6 +96,7 @@ func TestAccVPCPeeringIsOneSided(t *testing.T) {
 // it out and sends the create again, and it must end with one peering, not
 // two.
 func TestAccVPCPeeringWaitsOutALostVPCLock(t *testing.T) {
+	t.Parallel()
 	const cluster, name = "acc-peer-lock", "acc-to-inference-fake-vpc-lock-lost"
 	const remote = "/v1/regions/us-texas-1/projects/other/networking/vpcs/vpc-inference"
 
@@ -173,6 +175,7 @@ resource %q "test" {
 // while `security_groups` keeps what was configured or every plan proposes
 // changing it back.
 func TestAccVPCSecurityGroupsEmptyMeansDefault(t *testing.T) {
+	t.Parallel()
 	const cluster, group = "acc-bind-owner", "acc-bind-filter"
 
 	resource.Test(t, resource.TestCase{
@@ -236,6 +239,7 @@ func TestAccVPCSecurityGroupsEmptyMeansDefault(t *testing.T) {
 // show it, on a security boundary. `ExpectNonEmptyPlan` is what proves it:
 // with the read keeping prior state, that step fails.
 func TestAccVPCSecurityGroupsDetectsOutOfBandChange(t *testing.T) {
+	t.Parallel()
 	const cluster, group = "acc-drift-owner", "acc-drift-filter"
 	config := vpcBindingConfig(cluster, group, true)
 
@@ -358,6 +362,7 @@ func mintFakeToken() (string, error) {
 // With an empty list, a group attached in the console has to plan, and keep
 // planning until it is applied away. Not a warning that fires once.
 func TestAccVPCSecurityGroupsEmptyStillReportsDrift(t *testing.T) {
+	t.Parallel()
 	const cluster, group = "acc-bind-quiet", "acc-bind-quiet-filter"
 	attach := func() {
 		if err := setVPCGroupsOutOfBand(t, "vpc-"+cluster, []string{group}); err != nil {
@@ -386,6 +391,7 @@ func TestAccVPCSecurityGroupsEmptyStillReportsDrift(t *testing.T) {
 
 // A `timeouts` block is the one change a peering takes without an operation.
 func TestAccVPCPeeringTimeoutsChangeInPlace(t *testing.T) {
+	t.Parallel()
 	const cluster, name = "acc-peer-timeouts-owner", "acc-peer-timeouts"
 	remote := "/v1/regions/us-texas-1/projects/inference/networking/vpcs/vpc-far"
 	base := peeringConfig(cluster, name, remote)
@@ -419,6 +425,7 @@ func TestAccVPCPeeringTimeoutsChangeInPlace(t *testing.T) {
 // warnings, and this passes with the warning removed.
 // TestBindingConflictNamesTheBackendOnlyWhenItIsTheCause is what covers it.
 func TestAccVPCSecurityGroupsRefusedOnTheWrongBackend(t *testing.T) {
+	t.Parallel()
 	const cluster, group = "acc-on-ufo-owner", "acc-ufo-filter"
 
 	resource.Test(t, resource.TestCase{
@@ -467,6 +474,7 @@ resource %q "test" {
 // apply holding the new binding, both when the replacement changes the groups
 // and when it writes the same ones again, which is what -replace does.
 func TestAccVPCSecurityGroupsReplacedBeforeDestroyKeepsTheNewBinding(t *testing.T) {
+	t.Parallel()
 	const cluster, first, second = "acc-cbd-owner", "acc-cbd-first", "acc-cbd-second"
 	vpc := "vpc-" + cluster
 	replaced := resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{

@@ -27,6 +27,7 @@ resource %q "test" {
 // the VPC instead, and the group's delete waits for the VPC to go with its
 // cluster, so one `terraform destroy` ends with nothing left.
 func TestAccABindingOnAVPCWithNoDefaultGroupDestroysInOneRun(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("the CLI sequence runs on unix")
 	}
@@ -90,6 +91,7 @@ func TestAccABindingOnAVPCWithNoDefaultGroupDestroysInOneRun(t *testing.T) {
 // group. A group bound to a VPC some other way still fails its delete at
 // once, naming the VPC, as before.
 func TestAccAGroupHeldByAVPCThisRunDidntLeaveFailsFast(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("the CLI sequence runs on unix")
 	}
@@ -141,6 +143,7 @@ resource %q "test" {
 // A plan to bind a VPC that's already known, and has no default group, warns
 // before anything is written. A VPC with a default group doesn't.
 func TestAccAPlanWarnsBeforeBindingAVPCWithNoDefaultGroup(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("the CLI sequence runs on unix")
 	}

@@ -65,6 +65,7 @@ const (
 // reorders it, and, being immutable, a change to it is a replacement the guard
 // refuses until the configuration permits it.
 func TestAccInstanceGroupSSHAccess(t *testing.T) {
+	t.Parallel()
 	const name = "acc-ig-ssh"
 	both := sshAccessConfig(name, sshZoe+sshAdam)
 	zoeOnly := sshAccessConfig(name, sshZoe)
@@ -127,6 +128,7 @@ func TestAccInstanceGroupSSHAccess(t *testing.T) {
 // while the delete runs, and the test's own destroy, which refreshes first,
 // waits it out.
 func TestAccInstanceGroupBeingDeletedPlansAndDestroysClean(t *testing.T) {
+	t.Parallel()
 	const name = "acc-ig-ssh-deleting"
 	config := fmt.Sprintf(`
 resource %q "test" {
@@ -166,6 +168,7 @@ resource %q "test" {
 // past its refresh, and so does a configuration that drops `ssh_access`, which
 // leaves the users as state holds them rather than replacing the group.
 func TestAccInstanceGroupWhoseTeardownFailedPlansWithoutReplacing(t *testing.T) {
+	t.Parallel()
 	const name = "acc-ig-ssh-teardown-failed"
 	group := func(access string) string {
 		return fmt.Sprintf(`

@@ -250,6 +250,7 @@ func terraformForQuery(t *testing.T) string {
 // TestAccQueryGeneratesConfigThatPlansClean is the import guide's bulk
 // adoption, for every managed resource.
 func TestAccQueryGeneratesConfigThatPlansClean(t *testing.T) {
+	t.Parallel()
 	if os.Getenv("TF_ACC") == "" {
 		t.Skip("TF_ACC is not set")
 	}
@@ -442,6 +443,7 @@ func identityOf(b *hclsyntax.Block) (map[string]string, error) {
 // trusts, so it's checked here without a fake: an import block and its
 // resource are kept or dropped together, and the count is by type.
 func TestAdoptedBlocksKeepsAnImportWithItsResource(t *testing.T) {
+	t.Parallel()
 	src := []byte(strings.ReplaceAll(`
 resource "NETWORK" "found_0" {
   id = "mine"

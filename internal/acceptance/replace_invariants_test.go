@@ -292,8 +292,10 @@ func planRow(config, address, what string, want []string, refusal *regexp.Regexp
 var noRefusal *regexp.Regexp
 
 func TestReplacementsFollowTheDocumentedRules(t *testing.T) {
+	t.Parallel()
 	for _, k := range invKinds() {
 		t.Run(k.typ, func(t *testing.T) {
+			t.Parallel()
 			for i, start := range k.starts {
 				t.Run(start.String(), func(t *testing.T) {
 					t.Parallel()
@@ -531,6 +533,7 @@ func shortKind(typ string) string {
 // paragraph names the attributes any change to replaces, then those only
 // some changes to do, and the list here is both.
 func TestReplacementRulesNameEveryDocumentedAttribute(t *testing.T) {
+	t.Parallel()
 	paragraph := regexp.MustCompile(`\*\*What replaces it\.\*\*( Changing (.*?) cannot be done in place[^.]*\.)?( Some changes to (.*?) replace )?`)
 	quoted := regexp.MustCompile("`([a-z_]+)`")
 	for _, k := range invKinds() {

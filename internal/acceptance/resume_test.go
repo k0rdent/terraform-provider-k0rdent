@@ -149,7 +149,7 @@ func mustSay(t *testing.T, step, out string, wants ...string) {
 //     error suggests, waits for the same object and finishes it
 //
 // One create is sent in all, and the destroy at the end cleans up.
-func TestAccACreateThatTimesOutIsWaitedForAfterAnUntaint(t *testing.T) {
+func TestAccACreateThatTimesOutIsWaitedForAfterAnUntaint(t *testing.T) { //nolint:paralleltest // it counts every create the fake serves
 	if runtime.GOOS == "windows" {
 		t.Skip("the CLI sequence runs on unix")
 	}
@@ -271,6 +271,7 @@ func TestAccADestroyRunsPastACreateThePlatformFailed(t *testing.T) {
 // the delete up. That destroy, with the timeout raised, waits for the same
 // delete: the fake serves one DELETE in all, and the cluster is gone.
 func TestAccADestroyThatTimesOutResumesOnTheNextDestroy(t *testing.T) {
+	t.Parallel()
 	const name = "acc-resume-destroy"
 	deletes := &requestCounter{method: "DELETE", path: "/v1/regions/us-texas-1/projects/demo/compute/clusters/" + name}
 	resource.Test(t, resource.TestCase{

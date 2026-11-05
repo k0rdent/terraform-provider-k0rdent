@@ -25,6 +25,7 @@ var (
 // `org-empty` holds no project, so `projects` cannot report it. The list
 // does, at one row a page, and the project goes in it by the id read there.
 func TestAccOrganizationsGiveTheFirstProjectItsOrganization(t *testing.T) {
+	t.Parallel()
 	const id = "acc-first-project"
 	list, one := "data."+organizationsType+".all", "data."+organizationType+".empty"
 
@@ -59,6 +60,7 @@ resource %q "test" {
 
 // A filter on status reaches the platform: nothing in the fake is suspended.
 func TestAccOrganizationsFilterOnStatus(t *testing.T) {
+	t.Parallel()
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: protoV6,
 		Steps: []resource.TestStep{{
@@ -75,6 +77,7 @@ data %q "suspended" {
 // The other half of the test below: a literal that names no member's
 // interface is refused, so that test's pass rests on the value it read.
 func TestAccAFileStoreGrantNarrowedToNoMemberIsRefused(t *testing.T) {
+	t.Parallel()
 	const group = "acc-narrowed-literal"
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: protoV6,
@@ -105,6 +108,7 @@ resource %q "test" {
 // narrowed selector that matches no member's interface, as the contract says
 // the platform does, so a value that did not come from the group fails here.
 func TestAccInstancesNarrowAFileStoreGrant(t *testing.T) {
+	t.Parallel()
 	const group, store = "acc-narrowed", "acc-narrowed-store"
 	list, one := "data."+instancesType+".group", "data."+instanceType+".first"
 	status := "consumer_status." + group + "."

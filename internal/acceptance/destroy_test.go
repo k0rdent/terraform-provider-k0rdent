@@ -279,6 +279,7 @@ func TestCheckGoneFailsWhenItMatchesNothing(t *testing.T) {
 // A destroy that leaves the object behind has to fail this, or none of the
 // above is worth having. Proved by pointing the check at a live object.
 func TestCheckGoneFailsOnSomethingStillThere(t *testing.T) {
+	t.Parallel()
 	const name = "acc-checkdestroy-proof"
 
 	resource.Test(t, resource.TestCase{

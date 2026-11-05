@@ -16,6 +16,7 @@ import (
 // A create the provider can tell is in the wrong region stops at plan, naming
 // the project's region.
 func TestAccACreateInAnotherRegionThanItsProjectStopsAtPlan(t *testing.T) {
+	t.Parallel()
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: protoV6,
 		Steps: []resource.TestStep{{
@@ -39,6 +40,7 @@ resource %q "test" {
 // A read the platform refuses as a region mismatch says which region the
 // project is in and what to set.
 func TestAccARegionMismatchNamesTheProjectsRegion(t *testing.T) {
+	t.Parallel()
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: protoV6,
 		Steps: []resource.TestStep{{

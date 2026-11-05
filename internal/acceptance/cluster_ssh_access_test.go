@@ -29,6 +29,7 @@ resource %q "test" {
 // change to them is a replacement the guard refuses until the configuration
 // permits it, and the replacement carries the new users.
 func TestAccClusterSSHAccess(t *testing.T) {
+	t.Parallel()
 	const name = "acc-cluster-ssh"
 	both := clusterSSHConfig(name, sshZoe+sshAdam)
 	zoeOnly := clusterSSHConfig(name, sshZoe)
@@ -83,6 +84,7 @@ func TestAccClusterSSHAccess(t *testing.T) {
 // succeeds. A configuration that drops `ssh_access`, and keeps the cluster
 // with `on_failed = "keep"`, leaves the users as state holds them.
 func TestAccClusterWhoseTeardownFailedStillDestroys(t *testing.T) {
+	t.Parallel()
 	const name = "acc-cluster-teardown-failed"
 	cluster := func(extra string) string {
 		return fmt.Sprintf(`
@@ -139,6 +141,7 @@ resource %q "test" {
 // order: destroy again, then stop managing it with a removed block. The second
 // destroy, which the test ends with, succeeds.
 func TestAccClusterDestroyThePlatformEndedSaysWhatNext(t *testing.T) {
+	t.Parallel()
 	const name = "acc-cluster-destroy-refused"
 	config := fmt.Sprintf(`
 resource %q "test" {

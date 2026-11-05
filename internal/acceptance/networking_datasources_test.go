@@ -20,6 +20,7 @@ var (
 )
 
 func TestAccNetworkAndSubnetDataSources(t *testing.T) {
+	t.Parallel()
 	const network, subnet = "acc-fabric-read", "acc-sub-read"
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: protoV6,
@@ -78,6 +79,7 @@ data %q "vpc_default" {
 // it, which is the one place it can be bound. Both read back their rules, in
 // order, with an absent optional field null.
 func TestAccSecurityGroupDataSourceTellsOwnedFromTenant(t *testing.T) {
+	t.Parallel()
 	const cluster, group = "acc-sg-read-owner", "acc-sg-read"
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: protoV6,
@@ -137,6 +139,7 @@ data %q "read" {
 // From API v1.3.0-rc.4 a VPC with no subnet prefixes has no default group,
 // so its binding reads as an empty list, not null.
 func TestAccAVPCWithNoSubnetsReadsWithNoGroups(t *testing.T) {
+	t.Parallel()
 	const cluster = "acc-sg-read-no-subnets"
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: protoV6,
@@ -160,6 +163,7 @@ output "groups" {
 }
 
 func TestAccVPCPeeringDataSource(t *testing.T) {
+	t.Parallel()
 	const cluster, name = "acc-peer-read-owner", "acc-to-inference-read"
 	const remote = "/v1/regions/us-texas-1/projects/other/networking/vpcs/vpc-inference"
 	resource.Test(t, resource.TestCase{
@@ -189,6 +193,7 @@ data %q "read" {
 // The suite asks for two rows a page, so three subnets are two pages. A
 // provider that read only the first page would report two.
 func TestAccSubnetsDataSourceReadsEveryPage(t *testing.T) {
+	t.Parallel()
 	const network = "acc-fabric-pages"
 	subnetsType := provider.ResourceName("subnets")
 	subnetsAddr := "data." + subnetsType + ".all"

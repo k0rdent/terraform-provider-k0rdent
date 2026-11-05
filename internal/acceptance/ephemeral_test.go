@@ -33,6 +33,7 @@ import (
 // fake's server for this cluster and its token, and no CA, because the fake's
 // kubeconfig carries none.
 func TestAccEphemeralKubeconfigInTheSameRun(t *testing.T) {
+	t.Parallel()
 	skipUnderOpenTofu(t, openTofuChecksAnUnopenedEphemeral)
 	kubeconfigType := provider.ResourceName("cluster_kubeconfig")
 	cfg := fmt.Sprintf(`
@@ -85,6 +86,7 @@ ephemeral %q "eph" {
 // data source depend on the cluster, and Terraform defers a data source's
 // read while a resource it depends on has changes to apply.
 func TestAccKubeconfigMetadataForANewCluster(t *testing.T) {
+	t.Parallel()
 	kubeconfigType := provider.ResourceName("cluster_kubeconfig")
 	cfg := fmt.Sprintf(`
 resource %q "meta" {
@@ -112,6 +114,7 @@ data %q "meta" {
 // A 404 because the cluster does not exist is not the transient one, and must
 // not cost the whole timeout.
 func TestAccEphemeralKubeconfigForAMissingClusterFailsAtOnce(t *testing.T) {
+	t.Parallel()
 	kubeconfigType := provider.ResourceName("cluster_kubeconfig")
 	cfg := fmt.Sprintf(`
 ephemeral %q "missing" {
@@ -135,6 +138,7 @@ ephemeral %q "missing" {
 // failed issue. The fake's marker makes that issue fail. The open has to give
 // up after the provisional window rather than wait out `timeouts.open`.
 func TestAccEphemeralKubeconfigThatIsNeverIssuedGivesUp(t *testing.T) {
+	t.Parallel()
 	kubeconfigType := provider.ResourceName("cluster_kubeconfig")
 	cfg := fmt.Sprintf(`
 resource %q "unissued" {
@@ -169,6 +173,7 @@ ephemeral %q "unissued" {
 // doesn't exist yet. Recorded on Terraform 1.16.3. When a Terraform release
 // defers it, this fails, and the examples can move to depends_on.
 func TestAccEphemeralKubeconfigDependsOnDoesNotDeferTheOpen(t *testing.T) {
+	t.Parallel()
 	skipUnderOpenTofu(t, openTofuDefersTheOpen)
 	kubeconfigType := provider.ResourceName("cluster_kubeconfig")
 	cfg := fmt.Sprintf(`

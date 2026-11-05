@@ -26,6 +26,7 @@ resource %q "test" {
 }
 
 func TestAccInstanceGroupGrowsToASizeKnownOnlyAtApply(t *testing.T) {
+	t.Parallel()
 	const name = "acc-ig-unknown-size"
 	pool := "{ size = terraform_data.size.output }"
 	resource.Test(t, resource.TestCase{
@@ -52,6 +53,7 @@ func TestAccInstanceGroupGrowsToASizeKnownOnlyAtApply(t *testing.T) {
 // time is then a replacement the configuration does not permit, so the apply
 // fails there rather than replacing a group the plan said it would update.
 func TestAccInstanceGroupShrinkKnownOnlyAtApplyDeletesNothing(t *testing.T) {
+	t.Parallel()
 	const name = "acc-ig-unknown-shrink"
 	pool := "{ size = terraform_data.size.output }"
 	resource.Test(t, resource.TestCase{

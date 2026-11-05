@@ -131,8 +131,10 @@ func perpetualDiffCases() []perpetualDiffCase {
 // did answer two different bodies, and the refresh and plan are repeated so
 // the varied fields go through every shape they take.
 func TestAccPerpetualDiff(t *testing.T) {
+	t.Parallel()
 	for _, c := range perpetualDiffCases() {
 		t.Run(c.kind, func(t *testing.T) {
+			t.Parallel()
 			empty := []plancheck.PlanCheck{plancheck.ExpectEmptyPlan()}
 			// Each refresh has to leave state as the step before it left it.
 			// That's `terraform plan -refresh-only` exiting 0, which an empty
@@ -272,6 +274,7 @@ func checkChurns(addr string, pathOf func(map[string]string) string) resource.Te
 // registered without a perpetual-diff case, so a new resource can't skip the
 // check by being added after it was written. It needs no fake.
 func TestPerpetualDiffCoversEveryResource(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	var registered []string
 	for _, newResource := range provider.New("acc")().Resources(ctx) {

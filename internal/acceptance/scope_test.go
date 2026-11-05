@@ -20,6 +20,7 @@ var networksType = provider.ResourceName("networks")
 // sent the provider block's project, or either one of these, to both would
 // read, list or rename the wrong network and fail here.
 func TestAccTheSameIDInTwoProjectsStaysApart(t *testing.T) {
+	t.Parallel()
 	const network = "acc-same-network"
 	config := func(displayA string) string {
 		return fmt.Sprintf(`
@@ -102,6 +103,7 @@ data %[6]q "b" {
 // The same for a cluster, the object most of the provider's project-scoped
 // operations act on.
 func TestAccTheSameClusterIDInTwoProjectsStaysApart(t *testing.T) {
+	t.Parallel()
 	const cluster = "acc-same-cluster"
 	config := func(displayA string) string {
 		return fmt.Sprintf(`

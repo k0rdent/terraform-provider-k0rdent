@@ -8,6 +8,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/plancheck"
+	"github.com/hashicorp/terraform-plugin-testing/terraform"
 
 	"github.com/k0rdent/terraform-provider-k0rdent/internal/provider"
 )
@@ -54,6 +55,7 @@ resource %q "test" {
 // attribute would propose replacing the network on the second plan. The
 // PlanOnly step is what catches that.
 func TestAccNetworkEVPN(t *testing.T) {
+	t.Parallel()
 	const name = "acc-fabric"
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: protoV6,
@@ -96,6 +98,7 @@ func TestAccNetworkEVPN(t *testing.T) {
 }
 
 func TestAccNetworkInfiniBand(t *testing.T) {
+	t.Parallel()
 	const name = "acc-ib"
 	config := fmt.Sprintf(`
 resource %q "test" {
@@ -130,6 +133,7 @@ resource %q "test" {
 // A subnet is create-and-destroy only, so the lifecycle worth covering is the
 // CIDR arriving late and `exclude_ranges` never coming back.
 func TestAccSubnet(t *testing.T) {
+	t.Parallel()
 	const network, name = "acc-subnet-net", "acc-pods"
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: protoV6,
@@ -168,6 +172,7 @@ func TestAccSubnet(t *testing.T) {
 // null, or the first apply fails as an inconsistent result and taints a subnet
 // that exists.
 func TestAccSubnetWithoutMetadataStaysNull(t *testing.T) {
+	t.Parallel()
 	const network, name = "acc-nometa-net", "acc-nometa"
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: protoV6,
@@ -192,6 +197,7 @@ func TestAccSubnetWithoutMetadataStaysNull(t *testing.T) {
 // A VPC has no create operation: it exists because a cluster brought it into
 // being. So the data source is exercised against a cluster, not on its own.
 func TestAccVPCsDataSource(t *testing.T) {
+	t.Parallel()
 	const name = "acc-vpc-owner"
 	// `depends_on` is load-bearing, not decoration. Nothing in this data
 	// source's arguments refers to the cluster, so without it Terraform reads
@@ -209,22 +215,42 @@ data %q "all" {
 		Steps: []resource.TestStep{
 			{
 				Config: config,
-				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttr(vpcsAddr, "vpcs.0.id", "vpc-"+name),
-					resource.TestCheckResourceAttr(vpcsAddr, "vpcs.0.owner_kind", "cluster"),
-					resource.TestCheckResourceAttr(vpcsAddr, "vpcs.0.backend", "nico"),
-					// The default binding is always reported, never an empty list.
-					resource.TestCheckResourceAttrWith(vpcsAddr, "vpcs.0.security_groups.0", isDefaultGroupOf("vpc-"+name)),
-				),
+				Check: listedVPC("vpc-"+name, func(row string) resource.TestCheckFunc {
+					return resource.ComposeAggregateTestCheckFunc(
+						resource.TestCheckResourceAttr(vpcsAddr, row+"owner_kind", "cluster"),
+						resource.TestCheckResourceAttr(vpcsAddr, row+"backend", "nico"),
+						// The default binding is always reported, never an empty list.
+						resource.TestCheckResourceAttrWith(vpcsAddr, row+"security_groups.0", isDefaultGroupOf("vpc-"+name)),
+					)
+				}),
 			},
 		},
 	})
+}
+
+// listedVPC runs check on vpc's row of the list, which holds the VPCs of the
+// tests running beside this one too. check gets the row's prefix, such as
+// `vpcs.2.`.
+func listedVPC(vpc string, check func(row string) resource.TestCheckFunc) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		rs, ok := s.RootModule().Resources[vpcsAddr]
+		if !ok {
+			return fmt.Errorf("%s isn't in state", vpcsAddr)
+		}
+		for key, value := range rs.Primary.Attributes {
+			if value == vpc && strings.HasPrefix(key, "vpcs.") && strings.Count(key, ".") == 2 && strings.HasSuffix(key, ".id") {
+				return check(strings.TrimSuffix(key, "id"))(s)
+			}
+		}
+		return fmt.Errorf("%s doesn't list %s", vpcsAddr, vpc)
+	}
 }
 
 // A peering or binding names the cluster's VPC through `vpc`, which stays known
 // while the cluster changes. Through a data source it would go unknown on every
 // cluster change and replace the binding.
 func TestAccClusterVPCSurvivesAClusterChange(t *testing.T) {
+	t.Parallel()
 	const name = "acc-vpc-stable"
 	config := func(nodes int) string {
 		return clusterConfig(name, nodes) + fmt.Sprintf(`
@@ -271,6 +297,7 @@ import {
 // platform reports. For a value the platform does not echo as written, that
 // must not plan a replacement of the real object.
 func TestAccNetworkImportDoesNotReplace(t *testing.T) {
+	t.Parallel()
 	const name = "acc-adopt-evpn"
 	seed := strings.Replace(evpnConfig(name, "a"), `"test"`, `"seed"`, 1)
 	adopted := adopt(evpnConfig(name, "a"), networkType, "us-texas-1/demo/"+name)
@@ -294,6 +321,7 @@ func TestAccNetworkImportDoesNotReplace(t *testing.T) {
 // NICo ignores a requested PKey, so an imported InfiniBand network reports the
 // partition's own and the configured one never matches it.
 func TestAccNetworkInfiniBandImportDoesNotReplace(t *testing.T) {
+	t.Parallel()
 	const name = "acc-adopt-ib"
 	config := func(pkey string) string {
 		return fmt.Sprintf(`
@@ -335,6 +363,7 @@ resource %q "test" {
 }
 
 func TestAccNetworkClearsMetadata(t *testing.T) {
+	t.Parallel()
 	const name = "acc-clear"
 	bare := fmt.Sprintf(`
 resource %q "test" {
@@ -373,6 +402,7 @@ func clusterLocalSubnetConfig(network, name string) string {
 // `allocate_gateway` is not in the response, and on a pool that is not routable
 // an empty gateway fits either value, so the import cannot record it.
 func TestAccSubnetImportDoesNotReplace(t *testing.T) {
+	t.Parallel()
 	const network, name = "acc-adopt-net", "acc-adopt-sub"
 	config := clusterLocalSubnetConfig(network, name)
 	seed := strings.Replace(config, `"test" {
@@ -403,6 +433,7 @@ func TestAccSubnetImportDoesNotReplace(t *testing.T) {
 
 // A `timeouts` block is the one thing that changes without a subnet operation.
 func TestAccSubnetTimeoutsChangeInPlace(t *testing.T) {
+	t.Parallel()
 	const network, name = "acc-timeouts-net", "acc-timeouts"
 	base := subnetConfig(network, name)
 	withTimeouts := strings.Replace(base, `exclude_ranges   = ["10.0.0.10-10.0.0.20"]`,
@@ -430,6 +461,7 @@ func TestAccSubnetTimeoutsChangeInPlace(t *testing.T) {
 // An import that plans no change must not leave anything behind that later
 // swallows a real change.
 func TestAccNetworkChangeAfterQuietImportReplaces(t *testing.T) {
+	t.Parallel()
 	const name = "acc-quiet-ib"
 	config := func(pkey string) string {
 		return fmt.Sprintf(`
@@ -461,6 +493,7 @@ resource %q "test" {
 }
 
 func TestAccSubnetChangeAfterQuietImportReplaces(t *testing.T) {
+	t.Parallel()
 	const network, name = "acc-quiet-net", "acc-quiet-sub"
 	config := subnetConfig(network, name)
 	seed := strings.Replace(config, `"test" {
@@ -488,6 +521,7 @@ func TestAccSubnetChangeAfterQuietImportReplaces(t *testing.T) {
 
 // The contract accepts three spellings for the same addresses.
 func TestAccSubnetExcludeRangesCompareAsAddresses(t *testing.T) {
+	t.Parallel()
 	const network, name = "acc-ranges-net", "acc-ranges"
 	config := func(ranges string) string {
 		return strings.Replace(subnetConfig(network, name),
@@ -529,6 +563,7 @@ func TestAccSubnetExcludeRangesCompareAsAddresses(t *testing.T) {
 // until the step times out rather than fail fast, which is the behaviour the
 // four-set rule was written to prevent.
 func TestAccNetworkStopsOnAFailedOrUnrecognisedState(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name   string
 		marker string
@@ -570,6 +605,7 @@ func TestAccNetworkStopsOnAFailedOrUnrecognisedState(t *testing.T) {
 // The fake creates this network alongside the VPC, the way the cluster
 // workflow does, so the object being adopted here is one no tenant created.
 func TestAccNetworkRefusesToManageAClusterOwnedOne(t *testing.T) {
+	t.Parallel()
 	const cluster = "acc-owned-net"
 	owned := "vpc-" + cluster + "-net"
 
@@ -629,6 +665,7 @@ resource %q "test" {
 // With `exclude_ranges` left out it is computed, and a change to anything else
 // must still plan rather than fail on the unknown list.
 func TestAccSubnetWithoutRangesStillChanges(t *testing.T) {
+	t.Parallel()
 	const network, name = "acc-noranges-net", "acc-noranges"
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: protoV6,
@@ -651,6 +688,7 @@ func TestAccSubnetWithoutRangesStillChanges(t *testing.T) {
 
 // The contract caps a subnet prefix at /32, so /33 fails the plan, not the apply.
 func TestAccSubnetPrefixPastThirtyTwoFailsThePlan(t *testing.T) {
+	t.Parallel()
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: protoV6,
 		Steps: []resource.TestStep{{
@@ -664,6 +702,7 @@ func TestAccSubnetPrefixPastThirtyTwoFailsThePlan(t *testing.T) {
 // The tenant pool gives /16 to /28, so a /12 fails the plan with the pool's
 // range, not the create.
 func TestAccSubnetPrefixOutsideItsPoolFailsThePlan(t *testing.T) {
+	t.Parallel()
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: protoV6,
 		Steps: []resource.TestStep{{
@@ -677,6 +716,7 @@ func TestAccSubnetPrefixOutsideItsPoolFailsThePlan(t *testing.T) {
 // Each fabric block has its own replace rule, and on a switch one side of it is
 // null: the block being dropped has no plan and the one being added has no state.
 func TestAccNetworkFabricSwitchReplaces(t *testing.T) {
+	t.Parallel()
 	const name = "acc-switch"
 	ib := fmt.Sprintf(`
 resource %q "test" {
@@ -734,6 +774,7 @@ resource %q "test" {
 }
 
 func TestAccNetworkFabricFromAVariable(t *testing.T) {
+	t.Parallel()
 	const name = "acc-fabric-var"
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: protoV6,
@@ -749,6 +790,7 @@ func TestAccNetworkFabricFromAVariable(t *testing.T) {
 }
 
 func TestAccNetworkFabricFromAVariableStillRefusesTwo(t *testing.T) {
+	t.Parallel()
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: protoV6,
 		Steps: []resource.TestStep{{

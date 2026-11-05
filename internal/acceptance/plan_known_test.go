@@ -122,6 +122,7 @@ func renamed(config string) string {
 // step applies the plan it checks, so a value planned here that the apply then
 // contradicts fails the step as an inconsistent result.
 func TestAccNetworkRenamePlansOnlyTheName(t *testing.T) {
+	t.Parallel()
 	const name = "acc-known-net"
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: protoV6,
@@ -144,6 +145,7 @@ func TestAccNetworkRenamePlansOnlyTheName(t *testing.T) {
 }
 
 func TestAccSecurityGroupChangePlansOnlyWhatMoves(t *testing.T) {
+	t.Parallel()
 	const name = "acc-known-sg"
 	three := securityGroupConfig(name, true)
 	renamedNewPort := strings.Replace(renamed(three), `destination_port_range = "9090"`, `destination_port_range = "9091"`, 1)
@@ -178,6 +180,7 @@ func TestAccSecurityGroupChangePlansOnlyWhatMoves(t *testing.T) {
 }
 
 func TestAccClusterRenamePlansOnlyTheName(t *testing.T) {
+	t.Parallel()
 	const name = "acc-known-cluster"
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: protoV6,
@@ -207,6 +210,7 @@ func TestAccClusterRenamePlansOnlyTheName(t *testing.T) {
 }
 
 func TestAccInstanceGroupRenamePlansOnlyTheName(t *testing.T) {
+	t.Parallel()
 	const name = "acc-known-hosts"
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: protoV6,
@@ -225,6 +229,7 @@ func TestAccInstanceGroupRenamePlansOnlyTheName(t *testing.T) {
 }
 
 func TestAccFileStoreRenamePlansOnlyTheNameAndRevision(t *testing.T) {
+	t.Parallel()
 	const name = "acc-known-store"
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: protoV6,
@@ -257,6 +262,7 @@ func TestAccFileStoreRenamePlansOnlyTheNameAndRevision(t *testing.T) {
 }
 
 func TestAccSubnetTimeoutsPlanOnlyTheTimeouts(t *testing.T) {
+	t.Parallel()
 	const network, name = "acc-known-subnet-net", "acc-known-subnet"
 	base := subnetConfig(network, name)
 	withTimeouts := strings.Replace(base, `exclude_ranges   = ["10.0.0.10-10.0.0.20"]`,
@@ -282,6 +288,7 @@ func TestAccSubnetTimeoutsPlanOnlyTheTimeouts(t *testing.T) {
 }
 
 func TestAccPeeringTimeoutsPlanOnlyTheTimeouts(t *testing.T) {
+	t.Parallel()
 	const cluster, name = "acc-known-peer-owner", "acc-known-peer"
 	const remote = "/v1/regions/us-texas-1/projects/other/networking/vpcs/vpc-inference"
 	base := peeringConfig(cluster, name, remote)
@@ -306,6 +313,7 @@ func TestAccPeeringTimeoutsPlanOnlyTheTimeouts(t *testing.T) {
 }
 
 func TestAccVPCBindingChangePlansWhatIsAttached(t *testing.T) {
+	t.Parallel()
 	const cluster, group = "acc-known-bind", "acc-known-bind-sg"
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: protoV6,
@@ -335,6 +343,7 @@ func TestAccVPCBindingChangePlansWhatIsAttached(t *testing.T) {
 }
 
 func TestAccProjectRenamePlansOnlyTheName(t *testing.T) {
+	t.Parallel()
 	const id = "acc-known-project"
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: protoV6,
@@ -353,6 +362,7 @@ func TestAccProjectRenamePlansOnlyTheName(t *testing.T) {
 }
 
 func TestAccWebhookSubscriptionPlansOnlyWhatMoves(t *testing.T) {
+	t.Parallel()
 	url := webhookURL("plan-known")
 	events := []string{"io.k0rdent.cluster.ready.v1"}
 	base := webhookConfigFixedSecret(url, events, "known")
@@ -433,6 +443,7 @@ resource %[4]q "to_cluster" {
 // replace it. Moving between the id and the self_link of the same VPC then
 // replaces nothing either.
 func TestAccRenamingAPeeredClusterReplacesNoPeering(t *testing.T) {
+	t.Parallel()
 	const cluster, group = "acc-peered-cluster", "acc-peered-hosts"
 	byID := peeredOwnersConfig(cluster, group, "local.owners.hosts")
 	bySelfLink := peeredOwnersConfig(cluster, group, "data."+provider.ResourceName("vpc")+".hosts.self_link")
