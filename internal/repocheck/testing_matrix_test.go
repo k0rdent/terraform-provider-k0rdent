@@ -340,9 +340,10 @@ func readGaps(t *testing.T, file string) map[cellKey]bool {
 	return gaps
 }
 
-// matrixProblems is the check. new is the upgrade cells of attributes the
-// previous release didn't store, which need no test and no gap.
-func matrixProblems(attrs map[string][]matrixAttr, cov coverage, gaps, added map[cellKey]bool, unnamed []string) []string {
+// matrixProblems is the check. added is the upgrade cells of attributes
+// previous, the release upgraded from, didn't store, which need no test and
+// take no gap.
+func matrixProblems(attrs map[string][]matrixAttr, cov coverage, gaps, added map[cellKey]bool, unnamed []string, previous string) []string {
 	var problems []string
 	for _, r := range unnamed {
 		problems = append(problems, fmt.Sprintf("a provider binary recorded %s cells without being told its test: "+
@@ -365,6 +366,9 @@ func matrixProblems(attrs map[string][]matrixAttr, cov coverage, gaps, added map
 				case len(tests) > 0 && gaps[k]:
 					problems = append(problems, fmt.Sprintf("%s: listed as a gap, but %s covers it: drop its line from %s",
 						k, strings.Join(tests, ", "), matrixGapsFile))
+				case gaps[k] && added[k]:
+					problems = append(problems, fmt.Sprintf("%s: listed as a gap, but %s, the release the matrix upgrades from, "+
+						"never stored it, so there's no upgrade to test: drop its line from %s", k, previous, matrixGapsFile))
 				}
 			}
 		}
@@ -526,7 +530,7 @@ func TestTheTestingMatrixIsCurrent(t *testing.T) {
 		}
 	}
 	gaps := readGaps(t, filepath.Join(root, matrixGapsFile))
-	for _, p := range matrixProblems(attrs, cov, gaps, added, unnamed) {
+	for _, p := range matrixProblems(attrs, cov, gaps, added, unnamed, up.tag) {
 		t.Error(p)
 	}
 

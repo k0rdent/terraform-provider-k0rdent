@@ -27,14 +27,14 @@ func rulesCoverage() coverage {
 func TestTheMatrixPassesWhenEveryCellIsCoveredGappedOrNew(t *testing.T) {
 	gaps := map[cellKey]bool{{"example_thing", "name", cellUpgrade}: true}
 	added := map[cellKey]bool{{"example_thing", "id", cellUpgrade}: true}
-	if p := matrixProblems(rulesAttrs(), rulesCoverage(), gaps, added, nil); len(p) != 0 {
+	if p := matrixProblems(rulesAttrs(), rulesCoverage(), gaps, added, nil, "v0.1.0"); len(p) != 0 {
 		t.Fatalf("want no problems, got %q", p)
 	}
 }
 
 func TestTheMatrixFailsOnACellWithNoTestAndNoGap(t *testing.T) {
 	added := map[cellKey]bool{{"example_thing", "id", cellUpgrade}: true}
-	p := matrixProblems(rulesAttrs(), rulesCoverage(), map[cellKey]bool{}, added, nil)
+	p := matrixProblems(rulesAttrs(), rulesCoverage(), map[cellKey]bool{}, added, nil, "v0.1.0")
 	if len(p) != 1 || !strings.Contains(p[0], "example_thing name upgrade: no test covers it") ||
 		!strings.Contains(p[0], "add the line `example_thing name upgrade`") {
 		t.Fatalf("want the missing upgrade cell named, got %q", p)
@@ -47,7 +47,7 @@ func TestTheMatrixFailsOnAGapATestCovers(t *testing.T) {
 		{"example_thing", "name", cellUpdate}:  true,
 	}
 	added := map[cellKey]bool{{"example_thing", "id", cellUpgrade}: true}
-	p := matrixProblems(rulesAttrs(), rulesCoverage(), gaps, added, nil)
+	p := matrixProblems(rulesAttrs(), rulesCoverage(), gaps, added, nil, "v0.1.0")
 	if len(p) != 1 || !strings.Contains(p[0], "example_thing name update: listed as a gap, but TestAccRename covers it: drop its line") {
 		t.Fatalf("want the covered gap named, got %q", p)
 	}
@@ -60,17 +60,29 @@ func TestTheMatrixFailsOnAGapTheSchemaDoesntHave(t *testing.T) {
 		{"example_thing", "colour", cellImport}: true,
 	}
 	added := map[cellKey]bool{{"example_thing", "id", cellUpgrade}: true}
-	p := matrixProblems(rulesAttrs(), rulesCoverage(), gaps, added, nil)
+	p := matrixProblems(rulesAttrs(), rulesCoverage(), gaps, added, nil, "v0.1.0")
 	if len(p) != 2 || !strings.Contains(p[0], "example_thing colour import: listed as a gap, but the schema has no such cell") ||
 		!strings.Contains(p[1], "example_thing id update: listed as a gap, but the schema has no such cell") {
 		t.Fatalf("want both cells the schema lacks named, got %q", p)
 	}
 }
 
+func TestTheMatrixFailsOnAGapForAnUpgradeThePreviousReleaseNeverStored(t *testing.T) {
+	gaps := map[cellKey]bool{
+		{"example_thing", "name", cellUpgrade}: true,
+		{"example_thing", "id", cellUpgrade}:   true,
+	}
+	added := map[cellKey]bool{{"example_thing", "id", cellUpgrade}: true}
+	p := matrixProblems(rulesAttrs(), rulesCoverage(), gaps, added, nil, "v0.1.0")
+	if len(p) != 1 || !strings.Contains(p[0], "example_thing id upgrade: listed as a gap, but v0.1.0, the release the matrix upgrades from, never stored it") {
+		t.Fatalf("want the gap for a cell v0.1.0 never stored named, got %q", p)
+	}
+}
+
 func TestTheMatrixFailsOnABinaryThatWasntToldItsTest(t *testing.T) {
 	gaps := map[cellKey]bool{{"example_thing", "name", cellUpgrade}: true}
 	added := map[cellKey]bool{{"example_thing", "id", cellUpgrade}: true}
-	p := matrixProblems(rulesAttrs(), rulesCoverage(), gaps, added, []string{"example_thing"})
+	p := matrixProblems(rulesAttrs(), rulesCoverage(), gaps, added, []string{"example_thing"}, "v0.1.0")
 	if len(p) != 1 || !strings.Contains(p[0], "recorded example_thing cells without being told its test") {
 		t.Fatalf("want the unnamed binary named, got %q", p)
 	}
