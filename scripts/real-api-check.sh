@@ -13,8 +13,9 @@
 #                                      for a release: the same, and the record
 #                                      names TREE's code hash too. TREE is the
 #                                      tagged commit's checkout, default this one
-#   scripts/real-api-check.sh hash fake|code [TREE]
-#                                      prints a hash
+#   scripts/real-api-check.sh hash fake|code|fake-list|code-list|hashing [TREE]
+#                                      prints a hash, a digest of what one covers,
+#                                      or the hashing version
 #   scripts/real-api-check.sh hardware look/ and full/ with the switches for
 #                                      what kind can't do, against the fake
 #                                      and a landscape with hardware. CREATES
@@ -34,8 +35,11 @@
 #
 # The code hash covers everything the real API runs against: the fake hash's
 # files, the provider (go.mod, go.sum, main.go, internal/ but its tests), make
-# live and the walkthroughs. Only a release is held to it, so each release has run end to end
-# against the real API without every merge asking for a run.
+# live and the walkthroughs. Only a release is held to it, so each release has
+# run end to end against the real API without every merge asking for a run.
+#
+# ci/real-api/paths lists what each hash covers, and this script reads it
+# from the tree it hashes.
 #
 # Configuration for run, from the environment, with the names the provider
 # reads:
@@ -75,28 +79,74 @@ FAKE_REGION=us-texas-1 FAKE_PROJECT=demo FAKE_CLUSTER_TYPE=gpu-training
 # shellcheck source=lib/walkthrough.sh
 . "$REPO/scripts/lib/walkthrough.sh"
 
-FAKE_PATHS=(internal/tools/fakeapi internal/tools/fakedrift internal/k0rdent
-  ci/fake-drift-accepted.json ci/real-api/lifecycle scripts/real-api-check.sh)
-CODE_PATHS=("${FAKE_PATHS[@]}" go.mod go.sum main.go internal scripts/live.sh scripts/lib examples/live
-  examples/walkthrough)
+# HASHING is how tree_hash and list_hash make a hash. A record names the one
+# it was made with. Changing either function breaks every committed record on
+# every branch, since a release branch's tag is checked by main's script: bump
+# HASHING with it, so the check says why instead of blaming the code.
+HASHING=1
+
+# read_path_lists <tree> sets PATHS_FAKE, PATHS_CODE and PATHS_SKIP from
+# <tree>'s ci/real-api/paths, which says what each hash covers. They're data
+# in the tree, so main's script hashes a release branch's tag by that branch's
+# own lists. An entry has to be one path that matches a file in <tree>: a typo
+# or a comment after it would otherwise shrink what a hash covers, silently.
+read_path_lists() {
+  local file="$1/ci/real-api/paths" kind path
+  [ -s "$file" ] || die "$1 has no ci/real-api/paths, which says what the real-API record's hashes cover. A tree from before it can't be checked: add the file and run make real-api-check on it."
+  PATHS_FAKE=() PATHS_CODE=() PATHS_SKIP=()
+  while read -r kind path; do
+    case "$kind" in ''|'#'*) continue ;; esac
+    case "$path" in
+      '') die "$file: the $kind line names no path" ;;
+      *'#'* | *[[:space:]]*) die "$file: \"$kind $path\" has a # or a space in its path. Put one path a line, and comments on lines of their own" ;;
+    esac
+    [ -n "$(git -C "$1" ls-files --cached --others --exclude-standard -- "$path" 2>/dev/null | head -1)" ] \
+      || die "$file: \"$kind $path\" matches no file in $1. Fix the path, or drop the line"
+    case "$kind" in
+      fake) PATHS_FAKE+=("$path") ;;
+      code) PATHS_CODE+=("$path") ;;
+      skip) PATHS_SKIP+=("$path") ;;
+      *) die "$file: a line starts with $kind, want fake, code or skip" ;;
+    esac
+  done < "$file"
+  [ "${#PATHS_FAKE[@]}" -gt 0 ] || die "$file lists nothing for the fake hash"
+}
+
+# list_paths <fake|code> prints, one a line, the entries that hash covers and
+# skips, as read_path_lists set them.
+list_paths() {
+  local p
+  for p in "${PATHS_FAKE[@]}"; do printf 'fake %s\n' "$p"; done
+  if [ "$1" = code ]; then
+    for p in ${PATHS_CODE[@]+"${PATHS_CODE[@]}"}; do printf 'code %s\n' "$p"; done
+  fi
+  for p in ${PATHS_SKIP[@]+"${PATHS_SKIP[@]}"}; do printf 'skip %s\n' "$p"; done
+}
 
 # tree_hash <fake|code> <tree> prints one hash over every file that hash
 # covers, as <tree>'s working tree holds them, so a run before the commit and
 # CI after it agree.
 tree_hash() {
-  local paths
-  case "$1" in
-    fake) paths=("${FAKE_PATHS[@]}") ;;
-    code) paths=("${CODE_PATHS[@]}") ;;
-    *) die "no hash named $1, want fake or code" ;;
-  esac
+  local paths=() kind p
+  case "$1" in fake|code) ;; *) die "no hash named $1, want fake or code" ;; esac
+  read_path_lists "$2"
+  while read -r kind p; do
+    case "$kind" in skip) paths+=(":!:$p") ;; *) paths+=("$p") ;; esac
+  done < <(list_paths "$1")
   git -C "$2" ls-files --cached --others --exclude-standard -- "${paths[@]}" \
-      ':!:*_test.go' ':!:internal/acceptance' ':!:internal/repocheck' \
     | LC_ALL=C sort -u \
     | while IFS= read -r f; do
         [ -f "$2/$f" ] && printf '%s %s\n' "$(git -C "$2" hash-object -- "$f")" "$f"
       done \
     | git hash-object --stdin
+}
+
+# list_hash <fake|code> <tree> prints a hash of the paths that hash covers, as
+# <tree>'s ci/real-api/paths lists them, in any order.
+list_hash() {
+  case "$1" in fake|code) ;; *) die "no list named $1, want fake or code" ;; esac
+  read_path_lists "$2"
+  list_paths "$1" | LC_ALL=C sort -u | git hash-object --stdin
 }
 
 # want_api_version <tree> prints the API version <tree> is tested against.
@@ -107,29 +157,49 @@ want_api_version() {
 }
 
 cmd_hash() {
-  [ -n "${1:-}" ] || die "usage: scripts/real-api-check.sh hash fake|code [TREE]"
-  tree_hash "$1" "${2:-$REPO}"
+  case "${1:-}" in
+    fake|code) tree_hash "$1" "${2:-$REPO}" ;;
+    fake-list|code-list) list_hash "${1%-list}" "${2:-$REPO}" ;;
+    hashing) printf '%s\n' "$HASHING" ;;
+    *) die "usage: scripts/real-api-check.sh hash fake|code|fake-list|code-list|hashing [TREE]" ;;
+  esac
 }
 
 # check_record <tree> <fake|code>: fails unless <tree>'s record passed, names
 # its API version, and names its fake hash, and its code hash too for code.
 check_record() {
-  local tree="$1" scope="$2" fake code="" want
+  local tree="$1" scope="$2" fake code="" want fake_list code_list=""
   fake="$(tree_hash fake "$tree")" || die "could not hash $tree"
-  [ "$scope" = code ] && { code="$(tree_hash code "$tree")" || die "could not hash $tree"; }
+  fake_list="$(list_hash fake "$tree")" || die "could not hash $tree's ci/real-api/paths"
+  if [ "$scope" = code ]; then
+    code="$(tree_hash code "$tree")" || die "could not hash $tree"
+    code_list="$(list_hash code "$tree")" || die "could not hash $tree's ci/real-api/paths"
+  fi
   want="$(want_api_version "$tree")" || exit 1
   [ -f "$tree/ci/real-api/record.json" ] \
     || die "no ci/real-api/record.json. Run make real-api-check against a kind stack running API $want, then commit the record."
   RECORD="$tree/ci/real-api/record.json" HW="$tree/ci/real-api/hardware-record.json" \
-    GAP_RESOURCES="$GAP_RESOURCES" FAKE="$fake" CODE="$code" WANT="$want" python3 -c '
+    GAP_RESOURCES="$GAP_RESOURCES" FAKE="$fake" CODE="$code" WANT="$want" \
+    FAKE_LIST="$fake_list" CODE_LIST="$code_list" HASHING="$HASHING" python3 -c '
 import json, os, sys
 r = json.load(open(os.environ["RECORD"]))
-fake, code, want = os.environ["FAKE"], os.environ["CODE"], os.environ["WANT"]
+e = os.environ
+fake, code, want = e["FAKE"], e["CODE"], e["WANT"]
+lists = r.get("lists") or {}
 problems = []
-if r.get("fake") != fake:
+# What a hash covers, and how it is made, are checked before the hash, so a
+# change to either is named as that and not as a change to the code.
+if str(r.get("hashing")) != e["HASHING"]:
+    problems.append("the record was hashed by version %s of the hashing, and this script hashes by version %s, so the hashes cannot match" % (r.get("hashing", "none"), e["HASHING"]))
+elif lists.get("fake") != e["FAKE_LIST"]:
+    problems.append("the paths the fake hash covers, in ci/real-api/paths, changed since the last run (record %s, tree %s)" % (lists.get("fake"), e["FAKE_LIST"]))
+elif r.get("fake") != fake:
     problems.append("the fake, the API client or the real-API check changed since the last run (record %s, tree %s)" % (r.get("fake"), fake))
-if code and r.get("code") != code:
-    problems.append("this release has code the last run did not (record %s, tree %s)" % (r.get("code"), code))
+if code and str(r.get("hashing")) == e["HASHING"]:
+    if lists.get("code") != e["CODE_LIST"]:
+        problems.append("the paths the code hash covers, in ci/real-api/paths, changed since the last run (record %s, tree %s)" % (lists.get("code"), e["CODE_LIST"]))
+    elif r.get("code") != code:
+        problems.append("this release has code the last run did not (record %s, tree %s)" % (r.get("code"), code))
 if r.get("api_version") != want:
     problems.append("the last run was against API %s, and ci/real-api/api-version says %s" % (r.get("api_version"), want))
 failed = [s for s, v in r.get("steps", {}).items() if v != "PASS"]
@@ -514,11 +584,14 @@ cmd_run() {
   if [ "$steps_drift" != PASS ] || [ "$steps_live" != PASS ]; then
     die "fake drift $steps_drift, live $steps_live. ci/real-api/record.json is unchanged, so CI still asks for a run."
   fi
-  RECORD="$RECORD" FAKE="$fake" CODE="$code" API="$have" GAPS="${REAL_API_WALKTHROUGH_GAPS:-}" TF="$("$TF_BIN" version | head -1)" python3 -c '
+  RECORD="$RECORD" FAKE="$fake" CODE="$code" API="$have" GAPS="${REAL_API_WALKTHROUGH_GAPS:-}" TF="$("$TF_BIN" version | head -1)" \
+    FAKE_LIST="$(list_hash fake "$REPO")" CODE_LIST="$(list_hash code "$REPO")" HASHING="$HASHING" python3 -c '
 import json, os, datetime
 json.dump({
     "fake": os.environ["FAKE"],
     "code": os.environ["CODE"],
+    "hashing": int(os.environ["HASHING"]),
+    "lists": {"fake": os.environ["FAKE_LIST"], "code": os.environ["CODE_LIST"]},
     "api_version": os.environ["API"],
     "terraform": os.environ["TF"],
     "steps": {"fake drift": "PASS", "live": "PASS"},
@@ -1007,5 +1080,5 @@ case "${1:-}" in
   verify) check_record "$REPO" fake ;;
   verify-release) check_record "${2:-$REPO}" code ;;
   hash) cmd_hash "${2:-}" "${3:-}" ;;
-  *) die "usage: scripts/real-api-check.sh run|hardware|verify|verify-release [TREE]|hash fake|code [TREE]" ;;
+  *) die "usage: scripts/real-api-check.sh run|hardware|verify|verify-release [TREE]|hash fake|code|fake-list|code-list|hashing [TREE]" ;;
 esac

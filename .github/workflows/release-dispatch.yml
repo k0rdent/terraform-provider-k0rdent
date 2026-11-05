@@ -169,6 +169,17 @@ jobs:
             echo "tag=$RELEASE_TAG"
             echo "tag_commit=$tag_commit"
           } >> "$GITHUB_OUTPUT"
+      # The tagged commit's ci/real-api/record.json has to name all of its
+      # code, not only its fake. main's copy of the check reads the tagged
+      # tree, so the dispatcher still runs only main's code.
+      - name: Check the tagged code ran against the real API
+        shell: bash
+        env:
+          TAG_COMMIT: ${{ steps.validate.outputs.tag_commit }}
+        run: |
+          set -euo pipefail
+          git worktree add --detach "$RUNNER_TEMP/tagged" "$TAG_COMMIT"
+          ./scripts/real-api-check.sh verify-release "$RUNNER_TEMP/tagged"
 
   build-signed-artifacts:
     name: Build signed provider artifacts

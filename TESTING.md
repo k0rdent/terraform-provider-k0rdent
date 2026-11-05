@@ -313,6 +313,10 @@ or moves `ci/real-api/api-version` to a new API. A change to the provider alone
 doesn't, since its tests run against a fake that's known to match. A release
 does.
 
+`ci/real-api/paths` lists what each hash covers. The script reads it from the
+tree it checks, so a release branch's tag is held to that branch's own lists,
+and a change to the lists says so when the record is checked.
+
 | Variable | Value |
 | --- | --- |
 | `K0RDENT_ENDPOINT` | The stack's gateway, such as `http://localhost:14000` |

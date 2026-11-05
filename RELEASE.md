@@ -190,6 +190,11 @@ branch, `release-vMAJOR.MINOR.x`, so `main` can take new work meanwhile.
 
    `release-validate` builds an unsigned snapshot and checks its files.
 
+   Then run `make real-api-check` on that commit, against a kind stack
+   running the API version `ci/real-api/api-version` names, and merge the
+   `ci/real-api/record.json` it writes. "Validate release tag" refuses a tag
+   whose code the record doesn't cover.
+
    Then check an upgrade by hand, since CI doesn't. State written by the
    previous release, installed from the registry, must plan empty under the
    candidate with the previous release's configuration. Build the candidate
