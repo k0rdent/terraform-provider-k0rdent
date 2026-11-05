@@ -249,8 +249,8 @@ func (c coverage) names(k cellKey) []string {
 }
 
 // readRecord turns the record into coverage for the cells the schema needs.
-// A recorded update to a computed attribute isn't a cell, it's the platform
-// moving it, and a replacement counts as a change only to an attribute that
+// A recorded update to a computed attribute is the platform moving it, so it
+// fills no cell, and a replacement counts as a change only to an attribute that
 // sometimes replaces. unnamed is the cells recorded from a test the recorder
 // couldn't name.
 func readRecord(t *testing.T, file string, attrs map[string][]matrixAttr) (cov coverage, unnamed []string) {
