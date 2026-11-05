@@ -440,19 +440,6 @@
   },
 
   {
-    "operation": "GET /v1/regions/{region}/projects/{project}/networking/security-groups/{id} 200",
-    "field": "response $.ownerId",
-    "side": "real",
-    "reason": "Landscape data: the real leg read two VPC default groups by id, both of VPCs already in the kind project (the recorded paths end in -default), and only a platform-owned group answers these (services/compute/internal/model/security_group.go:181-187). The fake's walkthroughs read only tenant groups, and the fake answers both on a VPC's default group (security.go securityGroupJSON, TestEachVPCGetsItsOwnDefaultGroup). Read at datasource_managed_singulars.go:486-489."
-  },
-  {
-    "operation": "GET /v1/regions/{region}/projects/{project}/networking/security-groups/{id} 200",
-    "field": "response $.ownerKind",
-    "side": "real",
-    "reason": "Landscape data: the real leg read two VPC default groups by id, both of VPCs already in the kind project (the recorded paths end in -default), and only a platform-owned group answers these (services/compute/internal/model/security_group.go:181-187). The fake's walkthroughs read only tenant groups, and the fake answers both on a VPC's default group (security.go securityGroupJSON, TestEachVPCGetsItsOwnDefaultGroup). Read at datasource_managed_singulars.go:486-489."
-  },
-
-  {
     "operation": "GET /v1/regions/{region}/projects/{project}/networking/security-groups-effective 200",
     "field": "response $.vpcs[].securityGroupRules.*",
     "side": "real",
@@ -531,13 +518,5 @@
     "field": "response $.systemTags",
     "side": "real",
     "reason": "Not read: VPC.SystemTags (types.gen.go:11988) has no use in internal/provider."
-  },
-
-
-  {
-    "operation": "GET /v1/regions/{region}/storage/share-types 200",
-    "field": "response $.shareTypes[]*",
-    "side": "fake",
-    "reason": "Landscape data: the stack runs no storage service (the no-file-store gap the run names), so every real page was `shareTypes: []`. Read at datasource_share_types.go:160-312 (ShareType, types.gen.go:11476). The fake's catalog is what the acceptance tests read."
   }
 ]
