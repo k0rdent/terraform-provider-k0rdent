@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -54,11 +55,14 @@ func terraformForMigration(t *testing.T) string {
 
 // builtProvider builds the provider into a directory of its own, for a
 // dev_overrides block to point at. The build cache makes the second one cheap.
+// It waits the same provisional window as the provider served in process.
 func builtProvider(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
 	bin := filepath.Join(dir, "terraform-provider-"+provider.ProviderTypeName)
-	if out, err := exec.Command("go", "build", "-o", bin, "../..").CombinedOutput(); err != nil {
+	window := fmt.Sprintf("-X %s.linkedProvisionalFailureWindow=%s",
+		reflect.TypeFor[provider.Settings]().PkgPath(), provider.ProvisionalFailureWindow)
+	if out, err := exec.Command("go", "build", "-ldflags", window, "-o", bin, "../..").CombinedOutput(); err != nil {
 		t.Fatalf("building the provider: %v: %s", err, out)
 	}
 	return dir

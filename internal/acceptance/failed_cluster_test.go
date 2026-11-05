@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"runtime"
 	"testing"
+
+	"github.com/k0rdent/terraform-provider-k0rdent/internal/provider"
 )
 
 // A cluster the platform reports `failed`, through the real CLI. Each one is
@@ -17,10 +19,6 @@ import (
 // reserved stays `failed` and the apply fails, saying how to replace it. A
 // cluster a cancel left `failed` is TestAccCancelActionStopsAnUpgradeAndKeepsTheCluster's,
 // which plans nothing.
-//
-// The CLI runs its own build of the provider, which holds a cluster's
-// `failed` for the full provisional window, so the failing apply takes that
-// long.
 func TestAccAFailedClusterPlansAnUpdateThatWaitsForIt(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("the CLI sequence runs on unix")
@@ -33,9 +31,6 @@ func TestAccAFailedClusterPlansAnUpdateThatWaitsForIt(t *testing.T) {
 		{"acc-failed-reserve", createFails, "RESERVATION_FAILED", false},
 	} {
 		t.Run(tc.reason, func(t *testing.T) {
-			if testing.Short() && !tc.comesBack {
-				t.Skip("waits the full provisional window")
-			}
 			c := newCLIRun(t)
 			addr := clusterType + ".test"
 			failedOutside(t, tc.name, tc.markers)
@@ -57,7 +52,7 @@ func TestAccAFailedClusterPlansAnUpdateThatWaitsForIt(t *testing.T) {
 				t.Fatalf("the plan on the failed cluster was refused:\n%s", out)
 			}
 			mustSay(t, "the plan", out, fmt.Sprintf("Cluster %q is failed", tc.name), "reason "+tc.reason,
-				"can still bring it back to `active`", "`terraform apply` waits up to 2m",
+				"can still bring it back to `active`", "`terraform apply` waits up to "+provider.ProvisionalFailureWindow.String(),
 				"terraform apply -replace=<address>", "1 to change")
 
 			out, ok = c.run("apply", "-auto-approve")

@@ -79,10 +79,22 @@ const (
 )
 
 // ProvisionalFailureWindow is the window every new provider waits. Only the
-// acceptance suite lowers it, because its fake never recovers a failed object.
-// It is not keyed on a loopback endpoint: a kind stack serves the real platform
-// on localhost.
-var ProvisionalFailureWindow = DefaultProvisionalFailureWindow
+// acceptance suite lowers it, because its fake never recovers a failed object:
+// it sets this in process, and links linkedProvisionalFailureWindow into the
+// build it runs through the CLI. It is not keyed on a loopback endpoint: a
+// kind stack serves the real platform on localhost.
+var ProvisionalFailureWindow = linkedWindow(linkedProvisionalFailureWindow)
+
+// linkedProvisionalFailureWindow is set only with -ldflags -X. Release builds
+// leave it empty, which keeps the default.
+var linkedProvisionalFailureWindow string
+
+func linkedWindow(s string) time.Duration {
+	if d, err := time.ParseDuration(s); err == nil {
+		return d
+	}
+	return DefaultProvisionalFailureWindow
+}
 
 // Settings is the fully resolved provider configuration: every value that
 // reaches the client, after the provider block, the environment and the
