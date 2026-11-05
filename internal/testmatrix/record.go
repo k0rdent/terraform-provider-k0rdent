@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -456,16 +457,34 @@ func (r *recorder) PlanResourceChange(ctx context.Context, req *tfprotov6.PlanRe
 	for _, p := range resp.RequiresReplace {
 		f.Replaces = append(f.Replaces, attrPathString(p))
 	}
-	for path := range union(prior, config) {
-		// What a plan after an import keeps of it.
-		if writeOnly[path] && config[path] != "" || planned[path] == prior[path] {
-			f.Imported = append(f.Imported, path)
+	// What the plan moves of what state holds. A write-only value is never
+	// in state, so it's never here.
+	for path := range union(prior, planned) {
+		if planned[path] != prior[path] {
+			f.Moved = append(f.Moved, path)
 		}
 	}
-	for path := range union(prior, planned, config) {
-		// What it moves. A write-only value moves whenever it's set.
-		if writeOnly[path] || planned[path] != prior[path] {
-			f.Moved = append(f.Moved, path)
+	// Terraform replaces the object when a path RequiresReplace names moves,
+	// and otherwise updates it when anything moves.
+	f.Replacing = slices.ContainsFunc(f.Moved, func(p string) bool { return coveredBy(p, f.Replaces) })
+	if !f.Replacing {
+		for path := range union(prior, config) {
+			// What a plan after an import keeps of it. A replacement keeps
+			// nothing.
+			if writeOnly[path] && config[path] != "" || planned[path] == prior[path] {
+				f.Imported = append(f.Imported, path)
+			}
+		}
+	}
+	if len(f.Moved) > 0 && !f.Replacing {
+		// A write-only value reaches the provider only in an apply, and
+		// Terraform applies only a plan that moves something it stores. So
+		// a change to one alone plans nothing, and it's an update only
+		// beside one that does.
+		for path := range config {
+			if writeOnly[path] {
+				f.Moved = append(f.Moved, path)
+			}
 		}
 	}
 	sort.Strings(f.Imported)

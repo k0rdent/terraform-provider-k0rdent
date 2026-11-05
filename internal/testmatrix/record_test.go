@@ -17,8 +17,8 @@ import (
 
 // bindingServer answers like a resource with no id attribute, such as the
 // VPC security groups binding: its objects are told apart by vpc, project and
-// region. secret_wo is write-only. With replace, a change of security_groups
-// replaces it. A plan to attach "bad" fails.
+// region. secret_wo is write-only, and label changes in place. With replace, a
+// change of security_groups replaces it. A plan to attach "bad" fails.
 type bindingServer struct {
 	server
 	replace bool
@@ -32,6 +32,7 @@ var bindingSchema = &tfprotov6.Schema{Block: &tfprotov6.SchemaBlock{Attributes: 
 	{Name: "region", Type: tftypes.String, Optional: true, Computed: true},
 	{Name: "security_groups", Type: tftypes.Set{ElementType: tftypes.String}, Required: true},
 	{Name: "secret_wo", Type: tftypes.String, Optional: true, WriteOnly: true},
+	{Name: "label", Type: tftypes.String, Optional: true},
 }}}
 
 func (bindingServer) GetProviderSchema(context.Context, *tfprotov6.GetProviderSchemaRequest) (*tfprotov6.GetProviderSchemaResponse, error) {
@@ -74,10 +75,17 @@ func (bindingServer) ApplyResourceChange(_ context.Context, req *tfprotov6.Apply
 // binding is the binding on vpc with group attached, and secret as its
 // write-only value when it's a configuration.
 func binding(vpc, secret, group string) *tfprotov6.DynamicValue {
+	return labelled(vpc, secret, group, "")
+}
+
+// labelled is binding with label set, when it isn't empty.
+func labelled(vpc, secret, group, label string) *tfprotov6.DynamicValue {
 	typ := bindingSchema.ValueType()
-	wo := tftypes.NewValue(tftypes.String, nil)
-	if secret != "" {
-		wo = tftypes.NewValue(tftypes.String, secret)
+	str := func(s string) tftypes.Value {
+		if s == "" {
+			return tftypes.NewValue(tftypes.String, nil)
+		}
+		return tftypes.NewValue(tftypes.String, s)
 	}
 	dv, err := tfprotov6.NewDynamicValue(typ, tftypes.NewValue(typ, map[string]tftypes.Value{
 		"vpc":     tftypes.NewValue(tftypes.String, vpc),
@@ -86,7 +94,8 @@ func binding(vpc, secret, group string) *tfprotov6.DynamicValue {
 		"security_groups": tftypes.NewValue(tftypes.Set{ElementType: tftypes.String}, []tftypes.Value{
 			tftypes.NewValue(tftypes.String, group),
 		}),
-		"secret_wo": wo,
+		"secret_wo": str(secret),
+		"label":     str(label),
 	}))
 	if err != nil {
 		panic(err)
@@ -143,6 +152,20 @@ func (c command) planGroup(vpc, secret, group, planned string) {
 		PriorState:       binding(vpc, "", "default"),
 		ProposedNewState: binding(vpc, "", planned),
 		Config:           binding(vpc, secret, group),
+	}); err != nil {
+		c.t.Fatal(err)
+	}
+}
+
+// planValues plans the binding with these prior, planned and configured
+// values.
+func (c command) planValues(prior, planned, config *tfprotov6.DynamicValue) {
+	c.t.Helper()
+	if _, err := c.s.PlanResourceChange(context.Background(), &tfprotov6.PlanResourceChangeRequest{
+		TypeName:         bindingType,
+		PriorState:       prior,
+		ProposedNewState: planned,
+		Config:           config,
 	}); err != nil {
 		c.t.Fatal(err)
 	}
@@ -387,14 +410,44 @@ func TestEveryPlanOfOneCommandIsMeasuredAgainstTheOnesBefore(t *testing.T) {
 	}
 }
 
-// A write-only value changed from the last command's is an update, once.
-func TestAChangedWriteOnlyValueIsAnUpdate(t *testing.T) {
+// A write-only value is never in state, so a change to it alone plans no
+// change, Terraform applies nothing, and the provider never gets it: no
+// update. Beside a change Terraform applies, it's an update, once.
+func TestAWriteOnlyValueChangedAloneIsNoUpdate(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "record.jsonl")
 	start(t, file).apply("vpc-a", "one", "default")
 	c := start(t, file)
 	c.plan("vpc-a", "two")
-	c.plan("vpc-a", "two") // the apply's own plan, in the same provider
-	expect(t, "changed", recorded(t, file), "update secret_wo")
+	c.plan("vpc-a", "two")
+	expect(t, "alone", recorded(t, file))
+
+	file = filepath.Join(t.TempDir(), "record.jsonl")
+	start(t, file).apply("vpc-a", "one", "default")
+	c = start(t, file)
+	c.planValues(binding("vpc-a", "", "default"), labelled("vpc-a", "", "default", "web"), labelled("vpc-a", "two", "default", "web"))
+	c.planValues(binding("vpc-a", "", "default"), labelled("vpc-a", "", "default", "web"), labelled("vpc-a", "two", "default", "web"))
+	expect(t, "beside an update", recorded(t, file), "update label", "update secret_wo")
+}
+
+// A plan that replaces the object updates nothing in place: what else it
+// changes, write-only values included, is part of the new object.
+func TestAReplacingPlanUpdatesNothingInPlace(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "record.jsonl")
+	start(t, file).apply("vpc-a", "one", "default")
+	startWith(t, file, bindingServer{replace: true}).planValues(
+		binding("vpc-a", "", "default"), labelled("vpc-a", "", "web", "new"), labelled("vpc-a", "two", "web", "new"))
+	expect(t, "replace", recorded(t, file), "replace security_groups")
+}
+
+// A plan after an import that replaces the object keeps nothing it
+// imported, not even the write-only value its configuration sets.
+func TestAReplacingPlanAfterAnImportIsNoImport(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "record.jsonl")
+	c := startWith(t, file, bindingServer{replace: true})
+	c.importBinding("vpc-a")
+	c.read("vpc-a")
+	c.planGroup("vpc-a", "s3cret", "web", "web")
+	expect(t, "replaced", recorded(t, file))
 }
 
 // `terraform import`, then a plan with -refresh=false: the plan is the first
