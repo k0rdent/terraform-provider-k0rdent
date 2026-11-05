@@ -56,9 +56,12 @@ var (
 		inDeletingProject: func(w http.ResponseWriter, project string) {
 			recordedConflict(w, fmt.Sprintf("conflict: project %q is being deleted and cannot accept new clusters", project), "")
 		},
-		rows:      func(o *objects) table[*cluster] { return o.clusters },
-		advance:   (*objects).advance,
-		gone:      func(o *objects, c *cluster) { o.dropVPC("vpc-" + c.id) },
+		rows:    func(o *objects) table[*cluster] { return o.clusters },
+		advance: (*objects).advance,
+		gone: func(o *objects, c *cluster) {
+			o.dropOwnerNetwork("vpc-" + c.id)
+			o.dropVPC("vpc-" + c.id)
+		},
 		duplicate: alreadyExists("cluster", ""),
 	}
 
@@ -76,6 +79,7 @@ var (
 		rows:          func(o *objects) table[*instanceGroup] { return o.groups },
 		advance:       advanceGroup,
 		gone: func(o *objects, g *instanceGroup) {
+			o.dropOwnerNetwork("vpc-" + g.id)
 			o.dropVPC("vpc-" + g.id)
 			o.release(g)
 		},
