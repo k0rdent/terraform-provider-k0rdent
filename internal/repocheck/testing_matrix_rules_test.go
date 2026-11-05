@@ -88,6 +88,16 @@ func TestTheMatrixFailsOnABinaryThatWasntToldItsTest(t *testing.T) {
 	}
 }
 
+// A run where a test skipped names the tests and says to run them, not to
+// regenerate the page from a record that lacks their cells.
+func TestARecordWhereTestsSkippedNamesThem(t *testing.T) {
+	msg := unfinished("record.jsonl", []string{"TestAccQuery (terraform 1.13.0 has no `terraform query`)"})
+	if !strings.Contains(msg, "tests skipped: TestAccQuery (terraform 1.13.0 has no `terraform query`)") ||
+		strings.Contains(msg, matrixRegenerate) {
+		t.Fatalf("want the skipped test named and no %q, got %q", matrixRegenerate, msg)
+	}
+}
+
 func TestTheMatrixSaysWhichChangeASometimesReplacingAttributeSaw(t *testing.T) {
 	attrs := map[string][]matrixAttr{"example_thing": {{Path: "ssh_access", Kind: "optional", Replaces: replacesSometimes,
 		Needs: map[cell]bool{cellUpdate: true}}}}

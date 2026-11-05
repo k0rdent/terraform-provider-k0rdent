@@ -51,8 +51,9 @@ type touch struct {
 
 // Finish turns the facts every provider wrote into the record's import,
 // update and replace lines. Run it once the suite is done. complete says the
-// whole suite ran and passed, and only then does the record end with a
-// CellFinished line, which the check needs. For each object, over the
+// whole suite ran and passed, and only then, with no test skipped, does the
+// record end with a CellFinished line, which the check needs. A test that
+// skipped gets a CellSkipped line instead. For each object, over the
 // providers that touched it in the order they started:
 //
 //   - A provider follows an import when it made the import, or the one
@@ -73,6 +74,10 @@ func Finish(file string, complete bool) error {
 	if err != nil {
 		return err
 	}
+	keptMu.Lock()
+	skipped := skips[file]
+	delete(skips, file)
+	keptMu.Unlock()
 	for _, f := range facts {
 		k := key{f.Test, f.Resource, f.Object}
 		if objects[k] == nil {
@@ -135,11 +140,15 @@ func Finish(file string, complete bool) error {
 	sorted := slices.SortedFunc(maps.Keys(lines), func(a, b Line) int {
 		return strings.Compare(a.Test+"\x00"+a.Resource+"\x00"+a.Path+"\x00"+a.Cell, b.Test+"\x00"+b.Resource+"\x00"+b.Path+"\x00"+b.Cell)
 	})
-	values := make([]any, 0, len(sorted)+1)
+	values := make([]any, 0, len(sorted)+len(skipped)+1)
 	for _, l := range sorted {
 		values = append(values, l)
 	}
-	if complete {
+	slices.SortFunc(skipped, func(a, b Line) int { return cmp.Or(cmp.Compare(a.Test, b.Test), cmp.Compare(a.Why, b.Why)) })
+	for _, l := range slices.Compact(skipped) {
+		values = append(values, l)
+	}
+	if complete && len(skipped) == 0 {
 		values = append(values, Line{Cell: CellFinished})
 	}
 	return appendJSON(file, values)

@@ -408,6 +408,27 @@ func TestOnlyACompleteRunIsFinished(t *testing.T) {
 	}
 }
 
+// A test that skipped left its cells out, so the run isn't the whole
+// suite's, even though it passed: the record names the test and isn't
+// finished.
+func TestARunWhereATestSkippedIsNotFinished(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "record.jsonl")
+	start(t, file).apply("vpc-a", "", "default")
+	Skipped(file, "TestQuery", "terraform 1.13.0 has no `terraform query`")
+	Skipped(file, "TestQuery", "terraform 1.13.0 has no `terraform query`")
+	if err := Finish(file, true); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"test":"TestQuery","resource":"","path":"","cell":"skipped","why":"terraform 1.13.0 has no ` + "`terraform query`" + `"}` + "\n"
+	if string(b) != want {
+		t.Errorf("recorded\n%s\nwant\n%s", b, want)
+	}
+}
+
 // Every plan of one command is measured against the commands before it,
 // never against another plan of the same command, so their order doesn't
 // matter.

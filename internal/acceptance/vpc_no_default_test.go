@@ -28,7 +28,7 @@ resource %q "test" {
 // cluster, so one `terraform destroy` ends with nothing left.
 func TestAccABindingOnAVPCWithNoDefaultGroupDestroysInOneRun(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("the CLI sequence runs on unix")
+		skipTest(t, "the CLI sequence runs on unix")
 	}
 	const cluster, group = "acc-nodef-no-subnets", "acc-nodef-filter"
 	c := newCLIRun(t)
@@ -91,7 +91,7 @@ func TestAccABindingOnAVPCWithNoDefaultGroupDestroysInOneRun(t *testing.T) {
 // once, naming the VPC, as before.
 func TestAccAGroupHeldByAVPCThisRunDidntLeaveFailsFast(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("the CLI sequence runs on unix")
+		skipTest(t, "the CLI sequence runs on unix")
 	}
 	const cluster, group = "acc-nodef-held-no-subnets", "acc-nodef-held"
 	c := newCLIRun(t)
@@ -142,7 +142,7 @@ resource %q "test" {
 // before anything is written. A VPC with a default group doesn't.
 func TestAccAPlanWarnsBeforeBindingAVPCWithNoDefaultGroup(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("the CLI sequence runs on unix")
+		skipTest(t, "the CLI sequence runs on unix")
 	}
 	const warning = "This binding can't be taken off the VPC later"
 	for _, tc := range []struct {

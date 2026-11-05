@@ -11,7 +11,7 @@ import (
 // as null: Terraform fails the apply as an inconsistent result.
 func TestAccAnEmptyDisplayNameSurvivesAnUpdate(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("the CLI sequence runs on unix")
+		skipTest(t, "the CLI sequence runs on unix")
 	}
 	for _, tc := range []struct{ typeName, name string }{
 		{clusterType, "acc-empty-name-cluster"},

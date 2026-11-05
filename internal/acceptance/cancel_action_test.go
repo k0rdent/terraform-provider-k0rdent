@@ -32,7 +32,7 @@ import (
 var cancelAction = provider.ResourceName("cluster_cancel_operation")
 
 // actionsVersion is the first Terraform with actions.
-var actionsVersion = []tfversion.TerraformVersionCheck{tfversion.SkipBelow(tfversion.Version1_14_0)}
+var actionsVersion = []tfversion.TerraformVersionCheck{recordedVersionCheck{tfversion.SkipBelow(tfversion.Version1_14_0)}}
 
 // heldUpgradeCluster is an active cluster the fake holds mid-upgrade once an
 // upgrade is posted for it, and trigger, when set, is the configuration of a

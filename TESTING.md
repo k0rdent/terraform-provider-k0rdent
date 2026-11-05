@@ -123,7 +123,8 @@ make testing-matrix
 After a change to the gap list alone, `make testing-matrix-page` rewrites
 the page from the last run's record in `.testing-matrix/`, without the suite.
 Both refuse a record from a run that failed, ran only some tests or stopped
-early.
+early, or one where a test skipped, which the check names. A test here skips
+only through `skipTest`, which notes the skip in the record.
 
 ### `make demo`
 

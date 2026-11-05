@@ -51,14 +51,17 @@ var TestEnv = provider.EnvVar("TEST_MATRIX_TEST")
 // it is fails rather than losing its cells.
 const UnknownTest = "unknown"
 
-// The cells a line can name. CellFinished isn't a cell: Finish ends the
-// record with it, and the check refuses a record without it.
+// The cells a line can name. CellFinished and CellSkipped aren't cells:
+// Finish ends the record of a whole run with CellFinished, and the check
+// refuses a record without it. A CellSkipped line names a test that skipped,
+// and why, and a record with one isn't finished.
 const (
 	CellImport   = "import"
 	CellUpdate   = "update"
 	CellReplace  = "replace"
 	CellUpgrade  = "upgrade"
 	CellFinished = "finished"
+	CellSkipped  = "skipped"
 )
 
 // Line is one recorded cell.
@@ -67,6 +70,15 @@ type Line struct {
 	Resource string `json:"resource"`
 	Path     string `json:"path"`
 	Cell     string `json:"cell"`
+	Why      string `json:"why,omitempty"`
+}
+
+// Skipped notes that test skipped, and why, for Finish: its cells are
+// missing from file's record, so the run isn't the whole suite's.
+func Skipped(file, test, why string) {
+	keptMu.Lock()
+	defer keptMu.Unlock()
+	skips[file] = append(skips[file], Line{Test: test, Cell: CellSkipped, Why: why})
 }
 
 // server is what the framework's protocol 6 server implements. The recorder
@@ -216,10 +228,12 @@ func (r *recorder) note(ctx context.Context, typ string, st map[string]string, f
 	return nil
 }
 
-// kept is the facts of the providers in this process, by record file.
+// kept is the facts of the providers in this process, and skips the tests
+// that skipped, by record file.
 var (
 	keptMu sync.Mutex
 	kept   = map[string][]fact{}
+	skips  = map[string][]Line{}
 )
 
 func (r *recorder) emit(typ, cell string, paths []string) error {

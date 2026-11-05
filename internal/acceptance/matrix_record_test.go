@@ -1,12 +1,17 @@
 package acceptance
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -14,6 +19,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/providerserver"
 	"github.com/hashicorp/terraform-plugin-go/tfprotov6"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/tfversion"
 
 	"github.com/k0rdent/terraform-provider-k0rdent/internal/provider"
 	"github.com/k0rdent/terraform-provider-k0rdent/internal/testmatrix"
@@ -25,6 +31,10 @@ import (
 // See internal/testmatrix and docs/testing-matrix.md.
 var matrixRecord = flag.String("matrix-record", "",
 	"append the testing matrix cells each test exercises to this file")
+
+// matrixFile is -matrix-record's absolute path, once startMatrixRecord has
+// started the record.
+var matrixFile string
 
 // startMatrixRecord starts a fresh record when -matrix-record names one. The
 // binaries this run starts inherit the file through the environment, and each
@@ -46,6 +56,7 @@ func startMatrixRecord() error {
 	if err := os.Setenv(testmatrix.RecordEnv, file); err != nil {
 		return err
 	}
+	matrixFile = file
 	protoV6[provider.ProviderTypeName] = recording(file, protoV6[provider.ProviderTypeName])
 	return nil
 }
@@ -113,6 +124,33 @@ func finishMatrixRecord(code int) error {
 		return fmt.Errorf("finishing the matrix record: %w", err)
 	}
 	return nil
+}
+
+// skipTest skips t, and while the run records the testing matrix notes the
+// skip first, so the record of a run where a test skipped isn't taken for the
+// whole suite's. It's the one way a test here skips
+// (TestEveryAcceptanceSkipIsRecorded).
+func skipTest(t *testing.T, why string) {
+	t.Helper()
+	if matrixFile != "" {
+		name, _, _ := strings.Cut(t.Name(), "/")
+		testmatrix.Skipped(matrixFile, name, why)
+	}
+	t.Skip(why)
+}
+
+// recordedVersionCheck is a Terraform version check that notes a skip the
+// way skipTest does. terraform-plugin-testing runs the checks on the test's
+// goroutine, so the test is on the stack.
+type recordedVersionCheck struct {
+	tfversion.TerraformVersionCheck
+}
+
+func (c recordedVersionCheck) CheckTerraformVersion(ctx context.Context, req tfversion.CheckTerraformVersionRequest, resp *tfversion.CheckTerraformVersionResponse) {
+	c.TerraformVersionCheck.CheckTerraformVersion(ctx, req, resp)
+	if resp.Skip != "" && matrixFile != "" {
+		testmatrix.Skipped(matrixFile, callingTest(), resp.Skip)
+	}
 }
 
 // matrixTestEnv is what a built provider binary needs in its environment to
@@ -184,5 +222,58 @@ func TestAccAPlanAfterAnImportStepFollowsNoImport(t *testing.T) {
 		if l.Cell == testmatrix.CellImport {
 			t.Errorf("the PlanOnly step after the import step is credited with importing %s", l.Path)
 		}
+	}
+}
+
+// A test here skips only through skipTest, or a version check through
+// recordedVersionCheck, so a run where one skipped never passes for the
+// whole suite in the testing matrix's record.
+func TestEveryAcceptanceSkipIsRecorded(t *testing.T) {
+	files, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fset := token.NewFileSet()
+	for _, name := range files {
+		f, err := parser.ParseFile(fset, name, nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var allowed []ast.Node
+		ast.Inspect(f, func(n ast.Node) bool {
+			switch n := n.(type) {
+			case *ast.FuncDecl:
+				if n.Name.Name == "skipTest" {
+					allowed = append(allowed, n)
+				}
+			case *ast.CompositeLit:
+				if id, ok := n.Type.(*ast.Ident); ok && id.Name == "recordedVersionCheck" {
+					allowed = append(allowed, n)
+				}
+			}
+			return true
+		})
+		inside := func(n ast.Node) bool {
+			return slices.ContainsFunc(allowed, func(a ast.Node) bool { return a.Pos() <= n.Pos() && n.End() <= a.End() })
+		}
+		ast.Inspect(f, func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			sel, ok := call.Fun.(*ast.SelectorExpr)
+			if !ok || inside(sel) {
+				return true
+			}
+			x, isIdent := sel.X.(*ast.Ident)
+			switch {
+			case slices.Contains([]string{"Skip", "Skipf", "SkipNow"}, sel.Sel.Name):
+				t.Errorf("%s: %s skips without noting it in the testing matrix's record: use skipTest", fset.Position(sel.Pos()), sel.Sel.Name)
+			case isIdent && x.Name == "tfversion" && strings.HasPrefix(sel.Sel.Name, "Skip"):
+				t.Errorf("%s: tfversion.%s skips without noting it in the testing matrix's record: wrap it in recordedVersionCheck",
+					fset.Position(sel.Pos()), sel.Sel.Name)
+			}
+			return true
+		})
 	}
 }

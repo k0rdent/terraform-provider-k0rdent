@@ -267,6 +267,7 @@ func readRecord(t *testing.T, file string, attrs map[string][]matrixAttr) (cov c
 		}
 	}
 	cov = coverage{}
+	var skipped []string
 	seenUnnamed := map[string]bool{}
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
@@ -279,6 +280,10 @@ func readRecord(t *testing.T, file string, attrs map[string][]matrixAttr) (cov c
 		}
 		if l.Cell == testmatrix.CellFinished {
 			finished = true
+			continue
+		}
+		if l.Cell == testmatrix.CellSkipped {
+			skipped = append(skipped, fmt.Sprintf("%s (%s)", l.Test, l.Why))
 			continue
 		}
 		if l.Test == testmatrix.UnknownTest {
@@ -311,10 +316,20 @@ func readRecord(t *testing.T, file string, attrs map[string][]matrixAttr) (cov c
 		t.Fatalf("%s is empty, so the suite recorded nothing. Did it run with -matrix-record?", file)
 	}
 	if !finished {
-		t.Fatalf("%s has no %q line: the run that wrote it failed, ran only some tests or stopped early, so its cells aren't the suite's. Run make testacc", file, testmatrix.CellFinished)
+		t.Fatal(unfinished(file, skipped))
 	}
 	sort.Strings(unnamed)
 	return cov, unnamed
+}
+
+// unfinished says why a record with no finished line isn't the suite's.
+func unfinished(file string, skipped []string) string {
+	if len(skipped) > 0 {
+		return fmt.Sprintf("%s isn't the whole suite's, since tests skipped: %s. "+
+			"Run make testacc where none of them skips", file, strings.Join(skipped, ", "))
+	}
+	return fmt.Sprintf("%s has no %q line: the run that wrote it failed, ran only some tests or stopped early, "+
+		"so its cells aren't the suite's. Run make testacc", file, testmatrix.CellFinished)
 }
 
 // readGaps reads the gap list: one cell per line, as cellKey writes it, with
