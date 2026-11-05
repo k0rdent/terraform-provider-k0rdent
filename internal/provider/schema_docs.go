@@ -600,17 +600,26 @@ func (w factWriter) replacementSentence(ctx context.Context, v reflect.Value, sc
 	if w.guarded {
 		guard = " (needs `" + allowReplaceAttribute + " = true`)"
 	}
+	when, sometimes := replacementCondition(descs)
+	if scope || !sometimes {
+		return "**Forces replacement**" + guard + "."
+	}
+	return "**Can force replacement**" + guard + ": " + when + "."
+}
+
+// replacementCondition reads an attribute's replacement modifiers'
+// descriptions: whether only some changes replace the resource, and which,
+// without the closing full stop. A modifier that doesn't say, or says the
+// framework's default, replaces on every change.
+func replacementCondition(descs []string) (string, bool) {
 	var when []string
 	for _, d := range descs {
 		if d == "" || d == requiresReplaceDescription {
-			return "**Forces replacement**" + guard + "."
+			return "", false
 		}
 		when = append(when, strings.TrimSuffix(lowerFirst(d), "."))
 	}
-	if scope {
-		return "**Forces replacement**" + guard + "."
-	}
-	return "**Can force replacement**" + guard + ": " + strings.Join(when, ", and ") + "."
+	return strings.Join(when, ", and "), len(when) > 0
 }
 
 // appendFacts adds the sentences to the end of the description, once. A

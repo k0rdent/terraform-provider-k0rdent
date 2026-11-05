@@ -7,7 +7,7 @@ description: |-
   Creating this does not connect anything on its own. The project that owns remote_vpc has to declare its own mirrored peering pointing back, and until it does the peering is half-open. That is a normal state, not an error, and this side's state can't show it. The mirror is listed under remote_vpc, so after a create the provider lists that VPC's peerings: when it finds an active one pointing back it says nothing, and otherwise it warns, saying what it found. It reads only a remote_vpc in this peering's own region and project. For one anywhere else, or one whose read is refused, the warning says so and the far side has to be confirmed out of band.
   A peering outlives the VPC it points at. If the remote VPC's owning cluster is deleted, this object survives, still active, naming a VPC that is gone, carrying no traffic. The platform will not remove it on the strength of another project's delete. Destroying it, or destroying the owner of the local VPC, is what clears it.
   Requires region and project on the provider.
-  What replaces it. Changing description, display_name, id, project, region, remote_vpc, tags or vpc cannot be done in place and replaces the peering. Everything else changes in place.
+  What replaces it. Changing description, display_name, id, project, region or vpc cannot be done in place and replaces the peering. Some changes to remote_vpc or tags replace it too, and the others are made in place. remote_vpc: replaces the peering unless the new value names the same VPC. tags: replaces the resource when the tags the platform would hold change, and not when it writes out a tag the provider's default_tags already supplies with the same value, or leaves one there. Everything else changes in place.
 ---
 
 # k0rdent_vpc_peering (Resource)
@@ -20,7 +20,7 @@ One side of a peering between two VPCs in the same region.
 
 Requires `region` and `project` on the provider.
 
-**What replaces it.** Changing `description`, `display_name`, `id`, `project`, `region`, `remote_vpc`, `tags` or `vpc` cannot be done in place and replaces the peering. Everything else changes in place.
+**What replaces it.** Changing `description`, `display_name`, `id`, `project`, `region` or `vpc` cannot be done in place and replaces the peering. Some changes to `remote_vpc` or `tags` replace it too, and the others are made in place. `remote_vpc`: replaces the peering unless the new value names the same VPC. `tags`: replaces the resource when the tags the platform would hold change, and not when it writes out a tag the provider's `default_tags` already supplies with the same value, or leaves one there. Everything else changes in place.
 
 ## Example Usage
 
@@ -66,7 +66,7 @@ resource "k0rdent_vpc_peering" "to_inference" {
 
 - `remote_vpc` (String) The counterpart VPC: its id, for one in this peering's own region and project, or its `self_link`, for one anywhere else.
 
-Name a VPC in the same project by id, through the `vpc` attribute of the cluster or instance group that brought it. That stays known while the owner changes, so renaming it replaces no peering. A `self_link` read from the `k0rdent_vpc` data source does not: Terraform reads the data source during the apply when the owner has a change pending, and a value it doesn't know at plan replaces the peering. The provider sends an id as the URI the API takes, built from the contract's path for a VPC. Moving between an id and the `self_link` of the same VPC replaces nothing.
+Name a VPC in the same project by id, through the `vpc` attribute of the cluster or instance group that brought it. That stays known while the owner changes, so renaming it replaces no peering. A `self_link` read from the `k0rdent_vpc` data source does not: Terraform reads the data source during the apply when the owner has a change pending, and a value it doesn't know at plan replaces the peering. The provider sends an id as the URI the API takes, built from the contract's path for a VPC. Moving between an id, a `self_link`, and a path or absolute URL that name the same VPC replaces nothing: the plan is an in-place update, and the apply only reads the peering back.
 
 It must be an `active` VPC in the same region, and not the local one. It may be in a project you have no permission on, because declaring this side is not by itself enough to establish the peering. **Can force replacement**: replaces the peering unless the new value names the same VPC. **Constraints:** An id must be lower-case letters, digits and hyphens, starting with a letter and not ending with a hyphen. A self_link is sent as written.
 - `vpc` (String) Id of the local VPC this peering is declared under. Find it with the `k0rdent_vpcs` data source: a VPC is materialized by a cluster or instance group, never created directly. **Forces replacement**. **Constraints:** Must be lower-case letters, digits and hyphens, starting with a letter and not ending with a hyphen (`[a-z]([-a-z0-9]*[a-z0-9])?`), because it becomes a segment of a request URL.

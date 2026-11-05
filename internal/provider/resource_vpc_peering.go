@@ -168,7 +168,9 @@ func (r *vpcPeeringResource) Schema(ctx context.Context, _ resource.SchemaReques
 					"data source during the apply when the owner has a change pending, and a value " +
 					"it doesn't know at plan replaces the peering. The provider sends an id as the " +
 					"URI the API takes, built from the contract's path for a VPC. Moving between an " +
-					"id and the `self_link` of the same VPC replaces nothing.\n\n" +
+					"id, a `self_link`, and a path or absolute URL that name the same VPC replaces " +
+					"nothing: the plan is an in-place update, and the apply only reads the peering " +
+					"back.\n\n" +
 					"It must be an `active` VPC in the same region, and not the local one. It may " +
 					"be in a project you have no permission on, because declaring this side is " +
 					"not by itself enough to establish the peering.",

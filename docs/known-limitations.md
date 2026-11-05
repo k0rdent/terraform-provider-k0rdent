@@ -116,6 +116,22 @@ Use 1.16.5 or later, or OpenTofu, which doesn't have it.
 If it already happened, [import](guides/import.md) each resource the run
 created, then keep it or destroy it.
 
+## A refused plan stops `terraform destroy` too
+
+`terraform destroy` plans as if applying before it plans the delete, so a
+refusal in that plan stops the destroy as well. These refusals happen at plan
+on purpose: a replacement deletes the old object before it makes the new one,
+so a refusal at apply would come after the delete.
+
+- A change that replaces a cluster, instance group, file store, subnet,
+  network or project, without `allow_replace = true`
+- A smaller `capacity_gib` on a file store
+- A `cluster_type` version earlier than the cluster's
+- A `region` that isn't the project's
+
+Set the configuration back to what's applied, or run
+`terraform destroy -refresh=false`, which destroys from state as it is.
+
 ## Values you still have to hardcode
 
 Some values can't be read with a tenant credential, so a configuration has to

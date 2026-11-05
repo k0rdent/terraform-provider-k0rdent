@@ -216,7 +216,12 @@ func (r *clusterResource) Schema(ctx context.Context, _ resource.SchemaRequest, 
 					"apply waits out each before the next, skipping any `draft` or `deprecated` " +
 					"version between. The update timeout bounds the whole apply. If a step fails, the " +
 					"apply stops, state records the version the cluster reached, and nothing is " +
-					"deleted; the platform does not retry an upgrade from `failed`.\n\n" +
+					"deleted; the platform does not retry an upgrade from `failed`. So while the platform " +
+					"reports the cluster `failed`, a plan that pins another version of its ClusterType " +
+					"fails with \"" + versionRefusal + "\", whatever `on_failed` and `allow_replace` " +
+					"say. That includes the plan after a failed step, until you set `cluster_type` back " +
+					"to the version in `cluster_type_resolved`, the one the error names. Pin the later " +
+					"version again once the platform reports the cluster `active`.\n\n" +
 					"Node count changes in the same apply are made before or after each step, " +
 					"wherever the versions' node pool bounds admit them, since a scale is checked " +
 					"against the version the cluster is on and an upgrade against the one it moves " +
