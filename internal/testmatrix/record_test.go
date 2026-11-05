@@ -117,7 +117,7 @@ func start(t *testing.T, file string) command {
 
 func startWith(t *testing.T, file string, b bindingServer) command {
 	t.Helper()
-	s, err := Wrap(b, file, "TestBindings")
+	s, err := Wrap(b, file, "TestBindings", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -326,6 +326,23 @@ func TestAnImportInAnotherDirectoryIsNotThisOnes(t *testing.T) {
 	expect(t, "other directory", recorded(t, file))
 }
 
+// In process every provider runs in the test's directory, so a workspace
+// named on Wrap stands for the working directory it can't see: an import
+// there isn't followed by a plan in the test's other steps'.
+func TestANamedWorkspaceKeepsAnImportToItself(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "record.jsonl")
+	start(t, file).apply("vpc-a", "", "default")
+	s, err := Wrap(bindingServer{}, file, "TestBindings", "import step 1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	imp := command{t, s}
+	imp.importBinding("vpc-a")
+	imp.read("vpc-a")
+	start(t, file).plan("vpc-a", "")
+	expect(t, "import step", recorded(t, file))
+}
+
 // A plan that moves an imported value doesn't keep it, so it isn't credited
 // with importing it.
 func TestAnImportedValueThePlanMovesIsNoImport(t *testing.T) {
@@ -476,7 +493,7 @@ func TestAPlanInTheCommandAfterAnImportFollowsIt(t *testing.T) {
 // objects, so the recorder refuses it rather than mixing them up.
 func TestAResourceWithNoIdentityFailsTheRecord(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "record.jsonl")
-	s, err := Wrap(noIdentityServer{}, file, "TestBindings")
+	s, err := Wrap(noIdentityServer{}, file, "TestBindings", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -517,7 +534,7 @@ func TestOnlyAStateFromAnOlderVersionIsAnUpgrade(t *testing.T) {
 		1: nil,
 	} {
 		file := filepath.Join(t.TempDir(), "record.jsonl")
-		s, err := Wrap(versionedServer{}, file, "TestBindings")
+		s, err := Wrap(versionedServer{}, file, "TestBindings", "")
 		if err != nil {
 			t.Fatal(err)
 		}

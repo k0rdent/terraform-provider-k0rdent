@@ -1,15 +1,19 @@
 package acceptance
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"testing"
 
+	"github.com/hashicorp/terraform-plugin-framework/providerserver"
 	"github.com/hashicorp/terraform-plugin-go/tfprotov6"
+	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 
 	"github.com/k0rdent/terraform-provider-k0rdent/internal/provider"
 	"github.com/k0rdent/terraform-provider-k0rdent/internal/testmatrix"
@@ -42,18 +46,49 @@ func startMatrixRecord() error {
 	if err := os.Setenv(testmatrix.RecordEnv, file); err != nil {
 		return err
 	}
-	inner := protoV6[provider.ProviderTypeName]
-	protoV6[provider.ProviderTypeName] = func() (tfprotov6.ProviderServer, error) {
+	protoV6[provider.ProviderTypeName] = recording(file, protoV6[provider.ProviderTypeName])
+	return nil
+}
+
+// recording is factory with the recorder around each server it makes,
+// recording to file.
+func recording(file string, factory func() (tfprotov6.ProviderServer, error)) func() (tfprotov6.ProviderServer, error) {
+	return func() (tfprotov6.ProviderServer, error) {
 		// terraform-plugin-testing calls the factory on the test's own
-		// goroutine, so the test is on the stack.
-		test := callingTest()
-		s, err := inner()
+		// goroutine, so the test and its step are on the stack.
+		test, workspace := callingTest(), importStepWorkspace()
+		s, err := factory()
 		if err != nil {
 			return s, err
 		}
-		return testmatrix.Wrap(s, file, test)
+		return testmatrix.Wrap(s, file, test, workspace)
 	}
-	return nil
+}
+
+// importSteps numbers the providers import steps start.
+var importSteps atomic.Int64
+
+// importStepWorkspace names a working directory of its own for a provider an
+// import step starts, and is empty for any other. terraform-plugin-testing
+// runs an import step in a new directory (testing_new_import_state.go), but a
+// provider served in process can't see it, and the recorder would take it to
+// be the test's other steps' directory. Each provider gets its own name,
+// since no command of an import step follows another's import: the one that
+// plans imports too. With ImportStatePersist the step runs in the test's
+// directory after all, and then a plan after it without a read is only not
+// credited with the import.
+func importStepWorkspace() string {
+	pcs := make([]uintptr, 64)
+	frames := runtime.CallersFrames(pcs[:runtime.Callers(2, pcs)])
+	for {
+		f, more := frames.Next()
+		if strings.HasSuffix(f.Function, "terraform-plugin-testing/helper/resource.testStepNewImportState") {
+			return fmt.Sprintf("import step %d", importSteps.Add(1))
+		}
+		if !more {
+			return ""
+		}
+	}
 }
 
 // finishMatrixRecord writes the record's import, update and replace lines
@@ -104,6 +139,50 @@ func callingTest() string {
 		}
 		if !more {
 			return testmatrix.UnknownTest
+		}
+	}
+}
+
+// An import step runs in a working directory of its own, so a plan in the
+// test's directory after it, with no read in between, follows no import: a
+// PlanOnly step's first plan doesn't refresh. The test records to a file of
+// its own, through the same factory the suite's record uses.
+func TestAccAPlanAfterAnImportStepFollowsNoImport(t *testing.T) {
+	const id = "acc-matrix-import-step"
+	file := filepath.Join(t.TempDir(), "record.jsonl")
+	config := projectConfig(id, "Import step", "the matrix recorder's import step")
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: map[string]func() (tfprotov6.ProviderServer, error){
+			provider.ProviderTypeName: recording(file, providerserver.NewProtocol6WithError(provider.New("acc")())),
+		},
+		CheckDestroy: checkGone(projectType, projectPath),
+		Steps: []resource.TestStep{
+			{Config: config},
+			{
+				Config:                  config,
+				ResourceName:            projectAddr,
+				ImportState:             true,
+				ImportStateId:           id,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"timeouts"},
+			},
+			{Config: config, PlanOnly: true},
+		},
+	})
+	if err := testmatrix.Finish(file, true); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, line := range strings.Split(strings.TrimSpace(string(b)), "\n") {
+		var l testmatrix.Line
+		if err := json.Unmarshal([]byte(line), &l); err != nil {
+			t.Fatal(err)
+		}
+		if l.Cell == testmatrix.CellImport {
+			t.Errorf("the PlanOnly step after the import step is credited with importing %s", l.Path)
 		}
 	}
 }

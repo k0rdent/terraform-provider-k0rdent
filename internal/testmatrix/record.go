@@ -78,9 +78,19 @@ type server interface {
 }
 
 // Wrap returns s with the recorder around it, recording to file under test.
-// It keeps its facts in memory for Finish, in this process.
-func Wrap(s tfprotov6.ProviderServer, file, test string) (tfprotov6.ProviderServer, error) {
-	return wrap(s, file, test, false)
+// It keeps its facts in memory for Finish, in this process. Every provider
+// served in process runs in the test's directory, whatever Terraform's
+// working directory is, so a non-empty workspace names the working directory
+// when it isn't the test's other steps'.
+func Wrap(s tfprotov6.ProviderServer, file, test, workspace string) (tfprotov6.ProviderServer, error) {
+	r, err := wrap(s, file, test, false)
+	if err != nil {
+		return nil, err
+	}
+	if workspace != "" {
+		r.dir += "\x00" + workspace
+	}
+	return r, nil
 }
 
 // wrap is Wrap, writing the facts to files when toFile says Finish runs in
@@ -143,8 +153,8 @@ type recorder struct {
 	instance   string
 	started    int64
 	// dir is the provider's working directory: a built binary's is its
-	// workspace. In process it's the test's, the same for every workspace,
-	// so there the rules that compare directories can't tell them apart.
+	// workspace. In process it's the test's, with the workspace Wrap was
+	// given, if any.
 	dir    string
 	toFile bool
 
