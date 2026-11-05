@@ -36,10 +36,8 @@ func startMatrixRecord() error {
 	if err := os.WriteFile(file, nil, 0o600); err != nil {
 		return fmt.Errorf("starting the matrix record: %w", err)
 	}
-	for _, dir := range []string{file + ".memory", file + ".facts"} {
-		if err := os.RemoveAll(dir); err != nil {
-			return fmt.Errorf("clearing the last run's matrix memory: %w", err)
-		}
+	if err := os.RemoveAll(file + ".facts"); err != nil {
+		return fmt.Errorf("clearing the last run's matrix facts: %w", err)
 	}
 	if err := os.Setenv(testmatrix.RecordEnv, file); err != nil {
 		return err

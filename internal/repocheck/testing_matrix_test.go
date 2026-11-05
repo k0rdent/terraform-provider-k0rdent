@@ -270,12 +270,16 @@ func readRecord(t *testing.T, file string, attrs map[string][]matrixAttr) (cov c
 	seenUnnamed := map[string]bool{}
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-	lines := 0
+	lines, finished := 0, false
 	for sc.Scan() {
 		lines++
 		var l testmatrix.Line
 		if err := json.Unmarshal(sc.Bytes(), &l); err != nil {
 			t.Fatalf("%s line %d: %v", file, lines, err)
+		}
+		if l.Cell == testmatrix.CellFinished {
+			finished = true
+			continue
 		}
 		if l.Test == testmatrix.UnknownTest {
 			if !seenUnnamed[l.Resource] {
@@ -305,6 +309,9 @@ func readRecord(t *testing.T, file string, attrs map[string][]matrixAttr) (cov c
 	}
 	if lines == 0 {
 		t.Fatalf("%s is empty, so the suite recorded nothing. Did it run with -matrix-record?", file)
+	}
+	if !finished {
+		t.Fatalf("%s has no %q line, so the suite stopped before it could write its import, update and replace cells. Run it again", file, testmatrix.CellFinished)
 	}
 	sort.Strings(unnamed)
 	return cov, unnamed
