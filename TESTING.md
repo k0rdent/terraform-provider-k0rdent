@@ -45,6 +45,7 @@ Fastest first:
 | `make testacc` | Each resource's lifecycle works through real Terraform |
 | `make plan-quality` | Refresh-only plans find nothing, and plans stay within the unknown budget |
 | `make walkthrough-test` | The hardware walkthrough's directories work as the page says |
+| `make upgrade-test` | State from the previous release plans empty under this tree, but for accepted changes |
 | `make bench` | Plan, refresh and apply stay within the performance budget at 10 to 1,000 resources |
 
 CI also runs `make docs-check`, `make doc-commands`, `make client-check`,
@@ -52,7 +53,8 @@ CI also runs `make docs-check`, `make doc-commands`, `make client-check`,
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) lists them all.
 `make help` says what each target does.
 
-None of these prove the real API behaves like the fake. The live tests do.
+None of these prove the real API behaves like the fake.
+[`make real-api-check`](#make-real-api-check) and the other live tests do.
 
 ### `make check`
 
@@ -135,6 +137,42 @@ pull request.
 Follow [docs/walkthrough-hardware.md](docs/walkthrough-hardware.md) and
 [docs/walkthrough-api.md](docs/walkthrough-api.md) against the fake. A page
 that no longer matches its directories or commands fails here.
+
+### `make upgrade-test`
+
+Applies each walkthrough directory, as the previous release shipped it, with
+the previous release from the public registry. Then it switches to this
+tree's build and plans again. Runs under `terraform` and `tofu`, and needs the
+network.
+
+- The previous release is the newest one both registries serve, leaving out
+  a tag on `HEAD`. For a pull request into, or a push to, a `release-vX.Y.x`
+  branch it's the newest up to X.Y. Locally, a branch with commits from a
+  release branch counts as that branch. A tag either registry doesn't serve
+  yet is skipped, with a warning on the run.
+- A finding is a planned change, a changed output, drift, a failing
+  `show -json` of the old state, or a plan that fails. Drift is an attribute
+  the new build reads back differently, such as a renamed one. Drift the
+  previous release sees on its own state too is the fake's, and isn't one.
+- The directories are the previous release's, except `nodes/`. A variable
+  in a `terraform.tfvars` that `scripts/lib/walkthrough.sh` doesn't fill in
+  fails the run.
+- Every resource type the previous release registers has to end up in some
+  directory's state.
+- `DIRS="look cluster"` runs only those directories, and skips the coverage
+  check. `UPGRADE_KEEP=1` keeps the run directory.
+
+**Accepting a change**, when it's meant and the upgrade notes say so: add it
+to `changes` in `ci/upgrade-accepted.json`, with the release it's from, the
+directory, the change as the run prints it and a reason. The release has to
+be the one the check upgrades from by default: an entry for any other fails
+the run, as does one nothing matches. So once a new release ships, its
+entries go. A resource type no directory can create goes under
+`not_covered`, with a reason.
+
+`PREVIOUS=0.1.0-rc.1` upgrades from another release. The file only holds
+changes from the default, so such a run reports every change from that
+release, accepted or not. Read it, don't gate on it.
 
 ### `make bench`
 
@@ -223,6 +261,128 @@ PASS  destroy
 
 The upgrade steps need two or more `available` versions of the cluster type.
 With fewer, they're SKIP.
+
+### `make real-api-check`
+
+The acceptance tests run against the fake, so they're only as good as the
+fake's answers. This check runs the same Terraform against the fake and
+against the real API on a local kind stack, and compares the shape of every
+answer: each field's path and JSON type, never a value. Then it runs
+`make live` against the stack. It refuses an endpoint that isn't on
+localhost.
+
+It runs:
+
+- `look/` and every directory of `examples/walkthrough` the fake can apply,
+  each applied, planned again and destroyed
+- A cluster and an instance group with write-only SSH keys, applied, removed
+  from state, imported and planned again (`ci/real-api/lifecycle`)
+- `fakedrift compare` on the two recordings
+- `make live` against the stack
+
+Each difference `fakedrift` finds is either fixed in the fake or listed in
+`ci/fake-drift-accepted.json` with a reason. A listed difference that no
+longer turns up fails the check too, so the list can't go stale.
+
+When every step passes, the check writes `ci/real-api/record.json`. Commit it
+with the change. The record holds two hashes:
+
+| Hash | Covers | CI checks it |
+| --- | --- | --- |
+| `fake` | The fake, the API client and its spec, `fakedrift`, the accepted list, the lifecycle and the script | On every pull request, with the API version in `ci/real-api/api-version` |
+| `code` | Everything in `fake`, plus the provider, `make live` and the walkthroughs | Before a release, with `scripts/real-api-check.sh verify-release` |
+
+So a pull request needs a new run when it changes the fake or the API client,
+or moves `ci/real-api/api-version` to a new API. A change to the provider alone
+doesn't, since its tests run against a fake that's known to match. A release
+does.
+
+`ci/real-api/paths` lists what each hash covers. The script reads it from the
+tree it checks, so a release branch's tag is held to that branch's own lists,
+and a change to the lists says so when the record is checked.
+
+#### Set up the stack
+
+`make real-api-stack` builds the stack on a kind cluster from the platform
+API's source, and writes an env file that sets every variable the check reads.
+You need:
+
+- Read access to the platform API's source repository, and a GitHub token
+  with `read:packages` for its images on `ghcr.io`. Both are private to the
+  GitHub organization. Ask a platform maintainer for the repository and for
+  access to it.
+- Docker, kind, kubectl, helm, jq and curl, as well as what [Set up](#set-up)
+  installs. The API source's `go.work` names the Go it builds with, 1.27.3 at
+  v1.3.0-rc.7. An older Go downloads that version the first time, as Go does
+  by default.
+
+1. Check out the API's source at the version `ci/real-api/api-version` names,
+   and point the setup at it:
+
+   ```sh
+   export REAL_API_SOURCE=<path to the API source>
+   git -C "$REAL_API_SOURCE" fetch --tags
+   git -C "$REAL_API_SOURCE" checkout "$(cat ci/real-api/api-version)"
+   ```
+
+2. Log docker in to `ghcr.io`. The user is your GitHub user, and the password a
+   token with `read:packages`:
+
+   ```sh
+   docker login ghcr.io
+   ```
+
+3. Build the stack. On an M-series Mac the first run took six minutes,
+   mostly pulling images and installing. A run on a built stack took one:
+
+   ```sh
+   make real-api-stack
+   ```
+
+- It creates the kind cluster `k0rdent-rc5` and adds 6000 to every forwarded
+  port, so the gateway is on `localhost:14000`. `REAL_API_KIND_CLUSTER` and
+  `REAL_API_PORT_OFFSET` change them. It refuses a kind cluster of that name
+  it didn't make, unless that cluster already runs the API or
+  `REAL_API_KIND_REUSE=1` is set.
+- It installs the API in mock mode, with the source's kind values and a mock
+  identity provider. The secrets in those values are throwaway ones the
+  source ships, so there's nothing to supply.
+- It seeds a machine type, an address pool, and two cluster types:
+  `seed-ct-local` with three versions for `make live`, and `kind-ct-subnets`
+  with subnets for `full/`. It signs in as the mock identity provider's
+  administrator to do it.
+- It issues the two service accounts and writes `.live/real-api-kind.env`,
+  mode 600, which git ignores. `REAL_API_ENV_FILE` puts it elsewhere.
+- Run it again to restart the port-forwards after Docker or the machine
+  restarts. It reuses what's there, writes the env file again, and issues new
+  credentials only when the old ones stop working.
+- `REAL_API_FRESH=1 make real-api-stack` deletes the cluster and builds it
+  again. It deletes only a cluster it made, not one it found and installed
+  into. Use it when `make real-api-check` says the stack holds what an
+  earlier run left, as an interrupted run does. The check refuses such a
+  stack before it starts, since `look/` would read those objects and the
+  comparison would count them.
+
+Then run the check with the env file:
+
+```sh
+. .live/real-api-kind.env
+make real-api-check
+git add ci/real-api/record.json
+```
+
+For a stack built another way, set the variables yourself:
+
+| Variable | Value |
+| --- | --- |
+| `K0RDENT_ENDPOINT` | The stack's gateway, such as `http://localhost:14000` |
+| `K0RDENT_REGION` | A region the stack serves |
+| `K0RDENT_PROJECT` | A project to build in |
+| `K0RDENT_CLIENT_ID`, `K0RDENT_CLIENT_SECRET` | A service account scoped to that project, with `compute-admin` and `credentials-admin`, so an import can check SSH keys |
+| `REAL_API_ORG_CLIENT_ID`, `REAL_API_ORG_CLIENT_SECRET` | A service account scoped to the organization, with `compute-admin`, `organizations-admin` and `iam-viewer`, for the walkthroughs, as `docs/walkthrough-hardware.md` lists them |
+| `REAL_API_CLUSTER_TYPE` | A cluster type in the region with a worker pool and two or more `available` versions. `make live` uses it too, and a skipped step fails the check |
+| `REAL_API_WALKTHROUGH_GAPS` | What the stack can't do that a walkthrough asks for. `subnet-cidr`: the stack answers a subnet's CIDR without allocating it from the pool, so `full/` doesn't check it. `no-file-store`: no storage service, so `full-everything` leaves `file_store` off. `no-hosts`: no server for an instance group's host, so `full-everything` leaves `instance_group` and `vpc_peering` off. A kind stack needs all three. The record lists them. Default none |
+| `REAL_API_KUBE_CONTEXT` | The stack's kube context. The API version is read from its images. Default `kind-k0rdent-rc5` |
 
 ### Seed a cluster type
 

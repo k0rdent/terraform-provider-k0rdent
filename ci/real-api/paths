@@ -1,0 +1,33 @@
+# What each hash in ci/real-api/record.json covers. scripts/real-api-check.sh
+# reads this file from the tree it hashes, so a release branch's tag is hashed
+# by the release branch's own lists, never main's.
+#
+# One entry a line, as git ls-files takes it:
+#   fake <path>   in the fake hash and the code hash
+#   code <path>   in the code hash only
+#   skip <path>   left out of both
+#
+# The record keeps a digest of each list, so a change here says so plainly
+# when a record is checked, and needs a new run like any other change it
+# covers.
+
+fake internal/tools/fakeapi
+fake internal/tools/fakedrift
+fake internal/k0rdent
+fake ci/fake-drift-accepted.json
+fake ci/real-api/lifecycle
+fake ci/real-api/paths
+fake scripts/real-api-check.sh
+
+code go.mod
+code go.sum
+code main.go
+code internal
+code scripts/live.sh
+code scripts/lib
+code examples/live
+code examples/walkthrough
+
+skip *_test.go
+skip internal/acceptance
+skip internal/repocheck

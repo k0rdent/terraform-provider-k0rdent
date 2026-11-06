@@ -1,9 +1,12 @@
 package acceptance
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"os/exec"
 	"regexp"
 	"runtime"
@@ -11,6 +14,129 @@ import (
 	"testing"
 	"time"
 )
+
+// One Ctrl-C while several creates wait, through the real CLI. Every create
+// answers the interrupt at once with its object and an error, so Terraform
+// writes them to state together. Terraform 1.16.0 to 1.16.4 can crash there
+// and leave the state file empty (hashicorp/terraform#39283), which the
+// interrupt makes likely rather than rare. So:
+//
+//  1. the apply stops without a crash
+//  2. state holds every cluster the platform accepted, each tainted
+//  3. `terraform destroy` removes them all
+func TestAccOneInterruptKeepsEveryCreateInState(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the CLI sequence runs on unix")
+	}
+	const n = 8
+	c := newCLIRun(t)
+	names := make([]string, n)
+	for i := range names {
+		names[i] = fmt.Sprintf("acc-interrupted-%d", i)
+	}
+	t.Cleanup(func() {
+		for _, name := range names {
+			cancelAndRemoveFromFake(t, name)
+		}
+	})
+	c.write(fmt.Sprintf(`
+resource %q "test" {
+  count        = %d
+  id           = "acc-interrupted-${count.index}"
+  cluster_type = %q
+  display_name = %q
+  timeouts {
+    create = "10m"
+  }
+}
+`, clusterType, n, clusterTypeRef, neverSettles))
+
+	var out bytes.Buffer
+	apply := c.command("apply", "-auto-approve", "-no-color")
+	apply.Stdout, apply.Stderr = &out, &out
+	if err := apply.Start(); err != nil {
+		t.Fatal(err)
+	}
+	for deadline := time.Now().Add(2 * time.Minute); ; time.Sleep(100 * time.Millisecond) {
+		accepted := 0
+		for _, name := range names {
+			if status, _, err := readFake(clusterAPIPath(name)); err == nil && status == http.StatusOK {
+				accepted++
+			}
+		}
+		if accepted == n {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("%d of %d creates were accepted, and stopping the apply said: %v",
+				accepted, n, apply.Process.Kill())
+		}
+	}
+	if err := apply.Process.Signal(os.Interrupt); err != nil {
+		t.Fatalf("interrupt: %v", err)
+	}
+	var exited *exec.ExitError
+	if err := apply.Wait(); !errors.As(err, &exited) {
+		t.Fatalf("the interrupted apply ended with %v, not a failure:\n%s", err, out.String())
+	}
+	for _, crash := range []string{"TERRAFORM CRASH", "panic:", "Failed to serialize"} {
+		if strings.Contains(out.String(), crash) {
+			t.Fatalf("the interrupted apply says %q:\n%s", crash, out.String())
+		}
+	}
+	mustSay(t, "the interrupted apply", out.String(), "is still being created", "the run was interrupted")
+
+	pulled, ok := c.run("state", "pull")
+	if !ok {
+		t.Fatalf("state pull failed:\n%s", pulled)
+	}
+	var state struct {
+		Resources []struct {
+			Mode, Type string
+			Instances  []struct {
+				Status     string `json:"status"`
+				Attributes struct {
+					ID string `json:"id"`
+				} `json:"attributes"`
+			} `json:"instances"`
+		} `json:"resources"`
+	}
+	if err := json.Unmarshal([]byte(pulled), &state); err != nil {
+		t.Fatalf("state after the interrupt isn't JSON: %v\n%s", err, pulled)
+	}
+	kept := map[string]string{}
+	for _, r := range state.Resources {
+		if r.Mode != "managed" || r.Type != clusterType {
+			continue
+		}
+		for _, i := range r.Instances {
+			kept[i.Attributes.ID] = i.Status
+		}
+	}
+	for _, name := range names {
+		switch status, ok := kept[name]; {
+		case !ok:
+			t.Errorf("%s was accepted by the platform but isn't in state", name)
+		case status != "tainted":
+			t.Errorf("%s is in state as %q, not tainted, though its create never finished", name, status)
+		}
+	}
+	if t.Failed() {
+		t.Fatalf("state after the interrupt:\n%s", pulled)
+	}
+
+	if gone, ok := c.run("destroy", "-auto-approve"); !ok {
+		t.Fatalf("the destroy after the interrupt failed:\n%s", gone)
+	}
+	if listed, ok := c.run("state", "list"); !ok || strings.TrimSpace(listed) != "" {
+		t.Errorf("state isn't empty after the destroy:\n%s", listed)
+	}
+	for _, name := range names {
+		if status, _, err := readFakeStore(clusterAPIPath(name)); err != nil || status != http.StatusNotFound {
+			t.Errorf("%s is still on the platform after the destroy: %d %v", name, status, err)
+		}
+	}
+}
 
 // A run killed once the create is accepted, as `kill -9` or a lost CI runner
 // stops it, saves nothing: Terraform writes a create's state only when Create
@@ -128,6 +254,30 @@ func TestAccATaintedImportIsDestroyedTheWayItsRefusalSays(t *testing.T) {
 	if listed, ok := c.run("state", "list"); !ok || strings.TrimSpace(listed) != "" {
 		t.Errorf("state isn't empty after the destroy:\n%s", listed)
 	}
+}
+
+// cancelAndRemoveFromFake cancels the create of a cluster a failed test left
+// on the fake, since the fake refuses to delete one mid-create, then deletes
+// it.
+func cancelAndRemoveFromFake(t *testing.T, name string) {
+	t.Helper()
+	status, body, err := readFake(clusterAPIPath(name))
+	if err != nil || status != http.StatusOK {
+		return
+	}
+	var c struct {
+		State     string `json:"state"`
+		Operation struct {
+			ExecutionID string `json:"executionId"`
+		} `json:"operation"`
+	}
+	if json.Unmarshal(body, &c) == nil && c.State == "creating" && c.Operation.ExecutionID != "" {
+		if err := postFake(clusterAPIPath(name)+"/cancel",
+			fmt.Sprintf(`{"executionId":%q}`, c.Operation.ExecutionID)); err != nil {
+			t.Logf("cleanup of %s: %v", name, err)
+		}
+	}
+	removeFromFake(t, name)
 }
 
 // removeFromFake deletes a cluster a test left on the fake, if it's there.

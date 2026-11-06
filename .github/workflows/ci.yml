@@ -111,6 +111,23 @@ jobs:
       - name: no text that isn't for a public repository
         run: make public-text-check
 
+  # make real-api-check runs on a local kind stack with the real API, which
+  # public CI can't reach, and commits ci/real-api/record.json. This holds
+  # every pull request to that record: the fake it vouches for and the API
+  # version it ran against have to be this tree's. TESTING.md has how to run it.
+  real-api-record:
+    name: real API record
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: the fake was last checked against the real API at this tree and API version
+        run: make real-api-record-check
+      - name: the record check can still fail
+        run: make real-api-check-test
+
   # gitleaks over the tracked tree, and over every commit this event adds, so
   # a secret added then removed inside one pull request is still caught. The
   # CLI, pinned and checksum-checked by scripts/check-secrets.sh, not
@@ -183,7 +200,7 @@ jobs:
         run: make test
       - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd  # v3.1.2
         with:
-          terraform_version: "1.16.3"
+          terraform_version: "1.16.5"
           terraform_wrapper: false
       - name: acceptance
         run: make testacc
@@ -238,7 +255,7 @@ jobs:
           cache: true
       - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd  # v3.1.2
         with:
-          terraform_version: "1.16.3"
+          terraform_version: "1.16.5"
       - name: verify generated provider documentation
         run: make docs-check
 
@@ -256,7 +273,7 @@ jobs:
           cache: true
       - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd  # v3.1.2
         with:
-          terraform_version: "1.16.3"
+          terraform_version: "1.16.5"
           terraform_wrapper: false
       - name: plan the examples against the fake, over both tiers
         run: make plan-fake
@@ -283,10 +300,39 @@ jobs:
           cache: true
       - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd  # v3.1.2
         with:
-          terraform_version: "1.16.3"
+          terraform_version: "1.16.5"
           terraform_wrapper: false
       - name: refresh-only plans find nothing, and plans stay within the unknown budget
         run: make plan-quality
+
+  # State the previous release wrote must plan empty under this tree. The
+  # previous release is installed from the public registries, under the CLI
+  # versions the nightly pins.
+  upgrade:
+    name: upgrade from the previous release
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          # The previous release is worked out from the tags, and its
+          # walkthrough is read from its tag.
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e  # v4.0.1
+        with:
+          terraform_version: "1.16.5"
+          terraform_wrapper: false
+      - uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4  # v2.0.2
+        with:
+          tofu_version: "1.12.6"
+          tofu_wrapper: false
+      - name: state from the previous release plans empty under this tree
+        run: make upgrade-test
 
   release-validation:
     name: release artifact validation
@@ -422,6 +468,7 @@ jobs:
       - docs
       - against-fake
       - plan-quality
+      - upgrade
       - release-validation
       - release-checkout
     steps:

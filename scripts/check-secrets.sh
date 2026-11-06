@@ -37,29 +37,30 @@ sha256() {
 }
 
 install_gitleaks() {
-  local os arch platform want tmp got
+  local os arch platform want_sha download_dir got_sha
   case "$(uname -s)" in Linux) os=linux ;; Darwin) os=darwin ;; *) die "no gitleaks build for $(uname -s)" ;; esac
   case "$(uname -m)" in x86_64 | amd64) arch=x64 ;; arm64 | aarch64) arch=arm64 ;; *) die "no gitleaks build for $(uname -m)" ;; esac
   platform="${os}_${arch}"
-  want="$(gitleaks_sha256 "$platform")" || die "no pinned checksum for $platform"
-  tmp="$(mktemp -d)"
-  curl -fsSL --retry 3 -o "$tmp/gitleaks.tar.gz" \
+  want_sha="$(gitleaks_sha256 "$platform")" || die "no pinned checksum for $platform"
+
+  download_dir="$(mktemp -d)"
+  curl -fsSL --retry 3 -o "$download_dir/gitleaks.tar.gz" \
     "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_${platform}.tar.gz" ||
     die "couldn't download gitleaks $GITLEAKS_VERSION"
-  got="$(sha256 "$tmp/gitleaks.tar.gz")"
-  [ "$got" = "$want" ] || die "gitleaks_${GITLEAKS_VERSION}_${platform}.tar.gz has checksum $got, want $want"
-  tar -xzf "$tmp/gitleaks.tar.gz" -C "$tmp" gitleaks || die "couldn't unpack gitleaks"
+  got_sha="$(sha256 "$download_dir/gitleaks.tar.gz")"
+  [ "$got_sha" = "$want_sha" ] || die "gitleaks_${GITLEAKS_VERSION}_${platform}.tar.gz has checksum $got_sha, want $want_sha"
+
+  tar -xzf "$download_dir/gitleaks.tar.gz" -C "$download_dir" gitleaks || die "couldn't unpack gitleaks"
   mkdir -p "$(dirname "$bin")"
-  mv "$tmp/gitleaks" "$bin"
-  rm -rf "$tmp"
+  mv "$download_dir/gitleaks" "$bin"
+  rm -rf "$download_dir"
 }
 
 bin="${TOOLS_BIN:-$root/.tools/bin}/gitleaks-$GITLEAKS_VERSION"
 [ -x "$bin" ] || install_gitleaks
 
-# gitleaks exits 1 on a finding. Anything else that isn't 0 is its own
-# failure, and reads as one.
-run() {
+# gitleaks exits 1 on a finding. Any other non-zero exit is gitleaks failing.
+run_gitleaks() {
   local rc=0
   "$bin" "$@" --config "$root/.gitleaks.toml" --redact --no-banner --exit-code 1 || rc=$?
   case "$rc" in
@@ -77,14 +78,14 @@ case "${1:-}" in
     tree="$(mktemp -d)"
     trap 'rm -rf "$tree"' EXIT
     git checkout-index --all --prefix="$tree/" || die "couldn't copy the tracked files"
-    run dir "$tree"
+    run_gitleaks dir "$tree"
     ;;
   --range)
     [ -n "${2:-}" ] || die "--range needs A..B"
-    run git --log-opts="$2" .
+    run_gitleaks git --log-opts="$2" .
     ;;
   --staged)
-    run git --pre-commit --staged .
+    run_gitleaks git --pre-commit --staged .
     ;;
   *) die "unknown argument $1. See the usage at the top of $0" ;;
 esac

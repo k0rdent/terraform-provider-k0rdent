@@ -134,28 +134,72 @@ func describeReplacement(s *schema.Schema, noun string) {
 }
 
 // replacementParagraph lists what replaces the resource, region and project
-// included where the resource has them.
+// included where the resource has them: first the attributes any change to
+// replaces, then those only some changes to do, each with the changes its
+// modifier names, so a change it leaves out reads as made in place.
 func replacementParagraph(s schema.Schema, what tenantState) string {
-	replacing := ReplacingAttributes(s)
-	if len(replacing) == 0 {
+	var always, sometimes, conditions []string
+	for _, name := range ReplacingAttributes(s) {
+		when, conditional := "", false
+		if name != "region" && name != "project" {
+			when, conditional = replacementCondition(replacementDescriptions(context.Background(),
+				reflect.ValueOf(attributeAt(s, name))))
+		}
+		if !conditional {
+			always = append(always, name)
+			continue
+		}
+		sometimes = append(sometimes, name)
+		conditions = append(conditions, fmt.Sprintf("`%s`: %s.", name, when))
+	}
+	if len(always)+len(sometimes) == 0 {
 		return ""
 	}
-	quoted := make([]string, len(replacing))
-	for i, name := range replacing {
-		quoted[i] = "`" + name + "`"
+	out := "\n\n**What replaces it.**"
+	if len(always) > 0 {
+		out += fmt.Sprintf(" Changing %s cannot be done in place and replaces the %s.", orList(always), what.noun)
 	}
-	list := quoted[0]
-	if n := len(quoted); n > 1 {
-		list = strings.Join(quoted[:n-1], ", ") + " or " + quoted[n-1]
+	if len(sometimes) > 0 {
+		object := "it too"
+		if len(always) == 0 {
+			object = "the " + what.noun
+		}
+		out += fmt.Sprintf(" Some changes to %s replace %s, and the others are made in place. %s",
+			orList(sometimes), object, strings.Join(conditions, " "))
 	}
-	out := fmt.Sprintf("\n\n**What replaces it.** Changing %s cannot be done in place and replaces "+
-		"the %s.", list, what.noun)
 	if what.loses == "" {
 		return out + " Everything else changes in place."
 	}
 	return out + fmt.Sprintf(" %s So a plan that would replace it fails and names the attribute, "+
 		"unless `%s = true` is set on the resource. Everything else changes in place.",
 		what.loses, allowReplaceAttribute)
+}
+
+// orList quotes names as code and joins them: "`a`, `b` or `c`".
+func orList(names []string) string {
+	quoted := make([]string, len(names))
+	for i, name := range names {
+		quoted[i] = "`" + name + "`"
+	}
+	if n := len(quoted); n > 1 {
+		return strings.Join(quoted[:n-1], ", ") + " or " + quoted[n-1]
+	}
+	return quoted[0]
+}
+
+// attributeAt is the attribute a ReplacingAttributes name points at,
+// through single nested objects.
+func attributeAt(s schema.Schema, name string) schema.Attribute {
+	parts := strings.Split(name, ".")
+	a := s.Attributes[parts[0]]
+	for _, p := range parts[1:] {
+		nested, ok := a.(schema.SingleNestedAttribute)
+		if !ok {
+			return nil
+		}
+		a = nested.Attributes[p]
+	}
+	return a
 }
 
 // ReplacingAttributes lists the attributes whose change can replace a

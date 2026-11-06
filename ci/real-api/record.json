@@ -1,0 +1,21 @@
+{
+  "fake": "8a904e92815a147ee915c9ba962aa2f8fff4ddf5",
+  "code": "2a72289274d1f69f92eea871deb5b81cf61f629c",
+  "hashing": 1,
+  "lists": {
+    "fake": "89370dfc5bba877c39f5183bd56a725f4c3bc1ff",
+    "code": "00095c175e29422555a8036bc799082d195cd421"
+  },
+  "api_version": "v1.3.0-rc.7",
+  "terraform": "Terraform v1.16.5",
+  "steps": {
+    "fake drift": "PASS",
+    "live": "PASS"
+  },
+  "landscape_gaps": [
+    "subnet-cidr",
+    "no-file-store",
+    "no-hosts"
+  ],
+  "ran": "2026-11-05T12:44:54Z"
+}

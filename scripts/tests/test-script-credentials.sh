@@ -1,12 +1,9 @@
 #!/usr/bin/env bash
 #
 # Proves the scripts that mint with a real credential keep it on https and off
-# the command line. Nothing here needs a network or a real credential: curl and
-# go are shims that record what they were handed, every credential is a dummy,
-# and the one real HTTP exchange is between two servers on 127.0.0.1.
-#
-# Each script runs from a copy in a throwaway tree, so `cd "$(dirname "$0")/.."`
-# lands there and nothing the script writes touches this checkout.
+# the command line. curl and go are shims that record what they were handed,
+# every credential is a dummy, and the only real HTTP is between two servers
+# on 127.0.0.1. Each script runs from a copy in a throwaway tree.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -18,9 +15,8 @@ fail() { echo "script credentials test: FAIL - $1" >&2; exit 1; }
 DUMMY_KEY="dummy-api-key-not-a-secret"
 DUMMY_BEARER="dummy-bearer-not-a-secret"
 
-# A curl that never opens a socket. Each call writes its argv and its stdin to
-# the log directory, and answers with a token for a mint and an empty list for
-# anything else.
+# A curl that records each call's argv and stdin, and answers a mint with a
+# token and anything else with an empty list.
 mkdir -p "$work/bin"
 cat > "$work/bin/curl" <<EOF
 #!/usr/bin/env bash
@@ -34,8 +30,7 @@ case "\$*" in
   *)             printf '{"regions":[],"clusterTypes":[]}' ;;
 esac
 EOF
-# live.sh reads the provider name from the Go name audit and builds the
-# provider. Neither needs the real toolchain to answer.
+# A go that answers the name audit and builds an empty binary.
 cat > "$work/bin/go" <<'EOF'
 #!/usr/bin/env bash
 case "$1" in
@@ -71,10 +66,7 @@ run_script() {
 # --- 1. a cleartext endpoint is refused before anything is minted ----------
 
 for script in "scripts/live.sh preflight" "scripts/capture-live-fixtures.sh"; do
-  # A name that merely starts like a loopback one is not loopback, and the
-  # check does no DNS, so example.invalid never has to resolve. The provider
-  # reads the host as url.Parse gives it, so an uppercase LOCALHOST and an IPv6
-  # zone both fail there, and they have to fail here too.
+  # Uppercase LOCALHOST and an IPv6 zone fail in the provider, so they fail here.
   for bad in http://example.invalid http://localhost.example.invalid http://127.0.0.1.example.invalid \
              http://LOCALHOST:1 "http://[::1%25lo0]:1" http://127.0.0.1@example.invalid:1; do
     setup
@@ -92,9 +84,8 @@ for script in "scripts/live.sh preflight" "scripts/capture-live-fixtures.sh"; do
   done
 done
 
-# live-storage.sh never mints itself: the provider does, inside Terraform, and
-# refuses cleartext on its own. The script checks first anyway, so a run aimed
-# at the wrong endpoint stops before it builds anything or reaches LIVE_CONFIRM.
+# live-storage.sh never mints, but it still refuses cleartext before it builds
+# anything or reaches LIVE_CONFIRM.
 for bad in http://example.invalid http://localhost.example.invalid http://LOCALHOST:1; do
   setup
   run_script "$bad" LIVE_CONFIRM=example.invalid "$work/repo/scripts/live-storage.sh" run
@@ -110,10 +101,8 @@ done
 
 # --- 2. the upgrade picker does not follow a redirect -----------------------
 
-# Two servers on 127.0.0.1. A answers every request with a 302 to B, and B
-# writes down whatever reaches it. urllib follows a redirect by default and
-# carries the Authorization header along, so a picker that follows it hands
-# the bearer to wherever the Location header points.
+# Server A answers every request with a 302 to server B, which records what
+# reaches it. urllib follows redirects and keeps the Authorization header.
 cat > "$work/server.py" <<'EOF'
 import http.server, os, sys
 role, portfile, target = sys.argv[1], sys.argv[2], sys.argv[3]
@@ -164,9 +153,7 @@ grep -q "refusing to follow a redirect" "$work/out" \
 
 # --- 3. no credential in curl's argv ----------------------------------------
 
-# Any user on the machine can read another process's argv from ps. So the
-# bearer, like the API key before it, has to reach curl some other way, and it
-# still has to reach it.
+# Any user can read another process's argv from ps.
 for script in "scripts/live.sh preflight" "scripts/capture-live-fixtures.sh"; do
   setup
   # shellcheck disable=SC2086
@@ -181,31 +168,27 @@ done
 
 # --- 4. the walkthroughs name no fixed path under /tmp ---------------------
 
-# The walkthroughs build the provider binary and write the dev override that
-# points Terraform at it, and the hardware one runs it with a live secret. A
-# fixed directory under /tmp is one another user can create first and fill.
+# The walkthroughs build and run the provider, and another user can create a
+# fixed /tmp directory first.
 for doc in walkthrough.md walkthrough-hardware.md walkthrough-api.md; do
   if grep -n '/tmp/' "$here/docs/$doc"; then
     fail "docs/$doc builds or runs the provider from a fixed path in /tmp"
   fi
 done
 
-# --- 6. the docs read a client secret in rather than have it typed ----------
+# --- 5. the docs read a client secret in rather than have it typed ----------
 
-# A secret typed on an `export` line goes into the shell's history file. The
-# walkthrough already reads it in with `read -rs`. These are the other places
-# that show a reader how to supply one.
+# A secret typed on an `export` line goes into the shell's history file.
 if grep -n "export K0RDENT_CLIENT_SECRET=['<.]" \
      "$here/README.md" "$here/TESTING.md" "$here/docs/index.md" "$here/docs/guides/authentication.md" \
      "$here/templates/guides/authentication.md.tmpl" "$here/examples/provider/provider.tf"; then
   fail "a document still has the client secret typed on the command line"
 fi
 
-# --- 7. the demo keeps secrets out of argv -------------------------------
+# --- 6. the demo keeps secrets out of argv -------------------------------
 
-# The demo's own requests to its fake carry the fake's owner token. Lifted out
-# and run against a curl that answers ready, then accepts the shutdown, then
-# stops answering.
+# The demo's fake_running and stop_fake, lifted out and run against a curl that
+# answers ready, then accepts the shutdown, then stops answering.
 OWNER="dummy-owner-token-not-a-secret"
 mkdir -p "$work/demobin"
 cat > "$work/demobin/curl" <<EOF
@@ -241,9 +224,8 @@ fi
 grep -qx "Authorization: Bearer $OWNER" "$work"/calls/stdin.* \
   || fail "scripts/demo.sh did not hand curl the owner token on stdin"
 
-# cleanup and env source the run directory's secrets file as shell, so a run
-# directory someone else planted, here as a symlink, is refused before it's
-# read.
+# cleanup and env source the run directory's secrets file, so a planted run
+# directory is refused before it's read.
 mkdir -p "$work/planted-demo-target"
 printf 'http://127.0.0.1:1\n' > "$work/planted-demo-target/endpoint"
 printf 'touch "%s/demo-sourced"; FAKE_OWNER_TOKEN=x\n' "$work" > "$work/planted-demo-target/fake-secrets.env"
@@ -254,19 +236,16 @@ for cmd in cleanup env; do
   fi
   [ ! -e "$work/demo-sourced" ] || fail "scripts/demo.sh $cmd ran a planted secrets file"
 done
+
 # A cleanup with no run directory has nothing to stop, and makes none.
 DEMO_RUN_DIR="$work/no-demo/run" PATH="$work/demobin:$PATH" "$here/scripts/demo.sh" cleanup > "$work/out" 2>&1 ||
   { cat "$work/out" >&2; fail "scripts/demo.sh cleanup failed with no run directory"; }
 [ ! -e "$work/no-demo" ] || fail "scripts/demo.sh cleanup made the run directory it was asked to clean up"
 
-# --- 8. capture-live-fixtures writes what it fetched, redacted -------------
+# --- 7. capture-live-fixtures writes what it fetched, redacted -------------
 
-# The redactor reads the response on stdin. It once took its own source from a
-# heredoc on stdin too, which won, so it parsed an empty document and every
-# capture failed. This curl answers a mint with a token and every read with a
-# document that carries one field to redact and one to keep. The endpoint has
-# a quote in its path, which is legal in a URL and has to come through into
-# the manifest as data, not as code.
+# Each read answers with one field to redact and one to keep. The quote in the
+# endpoint's path has to reach the manifest as data, not as code.
 mkdir -p "$work/capbin"
 cat > "$work/capbin/curl" <<EOF
 #!/usr/bin/env bash
@@ -298,8 +277,8 @@ PY
 if grep -rl -e leak -e "$DUMMY_BEARER" -e "$DUMMY_KEY" "$work/fixtures"; then
   fail "capture-live-fixtures.sh wrote a credential into a fixture"
 fi
-# A fixture directory someone else planted as a symlink is refused, not
-# written through.
+
+# A fixture directory planted as a symlink is refused, not written through.
 mkdir -p "$work/elsewhere"
 ln -sfn "$work/elsewhere" "$work/planted-fixtures"
 if env -i PATH="$work/capbin:$PATH" HOME="$work" K0RDENT_ENDPOINT=https://example.invalid K0RDENT_REGION=r1 \
@@ -308,7 +287,7 @@ if env -i PATH="$work/capbin:$PATH" HOME="$work" K0RDENT_ENDPOINT=https://exampl
   fail "capture-live-fixtures.sh wrote through a planted symlink"
 fi
 [ -z "$(ls "$work/elsewhere")" ] || fail "capture-live-fixtures.sh wrote into a symlink's target"
-# Read-only fixtures from a real landscape are nobody else's business.
+
 [ "$(python3 -c 'import os, stat, sys; print(oct(stat.S_IMODE(os.stat(sys.argv[1]).st_mode)))' "$work/fixtures")" = 0o700 ] \
   || fail "capture-live-fixtures.sh left its fixture directory readable by other users"
 

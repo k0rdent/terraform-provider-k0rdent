@@ -183,12 +183,39 @@ unknown-budget-update: ## Rewrite ci/unknown-budget.json from the walkthrough pl
 walkthrough-api-test: ## Follow docs/walkthrough-api.md against the fake, from the commands the page shows
 	./ci/walkthrough-api-against-fake.sh
 
+# State the previous release wrote, under this tree's build, for terraform
+# and tofu. The previous release comes from the public registries, so this
+# needs the network. TESTING.md has how to accept a change.
+.PHONY: upgrade-test
+upgrade-test: ## State from the previous release plans empty under this tree, but for ci/upgrade-accepted.json, under terraform and tofu
+	./ci/upgrade-against-fake.sh
+
 .PHONY: doctor
 doctor: ## Check this machine can run the tests, before anything long fails halfway
 	./scripts/doctor.sh
 
 # `live` targets talk to a real control plane, configured entirely from the
 # K0RDENT_* environment. `live-preflight` is read-only and safe anywhere;
+# `real-api-check` creates real resources on a local kind stack only, and
+# writes ci/real-api/record.json, which CI holds every pull request to.
+.PHONY: real-api-check
+real-api-check: ## On a local kind stack: fake drift, then make live. Writes the record CI checks
+	./scripts/real-api-check.sh run
+
+# `real-api-stack` builds that kind stack from the platform API's source, at
+# REAL_API_SOURCE, and writes the env file real-api-check sources.
+.PHONY: real-api-stack
+real-api-stack: ## Build or refresh the local kind stack real-api-check runs against. Needs REAL_API_SOURCE
+	./scripts/real-api-kind-setup.sh
+
+.PHONY: real-api-record-check
+real-api-record-check: ## Fail unless ci/real-api/record.json covers this tree's fake and API version
+	./scripts/real-api-check.sh verify
+
+.PHONY: real-api-check-test
+real-api-check-test: ## Prove the real-API record check fails on each kind of mismatch
+	./scripts/tests/test-real-api-check.sh
+
 # `live` creates real resources and requires LIVE_CONFIRM=<endpoint host>.
 .PHONY: live-preflight
 live-preflight: ## Read-only check against a real API: mint, list regions, list cluster types, plan

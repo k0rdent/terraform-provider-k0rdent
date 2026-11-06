@@ -1,18 +1,10 @@
 #!/usr/bin/env bash
 #
-# Every commit must be signed by whoever wrote it.
-#
-# Branch protection can require this, and that is the right place for it, but it
-# is not the only place it has to hold. Protection guards one branch on one
-# host: it says nothing about a fork, a mirror, or the window between a rule
-# being turned off for a history rewrite and being turned back on. This runs on
-# the commits themselves, so the answer does not depend on a setting staying
-# where somebody left it.
+# Every commit in a range must be signed by whoever wrote it. Branch protection
+# guards one branch on one host. This checks the commits themselves.
 #
 # It asks GitHub rather than running `git verify-commit`: a runner holds no
-# keyring, so a local check answers `N` for a good signature. GitHub computes
-# this against the keys each author registered, which is the same verdict
-# branch protection uses.
+# keyring, so a local check answers `N` for a good signature.
 set -euo pipefail
 
 repo="${GITHUB_REPOSITORY:-k0rdent/terraform-provider-k0rdent}"
@@ -34,16 +26,14 @@ bad=0
 while read -r sha; do
   [ -n "$sha" ] || continue
   total=$((total + 1))
-  # `reason` is what makes a failure actionable. "unsigned" and
-  # "unknown_signature_type" and "unverified_email" all read as `false` and
-  # need three different fixes.
   subject="$(git log -1 --format=%s "$sha")"
   author="$(git log -1 --format='%an' "$sha")"
 
+  # `reason` tells "unsigned", "unknown_signature_type" and "unverified_email"
+  # apart, which need different fixes.
   if ! answer="$(gh api "repos/$repo/commits/$sha" \
       --jq '"\(.commit.verification.verified) \(.commit.verification.reason)"' 2>&1)"; then
-    # Usually means the commit has not been pushed yet, which needs a different
-    # fix from an unsigned one.
+    # Usually a commit that hasn't been pushed yet.
     bad=$((bad + 1))
     echo "  $sha  not-on-remote  $author  $subject" >&2
     continue
