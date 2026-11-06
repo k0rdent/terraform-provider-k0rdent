@@ -42,7 +42,7 @@ Fastest first:
 | `make plan-fake` | Credential handling and configuration errors work |
 | `make drift` | No resource plans a change after an apply or a refresh |
 | `make walkthrough-api-test` | The API walkthrough's commands work as the page shows them |
-| `make testacc` | Each resource's lifecycle works through real Terraform |
+| `make testacc` | Each resource's lifecycle works through real Terraform, and `docs/testing-matrix.md` is what those tests do |
 | `make plan-quality` | Refresh-only plans find nothing, and plans stay within the unknown budget |
 | `make walkthrough-test` | The hardware walkthrough's directories work as the page says |
 | `make upgrade-test` | State from the previous release plans empty under this tree, but for accepted changes |
@@ -67,10 +67,15 @@ None of these prove the real API behaves like the fake.
 ### `make testacc`
 
 Real Terraform against the fake, one lifecycle per resource. Each case checks
-its resources are gone after the destroy.
+its resources are gone after the destroy. CI runs the same command, so a
+local run sees what CI sees.
 
-- Runs under `terraform`. `make testacc TF_BIN=tofu` runs it under OpenTofu,
-  and CI runs both.
+- Runs under `terraform`, then checks the [testing matrix](#the-testing-matrix).
+  `make testacc TF_BIN=tofu` runs it under OpenTofu, without the matrix
+  check, and CI runs both.
+- `make testacc RUN=TestAccImport` runs only the tests the regexp matches.
+  It doesn't record or check the matrix, so the last whole run's record
+  stays.
 - Under OpenTofu, a test that needs something only Terraform has skips and
   says why. `skipUnderOpenTofu` in `internal/acceptance/cli_test.go` holds
   the reasons:
@@ -86,6 +91,49 @@ its resources are gone after the destroy.
   generated-configuration step. OpenTofu 1.12.6 writes a map key like
   `10.0.0.31` without quotes, then can't read it back. The step fails once
   OpenTofu fixes that.
+
+### The testing matrix
+
+[docs/testing-matrix.md](docs/testing-matrix.md) names, for every attribute
+of every resource, the acceptance tests that import it and change it. No
+test declares what it covers. `make testacc` runs the suite with a recorder
+around the provider, which writes down what each test made the provider do,
+then checks the page against that record. The page is terraform's run: under
+OpenTofu, the tests it can't run skip, so `make testacc TF_BIN=tofu` doesn't
+check it. The page and the check depend only on the commit, so a release tag
+changes neither.
+
+- A gap is a cell no test covers yet. The page shows it as gap, and each one
+  is a line in `internal/repocheck/testdata/testing-matrix-gaps.txt`. A cell
+  with no test and no line fails the check, and so does a line for a cell a
+  test now covers. Drop the line in the same change as the test.
+- A change to an attribute that only sometimes replaces, such as
+  `ssh_access`, counts for its update cell whether the plan updates it in
+  place or replaces the resource. The page says which it saw.
+- A test that runs a built provider binary has to add `matrixTestEnv(t)` to
+  the command's environment, or the check fails.
+
+Upgrades aren't on the page and the check doesn't gate them.
+[`make upgrade-test`](#make-upgrade-test) is what gates upgrades. After the
+check, `make testacc` reports upgrade coverage as information: which
+attributes the tests upgrade from an older schema version, and which the
+previous release's walkthrough sets, for the release `make upgrade-test`
+upgrades from. It's in the job summary of CI's acceptance job, and in
+`.testing-matrix/upgrade-coverage.md` after a local run. It never fails the
+run. Without that release's tag, or without the network the release rule
+needs, it says so in one line.
+
+When the check says the page isn't current, regenerate it and commit it:
+
+```sh
+make testing-matrix
+```
+
+After a change to the gap list alone, `make testing-matrix-page` rewrites
+the page from the last run's record in `.testing-matrix/`, without the suite.
+Both refuse a record from a run that failed, ran only some tests or stopped
+early, or one where a test skipped, which the check names. A test here skips
+only through `skipTest`, which notes the skip in the record.
 
 ### `make demo`
 

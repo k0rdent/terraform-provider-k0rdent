@@ -35,7 +35,7 @@ const (
 // token. An instance group carries none, so it passes on its state alone.
 func TestAccADestroyRunsPastATaintedCreateInEveryState(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("the CLI sequence runs on unix")
+		skipTest(t, "the CLI sequence runs on unix")
 	}
 	const (
 		clusters = "/v1/regions/us-texas-1/projects/demo/compute/clusters/"
@@ -132,7 +132,7 @@ func TestAccADestroyRunsPastATaintedCreateInEveryState(t *testing.T) {
 // nothing: the configuration doesn't hold it, so nothing is destroyed.
 func TestAccAPlanToCreateOverAClusterMadeElsewhereIsRefused(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("the CLI sequence runs on unix")
+		skipTest(t, "the CLI sequence runs on unix")
 	}
 	const name = "acc-made-elsewhere"
 	c := newCLIRun(t)

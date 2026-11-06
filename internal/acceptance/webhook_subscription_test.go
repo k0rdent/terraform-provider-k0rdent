@@ -798,7 +798,7 @@ func TestAccWebhookSubscriptionTurnedOffIsReplaced(t *testing.T) {
 // secret can't be replaced into a working one, so its plan only warns.
 func TestAccWebhookSubscriptionTurnedOffPlanWarns(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("the CLI sequence runs on unix")
+		skipTest(t, "the CLI sequence runs on unix")
 	}
 	c := newCLIRun(t)
 	addr := webhookType + ".test"

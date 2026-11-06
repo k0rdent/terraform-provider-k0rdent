@@ -35,7 +35,7 @@ import (
 //  5. the other tool's cluster is still there
 func TestAccADestroyLeavesAClusterMadeUnderAReusedID(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("the CLI sequence runs on unix")
+		skipTest(t, "the CLI sequence runs on unix")
 	}
 	for _, first := range []string{"destroy", "apply"} {
 		t.Run(first, func(t *testing.T) {

@@ -20,7 +20,7 @@ func heldObject(typeName, name, markers string) string {
 // that holds the object is left alone.
 func TestAccASecondStateOverATakenIDIsWarnedAndFailsAtApply(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("the CLI sequence runs on unix")
+		skipTest(t, "the CLI sequence runs on unix")
 	}
 	for _, tc := range []struct{ typeName, name string }{
 		{clusterType, "acc-taken-cluster"},
@@ -70,7 +70,7 @@ func TestAccASecondStateOverATakenIDIsWarnedAndFailsAtApply(t *testing.T) {
 // and state either way.
 func TestAccATagChangeKeepsTheCreateToken(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("the CLI sequence runs on unix")
+		skipTest(t, "the CLI sequence runs on unix")
 	}
 	const name = "acc-retagged"
 	path := "/v1/regions/us-texas-1/projects/demo/compute/clusters/" + name

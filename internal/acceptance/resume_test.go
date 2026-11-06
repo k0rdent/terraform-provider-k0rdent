@@ -94,7 +94,7 @@ type cliRun struct {
 func newCLIRun(t *testing.T) *cliRun {
 	t.Helper()
 	if os.Getenv("TF_ACC") == "" {
-		t.Skip("TF_ACC is not set, so there is no fake to run against")
+		skipTest(t, "TF_ACC is not set, so there is no fake to run against")
 	}
 	c := &cliRun{t: t, terraform: terraformForMigration(t), dir: t.TempDir()}
 	c.rc = filepath.Join(c.dir, "terraformrc")
@@ -124,6 +124,7 @@ func (c *cliRun) command(args ...string) *exec.Cmd {
 	cmd.Dir = c.dir
 	cmd.Env = append(quietEnviron(), "TF_CLI_CONFIG_FILE="+c.rc, "TF_IN_AUTOMATION=1", "TF_INPUT=0",
 		"CHECKPOINT_DISABLE=1")
+	cmd.Env = append(cmd.Env, matrixTestEnv(c.t)...)
 	return cmd
 }
 
@@ -151,7 +152,7 @@ func mustSay(t *testing.T, step, out string, wants ...string) {
 // One create is sent in all, and the destroy at the end cleans up.
 func TestAccACreateThatTimesOutIsWaitedForAfterAnUntaint(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("the CLI sequence runs on unix")
+		skipTest(t, "the CLI sequence runs on unix")
 	}
 	for _, tc := range []struct {
 		typeName, name, path string
@@ -217,7 +218,7 @@ func TestAccACreateThatTimesOutIsWaitedForAfterAnUntaint(t *testing.T) {
 //  3. `terraform destroy` runs without an untaint and leaves state empty
 func TestAccADestroyRunsPastACreateThePlatformFailed(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("the CLI sequence runs on unix")
+		skipTest(t, "the CLI sequence runs on unix")
 	}
 	for _, tc := range []struct {
 		typeName, name, path string

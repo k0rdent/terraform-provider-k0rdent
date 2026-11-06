@@ -26,7 +26,7 @@ import (
 //  3. `terraform destroy` removes them all
 func TestAccOneInterruptKeepsEveryCreateInState(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("the CLI sequence runs on unix")
+		skipTest(t, "the CLI sequence runs on unix")
 	}
 	const n = 8
 	c := newCLIRun(t)
@@ -149,7 +149,7 @@ resource %q "test" {
 //  4. that import takes the cluster back, and `terraform destroy` removes it
 func TestAccAKilledCreateIsTakenBackByTheImportItsErrorGives(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("the CLI sequence runs on unix")
+		skipTest(t, "the CLI sequence runs on unix")
 	}
 	const name = "acc-killed-create"
 	c := newCLIRun(t)
@@ -160,6 +160,7 @@ func TestAccAKilledCreateIsTakenBackByTheImportItsErrorGives(t *testing.T) {
 	apply.Dir = c.dir
 	apply.Env = append(quietEnviron(), "TF_CLI_CONFIG_FILE="+c.rc, "TF_IN_AUTOMATION=1", "TF_INPUT=0",
 		"CHECKPOINT_DISABLE=1")
+	apply.Env = append(apply.Env, matrixTestEnv(t)...)
 	if err := apply.Start(); err != nil {
 		t.Fatal(err)
 	}
@@ -220,7 +221,7 @@ func TestAccAKilledCreateIsTakenBackByTheImportItsErrorGives(t *testing.T) {
 // lets the destroy remove it.
 func TestAccATaintedImportIsDestroyedTheWayItsRefusalSays(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("the CLI sequence runs on unix")
+		skipTest(t, "the CLI sequence runs on unix")
 	}
 	const name = "acc-tainted-import"
 	c := newCLIRun(t)

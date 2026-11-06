@@ -72,7 +72,14 @@ func TestMain(m *testing.M) {
 	// says, so the provider asks for two rows and a handful of objects is
 	// more than one page.
 	provider.OffsetPageLimit = 2
+	if err := startMatrixRecord(); err != nil {
+		fmt.Fprintln(os.Stderr, "acceptance:", err)
+		os.Exit(1)
+	}
 	code, err := run(m)
+	if err == nil {
+		err = finishMatrixRecord(code)
+	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "acceptance:", err)
 		os.Exit(1)

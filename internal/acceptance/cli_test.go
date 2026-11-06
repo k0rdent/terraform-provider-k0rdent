@@ -57,7 +57,7 @@ func underOpenTofu(t *testing.T) bool {
 	tofu, err := cliIsOpenTofu()
 	if err != nil {
 		if os.Getenv("TF_ACC") == "" {
-			t.Skip(err)
+			skipTest(t, err.Error())
 		}
 		t.Fatal(err)
 	}
@@ -69,7 +69,7 @@ func underOpenTofu(t *testing.T) bool {
 func skipUnderOpenTofu(t *testing.T, why string) {
 	t.Helper()
 	if underOpenTofu(t) {
-		t.Skip("not under OpenTofu: " + why)
+		skipTest(t, "not under OpenTofu: "+why)
 	}
 }
 

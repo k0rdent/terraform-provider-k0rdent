@@ -72,7 +72,7 @@ func teamIs(got map[string]any, want string) bool {
 // and was untainted, which keeps it in state.
 func TestAccAMetadataChangeToAFailedNetworkOrInstanceGroup(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("the CLI sequence runs on unix")
+		skipTest(t, "the CLI sequence runs on unix")
 	}
 	const (
 		networks = "/v1/regions/us-texas-1/projects/demo/networking/networks/"
@@ -155,7 +155,7 @@ func TestAccAMetadataChangeToAFailedNetworkOrInstanceGroup(t *testing.T) {
 // the platform and plans clean after.
 func TestAccAMetadataChangeToAnActiveNetworkOrInstanceGroup(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("the CLI sequence runs on unix")
+		skipTest(t, "the CLI sequence runs on unix")
 	}
 	for _, tc := range []struct {
 		name, path    string
