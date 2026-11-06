@@ -1,8 +1,9 @@
 # Installing the provider
 
-**Nothing is published yet.** Until the first release, [build from
-source](build-from-source.md). [Distribution](distribution.md) has what's
-left before a release.
+The provider is published as `k0rdent/k0rdent` on registry.terraform.io and
+registry.opentofu.org. [Distribution](distribution.md) says where each release
+is, and [building from source](build-from-source.md) covers a change that isn't
+released yet.
 
 ## From the registry
 
