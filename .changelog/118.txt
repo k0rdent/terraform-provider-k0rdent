@@ -1,3 +1,0 @@
-```release-note:bug
-resource/k0rdent_instance_group: Fix a `failed` group with `ssh_access = []` warning on every refresh that the platform reports no SSH users for it
-```

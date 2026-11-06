@@ -1,21 +1,22 @@
 # Distribution
 
-The provider will be published as `k0rdent/k0rdent` on the public
-[Terraform Registry](https://registry.terraform.io) and
-[OpenTofu registry](https://search.opentofu.org). There's no private
-registry or mirror.
+The provider is published as `k0rdent/k0rdent` on the public
+[Terraform Registry](https://registry.terraform.io/providers/k0rdent/k0rdent)
+and [OpenTofu registry](https://search.opentofu.org/provider/k0rdent/k0rdent).
+There's no private registry or mirror.
 
-**Nothing is published yet.** There's no tag, release or registry listing.
+Each version is a signed
+[GitHub Release](https://github.com/k0rdent/terraform-provider-k0rdent/releases)
+of this repository, and both registries read it from there. 0.1.0 is the first
+final version. The candidates before it, `0.1.0-rc.1` to `0.1.0-rc.3`, are
+published too, and only an exact `version` installs one.
 
-## What's left, in order
+To see what each registry holds:
 
-| # | Step | Side | Needs |
-| --- | --- | --- | --- |
-| 1 | Make the repository public. Its history is already clean | Platform | Nothing |
-| 2 | Put an organization-owned RSA GPG key in the `release-signing` environment | Platform | Nothing |
-| 3 | Publish on registry.terraform.io under the `k0rdent` namespace, with the key's public half | Platform | 1 and 2 |
-| 4 | Submit the provider and key to the [OpenTofu registry](https://github.com/opentofu/registry) | Provider | 1 and 2 |
-| 5 | Cut the first candidate, `v0.1.0-rc.1`. The release workflow publishes the signed GitHub Release | Provider | 1 and 2 |
+```sh
+curl -s https://registry.terraform.io/v1/providers/k0rdent/k0rdent/versions | jq -r '.versions[].version'
+curl -s https://registry.opentofu.org/v1/providers/k0rdent/k0rdent/versions | jq -r '.versions[].version'
+```
 
 [RELEASE.md](../RELEASE.md) has the steps for a release.
 
@@ -25,7 +26,10 @@ registry or mirror.
   and `windows_amd64`
 - `SHA256SUMS`, its GPG signature, and the registry manifest
 - A signed SPDX SBOM per archive
-- Release notes from `.changelog/`
+
+The release's notes say which k0rdent API version it was tested against, the
+`version` that installs it, upgrade notes and known issues. Each version's
+changes are in [CHANGELOG.md](../CHANGELOG.md), rendered from `.changelog/`.
 
 Only the `release-signing` workflow on protected `main` signs a release. See
 [release signing](release-signing.md).

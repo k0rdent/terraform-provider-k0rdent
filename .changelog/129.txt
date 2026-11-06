@@ -1,3 +1,0 @@
-```release-note:enhancement
-provider: Raise the `operation_timeout` default from 30m to 2h
-```

@@ -176,9 +176,10 @@ branch, `release-vMAJOR.MINOR.x`, so `main` can take new work meanwhile.
      section to `## [VERSION] - YYYY-MM-DD, recorded before .changelog/` and
      keep its text. It replaces the `[0.1.0] - planned, not published`
      placeholder, which candidates leave in place.
-   - A dated heading makes `TestNoReleaseIsRecordedInTheChangelog` fail on
-     purpose. Rewrite `docs/distribution.md`, which says nothing is published,
-     in the same pull request.
+   - First final release only, too: rewrite `docs/distribution.md` and
+     `docs/install.md`, which say nothing is published, in the same pull
+     request. Once the changelog dates a release,
+     `TestDistributionDocsAgreeWithTheChangelog` fails while either says so.
 
 3. **Rehearse on the commit you'll tag.** CI must be green. On Linux, or with
    GNU findutils and bash 4:
