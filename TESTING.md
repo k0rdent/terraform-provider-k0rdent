@@ -69,6 +69,10 @@ None of these prove the real API behaves like the fake.
 Real Terraform against the fake, one lifecycle per resource. Each case checks
 its resources are gone after the destroy.
 
+- Tests run side by side against one fake, `TESTACC_PARALLEL` at a time, 8
+  by default. The serial ones run first, one at a time. Lint fails a new test
+  that doesn't call `t.Parallel()`, unless it calls `t.Setenv`, which Go
+  keeps serial, or carries `//nolint:paralleltest // <why>`.
 - Runs under `terraform`. `make testacc TF_BIN=tofu` runs it under OpenTofu,
   and CI runs both.
 - Under OpenTofu, a test that needs something only Terraform has skips and
@@ -458,7 +462,7 @@ terraform destroy -auto-approve -var-file=../../.live/kept.tfvars
 
 ## Writing tests
 
-Three rules keep the suite fast to run and easy to trust:
+Five rules keep the suite fast to run and easy to trust:
 
 - Test each behavior at the lowest layer that can see it. A plan modifier's
   decision is a unit test. An acceptance test checks only what needs
@@ -467,6 +471,13 @@ Three rules keep the suite fast to run and easy to trust:
 - Name the resource in the test's name, or in the subtest's when one test
   covers several, such as `TestAccInstanceGroupSSHAccess`. A resource missing
   a case then shows up in `go test -list`.
+- Start an acceptance test with `t.Parallel()`, and give everything it
+  creates a name no other test uses. The fake is shared, so a change to a
+  shared object, such as revoking an SSH key, reaches the tests running
+  beside it.
+- A test that reads a whole list, or binds a VPC, which lists every security
+  group, runs in a project of its own from `ownProject`. A list read in pages
+  skips a row when a test beside it deletes one ahead of it.
 - Delete a test only when every mutant it catches is caught by another test.
   A mutant is the code with one line broken on purpose, such as a condition
   negated. Two tests can run the same lines and check different things, so

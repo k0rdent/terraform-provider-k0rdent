@@ -46,8 +46,13 @@ var fakeOwnerToken string
 // can read. See useProjectCredential.
 var fakeProjectCredential struct{ clientID, clientSecret string }
 
+// protoV6 makes a provider for each Terraform command, as Terraform starts a
+// plugin process for each. One shared across the suite would carry one test's
+// default_tags into another test running beside it.
 var protoV6 = map[string]func() (tfprotov6.ProviderServer, error){
-	provider.ProviderTypeName: providerserver.NewProtocol6WithError(provider.New("acc")()),
+	provider.ProviderTypeName: func() (tfprotov6.ProviderServer, error) {
+		return providerserver.NewProtocol6WithError(provider.New("acc")())()
+	},
 }
 
 func TestMain(m *testing.M) {
@@ -385,6 +390,7 @@ func waitForFake(endpoint string) error {
 // The visibility audit has to refuse a run where the fake saw traffic and
 // none of it was checked, as gate S4 refuses a run it couldn't search.
 func TestAuditVerdictRefusesAVacuousRun(t *testing.T) {
+	t.Parallel()
 	harness := `2026/10/10 12:00:00 GET /_harness/ready ua="` + apiaudit.HarnessUserAgent + `" auth=present`
 	if auditVerdict(apiaudit.AuditProviderRequests(harness)) {
 		t.Error("a log of only harness requests passed")

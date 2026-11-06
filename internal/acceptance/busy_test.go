@@ -51,6 +51,7 @@ func fakeServed(method, path string) (int, error) {
 // configuration says `on_destroy_busy = "wait"`. CheckDestroy shows the
 // cluster is gone and that no cancel was sent for it.
 func TestAccDestroyWaitsForABusyClusterWhenAsked(t *testing.T) {
+	t.Parallel()
 	const name = "acc-destroy-waits"
 	config := fmt.Sprintf(`
 resource %q "test" {
@@ -102,6 +103,7 @@ resource %q "test" {
 // cluster is an update that sends the platform nothing, and the plan after it
 // is empty.
 func TestAccOnDestroyBusyChangesInPlace(t *testing.T) {
+	t.Parallel()
 	const name = "acc-on-destroy-busy"
 	config := func(onBusy string) string {
 		return strings.Replace(clusterConfig(name, 2), `display_name = "acceptance"`,
@@ -151,6 +153,7 @@ func TestAccOnDestroyBusyChangesInPlace(t *testing.T) {
 // of its own, so the destroy that ends every test has a configuration that
 // plans.
 func TestAccOnDestroyBusyRefusesAnotherValue(t *testing.T) {
+	t.Parallel()
 	config := strings.Replace(clusterConfig("acc-on-destroy-busy-bad", 2), `display_name = "acceptance"`,
 		`display_name = "acceptance"`+"\n  on_destroy_busy = \"sometimes\"", 1)
 	resource.Test(t, resource.TestCase{
@@ -168,6 +171,7 @@ func TestAccOnDestroyBusyRefusesAnotherValue(t *testing.T) {
 // for that operation and takes the step: two upgrade requests, the refused
 // one and the one taken, and the cluster lands on the version asked for.
 func TestAccUpgradeWaitsOutAnotherRunsOperation(t *testing.T) {
+	t.Parallel()
 	const name = "acc-upgrade-busy"
 	config := func(version int) string {
 		return fmt.Sprintf(`
@@ -225,6 +229,7 @@ resource %q "test" {
 // the destroy's included, so that fails here by name. The update this test
 // expects settles in a few polls.
 func TestAccFileStoreUpdateWaitsForACreatingStore(t *testing.T) {
+	t.Parallel()
 	const name = "acc-busy-store"
 	config := fmt.Sprintf(`
 provider %[4]q {

@@ -118,6 +118,7 @@ func patchFake(path, body string) error {
 // testing framework plans again after every apply and fails on any change, so
 // each step also proves its own result is stable.
 func TestAccDefaultTags(t *testing.T) {
+	t.Parallel()
 	const name = "acc-default-tags"
 	path := "/v1/regions/us-texas-1/projects/demo/networking/networks/" + name
 
@@ -218,6 +219,7 @@ func TestAccDefaultTags(t *testing.T) {
 // resource. The plan can't know the merge, so tags_all is unknown rather than
 // a guess the apply would contradict, and the apply fills it.
 func TestAccDefaultTagsKnownOnlyAtApply(t *testing.T) {
+	t.Parallel()
 	const name = "acc-default-tags-later"
 	config := `
 resource "terraform_data" "run" {
@@ -260,6 +262,7 @@ resource %q "test" {
 // and plans nothing, rather than being replaced, and writing a default out
 // in its own tags doesn't replace it either.
 func TestAccDefaultTagsReachEveryTaggedKind(t *testing.T) {
+	t.Parallel()
 	const cluster, network, sg, peer = "acc-dt-owner", "acc-dt-net", "acc-dt-sg", "acc-dt-peer"
 	const remote = "/v1/regions/us-texas-1/projects/other/networking/vpcs/vpc-inference"
 	config := func(defaults, peerTags string) string {
@@ -361,6 +364,7 @@ func noTokenIn(addrs ...string) resource.TestCheckFunc {
 // so the peering is updated in state and not replaced. Peerings have no
 // allow_replace guard, so a replacement here would have gone ahead.
 func TestAccDefaultTagsTakeOverAPeeringsTag(t *testing.T) {
+	t.Parallel()
 	const cluster, peer = "acc-dt-move-owner", "acc-dt-move"
 	const remote = "/v1/regions/us-texas-1/projects/other/networking/vpcs/vpc-inference"
 	config := func(defaults, peerTags string) string {

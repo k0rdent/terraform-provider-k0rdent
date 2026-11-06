@@ -74,6 +74,7 @@ data %q "read" {
 // The second step is the point: an upgrade started outside Terraform has to
 // show its target, its phase and when it began.
 func TestAccClusterDataSourceSeesAnUpgradeInFlight(t *testing.T) {
+	t.Parallel()
 	const name = "acc-cluster-read"
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: protoV6,
@@ -151,6 +152,7 @@ func TestAccClusterDataSourceSeesAnUpgradeInFlight(t *testing.T) {
 }
 
 func TestAccInstanceGroupDataSource(t *testing.T) {
+	t.Parallel()
 	const name = "acc-hosts-read"
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: protoV6,
@@ -177,6 +179,7 @@ data %q "read" {
 }
 
 func TestAccFileStoreDataSource(t *testing.T) {
+	t.Parallel()
 	const name = "acc-datasets-read"
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: protoV6,
@@ -203,6 +206,7 @@ data %q "read" {
 // A data source read deferred to apply still knows its scope at plan, so a
 // resource that takes the region from it doesn't see null become a value.
 func TestAccClusterDataSourceScopeIsKnownWhenTheReadIsDeferred(t *testing.T) {
+	t.Parallel()
 	const name = "acc-ds-deferred-scope"
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: protoV6,
@@ -232,6 +236,7 @@ resource "terraform_data" "scope" {
 // and no token, as the real list answers with its first page, so a provider
 // that read that page would report two.
 func TestAccClusterTypesDataSourceReadsEveryPage(t *testing.T) {
+	t.Parallel()
 	clusterTypesType := provider.ResourceName("cluster_types")
 	clusterTypesAddr := "data." + clusterTypesType + ".all"
 	resource.Test(t, resource.TestCase{
@@ -250,6 +255,7 @@ func TestAccClusterTypesDataSourceReadsEveryPage(t *testing.T) {
 // The fake leaves out a type with no `available` version unless asked, so a
 // `draft` filter finds gpu-preview only if the read asks for it.
 func TestAccClusterTypesDataSourceFindsADraftType(t *testing.T) {
+	t.Parallel()
 	clusterTypesType := provider.ResourceName("cluster_types")
 	clusterTypesAddr := "data." + clusterTypesType + ".draft"
 	resource.Test(t, resource.TestCase{
@@ -270,6 +276,7 @@ func TestAccClusterTypesDataSourceFindsADraftType(t *testing.T) {
 // refusal at plan would also block `terraform destroy`, whose refresh plan
 // reads the data source, so the test applies the pair and destroys it.
 func TestAccClusterTypesDataSourceDraftBesideIncludeDeprecatedFalse(t *testing.T) {
+	t.Parallel()
 	clusterTypesType := provider.ResourceName("cluster_types")
 	clusterTypesAddr := "data." + clusterTypesType + ".draft"
 	config := fmt.Sprintf(`data %q "draft" {

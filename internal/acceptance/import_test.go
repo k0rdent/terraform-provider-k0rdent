@@ -67,6 +67,9 @@ type importCase struct {
 	// OpenTofu the generating step expects that error. When OpenTofu quotes
 	// it, the step fails and this goes.
 	unquotedKeyUnderOpenTofu bool
+	// project, when set, is a project of the case's own, which ownProject
+	// makes. A binding lists every security group in its project.
+	project string
 }
 
 func (c importCase) addr() string { return c.resourceType + ".test" }
@@ -177,37 +180,41 @@ func (c importCase) run(t *testing.T) {
 		generate.ExpectError = openTofuUnquotedMapKey
 	}
 
+	steps := []resource.TestStep{
+		create,
+		{
+			Config:                               c.imported(),
+			ResourceName:                         c.addr(),
+			ImportState:                          true,
+			ImportStateIdFunc:                    importID,
+			ImportStateVerify:                    true,
+			ImportStateVerifyIgnore:              c.verifyIgnore,
+			ImportStateVerifyIdentifierAttribute: c.verifyBy,
+		},
+		{
+			Config:            c.imported(),
+			ResourceName:      c.addr(),
+			ImportState:       true,
+			ImportStateIdFunc: importID,
+			ImportStateKind:   resource.ImportBlockWithID,
+		},
+		{
+			Config:          c.imported(),
+			ResourceName:    c.addr(),
+			ImportState:     true,
+			ImportStateKind: resource.ImportBlockWithResourceIdentity,
+		},
+		generate,
+		adoption,
+		{Config: c.adopted(), PlanOnly: true},
+	}
+	if c.project != "" {
+		steps = stepsInProject(ownProject(t, c.project), steps)
+	}
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: protoV6,
 		CheckDestroy:             c.checkDestroy,
-		Steps: []resource.TestStep{
-			create,
-			{
-				Config:                               c.imported(),
-				ResourceName:                         c.addr(),
-				ImportState:                          true,
-				ImportStateIdFunc:                    importID,
-				ImportStateVerify:                    true,
-				ImportStateVerifyIgnore:              c.verifyIgnore,
-				ImportStateVerifyIdentifierAttribute: c.verifyBy,
-			},
-			{
-				Config:            c.imported(),
-				ResourceName:      c.addr(),
-				ImportState:       true,
-				ImportStateIdFunc: importID,
-				ImportStateKind:   resource.ImportBlockWithID,
-			},
-			{
-				Config:          c.imported(),
-				ResourceName:    c.addr(),
-				ImportState:     true,
-				ImportStateKind: resource.ImportBlockWithResourceIdentity,
-			},
-			generate,
-			adoption,
-			{Config: c.adopted(), PlanOnly: true},
-		},
+		Steps:                    steps,
 	})
 }
 
@@ -331,12 +338,13 @@ resource %q "test" {
 			}
 		},
 		vpcBindingType: func() importCase {
-			const cluster, group = "acc-import-bind-owner", "acc-import-bind-filter"
+			const cluster, group, project = "acc-import-bind-owner", "acc-import-bind-filter", "acc-import-binding"
 			return importCase{
+				project:      project,
 				config:       vpcBindingConfig(cluster, group, true),
 				resourceType: vpcBindingType,
-				importID:     "us-texas-1/demo/vpc-" + cluster,
-				identity:     map[string]string{"region": "us-texas-1", "project": "demo", "vpc": "vpc-" + cluster},
+				importID:     "us-texas-1/" + project + "/vpc-" + cluster,
+				identity:     map[string]string{"region": "us-texas-1", "project": project, "vpc": "vpc-" + cluster},
 				verifyBy:     "vpc",
 				checkDestroy: checkGone(clusterType, clusterPath),
 			}
@@ -388,6 +396,7 @@ resource %q "test" {
 // TestAccImport runs every resource's case, one subtest each, so
 // `-run 'TestAccImport/<type name>'` picks out one.
 func TestAccImport(t *testing.T) {
+	t.Parallel()
 	cases := importCases()
 	names := make([]string, 0, len(cases))
 	for name := range cases {
@@ -395,7 +404,10 @@ func TestAccImport(t *testing.T) {
 	}
 	sort.Strings(names)
 	for _, name := range names {
-		t.Run(name, func(t *testing.T) { cases[name]().run(t) })
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			cases[name]().run(t)
+		})
 	}
 }
 
@@ -406,6 +418,7 @@ func TestAccImport(t *testing.T) {
 // declared shape: an update, never a replacement, and once applied, nothing
 // left to plan.
 func TestAccImportClusterSparsePools(t *testing.T) {
+	t.Parallel()
 	const name = "acc-import-sparse"
 	config := clusterConfig(name, 2)
 	seed := strings.Replace(config, `"test"`, `"seed"`, 1)
@@ -435,6 +448,7 @@ func TestAccImportClusterSparsePools(t *testing.T) {
 // its pin on import, because there the unversioned spelling would mean a
 // different version. The pinned configuration plans clean.
 func TestAccImportKeepsAnOlderClusterTypePin(t *testing.T) {
+	t.Parallel()
 	const name = "acc-import-pinned"
 	importCase{
 		config: fmt.Sprintf(`
@@ -464,6 +478,7 @@ var notImportable = map[string]string{}
 // a resource registered without an import case, and not named as having no
 // import, fails the build.
 func TestEveryResourceHasAnImportCase(t *testing.T) {
+	t.Parallel()
 	cases := importCases()
 	guide, err := os.ReadFile(filepath.Join("..", "..", "docs", "guides", "import.md"))
 	if err != nil {
@@ -497,6 +512,7 @@ func TestEveryResourceHasAnImportCase(t *testing.T) {
 // `for_each`, naming each cluster by an identity that leaves the scope to the
 // provider. Both clusters have to adopt with no change, and stay that way.
 func TestAccImportForEachByIdentity(t *testing.T) {
+	t.Parallel()
 	clusters := fmt.Sprintf(`
 locals {
   clusters = toset(["acc-import-each-a", "acc-import-each-b"])
@@ -569,6 +585,7 @@ import {
 // move, so that plan moves `cluster_type` and nothing else: a cluster's
 // `node_count` stays known.
 func TestAccImportAPinToTheCurrentVersion(t *testing.T) {
+	t.Parallel()
 	pinned := clusterTypeRef + "/versions/33333333-3333-3333-3333-333333333333"
 	cases := map[string]string{
 		clusterType: fmt.Sprintf(`
@@ -616,12 +633,14 @@ resource %q "test" {
 // what the contract says `[]` means. The import can see that, from the group's
 // owner, so it records `[]` and that configuration plans clean.
 func TestAccImportABindingAtItsDefault(t *testing.T) {
-	const cluster, group = "acc-import-default-owner", "acc-import-default-filter"
+	t.Parallel()
+	const cluster, group, project = "acc-import-default-owner", "acc-import-default-filter", "acc-import-default"
 	importCase{
+		project:      project,
 		config:       vpcBindingConfig(cluster, group, false),
 		resourceType: vpcBindingType,
-		importID:     "us-texas-1/demo/vpc-" + cluster,
-		identity:     map[string]string{"region": "us-texas-1", "project": "demo", "vpc": "vpc-" + cluster},
+		importID:     "us-texas-1/" + project + "/vpc-" + cluster,
+		identity:     map[string]string{"region": "us-texas-1", "project": project, "vpc": "vpc-" + cluster},
 		verifyBy:     "vpc",
 		checkDestroy: checkGone(clusterType, clusterPath),
 	}.run(t)

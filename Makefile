@@ -45,6 +45,7 @@ GORELEASER     ?= $(TOOLS_BIN)/goreleaser
 TFPLUGINDOCS   ?= $(TOOLS_BIN)/tfplugindocs
 TF_BIN         ?= terraform
 TF_REGISTRY_HOST ?= registry.terraform.io
+TESTACC_PARALLEL ?= 8
 
 .DEFAULT_GOAL := check
 
@@ -96,11 +97,13 @@ test: ## Unit tests
 
 # TF_BIN=tofu runs it under OpenTofu. A TF_BIN that isn't on PATH fails here,
 # because an empty TF_ACC_TERRAFORM_PATH would quietly run terraform instead.
+# TESTACC_PARALLEL is how many tests run at once. Most of a test's time is
+# spent waiting on the fake, so it's set above the core count.
 .PHONY: testacc
 testacc: ## Acceptance tests: each resource's own lifecycle against the local fake. TF_BIN=tofu for OpenTofu
 	@tf="$$(command -v $(TF_BIN))" || { echo "testacc: $(TF_BIN) is not on PATH" >&2; exit 1; }; \
 	echo "testacc: $$("$$tf" version | head -1) at $$tf"; \
-	TF_ACC=1 TF_ACC_TERRAFORM_PATH="$$tf" go test ./internal/acceptance/ -count=1 -timeout 20m
+	TF_ACC=1 TF_ACC_TERRAFORM_PATH="$$tf" go test ./internal/acceptance/ -count=1 -timeout 20m -parallel $(TESTACC_PARALLEL)
 
 # The perpetual-diff check on its own, so the nightly can name it when it
 # fails: every managed resource applied, then planned, refreshed and planned
@@ -108,7 +111,7 @@ testacc: ## Acceptance tests: each resource's own lifecycle against the local fa
 # `make testacc` runs it too.
 .PHONY: drift
 drift: ## The perpetual-diff check alone: every resource, plan and refresh against a fake that moves what the platform moves
-	TF_ACC=1 TF_ACC_TERRAFORM_PATH="$$(command -v $(TF_BIN))" go test ./internal/acceptance/ -count=1 -timeout 20m -v \
+	TF_ACC=1 TF_ACC_TERRAFORM_PATH="$$(command -v $(TF_BIN))" go test ./internal/acceptance/ -count=1 -timeout 20m -parallel $(TESTACC_PARALLEL) -v \
 		-run '^(TestAccPerpetualDiff|TestPerpetualDiffCoversEveryResource)$$'
 
 # The performance benchmark: plan, refresh-only plan, apply and destroy at each

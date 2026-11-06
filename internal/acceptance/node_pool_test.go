@@ -15,6 +15,7 @@ import (
 // Leaving `node_pool` out reads every pool the platform created into state,
 // and the next plan has to accept that rather than propose an update.
 func TestAccClusterWithoutNodePoolPlansEmpty(t *testing.T) {
+	t.Parallel()
 	const name = "acc-no-pool"
 	config := fmt.Sprintf(`
 resource %q "test" {
@@ -47,6 +48,7 @@ resource %q "test" {
 // A configured pool scaled behind Terraform's back is drift, and the plan has
 // to say so.
 func TestAccClusterConfiguredPoolDriftShows(t *testing.T) {
+	t.Parallel()
 	const name = "acc-pool-drift"
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: protoV6,
