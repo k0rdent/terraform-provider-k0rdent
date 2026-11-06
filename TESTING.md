@@ -313,6 +313,82 @@ or moves `ci/real-api/api-version` to a new API. A change to the provider alone
 doesn't, since its tests run against a fake that's known to match. A release
 does.
 
+`ci/real-api/paths` lists what each hash covers. The script reads it from the
+tree it checks, so a release branch's tag is held to that branch's own lists,
+and a change to the lists says so when the record is checked.
+
+#### Set up the stack
+
+`make real-api-stack` builds the stack on a kind cluster from the platform
+API's source, and writes an env file that sets every variable the check reads.
+You need:
+
+- Read access to the platform API's source repository, and a GitHub token
+  with `read:packages` for its images on `ghcr.io`. Both are private to the
+  GitHub organization. Ask a platform maintainer for the repository and for
+  access to it.
+- Docker, kind, kubectl, helm, jq and curl, as well as what [Set up](#set-up)
+  installs. The API source's `go.work` names the Go it builds with, 1.27.3 at
+  v1.3.0. An older Go downloads that version the first time, as Go does
+  by default.
+
+1. Check out the API's source at the version `ci/real-api/api-version` names,
+   and point the setup at it:
+
+   ```sh
+   export REAL_API_SOURCE=<path to the API source>
+   git -C "$REAL_API_SOURCE" fetch --tags
+   git -C "$REAL_API_SOURCE" checkout "$(cat ci/real-api/api-version)"
+   ```
+
+2. Log docker in to `ghcr.io`. The user is your GitHub user, and the password a
+   token with `read:packages`:
+
+   ```sh
+   docker login ghcr.io
+   ```
+
+3. Build the stack. On an M-series Mac the first run took six minutes,
+   mostly pulling images and installing. A run on a built stack took one:
+
+   ```sh
+   make real-api-stack
+   ```
+
+- It creates the kind cluster `k0rdent-rc5` and adds 6000 to every forwarded
+  port, so the gateway is on `localhost:14000`. `REAL_API_KIND_CLUSTER` and
+  `REAL_API_PORT_OFFSET` change them. It refuses a kind cluster of that name
+  it didn't make, unless that cluster already runs the API or
+  `REAL_API_KIND_REUSE=1` is set.
+- It installs the API in mock mode, with the source's kind values and a mock
+  identity provider. The secrets in those values are throwaway ones the
+  source ships, so there's nothing to supply.
+- It seeds a machine type, an address pool, and two cluster types:
+  `seed-ct-local` with three versions for `make live`, and `kind-ct-subnets`
+  with subnets for `full/`. It signs in as the mock identity provider's
+  administrator to do it.
+- It issues the two service accounts and writes `.live/real-api-kind.env`,
+  mode 600, which git ignores. `REAL_API_ENV_FILE` puts it elsewhere.
+- Run it again to restart the port-forwards after Docker or the machine
+  restarts. It reuses what's there, writes the env file again, and issues new
+  credentials only when the old ones stop working.
+- `REAL_API_FRESH=1 make real-api-stack` deletes the cluster and builds it
+  again. It deletes only a cluster it made, not one it found and installed
+  into. Use it when `make real-api-check` says the stack holds what an
+  earlier run left, as an interrupted run does. The check refuses such a
+  stack before it starts, since `look/` would read those objects and the
+  comparison would count them.
+
+Then run the check with the env file:
+
+```sh
+. .live/real-api-kind.env
+make real-api-check
+git add ci/real-api/record.json
+```
+
+For a stack built another way, set the variables yourself:
+
 | Variable | Value |
 | --- | --- |
 | `K0RDENT_ENDPOINT` | The stack's gateway, such as `http://localhost:14000` |
@@ -323,11 +399,6 @@ does.
 | `REAL_API_CLUSTER_TYPE` | A cluster type in the region with a worker pool and two or more `available` versions. `make live` uses it too, and a skipped step fails the check |
 | `REAL_API_WALKTHROUGH_GAPS` | What the stack can't do that a walkthrough asks for. `subnet-cidr`: the stack answers a subnet's CIDR without allocating it from the pool, so `full/` doesn't check it. `no-file-store`: no storage service, so `full-everything` leaves `file_store` off. `no-hosts`: no server for an instance group's host, so `full-everything` leaves `instance_group` and `vpc_peering` off. A kind stack needs all three. The record lists them, and a release names the resources they leave to `make real-api-check-hardware`. Default none |
 | `REAL_API_KUBE_CONTEXT` | The stack's kube context. The API version is read from its images. Default `kind-k0rdent-rc5` |
-
-```sh
-make real-api-check
-git add ci/real-api/record.json
-```
 
 ### `make real-api-check-hardware`
 
