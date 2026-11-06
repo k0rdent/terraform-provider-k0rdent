@@ -1,3 +1,0 @@
-```release-note:enhancement
-provider: Name the credential, not the resource, when a token mint fails
-```

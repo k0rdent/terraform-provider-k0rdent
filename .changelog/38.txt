@@ -1,3 +1,0 @@
-```release-note:bug
-resource/k0rdent_vpc_security_groups: Fix the description and the destroy and replace warnings saying the VPC's default group permits all egress. From the k0rdent API v1.3.0-rc.3 it permits traffic between the VPC's own subnet prefixes and nothing else
-```
