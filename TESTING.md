@@ -313,7 +313,7 @@ You need:
   access to it.
 - Docker, kind, kubectl, helm, jq and curl, as well as what [Set up](#set-up)
   installs. The API source's `go.work` names the Go it builds with, 1.27.3 at
-  v1.3.0-rc.7. An older Go downloads that version the first time, as Go does
+  v1.3.0. An older Go downloads that version the first time, as Go does
   by default.
 
 1. Check out the API's source at the version `ci/real-api/api-version` names,
