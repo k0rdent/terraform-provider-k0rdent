@@ -625,6 +625,9 @@ var subnetStates = stateKind[k0rdent.Subnet]{
 	// "the subnet is not in a deletable state (e.g. still `creating` or
 	// already `deleting`)."
 	deleting: string(k0rdent.SubnetStateDeleting),
+	// The platform starts a delete only from `active` or `failed`, so one
+	// still `creating` is waited out.
+	busy: []string{string(k0rdent.SubnetStateCreating)},
 	state: func(n k0rdent.Subnet) (string, bool) {
 		return stateString(n.State), stateString(n.State) != ""
 	},

@@ -659,6 +659,7 @@ var vpcPeeringStates = stateKind[k0rdent.VPCPeering]{
 	subject:  "this side of the peering",
 	// "an operation is already in flight (`creating` or `deleting`)."
 	deleting: string(k0rdent.VPCPeeringStateDeleting),
+	busy:     []string{string(k0rdent.VPCPeeringStateCreating)},
 	state: func(p k0rdent.VPCPeering) (string, bool) {
 		return stateString(p.State), stateString(p.State) != ""
 	},

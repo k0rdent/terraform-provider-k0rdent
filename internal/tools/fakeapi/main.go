@@ -110,7 +110,9 @@ const (
 )
 
 // settle advances a transient state once it has been read settleAfter times,
-// to `active` or to wherever the display name asks for instead.
+// to `active` or to wherever the display name asks for instead. A create whose
+// display name carries createsSlowly lasts slowReads reads instead, so a test
+// can stop an apply, or start a destroy, while it's still `creating`.
 func settle(state *string, reads *int, displayName *string) {
 	*reads++
 
@@ -122,7 +124,11 @@ func settle(state *string, reads *int, displayName *string) {
 		target = unrecognisedState
 	}
 
-	if *reads > settleAfter && *state != target {
+	lasts := settleAfter
+	if *state == "creating" && nameCarries(displayName, createsSlowly) {
+		lasts = slowReads
+	}
+	if *reads > lasts && *state != target {
 		*state, *reads = target, 0
 	}
 }
@@ -2236,9 +2242,10 @@ const (
 	// test can plan against a group mid-delete and its destroy still finishes.
 	// A cluster's lasts slowReads, so a destroy's timeout can be reached.
 	deletesSlowly = "fake-deletes-slowly"
-	// A cluster's or an instance group's create settles only after slowReads
-	// reads, so a create timeout can be reached and the next apply can still
-	// see it finish.
+	// A create settles only after slowReads reads, so a create timeout can be
+	// reached and the next apply can still see it finish. A cluster and an
+	// instance group read it in their own advance, every kind that settles
+	// through settle reads it there.
 	createsSlowly = "fake-creates-slowly"
 	// The first teardown fails and leaves the group `failed`, the way a
 	// teardown the platform gives up on does. The next DELETE succeeds.

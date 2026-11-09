@@ -717,6 +717,9 @@ var securityGroupStates = stateKind[k0rdent.SecurityGroup]{
 	// not 409. Read on a 409 all the same, so that a platform that refuses
 	// it instead doesn't fail the provider's own delete.
 	deleting: string(k0rdent.SecurityGroupStateDeleting),
+	// "Only `active` and `failed` are deletable", so a group still being
+	// created or updated is waited out.
+	busy: []string{string(k0rdent.SecurityGroupStateCreating), string(k0rdent.SecurityGroupStateUpdating)},
 	state: func(g k0rdent.SecurityGroup) (string, bool) {
 		return stateString(g.State), stateString(g.State) != ""
 	},

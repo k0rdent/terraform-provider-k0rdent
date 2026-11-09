@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -101,6 +102,12 @@ type stateKind[T any] struct {
 	// on a delete of a resource that reads it is that delete, not a refusal.
 	// See startDelete.
 	deleting string
+
+	// busy are the states in which the platform refuses a delete with a
+	// CONFLICT_IN_USE 409 because an operation is still running on the
+	// resource, a create or an update, and which it leaves on its own. A
+	// destroy waits them out rather than report the refusal. See startDelete.
+	busy []string
 
 	// released are the states in which a read may answer blank for what the
 	// create sent, because a delete has released it. See teardown_read.go.
@@ -248,53 +255,160 @@ const (
 // destroy finds it so. That delete is the one to wait for: a second DELETE
 // would only meet a 409 on most kinds. A failed read sends the DELETE anyway,
 // and the 409 handling above still applies.
-func (k stateKind[T]) startDelete(ctx context.Context, what apiCall, send func(context.Context) (*http.Response, []byte, error), read stateRead[T], diags *diag.Diagnostics) deleteStart {
+//
+// A resource in one of k.busy is waited out the same way. An apply stopped
+// mid-create, by an interrupt or a create timeout, leaves the resource in
+// state, tainted, while the platform carries on creating it, and the platform
+// deletes it only once it is `active` or `failed`. So the destroy waits for
+// the operation to finish, inside the delete timeout, and then sends the
+// DELETE. A CONFLICT_IN_USE 409 on a resource that then reads busy, because
+// another run started an operation in between, is waited out and sent again,
+// with a longer pause before each wait after the first. A 409 on a resource
+// that reads settled is the refusal the platform meant, as before.
+func (k stateKind[T]) startDelete(ctx context.Context, cfg waitConfig, what apiCall, send func(context.Context) (*http.Response, []byte, error), read stateRead[T], diags *diag.Diagnostics) deleteStart {
+	waits := 0
 	if k.deleting != "" {
 		if body, readResp, readRaw, readErr := read(ctx); readErr == nil {
 			if isNotFound(readResp, readRaw) {
 				return deleteGone
 			}
-			if state, ok := k.stateOf(body); ok && state == k.deleting {
+			state, ok := k.stateOf(body)
+			switch {
+			case ok && state == k.deleting:
 				tflog.Info(ctx, "the "+k.name+" is already being deleted, so that delete is waited out rather than sent again",
 					map[string]any{"state": state})
 				return deleteAccepted
+			case ok && slices.Contains(k.busy, state):
+				if next, done := k.awaitDeletable(ctx, cfg, state, waits, read, diags); done {
+					return next
+				}
+				waits++
 			}
 		}
 	}
-	resp, raw, err := send(ctx)
+	for {
+		resp, raw, err := send(ctx)
+		switch {
+		case err != nil:
+			addAPIError(diags, what, nil, nil, err)
+			return deleteFailed
+		case isNotFound(resp, raw):
+			return deleteGone
+		case resp != nil && resp.StatusCode < 300:
+			return deleteAccepted
+		case resp == nil || resp.StatusCode != http.StatusConflict:
+			addAPIError(diags, what, resp, raw, nil)
+			return deleteFailed
+		}
+
+		if k.deleting != "" {
+			if body, readResp, readRaw, readErr := read(ctx); readErr == nil {
+				if isNotFound(readResp, readRaw) {
+					return deleteGone
+				}
+				state, ok := k.stateOf(body)
+				switch {
+				case ok && state == k.deleting:
+					tflog.Info(ctx, "the delete was refused because the "+k.name+" is already being deleted, so it's waited out",
+						withRequestID(map[string]any{"state": state}, resp, raw))
+					return deleteAccepted
+				case ok && slices.Contains(k.busy, state) && refusedInUse(resp, raw):
+					if next, done := k.awaitDeletable(ctx, cfg, state, waits, read, diags); done {
+						return next
+					}
+					waits++
+					continue
+				}
+			}
+		}
+		addAPIError(diags, what, resp, raw, nil)
+		return deleteRefused
+	}
+}
+
+// awaitDeletable waits for a resource the platform won't delete yet, because
+// it reads state, one of k.busy, to leave it. waited is how many such waits
+// this destroy has already made, and each wait after the first starts after
+// a longer, jittered pause, so a resource that keeps changing isn't polled in
+// step with whatever changes it.
+//
+// done says the destroy goes no further and next is its verdict: the
+// resource went, or a delete someone else started is to be waited out, or the
+// wait failed and was reported. Otherwise the resource can be deleted now.
+func (k stateKind[T]) awaitDeletable(ctx context.Context, cfg waitConfig, state string, waited int, read stateRead[T], diags *diag.Diagnostics) (next deleteStart, done bool) {
+	tflog.Info(ctx, "the platform deletes the "+k.name+" only once its operation finishes, so the destroy waits for it",
+		map[string]any{"state": state, "waited": waited})
+	paused := waited == 0
+	last := state
+	gone, deleting := false, false
+	err := waitFor(ctx, cfg, "the "+k.name+" to finish its operation before it is deleted", func(ctx context.Context) (bool, error) {
+		// The pause is the wait's first step, so a pause the timeout or an
+		// interrupt ends is reported as the wait it is.
+		if !paused {
+			paused = true
+			if err := sleepOrCancel(ctx, fullJitter(backoffCeiling(cfg, waited-1, time.Minute))); err != nil {
+				return false, err
+			}
+		}
+		body, resp, raw, err := read(ctx)
+		if err != nil {
+			return false, err
+		}
+		if isNotFound(resp, raw) {
+			gone = true
+			return true, nil
+		}
+		if body == nil {
+			return false, k0rdent.CheckResponse(resp, raw)
+		}
+		now, _ := k.state(*body)
+		last = now
+		deleting = now == k.deleting
+		return !slices.Contains(k.busy, now), nil
+	})
 	switch {
 	case err != nil:
-		addAPIError(diags, what, nil, nil, err)
-		return deleteFailed
-	case isNotFound(resp, raw):
-		return deleteGone
-	case resp != nil && resp.StatusCode < 300:
-		return deleteAccepted
-	case resp == nil || resp.StatusCode != http.StatusConflict:
-		addAPIError(diags, what, resp, raw, nil)
-		return deleteFailed
+		k.reportBusyWait(diags, withLastState(err, last))
+		return deleteFailed, true
+	case gone:
+		return deleteGone, true
+	case deleting:
+		return deleteAccepted, true
 	}
+	return 0, false
+}
 
-	if k.deleting != "" {
-		if body, readResp, readRaw, readErr := read(ctx); readErr == nil {
-			if isNotFound(readResp, readRaw) {
-				return deleteGone
-			}
-			if state, ok := k.stateOf(body); ok && state == k.deleting {
-				tflog.Info(ctx, "the delete was refused because the "+k.name+" is already being deleted, so it's waited out",
-					withRequestID(map[string]any{"state": state}, resp, raw))
-				return deleteAccepted
-			}
-		}
+// reportBusyWait reports a wait for an operation to finish before a delete
+// that ended first. Nothing was deleted, so the advice is to run the destroy
+// again, which waits for the same operation.
+func (k stateKind[T]) reportBusyWait(diags *diag.Diagnostics, err error) {
+	summary := "The " + k.name + "'s operation did not finish before the destroy stopped waiting"
+	if !stillRunning(err) {
+		addWaitError(diags, summary, err)
+		return
 	}
-	addAPIError(diags, what, resp, raw, nil)
-	return deleteRefused
+	advice := fmt.Sprintf("The platform deletes a %s only once it is `active` or `failed`, so the destroy "+
+		"waited for the operation running on it to finish, and the wait ended first. Nothing was deleted, "+
+		"and the %s stays in state. Next: run `terraform destroy` again, which waits for the same operation "+
+		"and then deletes the %s.", k.name, k.name, k.name)
+	if !waitInterrupted(err) {
+		advice += " If the operation routinely takes this long, raise `delete` in the resource's `timeouts` " +
+			"block and apply before destroying, since a destroy reads its timeout from state."
+	}
+	addAdvisedError(diags, summary, advice, err)
+}
+
+// refusedInUse reports whether a refusal carries details[].reason
+// CONFLICT_IN_USE, the reason the platform gives a delete it won't start yet.
+func refusedInUse(resp *http.Response, body []byte) bool {
+	var refusal *k0rdent.APIError
+	return errors.As(k0rdent.CheckResponse(resp, body), &refusal) && refusal.HasReason(conflictInUse)
 }
 
 // destroy starts a delete and waits for the 404, reporting any failure. It
 // returns startDelete's verdict.
 func (k stateKind[T]) destroy(ctx context.Context, cfg waitConfig, send func(context.Context) (*http.Response, []byte, error), read stateRead[T], diags *diag.Diagnostics) deleteStart {
-	started := k.startDelete(ctx, apiCall("delete the "+k.name), send, read, diags)
+	started := k.startDelete(ctx, cfg, apiCall("delete the "+k.name), send, read, diags)
 	if started == deleteAccepted {
 		k.reportDeleteWait(diags, k.awaitDeleted(ctx, cfg, "the "+k.name+" to finish deleting", read))
 	}

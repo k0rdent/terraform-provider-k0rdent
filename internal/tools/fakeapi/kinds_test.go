@@ -544,12 +544,21 @@ func TestASecondDeleteAnswersAsRecorded(t *testing.T) {
 	}
 }
 
-// deleteNetwork documents no state a network must settle into first: only
-// its read-only and in-use 409s. So a network the fake steered into a state
-// the contract doesn't declare is still deleted, and only one already
-// `deleting` is refused, as v1.3.0-dev.4 refused it.
-func TestANetworkIsRefusedADeleteOnlyWhileDeleting(t *testing.T) {
+// The v1.3.0 source deletes a network only from `active` or `failed`, so one
+// still `creating` is refused with CONFLICT_IN_USE, as one already `deleting`
+// was on v1.3.0-dev.4. A network the fake steered into a state the contract
+// doesn't declare is still deleted, so the test that steers it can clean up.
+func TestANetworkIsRefusedADeleteWhileAnOperationRuns(t *testing.T) {
 	s := newState()
+	if code, out := in(t, s.createNetwork, http.MethodPost, "r", "p", nil,
+		`{"id":"c","type":"evpn","evpn":{"type":"l2vpn"}}`); code != http.StatusCreated {
+		t.Fatalf("network: %d %v", code, out)
+	}
+	code, out := in(t, s.deleteNetwork, http.MethodDelete, "r", "p", map[string]string{"id": "c"}, "")
+	if code != http.StatusConflict || !strings.Contains(fmt.Sprint(out), "CONFLICT_IN_USE") {
+		t.Errorf("delete of a creating network: %d %v, want the CONFLICT_IN_USE 409", code, out)
+	}
+
 	if code, out := in(t, s.createNetwork, http.MethodPost, "r", "p", nil,
 		`{"id":"q","type":"evpn","evpn":{"type":"l2vpn"},"displayName":"`+settlesUnknown+`"}`); code != http.StatusCreated {
 		t.Fatalf("network: %d %v", code, out)

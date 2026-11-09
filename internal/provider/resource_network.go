@@ -863,7 +863,11 @@ var networkStates = stateKind[networkView]{
 	// one with subnets. Neither is a delete running, but the network reads
 	// `deleting` while one is, and only then is a 409 waited out.
 	deleting: string(k0rdent.NetworkEVPNStateDeleting),
-	state:    func(v networkView) (string, bool) { return v.state, v.state != "" },
+	// The contract doesn't say so, but the platform starts a delete only
+	// from `active` or `failed`, and refuses the rest with CONFLICT_IN_USE,
+	// so a network still being created or updated is waited out.
+	busy:  []string{string(k0rdent.NetworkEVPNStateCreating), string(k0rdent.NetworkEVPNStateUpdating)},
+	state: func(v networkView) (string, bool) { return v.state, v.state != "" },
 	detail: func(v networkView) string {
 		return stateDetail(v.stateMessage, reasonString(v.stateReason))
 	},

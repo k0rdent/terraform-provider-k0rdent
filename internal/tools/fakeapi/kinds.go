@@ -88,13 +88,17 @@ var (
 
 	// A network enters `deleting` on a delete, as v1.3.0-dev.4 showed, and a
 	// second delete of one is the 409 a subnet's is. deleteNetwork documents
-	// no state it must settle into first, so `deleting` is the only one
-	// refused.
+	// no state it must settle into first, but the v1.3.0 source moves a
+	// network to `deleting` only from `active` or `failed`
+	// (StartNetworkDelete in services/compute/db/queries/networks.sql), so
+	// every other state the contract declares is refused. A state it doesn't
+	// declare is deleted, so a test that steers a network into one can still
+	// clean up.
 	networkKind = &kind[*fakeNetwork]{
 		name:               "network",
 		idPrefix:           "network",
 		teardown:           settleAfter,
-		refusesDeleteWhile: []string{"deleting"},
+		refusesDeleteWhile: []string{"creating", "updating", "deleting"},
 		// createSubnet: "`details[].reason` is `CONFLICT_IN_USE` for other
 		// conflicts: ... the parent network is being deleted". A network
 		// with no subnets is deleted at once here, so only a network
@@ -543,8 +547,9 @@ func (k *kind[T]) admitDelete(w http.ResponseWriter, where at, v T) bool {
 	case slices.Contains(k.refusesDeleteWhile, *state),
 		k.deletableWhile != nil && !slices.Contains(k.deletableWhile, *state):
 		// Recorded on v1.3.0-dev.4 for a second delete of a network, a
-		// subnet and a peering. ASSUMPTION: a delete of one still `creating`
-		// answers the same.
+		// subnet and a peering. A delete of one still `creating` answers the
+		// same in the v1.3.0 source: each kind's Start*Delete moves a row to
+		// `deleting` only from `active` or `failed`, and a miss is this 409.
 		recordedConflict(w, fmt.Sprintf("conflict: %s %q cannot be deleted in current state", k.name, where.id),
 			"CONFLICT_IN_USE")
 		return false
