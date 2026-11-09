@@ -186,6 +186,7 @@ func callingTest() string {
 // PlanOnly step's first plan doesn't refresh. The test records to a file of
 // its own, through the same factory the suite's record uses.
 func TestAccAPlanAfterAnImportStepFollowsNoImport(t *testing.T) {
+	t.Parallel()
 	const id = "acc-matrix-import-step"
 	file := filepath.Join(t.TempDir(), "record.jsonl")
 	config := projectConfig(id, "Import step", "the matrix recorder's import step")
@@ -229,6 +230,7 @@ func TestAccAPlanAfterAnImportStepFollowsNoImport(t *testing.T) {
 // recordedVersionCheck, so a run where one skipped never passes for the
 // whole suite in the testing matrix's record.
 func TestEveryAcceptanceSkipIsRecorded(t *testing.T) {
+	t.Parallel()
 	files, err := filepath.Glob("*.go")
 	if err != nil {
 		t.Fatal(err)
