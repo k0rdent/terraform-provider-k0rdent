@@ -38,6 +38,9 @@ type perpetualDiffCase struct {
 	read func(attrs map[string]string) string
 	// gone is the CheckDestroy for the resource under test.
 	gone resource.TestCheckFunc
+	// project, when set, is a project of the case's own, which ownProject
+	// makes. A binding lists every security group in its project.
+	project string
 }
 
 // perpetualDiffCases is every managed resource the provider registers. A
@@ -98,7 +101,7 @@ func perpetualDiffCases() []perpetualDiffCase {
 			// Its destroy is a write rather than a delete, and the cluster that
 			// owns the VPC is what checkGone can ask about.
 			kind: "vpc_security_groups", config: vpcBindingConfig(binding, binding+"-sg", true), addr: vpcBindingAddr,
-			read: vpcPath, gone: checkGone(clusterType, clusterPath),
+			read: vpcPath, gone: checkGone(clusterType, clusterPath), project: "acc-perpetual-binding",
 		},
 		{
 			kind: "project", config: projectConfig(project, "acceptance", "perpetual diff"), addr: projectAddr,
@@ -131,8 +134,10 @@ func perpetualDiffCases() []perpetualDiffCase {
 // did answer two different bodies, and the refresh and plan are repeated so
 // the varied fields go through every shape they take.
 func TestAccPerpetualDiff(t *testing.T) {
+	t.Parallel()
 	for _, c := range perpetualDiffCases() {
 		t.Run(c.kind, func(t *testing.T) {
+			t.Parallel()
 			empty := []plancheck.PlanCheck{plancheck.ExpectEmptyPlan()}
 			// Each refresh has to leave state as the step before it left it.
 			// That's `terraform plan -refresh-only` exiting 0, which an empty
@@ -147,24 +152,28 @@ func TestAccPerpetualDiff(t *testing.T) {
 					PostApplyPostRefresh: empty,
 				},
 			}
+			steps := []resource.TestStep{
+				{
+					Config: c.config,
+					Check:  resource.ComposeAggregateTestCheckFunc(checkChurns(c.addr, c.read), unchanged.record),
+					ConfigPlanChecks: resource.ConfigPlanChecks{
+						PostApplyPreRefresh:  empty,
+						PostApplyPostRefresh: empty,
+					},
+				},
+				replan,
+				{RefreshState: true, Check: unchanged.compare},
+				replan,
+				{RefreshState: true, Check: unchanged.compare},
+				replan,
+			}
+			if c.project != "" {
+				steps = stepsInProject(ownProject(t, c.project), steps)
+			}
 			resource.Test(t, resource.TestCase{
 				ProtoV6ProviderFactories: protoV6,
 				CheckDestroy:             c.gone,
-				Steps: []resource.TestStep{
-					{
-						Config: c.config,
-						Check:  resource.ComposeAggregateTestCheckFunc(checkChurns(c.addr, c.read), unchanged.record),
-						ConfigPlanChecks: resource.ConfigPlanChecks{
-							PostApplyPreRefresh:  empty,
-							PostApplyPostRefresh: empty,
-						},
-					},
-					replan,
-					{RefreshState: true, Check: unchanged.compare},
-					replan,
-					{RefreshState: true, Check: unchanged.compare},
-					replan,
-				},
+				Steps:                    steps,
 			})
 		})
 	}
@@ -272,6 +281,7 @@ func checkChurns(addr string, pathOf func(map[string]string) string) resource.Te
 // registered without a perpetual-diff case, so a new resource can't skip the
 // check by being added after it was written. It needs no fake.
 func TestPerpetualDiffCoversEveryResource(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	var registered []string
 	for _, newResource := range provider.New("acc")().Resources(ctx) {

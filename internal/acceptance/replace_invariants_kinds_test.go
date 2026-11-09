@@ -325,7 +325,8 @@ resource %[1]q "other" {
 		{
 			unexercised: map[string]string{"region": "the fake's projects are all in its one region, so a move is refused as a region its project isn't in, a row of its own"},
 			typ:         vpcBindingType, noun: "binding",
-			replacing: []string{"project", "region", "vpc"},
+			replacing:  []string{"project", "region", "vpc"},
+			ownProject: true,
 			prelude: func(name string) string {
 				return clusterConfig(name+"-owner", 1) + fmt.Sprintf(`
 resource %q "test" {

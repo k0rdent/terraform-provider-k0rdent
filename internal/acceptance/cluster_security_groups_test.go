@@ -9,9 +9,9 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/plancheck"
 )
 
-// clusterGroupsConfig is two groups and a cluster on typeRef whose
-// `security_groups` line is groups, written as HCL. An empty groups leaves the
-// attribute out.
+// clusterGroupsConfig is two groups, named after the cluster, and a cluster on
+// typeRef whose `security_groups` line is groups, written as HCL. An empty
+// groups leaves the attribute out.
 func clusterGroupsConfig(name, typeRef, groups string) string {
 	line := ""
 	if groups != "" {
@@ -19,7 +19,7 @@ func clusterGroupsConfig(name, typeRef, groups string) string {
 	}
 	return fmt.Sprintf(`
 resource %[1]q "a" {
-  id = "acc-cg-a"
+  id = "%[3]s-sg-a"
   ingress {
     action             = "permit"
     protocol           = "tcp"
@@ -31,7 +31,7 @@ resource %[1]q "a" {
 }
 
 resource %[1]q "b" {
-  id = "acc-cg-b"
+  id = "%[3]s-sg-b"
   ingress {
     action             = "permit"
     protocol           = "tcp"
@@ -58,6 +58,7 @@ var (
 // The whole lifecycle of a cluster's own groups: set at create, reordered in
 // place, left alone when the attribute is removed, detached with `[]`.
 func TestAccClusterSecurityGroups(t *testing.T) {
+	t.Parallel()
 	const name = "acc-cluster-groups"
 	ab := clusterGroupsConfig(name, clusterTypeRef, groupsAB)
 	resource.Test(t, resource.TestCase{
@@ -71,8 +72,8 @@ func TestAccClusterSecurityGroups(t *testing.T) {
 				Config: ab,
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr(clusterAddr, "security_groups.#", "2"),
-					resource.TestCheckResourceAttr(clusterAddr, "security_groups.0", "acc-cg-a"),
-					resource.TestCheckResourceAttr(clusterAddr, "security_groups.1", "acc-cg-b"),
+					resource.TestCheckResourceAttr(clusterAddr, "security_groups.0", name+"-sg-a"),
+					resource.TestCheckResourceAttr(clusterAddr, "security_groups.1", name+"-sg-b"),
 				),
 			},
 			{
@@ -87,8 +88,8 @@ func TestAccClusterSecurityGroups(t *testing.T) {
 					plancheck.ExpectResourceAction(clusterAddr, plancheck.ResourceActionUpdate),
 				}},
 				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttr(clusterAddr, "security_groups.0", "acc-cg-b"),
-					resource.TestCheckResourceAttr(clusterAddr, "security_groups.1", "acc-cg-a"),
+					resource.TestCheckResourceAttr(clusterAddr, "security_groups.0", name+"-sg-b"),
+					resource.TestCheckResourceAttr(clusterAddr, "security_groups.1", name+"-sg-a"),
 					resource.TestCheckResourceAttr(clusterAddr, "state", "active"),
 				),
 			},
@@ -117,6 +118,7 @@ func TestAccClusterSecurityGroups(t *testing.T) {
 // A cluster type whose node pools have no interface on a NICo-backed VPC
 // can carry no group, and the platform's 422 reaches the user.
 func TestAccClusterSecurityGroupsNeedAnInterface(t *testing.T) {
+	t.Parallel()
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: protoV6,
 		// The refused create leaves no cluster in state, so only the groups

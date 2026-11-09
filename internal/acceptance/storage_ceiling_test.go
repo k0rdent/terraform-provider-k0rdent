@@ -25,6 +25,7 @@ resource %q "test" {
 // v1.3.0-dev.4's storage ceiling: sent on the create, raised in place, kept
 // when it's left out, and refused at plan when it would go down.
 func TestAccClusterStorageCeiling(t *testing.T) {
+	t.Parallel()
 	const name = "acc-storage"
 	addr := clusterType + ".test"
 	resource.Test(t, resource.TestCase{

@@ -42,6 +42,7 @@ func expect(addr string, action plancheck.ResourceActionType) resource.ConfigPla
 // be allocated a different CIDR. A changed description is the mildest edit that
 // does that.
 func TestAccSubnetReplacementNeedsThePermission(t *testing.T) {
+	t.Parallel()
 	const network, name = "acc-guard-net", "acc-guard-sub"
 	before := subnetConfig(network, name)
 	after := strings.Replace(before, "prefix_length    = 24", "prefix_length    = 24\n  description      = \"renamed\"", 1)
@@ -78,6 +79,7 @@ func TestAccSubnetReplacementNeedsThePermission(t *testing.T) {
 // The address allocation is what a replaced subnet can lose, so the refusal
 // has to hold for the attribute that sizes it as well.
 func TestAccSubnetPrefixChangeIsRefused(t *testing.T) {
+	t.Parallel()
 	const network, name = "acc-guard-prefix-net", "acc-guard-prefix"
 	before := subnetConfig(network, name)
 	resource.Test(t, resource.TestCase{
@@ -98,6 +100,7 @@ func TestAccSubnetPrefixChangeIsRefused(t *testing.T) {
 }
 
 func TestAccClusterReplacementNeedsThePermission(t *testing.T) {
+	t.Parallel()
 	const name, renamed = "acc-guard-cluster", "acc-guard-cluster-2"
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: protoV6,
@@ -130,6 +133,7 @@ func TestAccClusterReplacementNeedsThePermission(t *testing.T) {
 // would refuse every in-place change to such a network. A cluster and an
 // instance group take their id from configuration, so a network stands in.
 func TestAccNetworkWithAGeneratedIDChangesInPlace(t *testing.T) {
+	t.Parallel()
 	config := func(displayName string) string {
 		return fmt.Sprintf(`
 resource %q "test" {
@@ -158,6 +162,7 @@ resource %q "test" {
 // Growing a pool scales in place. Shrinking one is a replacement, because the
 // API scales an instance group up only.
 func TestAccInstanceGroupShrinkNeedsThePermission(t *testing.T) {
+	t.Parallel()
 	const name = "acc-guard-hosts"
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: protoV6,
@@ -183,6 +188,7 @@ func TestAccInstanceGroupShrinkNeedsThePermission(t *testing.T) {
 }
 
 func TestAccNetworkReplacementNeedsThePermission(t *testing.T) {
+	t.Parallel()
 	const name = "acc-guard-fabric"
 	ib := fmt.Sprintf(`
 resource %q "test" {
@@ -211,6 +217,7 @@ resource %q "test" {
 }
 
 func TestAccProjectReplacementNeedsThePermission(t *testing.T) {
+	t.Parallel()
 	const id, renamed = "acc-guard-project", "acc-guard-project-2"
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: protoV6,
@@ -238,6 +245,7 @@ func TestAccProjectReplacementNeedsThePermission(t *testing.T) {
 // A resource that holds no tenant state is replaced without asking, as
 // before: the guard is not a blanket refusal.
 func TestAccSecurityGroupReplacesWithoutAsking(t *testing.T) {
+	t.Parallel()
 	config := func(id string) string {
 		return fmt.Sprintf(`
 resource %q "test" {

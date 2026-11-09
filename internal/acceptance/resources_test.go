@@ -47,6 +47,7 @@ resource %q "test" {
 }
 
 func TestAccCluster(t *testing.T) {
+	t.Parallel()
 	const name = "acc-cluster"
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: protoV6,
@@ -101,6 +102,7 @@ func TestAccCluster(t *testing.T) {
 }
 
 func TestAccInstanceGroup(t *testing.T) {
+	t.Parallel()
 	const name = "acc-hosts"
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: protoV6,

@@ -11,9 +11,8 @@ import (
 )
 
 // The plural data sources' `tags`, `display_name_regex` and `state` filters,
-// read through Terraform against the fake. Each test tags what it creates
-// with a value no other test uses, because the suite shares one fake and a
-// list of a project's networks holds every test's networks.
+// read through Terraform against the fake. The tests that list a whole
+// project's networks or groups do it in a project of their own.
 
 var (
 	securityGroupsType = provider.ResourceName("security_groups")
@@ -39,11 +38,13 @@ resource %q %q {
 // fails exactly one of them, so a filter that did nothing would show up as a
 // second row.
 func TestAccNetworksDataSourceFiltersOnTagsNameAndState(t *testing.T) {
+	t.Parallel()
 	list := "data." + networksType + ".prod"
+	project := ownProject(t, "acc-networks-filtered")
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: protoV6,
 		CheckDestroy:             checkGone(networkType, networkPath),
-		Steps: []resource.TestStep{{
+		Steps: stepsInProject(project, []resource.TestStep{{
 			Config: filterNetworkConfig("a", "acc-filter-net-a", "prod-a", "prod") +
 				filterNetworkConfig("b", "acc-filter-net-b", "lab-b", "prod") +
 				filterNetworkConfig("c", "acc-filter-net-c", "prod-c", "lab") + fmt.Sprintf(`
@@ -72,7 +73,7 @@ data %q "none" {
 				resource.TestCheckResourceAttr(list, "networks.0.tags.suite", "acc-filters"),
 				resource.TestCheckResourceAttr("data."+networksType+".none", "networks.#", "0"),
 			),
-		}},
+		}}),
 	})
 }
 
@@ -81,11 +82,13 @@ data %q "none" {
 // group but the kept one fails exactly one filter, so dropping any filter
 // lets a second group through, and `failed` has to find none of them.
 func TestAccSecurityGroupsDataSourceFiltersOnTagsNameAndState(t *testing.T) {
+	t.Parallel()
 	list := "data." + securityGroupsType + ".mine"
+	project := ownProject(t, "acc-groups-filtered")
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: protoV6,
 		CheckDestroy:             checkGone(securityGroupType, securityGroupPath),
-		Steps: []resource.TestStep{{
+		Steps: stepsInProject(project, []resource.TestStep{{
 			Config: fmt.Sprintf(`
 resource %[1]q "kept" {
   id           = "acc-filter-sg-kept"
@@ -131,7 +134,7 @@ data %[2]q "failed" {
 				resource.TestCheckResourceAttr(list, "security_groups.0.state", "active"),
 				resource.TestCheckResourceAttr("data."+securityGroupsType+".failed", "security_groups.#", "0"),
 			),
-		}},
+		}}),
 	})
 }
 
@@ -139,6 +142,7 @@ data %[2]q "failed" {
 // both, so what the filter matched can be read back. Each peering but the
 // tagged one fails exactly one filter, and `failed` has to find none.
 func TestAccVPCPeeringsDataSourceFiltersOnTagsAndName(t *testing.T) {
+	t.Parallel()
 	const cluster = "acc-filter-peer-owner"
 	const remote = "/v1/regions/us-texas-1/projects/other/networking/vpcs/vpc-inference"
 	const remote2 = "/v1/regions/us-texas-1/projects/other/networking/vpcs/vpc-serving"
@@ -213,6 +217,7 @@ data %[2]q "failed" {
 // The organizations come from the fake's fixture, so nothing is created:
 // `org-empty` is the one whose display name is exactly "empty".
 func TestAccOrganizationsDataSourceFiltersOnName(t *testing.T) {
+	t.Parallel()
 	list := "data." + organizationsType + ".empty"
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: protoV6,
@@ -234,6 +239,7 @@ data %q "empty" {
 // hosts and `running` keeps them all. The state goes to the platform as
 // `inStates`.
 func TestAccInstancesDataSourceFiltersOnState(t *testing.T) {
+	t.Parallel()
 	const group = "acc-filter-hosts"
 	running, stopped := "data."+instancesType+".running", "data."+instancesType+".stopped"
 	resource.Test(t, resource.TestCase{
@@ -267,6 +273,7 @@ data %q "stopped" {
 // The data sources depend on the group so they're read after the
 // replacement, not at plan.
 func TestAccInstancesDataSourceFindsDeletedRecords(t *testing.T) {
+	t.Parallel()
 	const group = "acc-filter-released"
 	deleted, running := "data."+instancesType+".deleted", "data."+instancesType+".running"
 	reads := fmt.Sprintf(`
@@ -310,6 +317,7 @@ data %[1]q "running" {
 // excluding them, fails the plan on the attribute. Nothing is read: the step is plan-only and the
 // fake would answer a read.
 func TestAccDataSourceFiltersAreCheckedAtPlan(t *testing.T) {
+	t.Parallel()
 	for name, tc := range map[string]struct{ config, want string }{
 		"regex": {
 			config: fmt.Sprintf("data %q \"bad\" {\n  display_name_regex = \"(prod\"\n}\n", vpcsType),

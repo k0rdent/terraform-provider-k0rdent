@@ -71,6 +71,7 @@ func teamIs(got map[string]any, want string) bool {
 // doesn't wait for it to become `active`. Each object here failed its create
 // and was untainted, which keeps it in state.
 func TestAccAMetadataChangeToAFailedNetworkOrInstanceGroup(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("the CLI sequence runs on unix")
 	}
@@ -154,6 +155,7 @@ func TestAccAMetadataChangeToAFailedNetworkOrInstanceGroup(t *testing.T) {
 // A metadata change to an `active` network or instance group still reaches
 // the platform and plans clean after.
 func TestAccAMetadataChangeToAnActiveNetworkOrInstanceGroup(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("the CLI sequence runs on unix")
 	}

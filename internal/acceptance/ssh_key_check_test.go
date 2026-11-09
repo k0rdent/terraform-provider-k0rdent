@@ -15,8 +15,9 @@ import (
 // keyKind is one resource that holds SSH keys: a cluster or an instance group.
 // Every key check runs for both, so neither can be left with a weaker check.
 //
-// Each has keys of its own, so refusing their reads or revoking them touches
-// no other test's: the fake makes one credential per key.
+// Each has keys of its own. The fake makes one credential per key, so a test
+// that refuses a key's reads or revokes it uses a key no other test holds:
+// ownKey for kept.
 type keyKind struct {
 	typ  string
 	noun string
@@ -69,6 +70,9 @@ func eachKeyKind(t *testing.T, check func(t *testing.T, k keyKind)) {
 }
 
 func (k keyKind) adopted() string { return k.typ + ".adopted" }
+
+// ownKey is kept with name in its comment, so its credential is name's alone.
+func (k keyKind) ownKey(name string) string { return k.kept + "-" + name }
 
 // resource is the resource at address with ops and its write-only key, or
 // none, and whatever extra lines are given.
@@ -157,6 +161,7 @@ func (k keyKind) harness(s *terraform.State, action string) error {
 // replacement carries the new key. It never plans "No changes" over a key the
 // nodes don't have.
 func TestAccAKeyChangedAfterAnImportReplaces(t *testing.T) {
+	t.Parallel()
 	eachKeyKind(t, func(t *testing.T, k keyKind) {
 		name := k.prefix + "-import"
 		resource.Test(t, resource.TestCase{
@@ -206,6 +211,7 @@ resource %q "test" {
 // when they're the same keys, checked against the fingerprints the platform
 // holds, and a replacement the guard refuses when they aren't.
 func TestAccKeysMovedToWriteOnlyPlanNoChange(t *testing.T) {
+	t.Parallel()
 	eachKeyKind(t, func(t *testing.T, k keyKind) {
 		name := k.prefix + "-moved"
 		resource.Test(t, resource.TestCase{
@@ -232,15 +238,17 @@ func TestAccKeysMovedToWriteOnlyPlanNoChange(t *testing.T) {
 // an update, never no change, and the apply stops naming the role, every
 // time. A destroy with those keys still set runs: it plans first.
 func TestAccKeysThatCantBeCheckedStopTheApply(t *testing.T) {
+	t.Parallel()
 	stops := regexp.MustCompile(`(?s)The SSH keys can't be checked.*HTTP 403.*project.*credentials-admin`)
 	eachKeyKind(t, func(t *testing.T, k keyKind) {
 		name := k.prefix + "-refused"
+		kept := k.ownKey(name)
 		resource.Test(t, resource.TestCase{
 			ProtoV6ProviderFactories: protoV6,
 			CheckDestroy:             checkGone(k.typ, k.pathOf),
 			Steps: []resource.TestStep{
 				{
-					Config: k.config(name, "test", k.kept),
+					Config: k.config(name, "test", kept),
 					Check:  func(s *terraform.State) error { return k.harness(s, "refuse-reads") },
 				},
 				{
@@ -248,12 +256,12 @@ func TestAccKeysThatCantBeCheckedStopTheApply(t *testing.T) {
 					ConfigPlanChecks: expect(k.adopted(), plancheck.ResourceActionNoop),
 				},
 				{
-					Config:           k.adoptedConfig(name, k.kept, false),
+					Config:           k.adoptedConfig(name, kept, false),
 					ConfigPlanChecks: expect(k.adopted(), plancheck.ResourceActionUpdate),
 					ExpectError:      stops,
 				},
 				{
-					Config:      k.adoptedConfig(name, k.kept, false),
+					Config:      k.adoptedConfig(name, kept, false),
 					ExpectError: stops,
 				},
 			},
@@ -264,6 +272,7 @@ func TestAccKeysThatCantBeCheckedStopTheApply(t *testing.T) {
 // A key whose credential an operator revoked warns on every plan and plans
 // nothing: the nodes still take it, and a replacement would put it back.
 func TestAccARevokedKeyWarnsAndPlansNothing(t *testing.T) {
+	t.Parallel()
 	eachKeyKind(t, func(t *testing.T, k keyKind) {
 		name := k.prefix + "-revoked"
 		resource.Test(t, resource.TestCase{
@@ -286,6 +295,7 @@ func TestAccARevokedKeyWarnsAndPlansNothing(t *testing.T) {
 // A revoked key keeps its fingerprint, so after an import the same key plans
 // no change, with the revocation's warning, and a destroy with it set runs.
 func TestAccARevokedKeyIsStillCheckedAfterAnImport(t *testing.T) {
+	t.Parallel()
 	eachKeyKind(t, func(t *testing.T, k keyKind) {
 		name := k.prefix + "-revoked-import"
 		resource.Test(t, resource.TestCase{
@@ -313,11 +323,12 @@ func TestAccARevokedKeyIsStillCheckedAfterAnImport(t *testing.T) {
 // be read, can't be checked at plan either, in either attribute: the plan
 // shows the update that stops, never no change and never a replacement.
 func TestAccAKeyUnknownAtPlanThatCantBeCheckedStopsTheApply(t *testing.T) {
+	t.Parallel()
 	eachKeyKind(t, func(t *testing.T, k keyKind) {
 		for _, layout := range []string{"write-only", "text"} {
 			t.Run(layout, func(t *testing.T) {
 				name := k.prefix + "-unknown-" + map[string]string{"write-only": "wo", "text": "text"}[layout]
-				kept := k.kept
+				kept := k.ownKey(name)
 				if layout == "text" {
 					kept = k.keptText
 				}

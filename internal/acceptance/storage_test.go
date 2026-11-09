@@ -55,6 +55,7 @@ const twoConsumers = `{
 // The rest is the ordinary lifecycle, plus an expand, because capacity is the
 // one mutable field with a rule attached.
 func TestAccFileStore(t *testing.T) {
+	t.Parallel()
 	const name = "acc-datasets"
 
 	resource.Test(t, resource.TestCase{
@@ -142,6 +143,7 @@ func TestAccFileStore(t *testing.T) {
 // A shrink is refused before the apply, and deliberately not by replacing the
 // store: replacing it would destroy the data it holds.
 func TestAccFileStoreShrinkIsRefusedAtPlanTime(t *testing.T) {
+	t.Parallel()
 	const name = "acc-shrink"
 
 	resource.Test(t, resource.TestCase{
@@ -164,6 +166,7 @@ func TestAccFileStoreShrinkIsRefusedAtPlanTime(t *testing.T) {
 // rather than an update. Unlike a shrink, asking for a different class is
 // asking for a different store.
 func TestAccFileStoreShareTypeReplaces(t *testing.T) {
+	t.Parallel()
 	const name = "acc-class"
 
 	config := func(class string, capacity int) string {
@@ -207,6 +210,7 @@ resource %q "test" {
 // Every one of these is a 422 if it reaches the platform, which means a
 // rejection partway through an approved apply. None of them makes a request.
 func TestAccFileStoreConfigIsValidatedBeforeAnyRequest(t *testing.T) {
+	t.Parallel()
 	store := func(consumers string) string {
 		return fmt.Sprintf(`
 resource %q "test" {
@@ -312,6 +316,7 @@ resource %q "test" {
 // either hard-codes one, which is a 422 in the region that does not have it, or
 // is handed one out of band.
 func TestAccShareTypes(t *testing.T) {
+	t.Parallel()
 	config := fmt.Sprintf(`
 data %q "all" {}
 
@@ -342,6 +347,7 @@ data %q "one" {
 // A class that does not exist is an error, not an empty result: the store about
 // to be planned against it has nowhere to provision from.
 func TestAccShareTypeNotFound(t *testing.T) {
+	t.Parallel()
 	config := fmt.Sprintf(`
 data %q "one" {
   id = "no-such-class"
@@ -389,6 +395,7 @@ func checkStoreHasNoConsumers(name string) resource.TestCheckFunc {
 
 // Detaching every consumer through configuration empties the list upstream.
 func TestAccFileStoreConsumersDetach(t *testing.T) {
+	t.Parallel()
 	const name = "acc-detach"
 
 	resource.Test(t, resource.TestCase{
@@ -416,6 +423,7 @@ func TestAccFileStoreConsumersDetach(t *testing.T) {
 // A store that settles `failed` fails the apply and names the reason, rather
 // than polling until the timeout and reporting a wait that expired.
 func TestAccFileStoreFailedIsReportedNotWaitedOut(t *testing.T) {
+	t.Parallel()
 	config := fmt.Sprintf(`
 resource %q "test" {
   id           = "acc-store-fails"
@@ -439,6 +447,7 @@ resource %q "test" {
 // slow one, and guessing which known state it resembles puts an invented value
 // in state.
 func TestAccFileStoreUnrecognisedStateNamesTheValue(t *testing.T) {
+	t.Parallel()
 	config := fmt.Sprintf(`
 resource %q "test" {
   id           = "acc-store-unknown"
@@ -484,6 +493,7 @@ resource %q "test" {
 // A group that grows is repaired by the platform on its own, so the plan stays
 // clean while the grant catches up to the new members.
 func TestAccFileStoreRepairedGroupPlansNothing(t *testing.T) {
+	t.Parallel()
 	const group = "acc-trainers-repaired"
 	status := "consumer_status." + group + "."
 
@@ -507,6 +517,7 @@ func TestAccFileStoreRepairedGroupPlansNothing(t *testing.T) {
 // which is the only way to reach the new members, and the plan after that is
 // clean. A green plan here would leave them unable to mount.
 func TestAccFileStoreDriftedGroupIsResolvedAgain(t *testing.T) {
+	t.Parallel()
 	const group = "acc-trainers-fake-drifts"
 	status := "consumer_status." + group + "."
 	grown := groupStoreConfig("acc-drifted", group, 3)
@@ -542,6 +553,7 @@ func TestAccFileStoreDriftedGroupIsResolvedAgain(t *testing.T) {
 // to land the rest of the change and stop proposing the re-send, or every
 // later apply to the store fails.
 func TestAccFileStoreUnresolvableDriftDoesNotBlockTheStore(t *testing.T) {
+	t.Parallel()
 	const group = "acc-trainers-fake-unknown-host"
 	grown := groupStoreConfig("acc-unknown-host", group, 3)
 
@@ -565,6 +577,7 @@ func TestAccFileStoreUnresolvableDriftDoesNotBlockTheStore(t *testing.T) {
 // comparison verdict the contract calls pager-worthy. Sending the entry again
 // would grant whatever the id names now, so the plan fails instead.
 func TestAccFileStoreUngrantableGroupFailsThePlan(t *testing.T) {
+	t.Parallel()
 	const group = "acc-trainers-fake-ungrantable"
 
 	resource.Test(t, resource.TestCase{
@@ -587,6 +600,7 @@ func TestAccFileStoreUngrantableGroupFailsThePlan(t *testing.T) {
 // A day-2 change can fail while the store stays `active`, and the contract
 // says to treat a reason on the store as terminal. The apply has to fail.
 func TestAccFileStoreFailedExpansionFailsTheApply(t *testing.T) {
+	t.Parallel()
 	const name = "acc-expansion-fails"
 
 	resource.Test(t, resource.TestCase{
@@ -608,6 +622,7 @@ func TestAccFileStoreFailedExpansionFailsTheApply(t *testing.T) {
 // about the group. Reading every 422 as the re-send's refusal reported a false
 // warning and stopped proposing a re-send the platform never refused.
 func TestAccFileStoreAnUnrelatedRefusalDoesNotSuppressDrift(t *testing.T) {
+	t.Parallel()
 	const group = "acc-ceiling-fake-drifts"
 	config := func(size, capacity int) string {
 		return strings.Replace(strings.Replace(groupStoreConfig("acc-ceiling", group, size),

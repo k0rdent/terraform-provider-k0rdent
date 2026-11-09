@@ -65,6 +65,7 @@ func checkFakeState(name, want string) resource.TestCheckFunc {
 // the create, because the platform refuses to delete a cluster mid-operation,
 // and CheckDestroy proves the cluster is gone.
 func TestAccDestroyCancelsACreateThatNeverSettled(t *testing.T) {
+	t.Parallel()
 	const name = "acc-cancel"
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: protoV6,

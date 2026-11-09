@@ -34,6 +34,7 @@ const (
 // A cluster is told apart from one made outside Terraform by its create
 // token. An instance group carries none, so it passes on its state alone.
 func TestAccADestroyRunsPastATaintedCreateInEveryState(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("the CLI sequence runs on unix")
 	}
@@ -62,6 +63,7 @@ func TestAccADestroyRunsPastATaintedCreateInEveryState(t *testing.T) {
 			[]string{"failed: applying this plan replaces it if this state holds it"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			c := newCLIRun(t)
 			addr := tc.typeName + ".test"
 			path := clusters + tc.name
@@ -131,6 +133,7 @@ func TestAccADestroyRunsPastATaintedCreateInEveryState(t *testing.T) {
 // refused at plan in every state, and so is the destroy that would replace
 // nothing: the configuration doesn't hold it, so nothing is destroyed.
 func TestAccAPlanToCreateOverAClusterMadeElsewhereIsRefused(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("the CLI sequence runs on unix")
 	}

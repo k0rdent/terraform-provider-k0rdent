@@ -10,6 +10,7 @@ import (
 // as it is, and the answer may leave the field out, which must not read back
 // as null: Terraform fails the apply as an inconsistent result.
 func TestAccAnEmptyDisplayNameSurvivesAnUpdate(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("the CLI sequence runs on unix")
 	}

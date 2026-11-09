@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
@@ -14,12 +15,59 @@ import (
 
 var networksType = provider.ResourceName("networks")
 
+// ownProject makes a project for t alone, and deletes it once the test is
+// done. A test that reads a whole list in its project needs one, and so does
+// one with a VPC binding, which lists every security group: an offset list
+// skips a row when a test beside it deletes one ahead of it between two pages.
+func ownProject(t *testing.T, id string) string {
+	t.Helper()
+	if os.Getenv("TF_ACC") == "" {
+		return id
+	}
+	if err := postFake("/v1/regions/global/organizations/"+accOrg+"/projects",
+		fmt.Sprintf(`{"id":%q,"region":"us-texas-1"}`, id)); err != nil {
+		t.Fatalf("making the project %s: %v", id, err)
+	}
+	t.Cleanup(func() {
+		path := projectPath(map[string]string{"organization_id": accOrg, "id": id})
+		if status, body, err := callFake(http.MethodDelete, path); err != nil || status/100 != 2 {
+			t.Errorf("deleting the project %s answered %d: %v %s", id, status, err, body)
+			return
+		}
+		// The delete settles as the project is read, and a run with -count
+		// makes it again.
+		for range 200 {
+			if status, _, err := readFake(path); err != nil || status == http.StatusNotFound {
+				return
+			}
+		}
+		t.Errorf("the project %s is still there after its delete", id)
+	})
+	return id
+}
+
+// inProject is config with a provider block that puts it in project.
+func inProject(project, config string) string {
+	return fmt.Sprintf("\nprovider %q {\n  project = %q\n}\n", provider.ProviderTypeName, project) + config
+}
+
+// stepsInProject puts every step that has a configuration in project.
+func stepsInProject(project string, steps []resource.TestStep) []resource.TestStep {
+	for i := range steps {
+		if steps[i].Config != "" {
+			steps[i].Config = inProject(project, steps[i].Config)
+		}
+	}
+	return steps
+}
+
 // Two projects, one network id in each, and every request has to reach the
 // project its configuration names. The fake answers a request for another
 // project exactly as for an object that does not exist, so a provider that
 // sent the provider block's project, or either one of these, to both would
 // read, list or rename the wrong network and fail here.
 func TestAccTheSameIDInTwoProjectsStaysApart(t *testing.T) {
+	t.Parallel()
 	const network = "acc-same-network"
 	config := func(displayA string) string {
 		return fmt.Sprintf(`
@@ -102,6 +150,7 @@ data %[6]q "b" {
 // The same for a cluster, the object most of the provider's project-scoped
 // operations act on.
 func TestAccTheSameClusterIDInTwoProjectsStaysApart(t *testing.T) {
+	t.Parallel()
 	const cluster = "acc-same-cluster"
 	config := func(displayA string) string {
 		return fmt.Sprintf(`
