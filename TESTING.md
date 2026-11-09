@@ -92,9 +92,28 @@ local run sees what CI sees.
 | `TestAccEphemeralKubeconfigDependsOnDoesNotDeferTheOpen` | It records a Terraform behaviour that OpenTofu doesn't share |
 
 - `TestAccImport` for `k0rdent_file_store` expects OpenTofu's error at the
-  generated-configuration step. OpenTofu 1.12.6 writes a map key like
+  generated-configuration step. OpenTofu 1.12 and 1.13 write a map key like
   `10.0.0.31` without quotes, then can't read it back. The step fails once
   OpenTofu fixes that.
+
+#### Terraform and OpenTofu versions in CI
+
+CI runs the acceptance suite under the two newest releases of Terraform and
+of OpenTofu: for each, the newest patch of the newest minor, and the newest
+patch of the minor before it. HashiCorp fixes only those two Terraform
+minors. The `testacc` job's matrix in `.github/workflows/ci.yml` holds the
+Terraform pair, and the `testacc-opentofu` job's matrix the OpenTofu pair.
+Every other job runs the newer one.
+
+- When either project ships a new patch or minor, the nightly's
+  `make cli-releases-check` fails, and the nightly-failing issue says so.
+  Move that CLI's pins in `.github/workflows/` in one pull request: the
+  matrix to the two releases the check names, every other job to the newer
+  one. For example, Terraform 1.18.0 moves the matrix from 1.16 and 1.17 to
+  1.17's newest patch and 1.18.0.
+- `scripts/check-workflow-actions.sh` refuses anything else: a third version,
+  two that aren't adjacent minors, a matrix check name that doesn't show its
+  version, or a job outside the matrix on the older release.
 
 ### The testing matrix
 

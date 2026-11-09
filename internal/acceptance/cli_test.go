@@ -85,13 +85,14 @@ func taintedReplaced(t *testing.T) string {
 
 // openTofuUnquotedMapKey is the error `tofu plan -generate-config-out` gives
 // for a map attribute keyed by something that isn't an HCL identifier, such
-// as `10.0.0.31`. OpenTofu 1.12.6 writes each key of a nested map attribute
-// with "%s = {" in internal/genconfig/generate_config.go, where Terraform
-// quotes it, then fails to parse what it wrote.
+// as `10.0.0.31`. OpenTofu 1.12 and 1.13 write each key of a nested map
+// attribute with "%s = {" in internal/genconfig/generate_config.go, where
+// Terraform quotes it, then fail to parse what they wrote.
 var openTofuUnquotedMapKey = regexp.MustCompile(`(?s)generating plan with import config.*Invalid number literal.*on generated\.tf`)
 
 // Why a test is left out under OpenTofu. Each is something OpenTofu lacks or
-// does differently, seen on OpenTofu 1.12.6, and none is the provider's.
+// does differently, seen on OpenTofu 1.12 and 1.13, and none is the
+// provider's.
 const (
 	// Action blocks, action_trigger and `apply -invoke` are Terraform 1.14
 	// features. `tofu apply -invoke` fails with "flag provided but not

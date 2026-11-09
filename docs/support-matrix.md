@@ -6,14 +6,16 @@ What this provider runs with, and what's not decided yet.
 
 | Provider | Terraform | OpenTofu |
 | --- | --- | --- |
-| 0.x | 1.10 and later | Tested nightly |
+| 0.x | 1.10 and later | Tested in CI |
 
 - 1.10 is the minimum because the cluster kubeconfig is an ephemeral
   resource, which older versions don't support.
 - Write-only attributes need 1.11: a cluster's or an instance group's
   `ssh_public_keys_wo`, and a webhook subscription's `secret_wo`. An older
   version fails the plan when a configuration sets one.
-- CI tests a current Terraform release, not 1.10 itself.
+- CI tests the two newest releases of each, the newest patch of the newest
+  minor and of the minor before it, not 1.10 itself. HashiCorp fixes only
+  those two Terraform minors.
 - The nightly run tests Terraform and OpenTofu on the same configuration.
 
 ## The k0rdent platform
