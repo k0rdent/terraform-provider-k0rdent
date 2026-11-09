@@ -45,6 +45,7 @@ GORELEASER     ?= $(TOOLS_BIN)/goreleaser
 TFPLUGINDOCS   ?= $(TOOLS_BIN)/tfplugindocs
 TF_BIN         ?= terraform
 TF_REGISTRY_HOST ?= registry.terraform.io
+TESTACC_PARALLEL ?= 8
 
 .DEFAULT_GOAL := check
 
@@ -113,7 +114,9 @@ test: ## Unit tests
 #
 # A TF_BIN that isn't on PATH fails here, because an empty
 # TF_ACC_TERRAFORM_PATH would quietly run terraform instead.
-TESTACC_FLAGS := -count=1 -timeout 20m
+# TESTACC_PARALLEL is how many tests run at once. Most of a test's time is
+# spent waiting on the fake, so it's set above the core count.
+TESTACC_FLAGS := -count=1 -timeout 20m -parallel $(TESTACC_PARALLEL)
 RUN           :=
 MATRIX_RECORD := $(CURDIR)/.testing-matrix/record.jsonl
 MATRIX_CHECK  := go test ./internal/repocheck/ -count=1 -run '^TestTheTestingMatrixIsCurrent$$' -args -matrix-record="$(MATRIX_RECORD)"

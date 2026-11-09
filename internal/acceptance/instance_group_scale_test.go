@@ -26,6 +26,7 @@ resource %q "test" {
 // The platform answers a scale it will admit shortly with a 409 or a 503. The
 // apply waits those out instead of failing.
 func TestAccInstanceGroupScaleWaitsOutTransientRefusals(t *testing.T) {
+	t.Parallel()
 	for name, marker := range map[string]string{
 		"acc-settling":    "fake-scale-settling",
 		"acc-unconfirmed": "fake-scale-unconfirmed",
@@ -50,6 +51,7 @@ func TestAccInstanceGroupScaleWaitsOutTransientRefusals(t *testing.T) {
 // A refusal that retrying cannot clear fails the apply at once, and the
 // diagnostic says what to change.
 func TestAccInstanceGroupScaleRefusalsSayWhatToDo(t *testing.T) {
+	t.Parallel()
 	for marker, expect := range map[string]*regexp.Regexp{
 		"fake-scale-over-quota": regexp.MustCompile(
 			`(?s)requested 2, admissible 1, binding scope project.*at most 1 host`),
@@ -72,6 +74,7 @@ func TestAccInstanceGroupScaleRefusalsSayWhatToDo(t *testing.T) {
 // A group deleted while it is still creating reads creating, then failed, then
 // is gone. Destroying one whose create timed out has to wait through that.
 func TestAccInstanceGroupDestroyAfterACreateTimeout(t *testing.T) {
+	t.Parallel()
 	config := fmt.Sprintf(`
 resource %q "test" {
   id           = "acc-stuck"

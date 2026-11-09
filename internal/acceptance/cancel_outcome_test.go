@@ -43,6 +43,7 @@ var cancelOutcomes = []struct {
 // A destroy that cancels a create says how the cancel ended, from the
 // operation the settled cluster reports: cancelled, or finished anyway.
 func TestAccDestroySaysHowTheCancelEnded(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		skipTest(t, "the CLI sequence runs on unix")
 	}
@@ -68,6 +69,7 @@ func TestAccDestroySaysHowTheCancelEnded(t *testing.T) {
 // ended: the cluster settles `failed` and `cancelled`, or the create lands
 // anyway and the action says nothing was cancelled.
 func TestAccCancelActionSaysHowTheCancelEnded(t *testing.T) {
+	t.Parallel()
 	skipUnderOpenTofu(t, openTofuHasNoActions)
 	if runtime.GOOS == "windows" {
 		skipTest(t, "the CLI sequence runs on unix")

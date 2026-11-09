@@ -134,8 +134,8 @@ jobs:
   real-api-hardware:
     name: real API check on hardware, against a stand-in
     runs-on: ubuntu-latest
-    # Four runs of the walkthrough, each about four minutes on a laptop.
-    timeout-minutes: 30
+    # Four runs of the walkthrough at once, about three minutes on a laptop.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:

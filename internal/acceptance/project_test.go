@@ -43,6 +43,7 @@ resource %q "test" {
 // provider block's `project` takes, the import id can name the organization,
 // and the destroy is the only operation that waits.
 func TestAccProject(t *testing.T) {
+	t.Parallel()
 	const id = "acc-project"
 
 	resource.Test(t, resource.TestCase{
@@ -96,6 +97,7 @@ func TestAccProject(t *testing.T) {
 
 // A bare id imports a project when one organization holds it.
 func TestAccProjectImportsByItsID(t *testing.T) {
+	t.Parallel()
 	const id = "acc-project-import"
 
 	resource.Test(t, resource.TestCase{
@@ -118,6 +120,7 @@ func TestAccProjectImportsByItsID(t *testing.T) {
 // The platform answers both optional fields as "" when unset. Leaving them out,
 // and later removing them, must both apply cleanly and plan empty after.
 func TestAccProjectWithoutTheOptionalFields(t *testing.T) {
+	t.Parallel()
 	const id = "acc-project-bare"
 	bare := fmt.Sprintf(`
 resource %q "test" {
@@ -156,6 +159,7 @@ resource %q "test" {
 // A project created without an id gets a generated `tf-` one, and another
 // resource can be built inside it through its own `project` argument.
 func TestAccProjectGeneratedIDCarriesAnotherResource(t *testing.T) {
+	t.Parallel()
 	config := fmt.Sprintf(`
 resource %q "test" {
   organization_id = %q
@@ -190,6 +194,7 @@ resource %q "test" {
 // A destroy that finds the project already `deleting`, as a timed-out earlier
 // destroy leaves it, waits out that teardown instead of failing on the 409.
 func TestAccProjectDestroyResumesATeardownAlreadyRunning(t *testing.T) {
+	t.Parallel()
 	const id = "acc-project-resume"
 	config := projectConfig(id, "Resume", "")
 
@@ -243,6 +248,7 @@ func checkProjectField(id, field, want string) resource.TestCheckFunc {
 // carries that the resource does not, so a regression that dropped it would
 // otherwise be invisible.
 func TestAccProjectDataSource(t *testing.T) {
+	t.Parallel()
 	config := fmt.Sprintf(`
 data %q "read" {
   id              = "demo"
@@ -274,6 +280,7 @@ data %q "read" {
 // Without an organization the project is found by its id, which is unique
 // across organizations.
 func TestAccProjectDataSourceFindsTheOrganization(t *testing.T) {
+	t.Parallel()
 	config := fmt.Sprintf(`
 data %q "read" {
   id = "demo"
@@ -301,6 +308,7 @@ data %q "read" {
 // that names something absent is broken, and reporting it as an empty read would
 // hand the error to whatever referenced it instead.
 func TestAccProjectDataSourceFailsOnOneThatIsNotThere(t *testing.T) {
+	t.Parallel()
 	config := fmt.Sprintf(`
 data %q "read" {
   id              = "acc-no-such-project"
@@ -324,6 +332,7 @@ data %q "read" {
 // there, so no service is asked and nothing says whether the project exists.
 // The provider has to pass the upstream code through.
 func TestAccProjectDataSourceFailsOnAnUnknownOrganization(t *testing.T) {
+	t.Parallel()
 	config := fmt.Sprintf(`
 data %q "read" {
   id              = "demo"
@@ -351,6 +360,7 @@ data %q "read" {
 // resource and the data source are asserted separately because they are two
 // schemas and attaching it to one is the likely mistake.
 func TestAccProjectRefusesAnIdentifierThatRewritesTheURL(t *testing.T) {
+	t.Parallel()
 	cases := []struct{ name, config string }{
 		{"the resource's organization", fmt.Sprintf(`
 resource %q "test" {
@@ -416,6 +426,7 @@ func callFake(method, path string) (int, []byte, error) {
 // doesn't is refused at plan, naming the ones that do, rather than at apply
 // with the platform's 422.
 func TestAccProjectRegionThatHostsNoProjectsIsRefusedAtPlan(t *testing.T) {
+	t.Parallel()
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: protoV6,
 		Steps: []resource.TestStep{{
@@ -436,6 +447,7 @@ resource %q "test" {
 // imports and plans empty: the provider's region isn't planned onto it, which
 // would be a change no apply can make.
 func TestAccProjectWithNoRegionPlansEmpty(t *testing.T) {
+	t.Parallel()
 	config := fmt.Sprintf(`
 resource %q "test" {
   id              = "before-regions"
@@ -485,6 +497,7 @@ removed {
 // Every region says whether it hosts projects, and project_region_ids is the
 // ones that do: the values a project's region takes.
 func TestAccRegionsSayWhichHostProjects(t *testing.T) {
+	t.Parallel()
 	regions := provider.ResourceName("regions")
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: protoV6,

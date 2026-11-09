@@ -52,6 +52,7 @@ func inPlace() resource.ConfigPlanChecks {
 // v1 to v4 is two upgrades, v2 then v4, skipping the draft, in one apply. Going
 // back afterwards is refused at plan time rather than replacing the cluster.
 func TestAccClusterUpgradesAcrossTwoVersions(t *testing.T) {
+	t.Parallel()
 	const name = "acc-upgrade"
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: protoV6,
@@ -104,6 +105,7 @@ func TestAccClusterUpgradesAcrossTwoVersions(t *testing.T) {
 // result after apply". That's the check here, so it has no plan check of its
 // own: TestAccClusterUpgradesAcrossTwoVersions checks the plan.
 func TestAccClusterUpgradeThatBringsAPoolMovesTheNodeTotal(t *testing.T) {
+	t.Parallel()
 	const name = "acc-upgrade-pool-grow"
 	from, to := boundsVersion("gpu-poolgrow", "eeeeeeee", 1), boundsVersion("gpu-poolgrow", "eeeeeeee", 2)
 	resource.Test(t, resource.TestCase{
@@ -133,6 +135,7 @@ func TestAccClusterUpgradeThatBringsAPoolMovesTheNodeTotal(t *testing.T) {
 // cluster, and with `on_failed = "keep"` plans clean, and the cluster is still
 // there to destroy.
 func TestAccClusterUpgradeStopsAtAFailedStep(t *testing.T) {
+	t.Parallel()
 	const name = "acc-upgrade-fails"
 	kept := func(version int) string {
 		return strings.Replace(inferenceConfig(name, version, 2), "  }\n}\n", "  }\n  on_failed = \"keep\"\n}\n", 1)
@@ -197,6 +200,7 @@ data %q "read" {
 // which pool and why. Shrinking to three in the same apply works, because the
 // decrease goes first.
 func TestAccClusterUpgradeAndScaleDownInOneApply(t *testing.T) {
+	t.Parallel()
 	const name = "acc-upgrade-shrink"
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: protoV6,
@@ -226,6 +230,7 @@ func TestAccClusterUpgradeAndScaleDownInOneApply(t *testing.T) {
 // A cluster_type that is only known at apply, here from another resource, can
 // still move the cluster to another version.
 func TestAccClusterUpgradesToAVersionKnownOnlyAtApply(t *testing.T) {
+	t.Parallel()
 	const name = "acc-upgrade-unknown"
 	config := func(version int) string {
 		return fmt.Sprintf(`
@@ -256,6 +261,7 @@ resource %q "test" {
 // moves to, so each count change and the upgrade have to go in the order the
 // bounds admit. All four directions, each in one apply.
 func TestAccClusterUpgradeOrdersScalesByBounds(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name, from, to string
 		have, want     int
@@ -290,6 +296,7 @@ func TestAccClusterUpgradeOrdersScalesByBounds(t *testing.T) {
 // A count read from another resource is unknown at plan, so the route is
 // checked at apply. Here the count is what makes the raised minimum fit.
 func TestAccClusterUpgradeWithACountKnownOnlyAtApply(t *testing.T) {
+	t.Parallel()
 	const name = "acc-order-unknown-count"
 	cfg := func(ref string, workers int) string {
 		return fmt.Sprintf(`
@@ -327,6 +334,7 @@ resource %q "test" {
 // A route some step cannot take is refused at plan, before any of it runs:
 // gpu-chain's version 3 allows one worker, and its version 4 is BMaaS-only.
 func TestAccClusterUpgradeRefusesARouteAtPlan(t *testing.T) {
+	t.Parallel()
 	const name = "acc-upgrade-route"
 	chain := func(n int) string { return boundsVersion("gpu-chain", "dddddddd", n) }
 	resource.Test(t, resource.TestCase{

@@ -90,6 +90,7 @@ func checkPowerSent(verb string, n int) resource.TestCheckFunc {
 // inside the platform's guard interval fails with the wait, sending nothing
 // more: the provider never sends a power action again on its own.
 func TestAccPowerActionIsSentOnceAndRefusedInFlight(t *testing.T) {
+	t.Parallel()
 	skipUnderOpenTofu(t, openTofuHasNoActions)
 	const group = "acc-power"
 	resource.Test(t, resource.TestCase{
@@ -129,6 +130,7 @@ func TestAccPowerActionIsSentOnceAndRefusedInFlight(t *testing.T) {
 // action itself succeeded. The data source reads the host before the action
 // is sent, so it's the next refresh that sees it.
 func TestAccPowerActionFailureShowsOnTheInstance(t *testing.T) {
+	t.Parallel()
 	skipUnderOpenTofu(t, openTofuHasNoActions)
 	const group = "acc-power-fails"
 	list := "data." + instancesType + ".group"

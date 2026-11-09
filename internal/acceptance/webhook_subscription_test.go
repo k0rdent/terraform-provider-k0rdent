@@ -189,6 +189,7 @@ var checkWebhookGone = checkGone(webhookType, webhookPath)
 // at their own pace, so the previous secret has to still be accepted after a
 // rotation, and gone after one asked to cut over at once.
 func TestAccWebhookSubscription(t *testing.T) {
+	t.Parallel()
 	url := webhookURL("lifecycle")
 	events := []string{"io.k0rdent.cluster.ready.v1", "io.k0rdent.cluster.failed.v1"}
 	first, second, third := webhookSecret("first"), webhookSecret("second"), webhookSecret("third")
@@ -299,6 +300,7 @@ func TestAccWebhookSubscription(t *testing.T) {
 // event: the platform answers that as an empty list, and the attribute has to
 // stay null rather than plan a change to it.
 func TestAccWebhookSubscriptionLetsGoOfItsSecret(t *testing.T) {
+	t.Parallel()
 	url := webhookURL("secret-later")
 	first, second := webhookSecret("held"), webhookSecret("later")
 	var id string
@@ -360,6 +362,7 @@ func TestAccWebhookSubscriptionLetsGoOfItsSecret(t *testing.T) {
 // subscription and the same apply rotates it to the configured secret. The
 // subscription and its id are kept, and the plan after it is empty.
 func TestAccWebhookSubscriptionImportThenSecret(t *testing.T) {
+	t.Parallel()
 	url := webhookURL("import-then-secret")
 	secret := webhookSecret("adopted")
 	adoptedAddr := webhookType + ".adopted"
@@ -427,6 +430,7 @@ import {
 // Every value the contract refuses is refused at plan time, naming the
 // attribute, before anything is sent.
 func TestAccWebhookSubscriptionRefusesAtPlan(t *testing.T) {
+	t.Parallel()
 	url := webhookURL("refused")
 	secret := webhookSecret("refused")
 	for name, c := range map[string]struct {
@@ -475,6 +479,7 @@ func TestAccWebhookSubscriptionRefusesAtPlan(t *testing.T) {
 // every variable unknown before it plans, so refusing an unknown version there
 // refused every variable, which the error itself said was fine.
 func TestAccWebhookSubscriptionVersionFromVariable(t *testing.T) {
+	t.Parallel()
 	url := webhookURL("version-variable")
 	first, second := webhookSecret("var-first"), webhookSecret("var-second")
 	cfg := strings.Replace(webhookConfig(url, nil, 1, ""), "secret_wo_version = 1", "secret_wo_version = var.secret_version", 1) +
@@ -524,6 +529,7 @@ func TestAccWebhookSubscriptionVersionFromVariable(t *testing.T) {
 // A version only the apply works out is still refused at plan time, naming the
 // attribute, because the plan couldn't say whether the secret rotates.
 func TestAccWebhookSubscriptionVersionUnknownAtPlan(t *testing.T) {
+	t.Parallel()
 	cfg := strings.Replace(webhookConfig(webhookURL("version-unknown"), nil, 1, ""),
 		"secret_wo_version = 1", "secret_wo_version = length(terraform_data.version.id) > 0 ? 1 : 2", 1) +
 		"\nresource \"terraform_data\" \"version\" {}\n"
@@ -542,6 +548,7 @@ func TestAccWebhookSubscriptionVersionUnknownAtPlan(t *testing.T) {
 // Both read-only forms: one subscription by id, with the delivery health the
 // resource leaves out, and the list, narrowed to one endpoint.
 func TestAccWebhookSubscriptionDataSources(t *testing.T) {
+	t.Parallel()
 	url := webhookURL("read-only")
 	events := []string{"io.k0rdent.cluster.ready.v1"}
 	config := webhookConfig(url, events, 1, "") + fmt.Sprintf(`
@@ -595,6 +602,7 @@ const webhookDeliveryHistory = "fake-delivery-history"
 // reaches no delivery. `next_attempt_at` is reported only on the delivery
 // with a retry scheduled.
 func TestAccWebhookDeliveriesDataSource(t *testing.T) {
+	t.Parallel()
 	secret := webhookSecret("deliveries")
 	config := webhookConfig(webhookURL("deliveries-"+webhookDeliveryHistory), nil, 1, "") + fmt.Sprintf(`
 data %[1]q "newest" {
@@ -666,6 +674,7 @@ data %q "missing" {
 // A subscription somebody deleted outside Terraform reads as gone, and the
 // next plan makes it again rather than failing.
 func TestAccWebhookSubscriptionDeletedOutsideTerraform(t *testing.T) {
+	t.Parallel()
 	config := webhookConfig(webhookURL("deleted-outside"), nil, 1, "")
 	vars := webhookVars(webhookSecret("outside"))
 	resource.Test(t, resource.TestCase{
@@ -752,6 +761,7 @@ func disableWebhookOutOfBand(id string) error {
 // refresh that reads it off replaces it, and the plan before, while it's on,
 // is empty. The apply leaves a new subscription, on, and nothing to plan.
 func TestAccWebhookSubscriptionTurnedOffIsReplaced(t *testing.T) {
+	t.Parallel()
 	config := webhookConfig(webhookURL("turned-off"), nil, 1, "")
 	vars := webhookVars(webhookSecret("turned-off"))
 	var id string
@@ -797,6 +807,7 @@ func TestAccWebhookSubscriptionTurnedOffIsReplaced(t *testing.T) {
 // it, and the plan after is empty. A subscription whose configuration has no
 // secret can't be replaced into a working one, so its plan only warns.
 func TestAccWebhookSubscriptionTurnedOffPlanWarns(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		skipTest(t, "the CLI sequence runs on unix")
 	}

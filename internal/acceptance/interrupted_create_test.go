@@ -25,6 +25,7 @@ import (
 //  2. state holds every cluster the platform accepted, each tainted
 //  3. `terraform destroy` removes them all
 func TestAccOneInterruptKeepsEveryCreateInState(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		skipTest(t, "the CLI sequence runs on unix")
 	}
@@ -148,6 +149,7 @@ resource %q "test" {
 //     apply, and gives the import
 //  4. that import takes the cluster back, and `terraform destroy` removes it
 func TestAccAKilledCreateIsTakenBackByTheImportItsErrorGives(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		skipTest(t, "the CLI sequence runs on unix")
 	}
@@ -220,6 +222,7 @@ func TestAccAKilledCreateIsTakenBackByTheImportItsErrorGives(t *testing.T) {
 // carries no create token. The refusal says to untaint first, and doing that
 // lets the destroy remove it.
 func TestAccATaintedImportIsDestroyedTheWayItsRefusalSays(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		skipTest(t, "the CLI sequence runs on unix")
 	}

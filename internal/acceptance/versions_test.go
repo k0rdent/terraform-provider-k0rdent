@@ -21,6 +21,7 @@ var (
 // worth asserting are that it comes back oldest first and that each entry carries the
 // Kubernetes version the list record does not.
 func TestAccClusterTypeVersions(t *testing.T) {
+	t.Parallel()
 	config := fmt.Sprintf(`
 data %q "history" {
   cluster_type = "gpu-training"
@@ -61,6 +62,7 @@ data %q "history" {
 }
 
 func TestAccClusterTypeVersionsFilterByStatus(t *testing.T) {
+	t.Parallel()
 	config := fmt.Sprintf(`
 data %q "history" {
   cluster_type = "gpu-training"
@@ -84,6 +86,7 @@ data %q "history" {
 // The platform answers 422 rather than an empty list, so the plan is where this
 // belongs. Without the validator it is a failed apply.
 func TestAccClusterTypeVersionsRejectsAnUnknownStatus(t *testing.T) {
+	t.Parallel()
 	config := fmt.Sprintf(`
 data %q "history" {
   cluster_type = "gpu-training"
@@ -104,6 +107,7 @@ data %q "history" {
 // A pinned read is the version-scoped `self_link`, which is what stops a new
 // ClusterType version moving a cluster underneath its configuration.
 func TestAccClusterTypeVersionPinned(t *testing.T) {
+	t.Parallel()
 	config := fmt.Sprintf(`
 data %q "pinned" {
   cluster_type = "gpu-training"
@@ -132,6 +136,7 @@ data %q "pinned" {
 // A malformed id is a 400 whose message names the path parameter. Answering it
 // here names the attribute instead, and costs no round trip.
 func TestAccClusterTypeVersionRejectsAMalformedID(t *testing.T) {
+	t.Parallel()
 	config := fmt.Sprintf(`
 data %q "pinned" {
   cluster_type = "gpu-training"

@@ -186,9 +186,11 @@ func (p plannedAs) CheckPlan(_ context.Context, req plancheck.CheckPlanRequest, 
 }
 
 func TestSSHKeyPlansFollowTheDocumentedRules(t *testing.T) {
+	t.Parallel()
 	eachKeyKind(t, func(t *testing.T, k keyKind) {
 		for i, start := range []keyStart{madeWithWriteOnly, madeWithText, importedChecked, importedUnchecked} {
 			t.Run(string(start), func(t *testing.T) {
+				t.Parallel()
 				keys := invariantKeys[k.typ][start]
 				name := fmt.Sprintf("%s-inv-%d", k.prefix, i)
 				address := "test"
@@ -240,6 +242,7 @@ func TestSSHKeyPlansFollowTheDocumentedRules(t *testing.T) {
 // SSH_KEY_RULES_OUT names, so a run against the real API checks the same
 // rules. It needs no fake and does nothing without the variable.
 func TestWriteSSHKeyRules(t *testing.T) {
+	t.Parallel()
 	out := os.Getenv("SSH_KEY_RULES_OUT")
 	if out == "" {
 		// Not a skip: a full run never sets it, and a skip would leave the

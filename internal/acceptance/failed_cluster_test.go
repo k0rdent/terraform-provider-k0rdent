@@ -101,6 +101,7 @@ resource %q "test" {
 // failed, warns on every plan and plans nothing, so its applies pass. Setting
 // `on_failed` back to `wait` plans the wait again.
 func TestAccAFailedClusterKeptPlansNothing(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		skipTest(t, "the CLI sequence runs on unix")
 	}

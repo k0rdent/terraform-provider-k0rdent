@@ -66,6 +66,7 @@ resource %q "test" {
 // The rule set is replaced wholesale on update, so the test that matters is
 // adding a rule and checking the other two survived.
 func TestAccSecurityGroup(t *testing.T) {
+	t.Parallel()
 	const name = "acc-filter"
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: protoV6,
@@ -108,6 +109,7 @@ func TestAccSecurityGroup(t *testing.T) {
 
 // A port range on icmp is a 422 upstream. It should never get that far.
 func TestAccSecurityGroupRejectsPortsOnICMP(t *testing.T) {
+	t.Parallel()
 	config := fmt.Sprintf(`
 resource %q "test" {
   id = "acc-bad"
@@ -136,6 +138,7 @@ resource %q "test" {
 // apply. `PlanOnly` is what proves the diagnostic arrives before the approval,
 // not after it: without the validator the plan succeeds and the step passes.
 func TestAccSecurityGroupRejectsBadRuleValuesInThePlan(t *testing.T) {
+	t.Parallel()
 	// One well-formed rule, one field replaced per case.
 	rule := map[string]string{
 		"action":             `"permit"`,
@@ -211,6 +214,7 @@ resource %q "test" {
 }
 
 func TestAccTenantQuota(t *testing.T) {
+	t.Parallel()
 	config := fmt.Sprintf(`
 data %q "org" {
   organization_id = "org-demo"
@@ -248,6 +252,7 @@ data %q "team" {
 }
 
 func TestAccSecurityGroupClearsMetadata(t *testing.T) {
+	t.Parallel()
 	const name = "acc-sg-clear"
 	full := strings.Replace(securityGroupConfig(name, false), `display_name = "acceptance"`,
 		`display_name = "acceptance"
@@ -274,6 +279,7 @@ func TestAccSecurityGroupClearsMetadata(t *testing.T) {
 
 // The platform stores "22-22" as "22" and reports that.
 func TestAccSecurityGroupKeepsPortSpelling(t *testing.T) {
+	t.Parallel()
 	config := strings.Replace(securityGroupConfig("acc-sg-ports", false),
 		`destination_port_range = "22"`, `destination_port_range = "22-22"`, 1)
 	resource.Test(t, resource.TestCase{
@@ -293,7 +299,7 @@ func TestAccSecurityGroupKeepsPortSpelling(t *testing.T) {
 // `terraform validate` evaluates a variable as unknown, so the rule list a
 // `dynamic` block builds from one is unknown too. Validation has to wait for it
 // rather than fail to decode it, and still catch the bad rule once it is known.
-func dynamicIngressConfig(protocol, ports string) string {
+func dynamicIngressConfig(id, protocol, ports string) string {
 	return fmt.Sprintf(`
 variable "ingress" {
   type = list(object({ protocol = string, ports = string }))
@@ -301,7 +307,7 @@ variable "ingress" {
 }
 
 resource %q "test" {
-  id = "acc-dynamic"
+  id = %q
   dynamic "ingress" {
     for_each = var.ingress
     content {
@@ -313,28 +319,30 @@ resource %q "test" {
     }
   }
 }
-`, protocol, ports, securityGroupType)
+`, protocol, ports, securityGroupType, id)
 }
 
 func TestAccSecurityGroupDynamicRulesFromAVariable(t *testing.T) {
+	t.Parallel()
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: protoV6,
 		CheckDestroy:             checkGone(securityGroupType, securityGroupPath),
 		Steps: []resource.TestStep{
 			{
-				Config: dynamicIngressConfig("tcp", "443"),
+				Config: dynamicIngressConfig("acc-dynamic", "tcp", "443"),
 				Check:  resource.TestCheckResourceAttr(securityGroupAddr, "ingress.0.destination_port_range", "443"),
 			},
-			{Config: dynamicIngressConfig("tcp", "443"), PlanOnly: true},
+			{Config: dynamicIngressConfig("acc-dynamic", "tcp", "443"), PlanOnly: true},
 		},
 	})
 }
 
 func TestAccSecurityGroupDynamicRulesStillRejectPortsOnICMP(t *testing.T) {
+	t.Parallel()
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: protoV6,
 		Steps: []resource.TestStep{{
-			Config:      dynamicIngressConfig("icmp", "22"),
+			Config:      dynamicIngressConfig("acc-dynamic-icmp", "icmp", "22"),
 			PlanOnly:    true,
 			ExpectError: regexpPortsOnICMP,
 		}},

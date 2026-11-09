@@ -1,3 +1,0 @@
-```release-note:enhancement
-resource/k0rdent_kubernetes_cluster: Add `ssh_access`, the Linux users and public keys written onto every node when the cluster is created
-```

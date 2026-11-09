@@ -19,6 +19,7 @@ func heldObject(typeName, name, markers string) string {
 // nothing is replaced, and the create fails with "already exists". The state
 // that holds the object is left alone.
 func TestAccASecondStateOverATakenIDIsWarnedAndFailsAtApply(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		skipTest(t, "the CLI sequence runs on unix")
 	}
@@ -69,6 +70,7 @@ func TestAccASecondStateOverATakenIDIsWarnedAndFailsAtApply(t *testing.T) {
 // destroys it once it's tainted is refused. The token stays out of the plan
 // and state either way.
 func TestAccATagChangeKeepsTheCreateToken(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		skipTest(t, "the CLI sequence runs on unix")
 	}

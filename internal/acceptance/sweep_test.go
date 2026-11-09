@@ -883,6 +883,7 @@ func forgetSweepRuns() {
 }
 
 func TestSweepGuardRefusesAnythingWithoutThePrefix(t *testing.T) {
+	t.Parallel()
 	for _, id := range []string{"acc-cluster", "acc-x", "acc-to-inference-fake-vpc-lock-lost"} {
 		if err := guardSweep("cluster", id); err != nil {
 			t.Errorf("%q was refused: %v", id, err)
@@ -900,6 +901,7 @@ func TestSweepGuardRefusesAnythingWithoutThePrefix(t *testing.T) {
 // The guard has to stop the write, not just report: an object without the
 // prefix must never reach a delete, whatever a list said about it.
 func TestSweepOneNeverWritesWithoutThePrefix(t *testing.T) {
+	t.Parallel()
 	run := &sweepRun{region: "r"}
 	wrote := false
 	del := func(context.Context) (int, error) { wrote = true; return http.StatusNoContent, nil }
@@ -915,6 +917,7 @@ func TestSweepOneNeverWritesWithoutThePrefix(t *testing.T) {
 // runSweepers walks the list top to bottom, so the list has to be in an
 // order the platform accepts deletes in.
 func TestSweepersComeAfterWhatTheyNeed(t *testing.T) {
+	t.Parallel()
 	seen := map[string]bool{}
 	for _, s := range sweepers {
 		for _, dep := range s.after {
@@ -928,6 +931,7 @@ func TestSweepersComeAfterWhatTheyNeed(t *testing.T) {
 
 // Every managed resource has a sweeper, or a reason it doesn't need one.
 func TestSweepersCoverEveryResource(t *testing.T) {
+	t.Parallel()
 	noSweeper := map[string]bool{
 		// A property of a VPC, not an object, and the VPC goes with its owner.
 		"vpc_security_groups": true,

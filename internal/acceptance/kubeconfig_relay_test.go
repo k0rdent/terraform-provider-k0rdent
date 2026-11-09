@@ -108,6 +108,7 @@ func checkClusterAPI(t *testing.T, id string, want ...string) resource.TestCheck
 }
 
 func TestAccKubeconfigRelayOffFailsPastTheToken(t *testing.T) {
+	t.Parallel()
 	out := t.TempDir()
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: protoV6,
@@ -129,6 +130,7 @@ func TestAccKubeconfigRelayOffFailsPastTheToken(t *testing.T) {
 }
 
 func TestAccKubeconfigRelayRenewsBeforeTheTokenExpires(t *testing.T) {
+	t.Parallel()
 	out := t.TempDir()
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: protoV6,
@@ -145,6 +147,7 @@ func TestAccKubeconfigRelayRenewsBeforeTheTokenExpires(t *testing.T) {
 }
 
 func TestAccKubeconfigRelayReplaysAfterAnOpaqueTokenExpires(t *testing.T) {
+	t.Parallel()
 	out := t.TempDir()
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: protoV6,
@@ -158,6 +161,7 @@ func TestAccKubeconfigRelayReplaysAfterAnOpaqueTokenExpires(t *testing.T) {
 }
 
 func TestAccKubeconfigRelayReportsAPlatformThatWontReissue(t *testing.T) {
+	t.Parallel()
 	out := t.TempDir()
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: protoV6,

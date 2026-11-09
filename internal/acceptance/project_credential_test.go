@@ -64,7 +64,7 @@ func checkProjectReadByID(before *int, want int) resource.TestCheckFunc {
 // Without `organization_id` the project is the row the project list has for
 // it, so the read by id the platform would refuse is never sent, and every
 // attribute is still set.
-func TestAccProjectDataSourceWithAProjectCredential(t *testing.T) {
+func TestAccProjectDataSourceWithAProjectCredential(t *testing.T) { //nolint:paralleltest // useProjectCredential sets the environment
 	useProjectCredential(t)
 	before, err := fakeServed(http.MethodGet, demoInOrg)
 	if err != nil {
@@ -94,7 +94,7 @@ func TestAccProjectDataSourceWithAProjectCredential(t *testing.T) {
 
 // With `organization_id` the read by id is tried first, and its 403 falls back
 // to the project list filtered to that organization and id.
-func TestAccProjectDataSourceWithAProjectCredentialAndItsOrganization(t *testing.T) {
+func TestAccProjectDataSourceWithAProjectCredentialAndItsOrganization(t *testing.T) { //nolint:paralleltest // useProjectCredential sets the environment
 	useProjectCredential(t)
 	before, err := fakeServed(http.MethodGet, demoInOrg)
 	if err != nil {
@@ -132,7 +132,7 @@ func TestAccProjectDataSourceWithAProjectCredentialAndItsOrganization(t *testing
 
 // A project the list doesn't show the credential in that organization keeps
 // the platform's 403, with what the read by id needs.
-func TestAccProjectDataSourceWithAProjectCredentialRefusesAnotherProject(t *testing.T) {
+func TestAccProjectDataSourceWithAProjectCredentialRefusesAnotherProject(t *testing.T) { //nolint:paralleltest // useProjectCredential sets the environment
 	useProjectCredential(t)
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: protoV6,
@@ -154,7 +154,7 @@ func TestAccProjectDataSourceWithAProjectCredentialRefusesAnotherProject(t *test
 
 // The organization's read is refused with the role it needs, and the
 // organizations list it points to answers in its place.
-func TestAccOrganizationWithAProjectCredentialSaysWhatItNeeds(t *testing.T) {
+func TestAccOrganizationWithAProjectCredentialSaysWhatItNeeds(t *testing.T) { //nolint:paralleltest // useProjectCredential sets the environment
 	useProjectCredential(t)
 	organization := provider.ResourceName("organization")
 	organizations := provider.ResourceName("organizations")
@@ -183,6 +183,7 @@ func TestAccOrganizationWithAProjectCredentialSaysWhatItNeeds(t *testing.T) {
 // 403, so a credential scoped to the organization that mistypes its id is
 // told that may be why, not only that a role is missing.
 func TestAccOrganizationThatDoesNotExistSaysTheIDMayBeWrong(t *testing.T) {
+	t.Parallel()
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: protoV6,
 		Steps: []resource.TestStep{
@@ -197,7 +198,7 @@ func TestAccOrganizationThatDoesNotExistSaysTheIDMayBeWrong(t *testing.T) {
 
 // Every other organization-level read a project credential can't make says
 // which role it needs.
-func TestAccOrganizationReadsWithAProjectCredentialSayWhatTheyNeed(t *testing.T) {
+func TestAccOrganizationReadsWithAProjectCredentialSayWhatTheyNeed(t *testing.T) { //nolint:paralleltest // useProjectCredential sets the environment
 	useProjectCredential(t)
 	for _, c := range []struct {
 		suffix, body, want string
@@ -224,7 +225,7 @@ func TestAccOrganizationReadsWithAProjectCredentialSayWhatTheyNeed(t *testing.T)
 
 // A project credential's 403 creating a project names the role the create
 // needs and the one a destroy needs.
-func TestAccProjectCreateWithAProjectCredentialSaysWhatItNeeds(t *testing.T) {
+func TestAccProjectCreateWithAProjectCredentialSaysWhatItNeeds(t *testing.T) { //nolint:paralleltest // useProjectCredential sets the environment
 	useProjectCredential(t)
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: protoV6,

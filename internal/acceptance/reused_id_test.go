@@ -33,7 +33,7 @@ import (
 //     next `terraform destroy` is refused too, and
 //     `terraform destroy -refresh=false` finishes
 //  5. the other tool's cluster is still there
-func TestAccADestroyLeavesAClusterMadeUnderAReusedID(t *testing.T) {
+func TestAccADestroyLeavesAClusterMadeUnderAReusedID(t *testing.T) { //nolint:paralleltest // it counts every create the fake serves
 	if runtime.GOOS == "windows" {
 		skipTest(t, "the CLI sequence runs on unix")
 	}
