@@ -214,6 +214,7 @@ func TestADestroyThatOutwaitsItsTimeoutSaysToRunItAgain(t *testing.T) {
 				"Nothing was deleted",
 				"run `terraform destroy` again",
 				"raise `delete` in the resource's `timeouts` block",
+				"That doesn't work for a tainted " + k.name + ": apply replaces it",
 			} {
 				if !strings.Contains(strings.Join(strings.Fields(text), " "), want) {
 					t.Errorf("the diagnostic doesn't say %q:\n%s", want, text)

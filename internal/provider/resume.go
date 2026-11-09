@@ -322,8 +322,7 @@ func addDeleteWaitError(diags *diag.Diagnostics, kind, resourceName, summary str
 		"Next: run `terraform destroy` again. It reads the %s first and waits for this same delete "+
 		"rather than sending another.", kind, kind)
 	if !waitInterrupted(err) {
-		advice += " If a delete routinely takes this long, raise `delete` in the resource's `timeouts` " +
-			"block and apply before destroying, since a destroy reads its timeout from state."
+		advice += raiseDeleteTimeoutAdvice("a delete", kind)
 	}
 	addAdvisedError(diags, summary, advice, err)
 }

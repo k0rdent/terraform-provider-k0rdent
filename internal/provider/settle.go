@@ -392,10 +392,20 @@ func (k stateKind[T]) reportBusyWait(diags *diag.Diagnostics, err error) {
 		"and the %s stays in state. Next: run `terraform destroy` again, which waits for the same operation "+
 		"and then deletes the %s.", k.name, k.name, k.name)
 	if !waitInterrupted(err) {
-		advice += " If the operation routinely takes this long, raise `delete` in the resource's `timeouts` " +
-			"block and apply before destroying, since a destroy reads its timeout from state."
+		advice += raiseDeleteTimeoutAdvice("the operation", k.name)
 	}
 	addAdvisedError(diags, summary, advice, err)
+}
+
+// raiseDeleteTimeoutAdvice tells how to give a destroy a longer wait. A destroy
+// reads its timeout from state, so the new value has to be applied first. A
+// tainted object can't take it that way: apply plans a replacement, and the
+// replacement's destroy still reads the old timeout from state.
+func raiseDeleteTimeoutAdvice(what, kind string) string {
+	return fmt.Sprintf(" If %s routinely takes this long, raise `delete` in the resource's `timeouts` "+
+		"block and apply before destroying, since a destroy reads its timeout from state. That doesn't work "+
+		"for a tainted %s: apply replaces it, and the destroy half of that replacement still reads the old "+
+		"timeout. Run `terraform destroy` again instead, which waits once more.", what, kind)
 }
 
 // refusedInUse reports whether a refusal carries details[].reason
