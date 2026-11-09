@@ -7,6 +7,9 @@ dist/
 .tools/
 # make bench's results. docs/performance.md publishes the ones that count.
 .bench/
+# The testing matrix's record, from make testacc or make testing-matrix.
+# docs/testing-matrix.md publishes what it saw.
+.testing-matrix/
 
 # Terraform working files
 .terraform/

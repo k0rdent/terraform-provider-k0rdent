@@ -21,7 +21,7 @@ import (
 // which plans nothing.
 func TestAccAFailedClusterPlansAnUpdateThatWaitsForIt(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("the CLI sequence runs on unix")
+		skipTest(t, "the CLI sequence runs on unix")
 	}
 	for _, tc := range []struct {
 		name, markers, reason string
@@ -103,7 +103,7 @@ resource %q "test" {
 func TestAccAFailedClusterKeptPlansNothing(t *testing.T) {
 	t.Parallel()
 	if runtime.GOOS == "windows" {
-		t.Skip("the CLI sequence runs on unix")
+		skipTest(t, "the CLI sequence runs on unix")
 	}
 	const name = "acc-failed-kept"
 	c := newCLIRun(t)

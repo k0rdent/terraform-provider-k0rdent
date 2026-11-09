@@ -45,7 +45,7 @@ var cancelOutcomes = []struct {
 func TestAccDestroySaysHowTheCancelEnded(t *testing.T) {
 	t.Parallel()
 	if runtime.GOOS == "windows" {
-		t.Skip("the CLI sequence runs on unix")
+		skipTest(t, "the CLI sequence runs on unix")
 	}
 	for _, tc := range cancelOutcomes {
 		t.Run(tc.name, func(t *testing.T) {
@@ -72,7 +72,7 @@ func TestAccCancelActionSaysHowTheCancelEnded(t *testing.T) {
 	t.Parallel()
 	skipUnderOpenTofu(t, openTofuHasNoActions)
 	if runtime.GOOS == "windows" {
-		t.Skip("the CLI sequence runs on unix")
+		skipTest(t, "the CLI sequence runs on unix")
 	}
 	for _, tc := range cancelOutcomes {
 		t.Run(tc.name, func(t *testing.T) {

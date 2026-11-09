@@ -29,7 +29,7 @@ resource %q "test" {
 func TestAccABindingOnAVPCWithNoDefaultGroupDestroysInOneRun(t *testing.T) {
 	t.Parallel()
 	if runtime.GOOS == "windows" {
-		t.Skip("the CLI sequence runs on unix")
+		skipTest(t, "the CLI sequence runs on unix")
 	}
 	const cluster, group = "acc-nodef-no-subnets", "acc-nodef-filter"
 	project := ownProject(t, "acc-nodef-destroys")
@@ -94,7 +94,7 @@ func TestAccABindingOnAVPCWithNoDefaultGroupDestroysInOneRun(t *testing.T) {
 func TestAccAGroupHeldByAVPCThisRunDidntLeaveFailsFast(t *testing.T) {
 	t.Parallel()
 	if runtime.GOOS == "windows" {
-		t.Skip("the CLI sequence runs on unix")
+		skipTest(t, "the CLI sequence runs on unix")
 	}
 	const cluster, group = "acc-nodef-held-no-subnets", "acc-nodef-held"
 	c := newCLIRun(t)
@@ -146,7 +146,7 @@ resource %q "test" {
 func TestAccAPlanWarnsBeforeBindingAVPCWithNoDefaultGroup(t *testing.T) {
 	t.Parallel()
 	if runtime.GOOS == "windows" {
-		t.Skip("the CLI sequence runs on unix")
+		skipTest(t, "the CLI sequence runs on unix")
 	}
 	const warning = "This binding can't be taken off the VPC later"
 	for _, tc := range []struct {

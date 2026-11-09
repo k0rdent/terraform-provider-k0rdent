@@ -32,7 +32,7 @@ import (
 var cancelAction = provider.ResourceName("cluster_cancel_operation")
 
 // actionsVersion is the first Terraform with actions.
-var actionsVersion = []tfversion.TerraformVersionCheck{tfversion.SkipBelow(tfversion.Version1_14_0)}
+var actionsVersion = []tfversion.TerraformVersionCheck{recordedVersionCheck{tfversion.SkipBelow(tfversion.Version1_14_0)}}
 
 // heldUpgradeCluster is an active cluster the fake holds mid-upgrade once an
 // upgrade is posted for it, and trigger, when set, is the configuration of a
@@ -366,6 +366,7 @@ action %[3]q "stop" {
 	cmd := exec.CommandContext(ctx, tf, "apply", "-invoke=action."+cancelAction+".stop", "-auto-approve", "-no-color", "-input=false")
 	cmd.Dir = work
 	cmd.Env = append(os.Environ(), "TF_CLI_CONFIG_FILE="+cliConfig, "TF_IN_AUTOMATION=1")
+	cmd.Env = append(cmd.Env, matrixTestEnv(t)...)
 	if logPath := os.Getenv("TF_ACC_LOG_PATH"); logPath != "" {
 		cmd.Env = append(cmd.Env, "TF_LOG_PATH="+logPath)
 	}

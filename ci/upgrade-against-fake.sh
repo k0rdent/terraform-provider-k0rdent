@@ -29,6 +29,9 @@
 # a type's upgrade is never tried.
 #
 # Usage: ci/upgrade-against-fake.sh, or make upgrade-test.
+#   --previous            print the release it would upgrade from and stop,
+#                         for make testacc's upgrade coverage summary. Only
+#                         the version goes to stdout
 #   PREVIOUS=0.1.0-rc.2   the release to upgrade from. Default: see
 #                         default_previous
 #   CLIS="terraform tofu" the CLIs to run, each must be on PATH
@@ -532,6 +535,15 @@ main() {
   WORK="$(private_tmpdir)" || exit 1
   readonly WORK
   trap cleanup EXIT
+
+  if [[ "${1-}" == --previous ]]; then
+    # Everything but the version goes to stderr, a skipped release included.
+    exec 3>&1 1>&2
+    fetch_served
+    default_previous
+    printf '%s\n' "${PREVIOUS:-$DEFAULT_PREVIOUS}" >&3
+    return 0
+  fi
 
   check_accepted
   fetch_served

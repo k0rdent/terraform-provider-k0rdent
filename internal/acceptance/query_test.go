@@ -242,7 +242,7 @@ func terraformForQuery(t *testing.T) string {
 		t.Fatal(err)
 	}
 	if got.LessThan(queryMinimum) {
-		t.Skipf("terraform %s has no `terraform query`, which arrived in %s", got, queryMinimum)
+		skipTest(t, fmt.Sprintf("terraform %s has no `terraform query`, which arrived in %s", got, queryMinimum))
 	}
 	return tf
 }
@@ -251,7 +251,7 @@ func terraformForQuery(t *testing.T) string {
 // adoption, for every managed resource.
 func TestAccQueryGeneratesConfigThatPlansClean(t *testing.T) { //nolint:paralleltest // it lists every project, which tests beside it make and delete
 	if os.Getenv("TF_ACC") == "" {
-		t.Skip("TF_ACC is not set")
+		skipTest(t, "TF_ACC is not set")
 	}
 	tf := terraformForQuery(t)
 	build := builtProvider(t)

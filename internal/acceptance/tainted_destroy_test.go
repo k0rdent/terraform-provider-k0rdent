@@ -36,7 +36,7 @@ const (
 func TestAccADestroyRunsPastATaintedCreateInEveryState(t *testing.T) {
 	t.Parallel()
 	if runtime.GOOS == "windows" {
-		t.Skip("the CLI sequence runs on unix")
+		skipTest(t, "the CLI sequence runs on unix")
 	}
 	const (
 		clusters = "/v1/regions/us-texas-1/projects/demo/compute/clusters/"
@@ -135,7 +135,7 @@ func TestAccADestroyRunsPastATaintedCreateInEveryState(t *testing.T) {
 func TestAccAPlanToCreateOverAClusterMadeElsewhereIsRefused(t *testing.T) {
 	t.Parallel()
 	if runtime.GOOS == "windows" {
-		t.Skip("the CLI sequence runs on unix")
+		skipTest(t, "the CLI sequence runs on unix")
 	}
 	const name = "acc-made-elsewhere"
 	c := newCLIRun(t)

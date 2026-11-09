@@ -809,7 +809,7 @@ func TestAccWebhookSubscriptionTurnedOffIsReplaced(t *testing.T) {
 func TestAccWebhookSubscriptionTurnedOffPlanWarns(t *testing.T) {
 	t.Parallel()
 	if runtime.GOOS == "windows" {
-		t.Skip("the CLI sequence runs on unix")
+		skipTest(t, "the CLI sequence runs on unix")
 	}
 	c := newCLIRun(t)
 	addr := webhookType + ".test"

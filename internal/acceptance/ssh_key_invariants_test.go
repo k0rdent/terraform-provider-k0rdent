@@ -245,7 +245,10 @@ func TestWriteSSHKeyRules(t *testing.T) {
 	t.Parallel()
 	out := os.Getenv("SSH_KEY_RULES_OUT")
 	if out == "" {
-		t.Skip("SSH_KEY_RULES_OUT is not set")
+		// Not a skip: a full run never sets it, and a skip would leave the
+		// testing matrix's record unfinished.
+		t.Log("SSH_KEY_RULES_OUT is not set, so there's nothing to write")
+		return
 	}
 	type rule struct {
 		Start  keyStart `json:"start"`

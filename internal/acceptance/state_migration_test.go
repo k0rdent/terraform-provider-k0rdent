@@ -48,7 +48,7 @@ func terraformForMigration(t *testing.T) string {
 		if os.Getenv("TF_ACC") != "" {
 			t.Fatal("TF_ACC is set and no terraform binary was found")
 		}
-		t.Skip("no terraform binary on PATH")
+		skipTest(t, "no terraform binary on PATH")
 	}
 	return bin
 }
@@ -149,7 +149,7 @@ func (w *migrationWorkspace) run(args ...string) (int, string) {
 	w.t.Helper()
 	cmd := exec.Command(w.terraform, append(args, "-no-color")...) //nolint:gosec // the terraform under test
 	cmd.Dir = w.dir
-	cmd.Env = w.env
+	cmd.Env = append(append([]string(nil), w.env...), matrixTestEnv(w.t)...)
 	var out bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &out
 	err := cmd.Run()

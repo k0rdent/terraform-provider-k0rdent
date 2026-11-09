@@ -95,15 +95,50 @@ install: build ## Install into the local plugin mirror for dev_overrides
 test: ## Unit tests
 	go test -race -count=1 ./...
 
-# TF_BIN=tofu runs it under OpenTofu. A TF_BIN that isn't on PATH fails here,
-# because an empty TF_ACC_TERRAFORM_PATH would quietly run terraform instead.
+# The acceptance suite, the same command locally and in CI. TESTACC_FLAGS is
+# every go test flag it takes, for make drift too. RUN=<regexp> runs only the
+# tests it matches.
+#
+# A whole run records what each test did (internal/testmatrix) and checks
+# docs/testing-matrix.md against it (internal/repocheck). The page is
+# terraform's run, so TF_BIN=tofu, where some tests skip, neither records nor
+# checks, and nor does a run that RUN or a -run or -skip flag narrows, which
+# leaves the last whole run's record alone. testing-matrix rewrites the page
+# instead of checking it, and testing-matrix-page rewrites it from the record
+# in .testing-matrix/ without the suite, after a change to the gap list.
+#
+# After the check, a whole run also writes upgrade coverage against the
+# release make upgrade-test upgrades from, to .testing-matrix/ and in GitHub
+# Actions to the job summary. It's information: it never fails the run, and
+# says in one line what it couldn't work out.
+#
+# A TF_BIN that isn't on PATH fails here, because an empty
+# TF_ACC_TERRAFORM_PATH would quietly run terraform instead.
 # TESTACC_PARALLEL is how many tests run at once. Most of a test's time is
 # spent waiting on the fake, so it's set above the core count.
+TESTACC_FLAGS := -count=1 -timeout 20m -parallel $(TESTACC_PARALLEL)
+RUN           :=
+MATRIX_RECORD := $(CURDIR)/.testing-matrix/record.jsonl
+MATRIX_CHECK  := go test ./internal/repocheck/ -count=1 -run '^TestTheTestingMatrixIsCurrent$$' -args -matrix-record="$(MATRIX_RECORD)"
+UPGRADE_SUMMARY := go test ./internal/repocheck/ -count=1 -v -run '^TestTheUpgradeCoverageSummary$$' -args -matrix-record="$(MATRIX_RECORD)" -upgrade-summary="$(dir $(MATRIX_RECORD))upgrade-coverage.md"
+MATRIX_OFF     = $(if $(filter tofu,$(notdir $(TF_BIN))),OpenTofu skips some tests,$(if $(RUN)$(filter -run -run=% -skip -skip=%,$(TESTACC_FLAGS)),only some tests ran))
+
 .PHONY: testacc
-testacc: ## Acceptance tests: each resource's own lifecycle against the local fake. TF_BIN=tofu for OpenTofu
+testacc: ## Acceptance tests against the local fake, then the check that docs/testing-matrix.md is what they did. RUN=<regexp> for some, TF_BIN=tofu for OpenTofu, neither checked
 	@tf="$$(command -v $(TF_BIN))" || { echo "testacc: $(TF_BIN) is not on PATH" >&2; exit 1; }; \
 	echo "testacc: $$("$$tf" version | head -1) at $$tf"; \
-	TF_ACC=1 TF_ACC_TERRAFORM_PATH="$$tf" go test ./internal/acceptance/ -count=1 -timeout 20m -parallel $(TESTACC_PARALLEL)
+	mkdir -p "$(dir $(MATRIX_RECORD))"; \
+	TF_ACC=1 TF_ACC_TERRAFORM_PATH="$$tf" go test ./internal/acceptance/ $(TESTACC_FLAGS) $(if $(RUN),-run '$(RUN)') $(if $(MATRIX_OFF),,-args -matrix-record="$(MATRIX_RECORD)")
+	$(if $(MATRIX_OFF),@echo "testacc: docs/testing-matrix.md not checked or recorded: $(MATRIX_OFF)",$(MATRIX_CHECK) $(MATRIX_UPDATE))
+	$(if $(MATRIX_OFF),,@$(UPGRADE_SUMMARY) | grep -v -e '^=== RUN' -e '^--- PASS' -e '^PASS$$' -e '^ok ' || true)
+
+.PHONY: testing-matrix
+testing-matrix: ## make testacc, rewriting docs/testing-matrix.md from what it saw instead of checking it
+	@$(MAKE) --no-print-directory testacc TF_BIN=terraform MATRIX_UPDATE=-update-matrix
+
+.PHONY: testing-matrix-page
+testing-matrix-page: ## Rewrite docs/testing-matrix.md from the record the last make testacc left
+	$(MATRIX_CHECK) -update-matrix
 
 # The perpetual-diff check on its own, so the nightly can name it when it
 # fails: every managed resource applied, then planned, refreshed and planned
@@ -111,7 +146,7 @@ testacc: ## Acceptance tests: each resource's own lifecycle against the local fa
 # `make testacc` runs it too.
 .PHONY: drift
 drift: ## The perpetual-diff check alone: every resource, plan and refresh against a fake that moves what the platform moves
-	TF_ACC=1 TF_ACC_TERRAFORM_PATH="$$(command -v $(TF_BIN))" go test ./internal/acceptance/ -count=1 -timeout 20m -parallel $(TESTACC_PARALLEL) -v \
+	TF_ACC=1 TF_ACC_TERRAFORM_PATH="$$(command -v $(TF_BIN))" go test ./internal/acceptance/ $(TESTACC_FLAGS) -v \
 		-run '^(TestAccPerpetualDiff|TestPerpetualDiffCoversEveryResource)$$'
 
 # The performance benchmark: plan, refresh-only plan, apply and destroy at each

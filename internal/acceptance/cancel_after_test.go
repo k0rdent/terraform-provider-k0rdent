@@ -51,7 +51,7 @@ func TestAccAfterACancelledScale(t *testing.T) {
 	// The cluster is cancelled with the action.
 	skipUnderOpenTofu(t, openTofuHasNoActions)
 	if runtime.GOOS == "windows" {
-		t.Skip("the CLI sequence runs on unix")
+		skipTest(t, "the CLI sequence runs on unix")
 	}
 	const name = "acc-cancelled-scale"
 	c := newCLIRun(t)
@@ -91,7 +91,7 @@ func TestAccAfterACancelledUpgrade(t *testing.T) {
 	// The cluster is cancelled with the action.
 	skipUnderOpenTofu(t, openTofuHasNoActions)
 	if runtime.GOOS == "windows" {
-		t.Skip("the CLI sequence runs on unix")
+		skipTest(t, "the CLI sequence runs on unix")
 	}
 	const name = "acc-cancelled-upgrade"
 	held := "acceptance " + holdsUpgrade
@@ -176,7 +176,7 @@ func TestAccAMetadataChangeToACancelledCluster(t *testing.T) {
 	// The cluster is cancelled with the action.
 	skipUnderOpenTofu(t, openTofuHasNoActions)
 	if runtime.GOOS == "windows" {
-		t.Skip("the CLI sequence runs on unix")
+		skipTest(t, "the CLI sequence runs on unix")
 	}
 	const name = "acc-cancelled-metadata"
 	stuck := "acceptance " + neverSettles
@@ -225,7 +225,7 @@ func TestAccAMetadataChangeToACancelledCluster(t *testing.T) {
 func TestAccATagChangeToAnActiveCluster(t *testing.T) {
 	t.Parallel()
 	if runtime.GOOS == "windows" {
-		t.Skip("the CLI sequence runs on unix")
+		skipTest(t, "the CLI sequence runs on unix")
 	}
 	const name = "acc-active-metadata"
 	c := newCLIRun(t)

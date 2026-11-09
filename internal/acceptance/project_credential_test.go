@@ -27,7 +27,7 @@ import (
 func useProjectCredential(t *testing.T) {
 	t.Helper()
 	if fakeProjectCredential.clientID == "" {
-		t.Skip("needs the fake, under TF_ACC")
+		skipTest(t, "needs the fake, under TF_ACC")
 	}
 	t.Setenv(provider.EnvVar("CLIENT_ID"), fakeProjectCredential.clientID)
 	t.Setenv(provider.EnvVar("CLIENT_SECRET"), fakeProjectCredential.clientSecret)
