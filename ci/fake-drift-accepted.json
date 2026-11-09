@@ -291,13 +291,6 @@
   },
 
   {
-    "operation": "GET /v1/regions/global/notifications/webhooks 200",
-    "field": "response $.subscriptions[].failing_since",
-    "side": "type",
-    "reason": "Landscape data: the walkthrough's subscription points at https://hooks.example.com/k0rdent (scripts/lib/walkthrough.sh:119), which kind's notifications service fails to reach, so the real list carries a failing_since time. The fake delivers nothing and answers null. Read at datasource_webhook_subscriptions.go:131 (WebhookSubscription.FailingSince, types.gen.go:12237). The fake answers a time for a subscription the platform disabled and for a churning one (webhooks.go:139-140, :461-462), and TestWebhookDisabledByThePlatform reads it."
-  },
-
-  {
     "operation": "GET /v1/regions/global/organizations/{orgId}/quota 200",
     "field": "response $.dimensions[]*",
     "side": "fake",
@@ -437,19 +430,6 @@
     "field": "response $.systemTags.managed-by",
     "side": "fake",
     "reason": "Deliberate hazard: the fake adds a server-owned tag beside the tenant's (networking.go networkJSON), so a provider that folded systemTags into tags would plan its removal. The real tenant network answers systemTags as {}. Not read: the systemTags of NetworkEVPN, NetworkInfiniBand and NetworkNVLink (types.gen.go:9093, 9193, 9284) have no use in internal/provider."
-  },
-
-  {
-    "operation": "GET /v1/regions/{region}/projects/{project}/networking/security-groups/{id} 200",
-    "field": "response $.ownerId",
-    "side": "real",
-    "reason": "Landscape data: the real leg read two VPC default groups by id, both of VPCs already in the kind project (the recorded paths end in -default), and only a platform-owned group answers these (services/compute/internal/model/security_group.go:181-187). The fake's walkthroughs read only tenant groups, and the fake answers both on a VPC's default group (security.go securityGroupJSON, TestEachVPCGetsItsOwnDefaultGroup). Read at datasource_managed_singulars.go:486-489."
-  },
-  {
-    "operation": "GET /v1/regions/{region}/projects/{project}/networking/security-groups/{id} 200",
-    "field": "response $.ownerKind",
-    "side": "real",
-    "reason": "Landscape data: the real leg read two VPC default groups by id, both of VPCs already in the kind project (the recorded paths end in -default), and only a platform-owned group answers these (services/compute/internal/model/security_group.go:181-187). The fake's walkthroughs read only tenant groups, and the fake answers both on a VPC's default group (security.go securityGroupJSON, TestEachVPCGetsItsOwnDefaultGroup). Read at datasource_managed_singulars.go:486-489."
   },
 
   {
