@@ -16,9 +16,11 @@
 #   check-public-text.sh --hash NAME FLAGS WORD
 #                                   the hashed.txt line for WORD
 #   check-public-text.sh --commits RANGE --text NAME FILE
-#                                   the messages of the commits in RANGE, and
-#                                   FILE's text reported as NAME, such as a
-#                                   pull request's title. Each repeats.
+#                                   the messages of the commits in RANGE, their
+#                                   authors and committers under the ai-tool
+#                                   rule, and FILE's text reported as NAME,
+#                                   such as a pull request's title. Each
+#                                   repeats.
 #
 # Exits 0 when clean, 1 on a hit, 2 when it can't run.
 set -euo pipefail
@@ -136,15 +138,22 @@ args = sys.argv[1:]
 staged = args[:1] == ["--staged"]
 # (source, bytes) from --commits and --text, scanned instead of files.
 texts = []
+# (source, bytes) for each commit's author and committer, "Name <address>".
+# Only the ai-tool rule applies: a person's own name and address belong there.
+identities = []
+TOOL_RULES = [r for r in rules if r[0] == "ai-tool"]
 commits = 0
 text_mode = args[:1] in (["--commits"], ["--text"])
 if text_mode:
     while args:
         if args[0] == "--commits" and len(args) > 1:
-            log = git("log", "-z", "--format=%H%n%B", "--end-of-options", args[1], "--")
+            log = git("log", "-z", "--format=%H%n%an <%ae>%n%cn <%ce>%n%B", "--end-of-options", args[1], "--")
             for entry in filter(None, log.split(b"\0")):
-                sha, _, message = entry.partition(b"\n")
-                texts.append((f"commit {sha.decode()[:12]}", message))
+                sha, author, committer, message = (entry.split(b"\n", 3) + [b""])[:4]
+                commit = f"commit {sha.decode()[:12]}"
+                texts.append((commit, message))
+                identities.append((f"{commit} author", author))
+                identities.append((f"{commit} committer", committer))
                 commits += 1
             args = args[2:]
         elif args[0] == "--text" and len(args) > 2:
@@ -156,6 +165,8 @@ if text_mode:
             args = args[3:]
         else:
             die("--commits RANGE and --text NAME FILE go together, and with nothing else")
+    if identities and not TOOL_RULES:
+        die(f"{DENY} has no ai-tool rule to check commit authors and committers against")
     paths = []
 elif staged:
     args = args[1:]
@@ -188,7 +199,9 @@ def sources():
 
 
 hits = {}
-for path, data in sources():
+
+
+def scan(path, data, rules, use_hashed):
     text = data.decode("utf-8", errors="replace")
     for lineno, line in enumerate(text.splitlines(), 1):
         for name, pattern, rx in rules:
@@ -197,10 +210,18 @@ for path, data in sources():
                 if any(p.search(path) and t.search(tok) for p, t in allows):
                     continue
                 hits.setdefault((name, pattern), []).append((path, lineno, tok))
+        if not use_hashed:
+            continue
         for name, tok in hashed_hits(line):
             if any(p.search(path) and t.search(tok) for p, t in allows):
                 continue
             hits.setdefault((name, "a word in " + HASHED), []).append((path, lineno, tok))
+
+
+for path, data in sources():
+    scan(path, data, rules, True)
+for path, data in identities:
+    scan(path, data, TOOL_RULES, False)
 
 def esc(s, prop=False):
     """s escaped for a workflow command, so it can't end the command early."""
