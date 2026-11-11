@@ -9,7 +9,7 @@
 #   scripts/demo.sh env        print the exports setup created, for a new shell
 #
 # Needs no secret and no network beyond the fake on 127.0.0.1. Needs Go
-# 1.26.10 or newer (go.mod), terraform or tofu on PATH, and a populated Go
+# 1.26.11 or newer (go.mod), terraform or tofu on PATH, and a populated Go
 # module cache or network access on the first run.
 #
 # Caveats: everything on the provider's side of the wire is real, the control

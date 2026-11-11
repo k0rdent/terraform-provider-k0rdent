@@ -184,7 +184,7 @@ fi
 # The floor is the full version go.mod declares, since Go refuses to build a
 # module that declares a newer one than the toolchain.
 MODULE_GO="$(awk '/^go / {print $2; exit}' go.mod 2>/dev/null || true)"
-GO_MIN="${MODULE_GO:-1.26.10}"
+GO_MIN="${MODULE_GO:-1.26.11}"
 if command -v go >/dev/null 2>&1; then
   go_ver="$(go env GOVERSION 2>/dev/null | sed 's/^go//')"
   if semver_ge "${go_ver:-0}" "$GO_MIN"; then

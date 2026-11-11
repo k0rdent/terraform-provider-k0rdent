@@ -120,7 +120,7 @@ make demo
 
 ## Build from source
 
-Needs Go 1.26.10 or later.
+Needs Go 1.26.11 or later.
 
 ```sh
 git clone https://github.com/k0rdent/terraform-provider-k0rdent

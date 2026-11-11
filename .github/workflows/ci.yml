@@ -16,9 +16,10 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # The minimum go.mod declares, and not a preference: 1.26.10 is the first
-  # 1.26 with the crypto/x509 fix, and golang.org/x/net v0.60.0 needs 1.26.
-  GO_VERSION: "1.26.10"
+  # The minimum go.mod declares, and not a preference: 1.26.11 is the first
+  # 1.26 with both the crypto/x509 and the net/http GO-2026-6859 fixes, and
+  # golang.org/x/net v0.60.0 needs 1.26.
+  GO_VERSION: "1.26.11"
 
 jobs:
   # Keeps build and module caches from being committed.
