@@ -9,8 +9,9 @@
       "plan": "examples/walkthrough/cluster, first plan",
       "resources": {
         "k0rdent_kubernetes_cluster": {
-          "count": 9,
+          "count": 11,
           "unknown": {
+            "api_endpoint": "the API server URL the platform reports once the control plane is up",
             "cluster_type_resolved": "the platform may resolve an unversioned cluster_type to a pinned version",
             "kubernetes_version": "read from the ClusterType version the platform binds on create",
             "node_count": "counted across the node pools the platform creates",
@@ -19,6 +20,7 @@
             "ssh_access[*].ssh_public_key_refs": "the credentials the platform registers the keys as, on create",
             "state": "the lifecycle state the create settles on, read back after it",
             "storage_ceiling_gib": "the platform's default, since the configuration leaves it out",
+            "uid": "the platform's unique id, assigned on create",
             "vpc": "the VPC the platform creates with the cluster"
           }
         }
@@ -28,8 +30,9 @@
       "plan": "examples/walkthrough/cluster-own-project, first plan",
       "resources": {
         "k0rdent_kubernetes_cluster": {
-          "count": 8,
+          "count": 10,
           "unknown": {
+            "api_endpoint": "the API server URL the platform reports once the control plane is up",
             "cluster_type_resolved": "the platform may resolve an unversioned cluster_type to a pinned version",
             "kubernetes_version": "read from the ClusterType version the platform binds on create",
             "node_count": "counted across the node pools the platform creates",
@@ -37,6 +40,7 @@
             "self_link": "the platform-defined reference, assigned on create",
             "state": "the lifecycle state the create settles on, read back after it",
             "storage_ceiling_gib": "the platform's default, since the configuration leaves it out",
+            "uid": "the platform's unique id, assigned on create",
             "vpc": "the VPC the platform creates with the cluster"
           }
         },
@@ -69,7 +73,7 @@
           }
         },
         "data.k0rdent_kubernetes_cluster": {
-          "count": 25,
+          "count": 26,
           "unknown": {
             "api_endpoint": "read during the apply, because it waits for terraform_data.made, which this plan creates",
             "cluster_type": "read during the apply, because it waits for terraform_data.made, which this plan creates",
@@ -95,6 +99,7 @@
             "state_message": "read during the apply, because it waits for terraform_data.made, which this plan creates",
             "state_reason": "read during the apply, because it waits for terraform_data.made, which this plan creates",
             "tags": "read during the apply, because it waits for terraform_data.made, which this plan creates",
+            "uid": "read during the apply, because it waits for terraform_data.made, which this plan creates",
             "upgrade_target_version_id": "read during the apply, because it waits for terraform_data.made, which this plan creates"
           }
         },
@@ -172,8 +177,9 @@
           }
         },
         "k0rdent_kubernetes_cluster": {
-          "count": 8,
+          "count": 10,
           "unknown": {
+            "api_endpoint": "the API server URL the platform reports once the control plane is up",
             "cluster_type_resolved": "the platform may resolve an unversioned cluster_type to a pinned version",
             "kubernetes_version": "read from the ClusterType version the platform binds on create",
             "node_count": "counted across the node pools the platform creates",
@@ -181,6 +187,7 @@
             "ssh_access[*].ssh_public_key_refs": "the credentials the platform registers the keys as, on create",
             "state": "the lifecycle state the create settles on, read back after it",
             "storage_ceiling_gib": "the platform's default, since the configuration leaves it out",
+            "uid": "the platform's unique id, assigned on create",
             "vpc": "the VPC the platform creates with the cluster"
           }
         },
@@ -299,7 +306,7 @@
           }
         },
         "data.k0rdent_instance_group": {
-          "count": 13,
+          "count": 14,
           "unknown": {
             "cluster_type": "read during the apply, because its arguments come from a resource this plan creates",
             "description": "read during the apply, because its arguments come from a resource this plan creates",
@@ -313,7 +320,8 @@
             "ssh_access": "read during the apply, because its arguments come from a resource this plan creates",
             "state": "read during the apply, because its arguments come from a resource this plan creates",
             "state_message": "read during the apply, because its arguments come from a resource this plan creates",
-            "state_reason": "read during the apply, because its arguments come from a resource this plan creates"
+            "state_reason": "read during the apply, because its arguments come from a resource this plan creates",
+            "uid": "read during the apply, because its arguments come from a resource this plan creates"
           }
         },
         "data.k0rdent_instances": {
@@ -325,7 +333,7 @@
           }
         },
         "data.k0rdent_kubernetes_cluster": {
-          "count": 25,
+          "count": 26,
           "unknown": {
             "api_endpoint": "read during the apply, because it waits for terraform_data.made, which this plan creates",
             "cluster_type": "read during the apply, because it waits for terraform_data.made, which this plan creates",
@@ -351,6 +359,7 @@
             "state_message": "read during the apply, because it waits for terraform_data.made, which this plan creates",
             "state_reason": "read during the apply, because it waits for terraform_data.made, which this plan creates",
             "tags": "read during the apply, because it waits for terraform_data.made, which this plan creates",
+            "uid": "read during the apply, because it waits for terraform_data.made, which this plan creates",
             "upgrade_target_version_id": "read during the apply, because it waits for terraform_data.made, which this plan creates"
           }
         },
@@ -454,18 +463,20 @@
           }
         },
         "k0rdent_instance_group": {
-          "count": 5,
+          "count": 6,
           "unknown": {
             "cluster_type_resolved": "the platform may answer with a different form of the cluster_type reference",
             "self_link": "the platform-defined reference, assigned on create",
             "ssh_access[*].ssh_public_key_refs": "the credentials the platform registers the keys as, on create",
             "state": "the lifecycle state the create settles on, read back after it",
+            "uid": "the platform's unique id, assigned on create",
             "vpc": "the VPC the platform creates with the group"
           }
         },
         "k0rdent_kubernetes_cluster": {
-          "count": 8,
+          "count": 10,
           "unknown": {
+            "api_endpoint": "the API server URL the platform reports once the control plane is up",
             "cluster_type_resolved": "the platform may resolve an unversioned cluster_type to a pinned version",
             "kubernetes_version": "read from the ClusterType version the platform binds on create",
             "node_count": "counted across the node pools the platform creates",
@@ -473,6 +484,7 @@
             "ssh_access[*].ssh_public_key_refs": "the credentials the platform registers the keys as, on create",
             "state": "the lifecycle state the create settles on, read back after it",
             "storage_ceiling_gib": "the platform's default, since the configuration leaves it out",
+            "uid": "the platform's unique id, assigned on create",
             "vpc": "the VPC the platform creates with the cluster"
           }
         },

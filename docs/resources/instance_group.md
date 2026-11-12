@@ -85,6 +85,7 @@ Left out, it's read from the platform and changes nothing, so an import without 
 - `cluster_type_resolved` (String) The `clusterType` value the platform returned, verbatim. It can be a relative path or an absolute URI, so it can differ in form from `cluster_type` while naming the same version.
 - `self_link` (String) Platform-defined reference to this instance group.
 - `state` (String) Lifecycle state as last read from the platform.
+- `uid` (String) The platform's unique id for this instance group, a UUID. Unlike `id`, it's never reused: another instance group created later under the same `id` gets a different one. A refresh that finds another uid under `id` drops the instance group from state with a warning rather than adopting the other one.
 - `vpc` (String) Id of the VPC this instance group brought with it. Name the VPC through this rather than a data source: it stays known while the instance group changes, so a peering or a security-group binding that names it is not replaced. A peering takes it as `vpc`, and a peering in this project that points at it takes it as `remote_vpc`.
 
 <a id="nestedatt--node_pool"></a>

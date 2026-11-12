@@ -53,6 +53,7 @@ type clusterDataSource struct{ meta *Meta }
 
 type clusterDataSourceModel struct {
 	ID      types.String `tfsdk:"id"`
+	UID     types.String `tfsdk:"uid"`
 	Region  types.String `tfsdk:"region"`
 	Project types.String `tfsdk:"project"`
 
@@ -127,6 +128,7 @@ func (d *clusterDataSource) Schema(_ context.Context, _ datasource.SchemaRequest
 				MarkdownDescription: "The cluster's name, which is its id.",
 				Validators:          []validator.String{urlSafeIdentifier{}},
 			},
+			"uid":     uidDataSourceAttribute("cluster"),
 			"region":  dataSourceRegionAttribute(),
 			"project": dataSourceProjectAttribute(),
 			"cluster_type": schema.StringAttribute{
@@ -183,10 +185,8 @@ func (d *clusterDataSource) Schema(_ context.Context, _ datasource.SchemaRequest
 				MarkdownDescription: "Why the health is what it is. Null when healthy.",
 			},
 			"api_endpoint": schema.StringAttribute{
-				Computed: true,
-				MarkdownDescription: "URL of the Kubernetes API server. Null until the control plane " +
-					"has one. The certificate to trust it with is not returned here; see the " +
-					"`" + ResourceName("cluster_kubeconfig") + "` ephemeral resource.",
+				Computed:            true,
+				MarkdownDescription: apiEndpointDescription(),
 			},
 			"control_plane_state": schema.StringAttribute{
 				Computed: true,
@@ -353,6 +353,7 @@ func (d *clusterDataSource) Read(ctx context.Context, req datasource.ReadRequest
 
 func (data *clusterDataSourceModel) fill(ctx context.Context, c k0rdent.Cluster) diag.Diagnostics {
 	var diags diag.Diagnostics
+	data.UID = uidValue(c.Uid)
 	data.ClusterType = stringOrNull(c.ClusterType)
 	data.ClusterTypeName = stringOrNull(c.ClusterTypeName)
 	data.DisplayName = stringOrNull(c.DisplayName)
@@ -378,14 +379,11 @@ func (data *clusterDataSourceModel) fill(ctx context.Context, c k0rdent.Cluster)
 		data.HealthReason = stringOrNull(c.Health.Reason)
 	}
 
-	data.APIEndpoint = types.StringNull()
+	data.APIEndpoint = apiEndpointOf(c)
 	data.ControlPlaneState, data.ControlPlaneMessage = types.StringNull(), types.StringNull()
 	data.ControlPlaneVersion = types.StringNull()
 	data.ControlPlaneDesired, data.ControlPlaneReadyCount = types.Int64Null(), types.Int64Null()
 	if c.ControlPlane != nil {
-		if c.ControlPlane.Endpoint != nil {
-			data.APIEndpoint = stringOrNull(c.ControlPlane.Endpoint.Url)
-		}
 		if h := c.ControlPlane.Hosted; h != nil {
 			data.ControlPlaneState = enumOrNull(h.State)
 			data.ControlPlaneMessage = stringOrNull(h.Message)
@@ -412,6 +410,22 @@ func (data *clusterDataSourceModel) fill(ctx context.Context, c k0rdent.Cluster)
 	}
 
 	return diags
+}
+
+// apiEndpointDescription is `api_endpoint` on the cluster resource and data
+// source alike.
+func apiEndpointDescription() string {
+	return "URL of the Kubernetes API server. Null until the control plane has one. The certificate to " +
+		"trust it with isn't returned here: the `" + ResourceName("cluster_kubeconfig") + "` ephemeral " +
+		"resource carries it."
+}
+
+// apiEndpointOf is the cluster's API server URL, null until it has one.
+func apiEndpointOf(c k0rdent.Cluster) types.String {
+	if c.ControlPlane == nil || c.ControlPlane.Endpoint == nil {
+		return types.StringNull()
+	}
+	return stringOrNull(c.ControlPlane.Endpoint.Url)
 }
 
 func operationFrom(op *k0rdent.Operation) *clusterOperationModel {

@@ -66,6 +66,7 @@ type clusterModel struct {
 	OnFailed types.String `tfsdk:"on_failed"`
 
 	ID                  types.String   `tfsdk:"id"`
+	UID                 types.String   `tfsdk:"uid"`
 	Region              types.String   `tfsdk:"region"`
 	Project             types.String   `tfsdk:"project"`
 	ClusterType         types.String   `tfsdk:"cluster_type"`
@@ -79,6 +80,7 @@ type clusterModel struct {
 	NodeCount           types.Int64    `tfsdk:"node_count"`
 	State               types.String   `tfsdk:"state"`
 	SelfLink            types.String   `tfsdk:"self_link"`
+	APIEndpoint         types.String   `tfsdk:"api_endpoint"`
 	VPC                 types.String   `tfsdk:"vpc"`
 	SecurityGroups      types.List     `tfsdk:"security_groups"`
 	StorageCeilingGiB   types.Int64    `tfsdk:"storage_ceiling_gib"`
@@ -87,7 +89,7 @@ type clusterModel struct {
 	Timeouts            timeouts.Value `tfsdk:"timeouts"`
 
 	// uid is the platform's uid for the cluster read, which own_object.go
-	// keeps in private state. Not an attribute.
+	// keeps in private state. UID is the same value as an attribute.
 	uid string
 	// failed is what the platform said about a cluster read `failed`, which
 	// cluster_failed.go keeps in private state. Not an attribute: it moves
@@ -204,6 +206,7 @@ func (r *clusterResource) Schema(ctx context.Context, _ resource.SchemaRequest, 
 			"region":  regionAttribute(),
 			"project": projectAttribute(),
 			"id":      hardwareIDAttribute("Cluster"),
+			"uid":     uidAttribute("cluster"),
 			"cluster_type": schema.StringAttribute{
 				Required: true,
 				MarkdownDescription: "Reference to the ClusterType to create this cluster from, as returned in a " +
@@ -328,6 +331,16 @@ func (r *clusterResource) Schema(ctx context.Context, _ resource.SchemaRequest, 
 				Computed:            true,
 				MarkdownDescription: "Platform-defined reference to this cluster.",
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
+			},
+			// An update plans the one state holds, since nothing this
+			// resource changes moves the control plane's address. A null
+			// plans as unknown, so one published during the update lands.
+			"api_endpoint": schema.StringAttribute{
+				Computed: true,
+				MarkdownDescription: apiEndpointDescription() + " Each refresh reads it from the platform, so " +
+					"one reported after the create fills in then, and one that changes is updated in state. " +
+					"Neither plans a change to the cluster.",
+				PlanModifiers: []planmodifier.String{stringplanmodifier.UseNonNullStateForUnknown()},
 			},
 			"vpc": schema.StringAttribute{
 				Computed: true,
@@ -1153,6 +1166,8 @@ func clusterStateFrom(ctx context.Context, c k0rdent.Cluster, prior clusterModel
 		Tags:            md.Tags,
 		TagsAll:         md.TagsAll,
 		SelfLink:        stringOrNull(c.SelfLink),
+		UID:             uidValue(c.Uid),
+		APIEndpoint:     apiEndpointOf(c),
 		State:           types.StringNull(),
 		NodeCount:       types.Int64Null(),
 	}

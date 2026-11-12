@@ -8,8 +8,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
+	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-go/tftypes"
 )
 
@@ -77,6 +79,9 @@ func TestARefreshDropsAClusterRecreatedUnderItsID(t *testing.T) {
 			}
 			if got, same := heldObject(context.Background(), resp.Private, tc.answered); !same || got != tc.answered {
 				t.Errorf("recorded uid = %q, want %q", got, tc.answered)
+			}
+			if got := stateUID(t, resp.State); got != tc.answered {
+				t.Errorf("uid attribute = %q, want the recorded %q", got, tc.answered)
 			}
 		})
 	}
@@ -156,6 +161,12 @@ func TestEveryKindDropsAnObjectRecreatedUnderItsID(t *testing.T) {
 				if kept := !resp.State.Raw.IsNull(); kept != tc.kept {
 					t.Errorf("row kept = %v, want %v (%v)", kept, tc.kept, resp.Diagnostics)
 				}
+				if _, ok := s.Schema.Attributes["uid"]; ok && tc.kept {
+					if got := stateUID(t, resp.State); got != ours || heldUID(context.Background(), resp.Private) != ours {
+						t.Errorf("uid attribute = %q and recorded uid = %q, want both %q",
+							got, heldUID(context.Background(), resp.Private), ours)
+					}
+				}
 			})
 		}
 	}
@@ -177,6 +188,9 @@ func TestACreateRecordsTheUIDOfWhatItMade(t *testing.T) {
 		if held, _ := heldObject(context.Background(), resp.Private, "x"); held != "00000000-0000-4000-8000-000000000009" {
 			t.Errorf("recorded uid = %q", held)
 		}
+		if got := stateUID(t, resp.State); got != "00000000-0000-4000-8000-000000000009" {
+			t.Errorf("uid attribute = %q, want the recorded one", got)
+		}
 	})
 	t.Run("project", func(t *testing.T) {
 		api := &regionsAPI{regions: []map[string]any{region("local", true)}}
@@ -194,4 +208,14 @@ func TestACreateRecordsTheUIDOfWhatItMade(t *testing.T) {
 			t.Errorf("recorded uid = %q", held)
 		}
 	})
+}
+
+// stateUID is the `uid` attribute a resource wrote.
+func stateUID(t *testing.T, st tfsdk.State) string {
+	t.Helper()
+	var uid types.String
+	if d := st.GetAttribute(context.Background(), path.Root("uid"), &uid); d.HasError() {
+		t.Fatal(d)
+	}
+	return uid.ValueString()
 }

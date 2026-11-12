@@ -107,6 +107,12 @@ const (
 	// An upgrade on a cluster whose display name carries this never settles,
 	// so a test can read one in flight across as many requests as it takes.
 	holdsUpgrade = "fake-holds-upgrade"
+
+	// A cluster created with a display name that carries this reports no
+	// API server endpoint until the harness publishes one, as a hosted
+	// control plane does when it's observed only after the cluster is
+	// `active`.
+	endpointLate = "fake-endpoint-late"
 )
 
 // settle advances a transient state once it has been read settleAfter times,
@@ -223,6 +229,7 @@ func newHandler(s *state, secrets runSecrets, port string, shutdown func()) http
 	mux.HandleFunc("GET /_harness/store/{path...}", secrets.owner(s.storeRead()))
 	mux.HandleFunc("POST /_harness/webhooks/{id}/disable", secrets.owner(s.disableWebhook))
 	mux.HandleFunc("POST /_harness/regions/{region}/projects/{project}/credentials/{id}/{action}", secrets.owner(s.sshKeyHarness))
+	mux.HandleFunc("POST /_harness/regions/{region}/projects/{project}/clusters/{id}/endpoint/{action}", secrets.owner(s.clusterEndpointHarness))
 	counts := newRequestCounts()
 	mux.HandleFunc("GET /_harness/requests", secrets.owner(counts.serve))
 	s.routes(mux, secrets.auth)
@@ -418,6 +425,11 @@ type cluster struct {
 	// busiedForUpgrade says another run's operation already met an upgrade.
 	// See busyAtFirstUpgrade.
 	busiedForUpgrade bool
+
+	// endpointHeld says the cluster reports no API server endpoint yet: see
+	// endpointLate. endpointMoves is how many times the harness moved it.
+	endpointHeld  bool
+	endpointMoves int
 }
 
 // The contract's bounds on a cluster's storage.ceilingGiB.
@@ -1298,6 +1310,7 @@ func (s *state) createCluster(w http.ResponseWriter, r *http.Request) {
 
 		securityGroups: groups,
 		sshAccess:      o.keysAsCredentials(body.SSHAccess),
+		endpointHeld:   nameCarries(body.DisplayName, endpointLate),
 	}
 	if body.Storage != nil {
 		c.ceiling = *body.Storage.CeilingGiB
@@ -1797,8 +1810,15 @@ func (s *state) clusterBody(region string, c *cluster, read bool) map[string]any
 	if c.op != nil {
 		body["operation"] = c.op.json()
 	}
+	controlPlane := map[string]any{}
 	if hosted := hostedControlPlane(c); hosted != nil {
-		body["controlPlane"] = map[string]any{"hosted": hosted}
+		controlPlane["hosted"] = hosted
+	}
+	if url := clusterEndpoint(region, c); url != "" {
+		controlPlane["endpoint"] = map[string]any{"url": url}
+	}
+	if len(controlPlane) > 0 {
+		body["controlPlane"] = controlPlane
 	}
 	if c.displayName != nil {
 		body["displayName"] = *c.displayName
@@ -1885,6 +1905,43 @@ func hostedControlPlane(c *cluster) map[string]any {
 		hosted["updatedReplicas"] = 1
 	}
 	return hosted
+}
+
+// clusterEndpoint is the API server URL a cluster reports, or "" for none.
+// A hosted control plane's is derived from the observed control plane, so it's
+// absent while the cluster is created, and from then on it's there whenever the
+// hosted block is, with no CA certificate. Port 6443 and up, so a move the
+// harness makes changes the URL.
+func clusterEndpoint(region string, c *cluster) string {
+	if c.state == "creating" || c.endpointHeld {
+		return ""
+	}
+	return fmt.Sprintf("https://%s.%s.k8s.example.invalid:%d", c.id, region, 6443+c.endpointMoves)
+}
+
+// clusterEndpointHarness acts on a cluster's API server endpoint as the
+// platform's observation of its control plane would: POST
+// /_harness/regions/{region}/projects/{project}/clusters/{id}/endpoint/
+// followed by publish (an endpointLate cluster's is observed at last) or move
+// (the control plane's address changes).
+func (s *state) clusterEndpointHarness(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	c, ok := s.in(r).clusters[at{id: r.PathValue("id")}]
+	if !ok {
+		http.Error(w, "no such cluster", http.StatusNotFound)
+		return
+	}
+	switch r.PathValue("action") {
+	case "publish":
+		c.endpointHeld = false
+	case "move":
+		c.endpointMoves++
+	default:
+		http.Error(w, "want publish or move", http.StatusBadRequest)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // ---------------------------------------------------------------------------

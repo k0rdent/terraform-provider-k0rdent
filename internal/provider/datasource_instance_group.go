@@ -34,6 +34,7 @@ type instanceGroupDataSource struct{ meta *Meta }
 
 type instanceGroupDataSourceModel struct {
 	ID      types.String `tfsdk:"id"`
+	UID     types.String `tfsdk:"uid"`
 	Region  types.String `tfsdk:"region"`
 	Project types.String `tfsdk:"project"`
 
@@ -80,6 +81,7 @@ func (d *instanceGroupDataSource) Schema(_ context.Context, _ datasource.SchemaR
 				MarkdownDescription: "Instance group name.",
 				Validators:          []validator.String{urlSafeIdentifier{}},
 			},
+			"uid":     uidDataSourceAttribute("instance group"),
 			"region":  dataSourceRegionAttribute(),
 			"project": dataSourceProjectAttribute(),
 			"cluster_type": schema.StringAttribute{
@@ -214,6 +216,7 @@ func (d *instanceGroupDataSource) Read(ctx context.Context, req datasource.ReadR
 }
 
 func (data *instanceGroupDataSourceModel) fill(ctx context.Context, g k0rdent.InstanceGroup) diag.Diagnostics {
+	data.UID = uidValue(g.Uid)
 	data.ClusterType = types.StringValue(g.ClusterType)
 	data.DisplayName = stringOrNull(g.DisplayName)
 	data.Description = stringOrNull(g.Description)
