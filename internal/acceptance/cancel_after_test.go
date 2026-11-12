@@ -84,8 +84,9 @@ func TestAccAfterACancelledScale(t *testing.T) {
 }
 
 // A cancelled upgrade leaves the cluster bound to the old version. A plan
-// that names the new one is refused, and so is `terraform destroy`, which
-// plans first, until `cluster_type` names the old version again.
+// that names the new one warns, its apply is refused with nothing sent, and
+// `terraform destroy`, which plans first, still removes the cluster. Naming
+// the old version again plans no change.
 func TestAccAfterACancelledUpgrade(t *testing.T) {
 	t.Parallel()
 	// The cluster is cancelled with the action.
@@ -101,30 +102,42 @@ func TestAccAfterACancelledUpgrade(t *testing.T) {
 		t.Fatalf("create:\n%s", out)
 	}
 	t.Cleanup(func() {
-		c.write(cancelledCluster(name, clusterTypeV2ID, held, 1))
-		if out, ok := c.run("destroy", "-auto-approve"); !ok {
+		if out, ok := c.run("destroy", "-auto-approve", "-refresh=false"); !ok {
 			t.Errorf("cleanup destroy failed:\n%s", out)
 		}
 	})
-	cancelAfterTimeout(t, c, name, cancelledCluster(name, clusterTypeV3, held, 1))
+	newVersion := cancelledCluster(name, clusterTypeV3, held, 1)
+	cancelAfterTimeout(t, c, name, newVersion)
 
-	refusal := []string{"does not retry an upgrade from `failed`",
+	refusal := []string{versionRefused, "does not retry an upgrade from `failed`",
 		"set `cluster_type` to \"" + clusterTypeRef + "/versions/" + clusterTypeV2ID + "\""}
 	out, ok := c.run("plan")
-	if ok {
-		t.Fatalf("the plan naming the new version passed:\n%s", out)
+	if !ok {
+		t.Fatalf("the plan naming the new version was refused:\n%s", out)
 	}
-	mustSay(t, "the plan", out, refusal...)
-	out, ok = c.run("destroy", "-auto-approve")
+	mustSay(t, "the plan", out, append(refusal, "Warning: "+versionRefused, "0 to add, 1 to change, 0 to destroy")...)
+	sentNothing := clusterWrites(t, clusterAPIPath(name))
+	out, ok = c.run("apply", "-auto-approve")
 	if ok {
-		t.Fatalf("the destroy naming the new version passed:\n%s", out)
+		t.Fatalf("the apply naming the new version passed:\n%s", out)
 	}
-	mustSay(t, "the destroy", out, refusal...)
+	mustSay(t, "the apply", out, append(refusal, "Error: "+versionRefused, "This apply sent nothing")...)
+	sentNothing("the apply")
 	checkFakeStateNow(t, name, "failed")
 
 	c.write(cancelledCluster(name, clusterTypeV2ID, held, 1))
 	out, _ = c.run("plan")
 	mustSay(t, "the plan with the old version", out, "No changes.")
+
+	c.write(newVersion)
+	out, ok = c.run("destroy", "-auto-approve")
+	if !ok {
+		t.Fatalf("the destroy naming the new version failed:\n%s", out)
+	}
+	mustSay(t, "the destroy", out, "Destroy complete! Resources: 1 destroyed.")
+	if err := checkGoneAt(clusterAPIPath(name))(nil); err != nil {
+		t.Error(err)
+	}
 }
 
 // metadataCluster is a cluster at one worker with tags, and a description
