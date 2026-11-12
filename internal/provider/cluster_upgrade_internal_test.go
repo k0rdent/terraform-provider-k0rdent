@@ -641,32 +641,109 @@ func TestPlanSaysHowManyStepsAnUpgradeTakes(t *testing.T) {
 	}
 }
 
-func TestPlanRefusals(t *testing.T) {
-	server := (&upgradeAPI{bound: 4, state: "active"}).serve(t)
-	meta := testClusterMeta(t, server.URL, time.Minute)
-	for _, tc := range []struct {
+// versionRefusals are the version changes a cluster can't take: the bound
+// version, the configured one and the cluster's state, the API, and what the
+// refusal says.
+func versionRefusals() []struct {
+	name, bound, target, state, want string
+	api                              *upgradeAPI
+} {
+	later := &upgradeAPI{bound: 1, state: "active", workers: 2, bounds: map[int][2]int{4: {1, 1}}}
+	bmaas := &upgradeAPI{bound: 1, state: "active", workers: 2, bmaas: map[int]bool{4: true}}
+	return []struct {
 		name, bound, target, state, want string
+		api                              *upgradeAPI
 	}{
-		{"an earlier version", verRef(4), verRef(2), "active", "forward-only"},
-		{"a draft", verRef(2), verRef(3), "active", "draft"},
-		{"a version the ClusterType does not have", verRef(2), upgradeTypeRef + "/versions/99999999-0000-4000-8000-000000000000", "active", "not a version"},
-		{"a failed cluster", verRef(2), verRef(4), "failed", "does not retry"},
-	} {
+		{"an earlier version", verRef(4), verRef(2), "active", "forward-only", &upgradeAPI{bound: 4, state: "active", workers: 2}},
+		{"a draft", verRef(2), verRef(3), "active", "draft", &upgradeAPI{bound: 2, state: "active", workers: 2}},
+		{"a version the ClusterType does not have", verRef(2), upgradeTypeRef + "/versions/99999999-0000-4000-8000-000000000000",
+			"active", "not a version", &upgradeAPI{bound: 2, state: "active", workers: 2}},
+		{"a failed cluster", verRef(2), verRef(4), "failed", "does not retry", &upgradeAPI{bound: 2, state: "failed", workers: 2}},
+		{"a later step's bounds", verRef(1), verRef(5), "active", "version 4 allows 1 to 1", later},
+		{"a BMaaS-only step", verRef(1), verRef(5), "active", "no Kubernetes configuration", bmaas},
+	}
+}
+
+// A version change is made in place, so the plan only warns about one the
+// apply refuses: `terraform destroy` refreshes with a normal plan first, and
+// a refusal there would stop it too.
+func TestPlanWarnsOfAVersionChangeTheApplyRefuses(t *testing.T) {
+	for _, tc := range versionRefusals() {
 		t.Run(tc.name, func(t *testing.T) {
-			resp := planUpgrade(t, meta, tc.bound, tc.target, tc.state)
+			server := tc.api.serve(t)
+			resp := planWith(t, testClusterMeta(t, server.URL, time.Minute),
+				clusterValues(tc.bound, tc.bound, 2, tc.state), clusterValues(tc.target, tc.bound, 2, tc.state))
+			if resp.Diagnostics.HasError() {
+				t.Fatalf("the plan was refused: %s", detailOf(resp.Diagnostics))
+			}
+			// A failed cluster also gets on_failed's warning.
+			var refusals []diag.Diagnostic
+			for _, w := range resp.Diagnostics.Warnings() {
+				if w.Summary() == versionRefusal {
+					refusals = append(refusals, w)
+				}
+			}
+			if len(refusals) != 1 {
+				t.Fatalf("warnings = %v, want one refusal", resp.Diagnostics.Warnings())
+			}
+			w := refusals[0]
+			if !strings.Contains(w.Detail(), tc.want) {
+				t.Errorf("warning:\n%s\n%s", w.Summary(), w.Detail())
+			}
+			for _, want := range []string{"fails before it sends any request", "`terraform destroy` isn't affected", tc.bound} {
+				if !strings.Contains(w.Detail(), want) {
+					t.Errorf("the warning doesn't say %q:\n%s", want, w.Detail())
+				}
+			}
+			if strings.Contains(w.Detail(), "-refresh=false") {
+				t.Errorf("the warning still offers -refresh=false:\n%s", w.Detail())
+			}
+			if !resolvedIsUnknown(t, resp) {
+				t.Error("cluster_type_resolved is planned known")
+			}
+		})
+	}
+}
+
+// The apply refuses each of them before it sends anything, so the node
+// count, storage ceiling and name changes in the same plan don't land
+// without the version change. The counts here are known only at apply for
+// the bounds case: the plan above checked two workers, the apply three.
+func TestApplyRefusesAVersionChangeBeforeAnyRequest(t *testing.T) {
+	for _, tc := range versionRefusals() {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.api.ceiling = 100
+			server := tc.api.serve(t)
+			r := &clusterResource{meta: testClusterMeta(t, server.URL, time.Minute)}
+			prior := clusterValues(tc.bound, tc.bound, 2, tc.state)
+			prior["storage_ceiling_gib"] = tftypes.NewValue(tftypes.Number, 100)
+			prior["display_name"] = str("before")
+			planned := clusterValues(tc.target, "", 3, "")
+			planned["storage_ceiling_gib"] = tftypes.NewValue(tftypes.Number, 200)
+			planned["display_name"] = str("after")
+			stateRaw, s := testValue(t, r, prior)
+			planRaw, _ := testValue(t, r, planned)
+			resp := resource.UpdateResponse{State: tfsdk.State{Raw: stateRaw, Schema: s.Schema}}
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			r.Update(ctx, resource.UpdateRequest{
+				State: tfsdk.State{Raw: stateRaw, Schema: s.Schema},
+				Plan:  tfsdk.Plan{Raw: planRaw, Schema: s.Schema},
+			}, &resp)
+			if got := fmt.Sprint(tc.api.calls); got != "[]" {
+				t.Errorf("calls = %s, want none", got)
+			}
 			if !resp.Diagnostics.HasError() {
-				t.Fatal("the plan was not refused")
+				t.Fatal("the apply wasn't refused")
 			}
 			e := resp.Diagnostics.Errors()[0]
-			if !regexp.MustCompile(`different version of its\s+ClusterType`).MatchString(e.Summary()) ||
-				!strings.Contains(e.Detail(), tc.want) {
-				t.Errorf("diagnostic:\n%s\n%s", e.Summary(), e.Detail())
+			for _, want := range []string{tc.want, "This apply sent nothing", tc.bound} {
+				if !strings.Contains(e.Detail(), want) {
+					t.Errorf("the error doesn't say %q:\n%s\n%s", want, e.Summary(), e.Detail())
+				}
 			}
-			// `terraform destroy` refreshes with a normal plan first, so this
-			// refusal also stops a destroy. It has to name one that works.
-			if !strings.Contains(e.Detail(), "terraform destroy -refresh=false") ||
-				!strings.Contains(e.Detail(), tc.bound) || strings.Contains(e.Detail(), "-target") {
-				t.Errorf("no working way to destroy:\n%s", e.Detail())
+			if e.Summary() != versionRefusal {
+				t.Errorf("summary = %q", e.Summary())
 			}
 		})
 	}
@@ -699,37 +776,15 @@ func TestAnUnknownClusterTypePlansTheBindingUnknown(t *testing.T) {
 	}
 }
 
-// Every step on the route is checked at plan, so a chain that would stop part
-// way is refused before any of it runs.
-func TestPlanRefusesARouteSomeStepCannotTake(t *testing.T) {
-	for _, tc := range []struct {
-		name string
-		api  *upgradeAPI
-		want string
-	}{
-		{"a later step's bounds", &upgradeAPI{bound: 1, state: "active", workers: 2, bounds: map[int][2]int{4: {1, 1}}},
-			"version 4 allows 1 to 1"},
-		{"a BMaaS-only step", &upgradeAPI{bound: 1, state: "active", workers: 2, bmaas: map[int]bool{4: true}},
-			"no Kubernetes configuration"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			server := tc.api.serve(t)
-			resp := planWith(t, testClusterMeta(t, server.URL, time.Minute),
-				clusterValues(verRef(1), verRef(1), 2, "active"), clusterValues(verRef(5), verRef(1), 2, "active"))
-			if !resp.Diagnostics.HasError() {
-				t.Fatal("the plan was not refused")
-			}
-			if e := resp.Diagnostics.Errors()[0]; !strings.Contains(e.Detail(), tc.want) {
-				t.Errorf("diagnostic:\n%s\n%s", e.Summary(), e.Detail())
-			}
-		})
-	}
-
-	// One worker fits every step, so the same route plans.
+// One worker fits every step of a route whose later step allows one, so the
+// route plans as an upgrade, with no refusal. With two it's refused, in
+// versionRefusals.
+func TestPlanAcceptsARouteEveryStepCanTake(t *testing.T) {
 	server := (&upgradeAPI{bound: 1, state: "active", workers: 2, bounds: map[int][2]int{4: {1, 1}}}).serve(t)
 	resp := planWith(t, testClusterMeta(t, server.URL, time.Minute),
 		clusterValues(verRef(1), verRef(1), 2, "active"), clusterValues(verRef(4), verRef(1), 1, "active"))
-	if resp.Diagnostics.HasError() {
+	if resp.Diagnostics.HasError() || !hasWarning(resp.Diagnostics, "This plan upgrades the cluster") ||
+		hasWarning(resp.Diagnostics, versionRefusal) {
 		t.Errorf("plan: %v", resp.Diagnostics)
 	}
 }

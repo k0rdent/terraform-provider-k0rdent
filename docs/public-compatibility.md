@@ -72,7 +72,8 @@ interface.
 - Naming a different cluster type replaces the cluster.
 - Naming a later `available` version of the same cluster type upgrades it in
   place, one version per step.
-- Naming an earlier version fails the plan, since upgrades only go forward.
+- Naming an earlier version plans with a warning and fails the apply, sending
+  nothing, since upgrades only go forward.
 
 ## Migrations
 

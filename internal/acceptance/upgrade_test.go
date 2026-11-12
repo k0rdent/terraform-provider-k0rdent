@@ -50,7 +50,8 @@ func inPlace() resource.ConfigPlanChecks {
 }
 
 // v1 to v4 is two upgrades, v2 then v4, skipping the draft, in one apply. Going
-// back afterwards is refused at plan time rather than replacing the cluster.
+// back afterwards plans an update and is refused at apply, rather than
+// replacing the cluster.
 func TestAccClusterUpgradesAcrossTwoVersions(t *testing.T) {
 	t.Parallel()
 	const name = "acc-upgrade"
@@ -90,9 +91,9 @@ func TestAccClusterUpgradesAcrossTwoVersions(t *testing.T) {
 				PlanOnly: true,
 			},
 			{
-				Config:      inferenceConfig(name, 2, 2),
-				PlanOnly:    true,
-				ExpectError: regexp.MustCompile(`(?s)different\s+version\s+of\s+its\s+ClusterType.*forward-only`),
+				Config:           inferenceConfig(name, 2, 2),
+				ConfigPlanChecks: inPlace(),
+				ExpectError:      regexp.MustCompile(`(?s)different\s+version\s+of\s+its\s+ClusterType.*forward-only.*sent\s+nothing`),
 			},
 		},
 	})
@@ -189,8 +190,7 @@ data %q "read" {
 			},
 			{
 				Config:      inferenceConfig(name, 5, 2),
-				PlanOnly:    true,
-				ExpectError: regexp.MustCompile(`does\s+not\s+retry\s+an\s+upgrade\s+from\s+` + "`failed`"),
+				ExpectError: regexp.MustCompile(`(?s)does\s+not\s+retry\s+an\s+upgrade\s+from\s+` + "`failed`" + `.*sent\s+nothing`),
 			},
 		},
 	})
@@ -331,9 +331,9 @@ resource %q "test" {
 	})
 }
 
-// A route some step cannot take is refused at plan, before any of it runs:
+// A route some step cannot take is refused at apply, before any of it runs:
 // gpu-chain's version 3 allows one worker, and its version 4 is BMaaS-only.
-func TestAccClusterUpgradeRefusesARouteAtPlan(t *testing.T) {
+func TestAccClusterUpgradeRefusesARouteAtApply(t *testing.T) {
 	t.Parallel()
 	const name = "acc-upgrade-route"
 	chain := func(n int) string { return boundsVersion("gpu-chain", "dddddddd", n) }
@@ -343,14 +343,14 @@ func TestAccClusterUpgradeRefusesARouteAtPlan(t *testing.T) {
 		Steps: []resource.TestStep{
 			{Config: poolConfig(name, chain(1), 2)},
 			{
-				Config:      poolConfig(name, chain(3), 2),
-				PlanOnly:    true,
-				ExpectError: regexp.MustCompile(`(?s)"workers".*version\s+3\s+allows\s+1\s+to\s+1`),
+				Config:           poolConfig(name, chain(3), 2),
+				ConfigPlanChecks: inPlace(),
+				ExpectError:      regexp.MustCompile(`(?s)"workers".*version\s+3\s+allows\s+1\s+to\s+1.*sent\s+nothing`),
 			},
 			{
-				Config:      poolConfig(name, chain(5), 1),
-				PlanOnly:    true,
-				ExpectError: regexp.MustCompile(`(?s)Version\s+4\s+is\s+the\s+next\s+available.*no\s+Kubernetes\s+configuration`),
+				Config:           poolConfig(name, chain(5), 1),
+				ConfigPlanChecks: inPlace(),
+				ExpectError:      regexp.MustCompile(`(?s)Version\s+4\s+is\s+the\s+next\s+available.*no\s+Kubernetes\s+configuration.*sent\s+nothing`),
 			},
 			{
 				Config:           poolConfig(name, chain(3), 1),

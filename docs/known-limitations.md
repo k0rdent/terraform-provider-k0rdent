@@ -126,11 +126,13 @@ so a refusal at apply would come after the delete.
 - A change that replaces a cluster, instance group, file store, subnet,
   network or project, without `allow_replace = true`
 - A smaller `capacity_gib` on a file store
-- A `cluster_type` version earlier than the cluster's
 - A `region` that isn't the project's
 
 Set the configuration back to what's applied, or run
 `terraform destroy -refresh=false`, which destroys from state as it is.
+
+A cluster's `cluster_type` version change is made in place, so its refusal
+waits for the apply and doesn't stop a destroy.
 
 ## Values you still have to hardcode
 
@@ -163,9 +165,8 @@ has to change to remove it. In short:
   version, and `kubernetes_version` is read-only.
   - Pinning `cluster_type` to a later version upgrades the cluster in place,
     one version per step.
-  - An earlier version fails the plan, since upgrades only go forward.
-  - While `cluster_type` names a version the plan refuses, `terraform
-    destroy` fails too. Set `cluster_type` back to the cluster's version, or
-    run `terraform destroy -refresh=false`.
+  - An earlier version plans with a warning and fails the apply before it
+    sends anything, since upgrades only go forward. So does any other
+    version change the cluster can't take. `terraform destroy` still works.
   - A cluster left `failed` by an upgrade has to be fixed on the platform
     before it can be upgraded again.

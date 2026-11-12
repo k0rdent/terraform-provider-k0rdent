@@ -12,9 +12,6 @@ import (
 const invKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICalTR9icsm8WarWXVQxwy8TRDjP7bQ/eoJdFARMvUlQ inv-replace"
 
 var (
-	// The cluster's refusal of an earlier version (known-limitations: "An
-	// earlier version fails the plan").
-	earlierVersion = regexp.MustCompile(`Cannot move the cluster to a different version of its ClusterType`)
 	// A region its project isn't in, refused even with allow_replace, since a
 	// project is locked to one region (known-limitations: "A refused plan
 	// stops `terraform destroy` too", and the region attribute: a resource
@@ -66,12 +63,13 @@ func invKinds() []invKind {
 				invChange{label: "display_name", rule: changesInPlace, edit: set("display_name", q("display_name", "inv-renamed"))},
 				// known-limitations: pinning a later version upgrades in place.
 				// cluster_type doc, and on_failed's: while the platform reports
-				// the cluster `failed`, a plan that pins another version of its
-				// ClusterType fails, whatever on_failed and allow_replace say.
-				invChange{label: "cluster_type, the next version", rule: changesInPlace, whenFailed: earlierVersion,
+				// the cluster `failed`, pinning another version of its
+				// ClusterType is refused, at apply, so it plans in place too.
+				invChange{label: "cluster_type, the next version", rule: changesInPlace,
 					edit: set("cluster_type", q("cluster_type", clusterTypeRef+"/versions/33333333-3333-3333-3333-333333333333"))},
-				// known-limitations: an earlier version fails the plan.
-				invChange{label: "cluster_type, an earlier version", attr: "cluster_type", rule: refused, refusal: earlierVersion,
+				// known-limitations: an earlier version plans with a warning and
+				// fails the apply. TestAccARefusedVersionChange* runs both.
+				invChange{label: "cluster_type, an earlier version", rule: changesInPlace,
 					edit: set("cluster_type", q("cluster_type", clusterTypeRef+"/versions/11111111-1111-1111-1111-111111111111"))},
 				// cluster_type doc: a path and an absolute URL are both accepted,
 				// and only another ClusterType replaces.
