@@ -137,7 +137,7 @@ variable "ssh_public_key_file" {
 }
 
 # Set when nodes are built, so changing this later replaces the cluster,
-# which the plan refuses without allow_replace.
+# which the apply refuses without allow_replace.
 variable "ssh_users" {
   type = map(object({
     public_key_files = optional(list(string), [])

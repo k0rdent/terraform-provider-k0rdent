@@ -343,8 +343,8 @@ func TestAGroupCreateHoldsTheFingerprintsOfTheKeysItSent(t *testing.T) {
 }
 
 // A plan whose write-only key differs, by fingerprint, from the one the nodes
-// were made with is refused as a replacement, on both resources, and the
-// refusal says a key differs: `ssh_access` itself didn't move. The same
+// were made with is refused as a replacement at apply, on both resources, and
+// the plan's warning says a key differs: `ssh_access` itself didn't move. The same
 // key plans nothing.
 func TestAChangedWriteOnlyKeyIsRefusedAsAReplacement(t *testing.T) {
 	for _, rc := range []struct {
@@ -368,14 +368,17 @@ func TestAChangedWriteOnlyKeyIsRefusedAsAReplacement(t *testing.T) {
 				if d := saveFingerprints(context.Background(), privateIn(t, req.Private), map[string][]string{"ops": {keyAFP}}); d.HasError() {
 					t.Fatal(d)
 				}
-				resp := resource.ModifyPlanResponse{Plan: plan}
+				resp := resource.ModifyPlanResponse{Plan: plan, Private: req.Private}
 				r.ModifyPlan(context.Background(), req, &resp)
-				errs := resp.Diagnostics.Errors()
-				if got := len(errs) == 1 && strings.Contains(errs[0].Summary(), "would replace"); got != refused {
+				if resp.Diagnostics.HasError() {
+					t.Fatalf("the plan failed, so a destroy would too: %v", resp.Diagnostics)
+				}
+				warns := resp.Diagnostics.Warnings()
+				if got := len(replacementWarnings(resp.Diagnostics)) == 1 && len(refusalRecorded(t, resp.Private)) == 1; got != refused {
 					t.Fatalf("refused = %v, want %v: %v", got, refused, resp.Diagnostics)
 				}
-				if refused && !strings.Contains(errs[0].Detail(), "A configured SSH key, or a key reference, differs") {
-					t.Errorf("the refusal doesn't say a key differs:\n%s", errs[0].Detail())
+				if refused && !strings.Contains(warns[0].Detail(), "A configured SSH key, or a key reference, differs") {
+					t.Errorf("the warning doesn't say a key differs:\n%s", warns[0].Detail())
 				}
 			})
 		}

@@ -23,8 +23,19 @@ import (
 // and a create, and the only sign of it is "must be replaced" in a plan that an
 // automated pipeline may never show a person. On a resource that holds tenant
 // data or runs tenant workloads that is the failure to prevent: a silent
-// replacement. So on those resources the plan fails instead, names the
-// attribute that forces the replacement, and says how to permit it.
+// replacement. So on those resources the plan warns instead, naming the
+// attribute that forces the replacement and how to permit it, and the apply
+// refuses before it sends any request.
+//
+// # Why the refusal waits for the apply
+//
+// `terraform destroy` runs a normal plan first, and nothing in the protocol
+// tells that plan from any other, so a refusal at plan stops the destroy too.
+// A refusal at apply can't stop a destroy, but a replacement's Delete is
+// handed the prior state's private data, never the plan's, so it can't tell
+// a refused replacement from a permitted one. So the guard makes Terraform
+// plan an update instead, which reaches the guarded Update, and the Update
+// refuses (replace_guard_refusal.go).
 //
 // # The opt-in is an attribute, read from configuration
 //
@@ -106,12 +117,14 @@ func allowReplaceSchemaAttribute(what tenantState) schema.BoolAttribute {
 	return schema.BoolAttribute{
 		Optional: true,
 		MarkdownDescription: fmt.Sprintf("Permit a plan that replaces this %[1]s. Left out or `false`, "+
-			"a change that cannot be made in place fails the plan, naming the attribute that forces "+
-			"the replacement, instead of destroying the %[1]s and creating another. Set it to `true` "+
-			"in the same configuration as the change to let the replacement go ahead, and remove it "+
-			"afterwards to put the guard back. It is read from the configuration being planned and "+
-			"must be known at plan time. It is never sent to the platform: setting or removing it on "+
-			"its own is an update that changes nothing there.", what.noun),
+			"a change that cannot be made in place plans as an update with a warning that names the "+
+			"attribute forcing the replacement, and the apply refuses that update before it sends any "+
+			"request, so the %[1]s isn't destroyed and created again. `terraform destroy` isn't affected. "+
+			"Set it to `true` in the same configuration as the change to let the replacement go ahead, "+
+			"and remove it afterwards to put the guard back. It is read from the configuration being "+
+			"planned and must be known at plan time: a value known only after apply can't permit the "+
+			"replacement. It is never sent to the platform: setting or removing it on its own is an "+
+			"update that changes nothing there.", what.noun),
 	}
 }
 
@@ -170,8 +183,9 @@ func replacementParagraph(s schema.Schema, what tenantState) string {
 	if what.loses == "" {
 		return out + " Everything else changes in place."
 	}
-	return out + fmt.Sprintf(" %s So a plan that would replace it fails and names the attribute, "+
-		"unless `%s = true` is set on the resource. Everything else changes in place.",
+	return out + fmt.Sprintf(" %s So unless `%s = true` is set on the resource, a change that would "+
+		"replace it plans as an update with a warning that names the attribute, and the apply refuses "+
+		"it before it sends any request. `terraform destroy` isn't affected. Everything else changes in place.",
 		what.loses, allowReplaceAttribute)
 }
 
@@ -286,6 +300,9 @@ func replacementModifiers(a schema.Attribute) []any {
 	case schema.SingleNestedAttribute:
 		all = anySlice(a.PlanModifiers)
 	}
+	for i, m := range all {
+		all[i] = unwrapReplacement(m)
+	}
 	return slices.DeleteFunc(all, func(m any) bool { return !IsReplacementModifier(m) })
 }
 
@@ -302,9 +319,10 @@ func anySlice[M any](mods []M) []any {
 // schemas is built from RequiresReplace or RequiresReplaceIf, which share one
 // unexported type per attribute kind. The name is the framework's, so
 // TestReplacementModifiersAreRecognised pins it: an upgrade that renames the
-// type fails that test rather than quietly unguarding every resource.
+// type fails that test rather than quietly unguarding every resource. One the
+// guard has wrapped (replace_guard_refusal.go) is still one.
 func IsReplacementModifier(m any) bool {
-	t := reflect.TypeOf(m)
+	t := reflect.TypeOf(unwrapReplacement(m))
 	if t == nil {
 		return false
 	}
@@ -322,15 +340,25 @@ func replacementAllowed(ctx context.Context, config tfsdk.Config) bool {
 	return allow.ValueBool()
 }
 
-// guardReplacement refuses every replacement in this plan unless the
-// configuration permits it. The guarded resource's ModifyPlan calls it after
-// the resource's own, so region and project are already resolved and the plan
-// is final.
+// guardReplacement turns every replacement in this plan that the
+// configuration doesn't permit into an update the apply refuses: a warning
+// per attribute, the refusal recorded in planned private state for the
+// guarded Update, and region and project taken out of RequiresReplace. The
+// attributes' own RequiresReplace answers were dropped already, by the
+// wrappers the served schema carries. The guarded resource's ModifyPlan calls
+// it after the resource's own, so region and project are already resolved
+// and the plan is final.
 //
-// It runs on a plan the resource has already failed, too, so that the refusal
+// It runs on a plan the resource has already failed, too, so that the warning
 // is reported with the resource's own errors rather than only once they're
 // fixed.
 func guardReplacement(ctx context.Context, what tenantState, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
+	// A refused Update writes its planned private data back to state, so a
+	// refusal is cleared at the start of every plan, or it would outlive
+	// the plan that made it.
+	if resp.Private != nil {
+		resp.Diagnostics.Append(resp.Private.SetKey(ctx, refusedReplacementKey, nil)...)
+	}
 	if req.State.Raw.IsNull() || req.Plan.Raw.IsNull() || resp.Plan.Raw.IsNull() {
 		return // a create or a destroy
 	}
@@ -345,9 +373,36 @@ func guardReplacement(ctx context.Context, what tenantState, req resource.Modify
 			fmt.Sprintf("The plan was refused because the provider cannot tell whether it replaces this %s.", what.noun))
 		return
 	}
-	for _, r := range replacing {
-		refuseReplacement(&resp.Diagnostics, r.path, r.from, r.to, what)
+	if len(replacing) == 0 {
+		return
 	}
+	pending := optInUnknown(ctx, req.Config)
+	refused := make([]refusedReplacement, 0, len(replacing))
+	for _, r := range replacing {
+		// The resource's ModifyPlan and the attribute's modifier can both
+		// name one path.
+		if slices.ContainsFunc(refused, func(x refusedReplacement) bool { return slices.Equal(x.Path, pathSteps(r.path)) }) {
+			continue
+		}
+		change := describeChange(r, what)
+		warnReplacement(&resp.Diagnostics, r.path, change, pending, what)
+		refused = append(refused, refusedReplacement{Path: pathSteps(r.path), Change: change})
+	}
+	// Fails closed: with nowhere to record the refusal, the Update couldn't
+	// make it, so the plan errors. The framework always hands ModifyPlan
+	// private data, so this is unreachable.
+	recordRefusal(ctx, resp.Private, refused, &resp.Diagnostics)
+	resp.RequiresReplace = nil
+}
+
+// optInUnknown reports whether the configuration sets the opt-in to a value
+// known only after apply.
+func optInUnknown(ctx context.Context, config tfsdk.Config) bool {
+	var allow types.Bool
+	if d := config.GetAttribute(ctx, path.Root(allowReplaceAttribute), &allow); d.HasError() {
+		return false
+	}
+	return allow.IsUnknown()
 }
 
 // plannedReplacement is one attribute whose planned change replaces the
@@ -401,29 +456,42 @@ func plannedReplacements(ctx context.Context, req resource.ModifyPlanRequest, re
 	return out, true
 }
 
-// refuseReplacement is the one message every refusal uses.
-func refuseReplacement(diags *diag.Diagnostics, p path.Path, from, to attr.Value, what tenantState) {
-	name := p.String()
-	changed := fmt.Sprintf("`%s` goes from %s to %s.", name, describeValue(from), describeValue(to))
-	if onlyReferencesUnknown(from, to) {
+// describeChange is the sentence that says what the change to one attribute
+// is.
+func describeChange(r plannedReplacement, what tenantState) string {
+	if onlyReferencesUnknown(r.from, r.to) {
 		// Only references moved: a configured key differs from the nodes'
 		// by fingerprint, which state doesn't show.
-		changed = fmt.Sprintf("A configured SSH key, or a key reference, differs from the keys this "+
+		return fmt.Sprintf("A configured SSH key, or a key reference, differs from the keys this "+
 			"%s's nodes were made with.", what.noun)
 	}
-	// Local: decided from configuration and prior state, no request made.
-	diags.AddAttributeError(p,
-		fmt.Sprintf("Changing `%s` would replace this %s", name, what.noun),
-		fmt.Sprintf("%s That cannot be done in place, so Terraform would "+
-			"destroy this %s and create another. %s\n\n"+
-			"The plan is refused rather than making the replacement silently. To replace the %s "+
-			"on purpose, add `%s = true` to this resource and plan again. To keep it, put `%s` back "+
-			"to its current value.\n\n"+
-			"If you ran `terraform destroy`: Terraform plans a refresh before every destroy as if "+
-			"applying, and this refusal stops that plan. Run `terraform destroy -refresh=false` to "+
-			"destroy from state as it is.",
-			changed, what.noun, what.loses,
-			what.noun, allowReplaceAttribute, name))
+	return fmt.Sprintf("`%s` goes from %s to %s.", r.path.String(), describeValue(r.from), describeValue(r.to))
+}
+
+// warnReplacement is the plan's half of a refusal: the plan shows an update,
+// and says that the apply will refuse it and why. pending is an opt-in known
+// only after apply, which this plan can't count as a permission.
+func warnReplacement(diags *diag.Diagnostics, p path.Path, change string, pending bool, what tenantState) {
+	name := p.String()
+	optIn := fmt.Sprintf("To replace the %s on purpose, add `%s = true` to this resource and plan again.",
+		what.noun, allowReplaceAttribute)
+	if pending {
+		optIn = fmt.Sprintf("`%[1]s` is set, but to a value known only after apply, so this plan can't "+
+			"count it. If it turns out `true`, Terraform stops the apply with \"Provider produced "+
+			"inconsistent final plan\" before it changes the %[2]s. To replace the %[2]s on purpose, set "+
+			"`%[1]s = true` as a value known at plan time, and plan again.", allowReplaceAttribute, what.noun)
+	}
+	diags.AddAttributeWarning(p,
+		fmt.Sprintf("Changing `%s` would replace this %s, so the apply will refuse it", name, what.noun),
+		fmt.Sprintf("%s That can't be done in place: Terraform would destroy this %s and create "+
+			"another. %s\n\n"+
+			"So this plan shows the %s updated in place, and the apply refuses that update before it "+
+			"sends any request. None of this %s's changes in the plan are made. Other resources in the "+
+			"plan that don't depend on it are still changed. `terraform destroy` isn't affected.\n\n"+
+			"%s To keep the %s, set `%s` back to its current value.",
+			change, what.noun, what.loses,
+			what.noun, what.noun,
+			optIn, what.noun, name))
 }
 
 func describeValue(v attr.Value) string {

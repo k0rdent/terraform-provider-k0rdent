@@ -164,9 +164,9 @@ type invKind struct {
 //   - Nothing changed plans nothing, but a failed cluster with on_failed
 //     unset plans an update that waits for it (on_failed doc).
 //   - A change the docs say is made in place is an update.
-//   - A change to an attribute "What replaces it" lists is a replacement,
-//     refused on a guarded resource unless allow_replace = true, and refused
-//     with the attribute's name.
+//   - A change to an attribute "What replaces it" lists is a replacement. On
+//     a guarded resource without allow_replace = true it plans as an update,
+//     with a warning naming the attribute, which the apply refuses.
 //   - A refusal of its own is refused whatever allow_replace says.
 //   - allow_replace appearing is itself an update, in place.
 //   - A tainted resource's plan is a replacement whatever changed: the
@@ -205,7 +205,7 @@ func wantReplacePlan(k invKind, start invStart, c invChange, allow bool) ([]stri
 		want = "update"
 	case replaces:
 		if k.guarded && !allow {
-			return []string{"refuse"}, refusal(c.attr, k.noun)
+			return []string{"update"}, nil
 		}
 		if r := k.replaceRefused[start]; r != nil {
 			return []string{"refuse"}, r
@@ -348,18 +348,20 @@ func TestReplacementsFollowTheDocumentedRules(t *testing.T) {
 }
 
 // destroySteps are `terraform destroy` right after each refusal, then with
-// the start's own configuration, each through a Destroy step: a plan with
-// -destroy and a refresh, which runs the normal plan `terraform destroy`
-// runs first. terraform-plugin-testing's own destroy at the end passes
-// -refresh=false, so it never runs that plan (mistakes log, Class 1).
+// a change the guard refuses at apply, each through a Destroy step: a plan
+// with -destroy and a refresh, which runs the normal plan `terraform
+// destroy` runs first. terraform-plugin-testing's own destroy at the end
+// passes -refresh=false, so it never runs that plan (mistakes log, Class 1).
 //
-//   - A configuration whose change the guard refuses refuses `terraform
-//     destroy` too, since destroy runs that plan first: "A refused plan stops
-//     `terraform destroy` too" in docs/known-limitations.md, and the guard's
-//     error text, which names -refresh=false. The test's own destroy, with
-//     -refresh=false, then has to remove it.
-//   - With the start's configuration the destroy passes, from every start
-//     (Class 1), except a tainted cluster with no create token, which the
+//   - A configuration with a refusal of its own refuses `terraform destroy`
+//     too, since destroy runs that plan first: "A refused plan stops
+//     `terraform destroy` too" in docs/known-limitations.md. The test's own
+//     destroy, with -refresh=false, then has to remove it.
+//   - A change that would replace a guarded resource only warns at plan
+//     ("A refused replacement fails the apply, not the plan"), so the destroy
+//     passes with it in the configuration, from every start (Class 1). An
+//     unguarded kind's destroy runs with the start's own configuration.
+//   - A tainted cluster with no create token is the exception, which the
 //     cluster description says refuses destroy until it's untainted.
 func (k invKind) destroySteps(start invStart, base block, render func(block) string) []destroyRow {
 	var rows []destroyRow
@@ -373,9 +375,16 @@ func (k invKind) destroySteps(start invStart, base block, render func(block) str
 	}
 	final := destroyRow{what: "nothing changed, rule: destroyed",
 		step: resource.TestStep{Config: render(base), Destroy: true, ExpectError: noRefusal}}
+	for _, c := range k.changes {
+		if k.guarded && c.rule == replaces {
+			final.what = c.label + " changed, which the apply would refuse, rule: destroyed"
+			final.step.Config = render(c.edit(base))
+			break
+		}
+	}
 	if start == taintedNoToken {
 		final.what = "nothing changed, rule: refuse until untainted"
-		final.step.ExpectError = takenID(k.noun)
+		final.step = resource.TestStep{Config: render(base), Destroy: true, ExpectError: takenID(k.noun)}
 	}
 	return append(rows, final)
 }

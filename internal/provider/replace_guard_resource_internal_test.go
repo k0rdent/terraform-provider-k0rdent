@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/identityschema"
@@ -195,7 +196,8 @@ func TestTheGuardAddsTheOptInAndSaysWhatItGuards(t *testing.T) {
 		t.Fatalf("%s = %#v, want an optional bool with no default", allowReplaceAttribute, s.Attributes[allowReplaceAttribute])
 	}
 	for _, want := range []string{"**What replaces it.** Changing `id` cannot be done in place",
-		"unless `allow_replace = true` is set"} {
+		"unless `allow_replace = true` is set on the resource, a change that would replace it plans as an update",
+		"the apply refuses it before it sends any request. `terraform destroy` isn't affected."} {
 		if !strings.Contains(s.MarkdownDescription, want) {
 			t.Errorf("description lacks %q:\n%s", want, s.MarkdownDescription)
 		}
@@ -208,6 +210,7 @@ func TestTheGuardAddsTheOptInAndSaysWhatItGuards(t *testing.T) {
 func planStub(t *testing.T, r resource.Resource, s schema.Schema, prior, planned tftypes.Value) resource.ModifyPlanResponse {
 	t.Helper()
 	resp := resource.ModifyPlanResponse{Plan: tfsdk.Plan{Raw: planned, Schema: s}}
+	freshPrivate(t, &resp.Private, nil)
 	modifier, ok := r.(resource.ResourceWithModifyPlan)
 	if !ok {
 		t.Fatal("a guarded resource has no ModifyPlan")
@@ -220,17 +223,23 @@ func planStub(t *testing.T, r resource.Resource, s schema.Schema, prior, planned
 	return resp
 }
 
-// The refusal, through the guard: a replacing change fails the plan naming
-// the attribute, the opt-in lets it through, and an opt-in known only at
-// apply doesn't. The resource's own ModifyPlan runs first and never sees the
-// opt-in.
-func TestTheGuardRefusesAReplacementTheResourceDoesntKnowAbout(t *testing.T) {
+// The refusal, through the guard: a replacing change plans with a warning
+// naming the attribute and records the refusal for the apply, the opt-in lets
+// it through, and an opt-in known only at apply doesn't. The resource's own
+// ModifyPlan runs first and never sees the opt-in.
+func TestTheGuardWarnsOfAReplacementTheResourceDoesntKnowAbout(t *testing.T) {
 	stub, r, s := guardedStub(t)
 	prior := stubValue(t, s, stubBase)
 
 	refused := planStub(t, r, s, prior, stubValue(t, s, with(stubBase, map[string]tftypes.Value{"id": str("s2")})))
-	if got := errorSummaries(refused.Diagnostics); len(got) != 1 || got[0] != "Changing `id` would replace this stub" {
-		t.Errorf("errors = %q, want the refusal naming id", got)
+	if got := replacementWarnings(refused.Diagnostics); len(got) != 1 || got[0] != "Changing `id` would replace this stub, so the apply will refuse it" {
+		t.Errorf("warnings = %q, want the warning naming id", got)
+	}
+	if refused.Diagnostics.HasError() {
+		t.Errorf("errors = %q, want none, so a destroy's plan goes ahead", errorSummaries(refused.Diagnostics))
+	}
+	if got := refusalRecorded(t, refused.Private); !reflect.DeepEqual(got, []string{"id"}) {
+		t.Errorf("recorded for the apply: %q, want id", got)
 	}
 	if len(stub.calls) != 1 || stub.calls[0] != "ModifyPlan" {
 		t.Errorf("calls = %q, want the resource's ModifyPlan", stub.calls)
@@ -238,8 +247,11 @@ func TestTheGuardRefusesAReplacementTheResourceDoesntKnowAbout(t *testing.T) {
 
 	permitted := planStub(t, r, s, prior, stubValue(t, s, with(stubBase, map[string]tftypes.Value{
 		"id": str("s2"), allowReplaceAttribute: yes})))
-	if permitted.Diagnostics.HasError() {
-		t.Errorf("refused with the opt-in: %q", errorSummaries(permitted.Diagnostics))
+	if permitted.Diagnostics.HasError() || len(replacementWarnings(permitted.Diagnostics)) != 0 {
+		t.Errorf("refused with the opt-in: %v", permitted.Diagnostics)
+	}
+	if got := refusalRecorded(t, permitted.Private); len(got) != 0 {
+		t.Errorf("recorded with the opt-in: %q", got)
 	}
 	// The resource's plan is kept, and the opt-in is planned as configured.
 	var state types.String
@@ -255,27 +267,231 @@ func TestTheGuardRefusesAReplacementTheResourceDoesntKnowAbout(t *testing.T) {
 
 	unknown := planStub(t, r, s, prior, stubValue(t, s, with(stubBase, map[string]tftypes.Value{
 		"id": str("s2"), allowReplaceAttribute: pending})))
-	if !unknown.Diagnostics.HasError() {
+	if got := refusalRecorded(t, unknown.Private); len(got) != 1 {
 		t.Error("an opt-in known only at apply let the replacement through")
 	}
 
 	inPlace := planStub(t, r, s, prior, stubValue(t, s, with(stubBase, map[string]tftypes.Value{"name": str("b")})))
-	if inPlace.Diagnostics.HasError() {
-		t.Errorf("an in-place change was refused: %q", errorSummaries(inPlace.Diagnostics))
+	if inPlace.Diagnostics.HasError() || len(replacementWarnings(inPlace.Diagnostics)) != 0 {
+		t.Errorf("an in-place change was refused: %v", inPlace.Diagnostics)
+	}
+	if got := refusalRecorded(t, inPlace.Private); len(got) != 0 {
+		t.Errorf("an in-place change was recorded for refusal: %q", got)
 	}
 }
 
 // A replacement the resource decides in its own ModifyPlan, the way a moved
-// region is, is refused too, because the guard runs after it.
-func TestTheGuardRefusesAReplacementTheResourcePlans(t *testing.T) {
+// region is, is refused too, because the guard runs after it, and it's taken
+// out of RequiresReplace so Terraform plans the update the apply refuses.
+func TestTheGuardWarnsOfAReplacementTheResourcePlans(t *testing.T) {
 	stub, r, s := guardedStub(t)
 	name := path.Root("name")
 	stub.replaceInPlan = &name
 	prior := stubValue(t, s, stubBase)
 	resp := planStub(t, r, s, prior, stubValue(t, s, with(stubBase, map[string]tftypes.Value{"name": str("b")})))
-	if got := errorSummaries(resp.Diagnostics); len(got) != 1 || got[0] != "Changing `name` would replace this stub" {
-		t.Errorf("errors = %q, want the refusal naming name", got)
+	if got := replacementWarnings(resp.Diagnostics); len(got) != 1 || got[0] != "Changing `name` would replace this stub, so the apply will refuse it" {
+		t.Errorf("warnings = %q, want the warning naming name", got)
 	}
+	if len(resp.RequiresReplace) != 0 {
+		t.Errorf("RequiresReplace = %v, want none", resp.RequiresReplace)
+	}
+	if got := refusalRecorded(t, resp.Private); !reflect.DeepEqual(got, []string{"name"}) {
+		t.Errorf("recorded for the apply: %q, want name", got)
+	}
+}
+
+// updateStub runs the guarded stub's Update with private data that holds
+// refused, as the plan left it.
+func updateStub(t *testing.T, r resource.Resource, s schema.Schema, prior, planned tftypes.Value, refused []refusedReplacement) resource.UpdateResponse {
+	t.Helper()
+	ctx := context.Background()
+	req := resource.UpdateRequest{Config: tfsdk.Config{Raw: planned, Schema: s},
+		Plan: tfsdk.Plan{Raw: planned, Schema: s}, State: tfsdk.State{Raw: prior, Schema: s}}
+	freshPrivate(t, &req.Private, nil)
+	if refused != nil {
+		w, ok := any(req.Private).(privateWriter)
+		if !ok {
+			t.Fatal("private state cannot be written")
+		}
+		var diags diag.Diagnostics
+		recordRefusal(ctx, w, refused, &diags)
+		if diags.HasError() {
+			t.Fatal(diags)
+		}
+	}
+	resp := resource.UpdateResponse{State: tfsdk.State{Raw: prior, Schema: s}, Private: req.Private}
+	r.Update(ctx, req, &resp)
+	return resp
+}
+
+// The apply's half: an update the plan recorded as a refused replacement
+// fails before the resource is called, so no request goes out, state stays
+// as it was, and the refusal isn't written back to outlive the apply. An
+// update the plan recorded nothing for goes to the resource as before.
+func TestTheGuardedUpdateRefusesARecordedReplacement(t *testing.T) {
+	stub, r, s := guardedStub(t)
+	prior := stubValue(t, s, stubBase)
+	planned := stubValue(t, s, with(stubBase, map[string]tftypes.Value{"id": str("s2"), "name": str("b")}))
+	change := "`id` goes from \"s1\" to \"s2\"."
+
+	resp := updateStub(t, r, s, prior, planned, []refusedReplacement{{Path: []string{"id"}, Change: change}})
+	if got := errorSummaries(resp.Diagnostics); len(got) != 1 || got[0] != "Changing `id` would replace this stub, so the apply refused it" {
+		t.Errorf("errors = %q, want the refusal naming id", got)
+	}
+	if d, ok := resp.Diagnostics.Errors()[0].(diag.DiagnosticWithPath); !ok || d.Path().String() != "id" {
+		t.Errorf("the refusal does not point at id: %v", resp.Diagnostics.Errors()[0])
+	}
+	if d := resp.Diagnostics.Errors()[0].Detail(); !strings.Contains(d, change) {
+		t.Errorf("the refusal doesn't say what changed: %q", d)
+	}
+	if len(stub.calls) != 0 {
+		t.Errorf("calls = %q, want none", stub.calls)
+	}
+	if !resp.State.Raw.Equal(prior) {
+		t.Errorf("state = %v, want prior state", resp.State.Raw)
+	}
+	if got := refusalRecorded(t, resp.Private); len(got) != 0 {
+		t.Errorf("the refusal is written back to state: %q", got)
+	}
+
+	resp = updateStub(t, r, s, prior, stubValue(t, s, with(stubBase, map[string]tftypes.Value{"name": str("b")})), nil)
+	if resp.Diagnostics.HasError() || !reflect.DeepEqual(stub.calls, []string{"Update"}) {
+		t.Errorf("an update with nothing recorded: calls = %q, %v", stub.calls, resp.Diagnostics)
+	}
+}
+
+// A refused Update writes the plan's private data back to state, so the
+// next plan starts by clearing it: an in-place change after a refusal goes
+// through.
+func TestAPlanClearsAnEarlierRefusal(t *testing.T) {
+	_, r, s := guardedStub(t)
+	prior := stubValue(t, s, stubBase)
+	planned := stubValue(t, s, with(stubBase, map[string]tftypes.Value{"name": str("b")}))
+	resp := resource.ModifyPlanResponse{Plan: tfsdk.Plan{Raw: planned, Schema: s}}
+	freshPrivate(t, &resp.Private, nil)
+	w, ok := any(resp.Private).(privateWriter)
+	if !ok {
+		t.Fatal("private state cannot be written")
+	}
+	var diags diag.Diagnostics
+	recordRefusal(context.Background(), w, []refusedReplacement{{Path: []string{"id"}, Change: "earlier"}}, &diags)
+	if got := refusalRecorded(t, resp.Private); len(got) != 1 || diags.HasError() {
+		t.Fatalf("the earlier refusal wasn't set up: %q %v", got, diags)
+	}
+	modifier, ok := r.(resource.ResourceWithModifyPlan)
+	if !ok {
+		t.Fatal("a guarded resource has no ModifyPlan")
+	}
+	modifier.ModifyPlan(context.Background(), resource.ModifyPlanRequest{
+		Config: tfsdk.Config{Raw: planned, Schema: s},
+		Plan:   tfsdk.Plan{Raw: planned, Schema: s},
+		State:  tfsdk.State{Raw: prior, Schema: s},
+	}, &resp)
+	if got := refusalRecorded(t, resp.Private); len(got) != 0 {
+		t.Errorf("the earlier refusal outlived the plan: %q", got)
+	}
+}
+
+// The served schema's RequiresReplace modifiers are wrapped, and a wrapper
+// answers as the modifier it wraps only when the configuration sets
+// `allow_replace = true`. Otherwise Terraform would plan the replacement and
+// call Delete, which can't tell a refused replacement from a permitted one.
+func TestTheServedModifierDropsAReplacementTheConfigDoesntPermit(t *testing.T) {
+	_, _, s := guardedStub(t)
+	id, ok := s.Attributes["id"].(schema.StringAttribute)
+	if !ok || len(id.PlanModifiers) != 1 {
+		t.Fatalf("id = %#v", s.Attributes["id"])
+	}
+	m := id.PlanModifiers[0]
+	if _, wrapped := m.(replacementWrapper); !wrapped {
+		t.Fatalf("id's RequiresReplace is served unwrapped: %T", m)
+	}
+	prior := stubValue(t, s, stubBase)
+	for allow, want := range map[string]bool{"null": false, "false": false, "unknown": false, "true": true} {
+		v := map[string]tftypes.Value{"null": tftypes.NewValue(tftypes.Bool, nil), "false": tftypes.NewValue(tftypes.Bool, false),
+			"unknown": pending, "true": yes}[allow]
+		config := stubValue(t, s, with(stubBase, map[string]tftypes.Value{"id": str("s2"), allowReplaceAttribute: v}))
+		resp := planmodifier.StringResponse{PlanValue: types.StringValue("s2")}
+		m.PlanModifyString(context.Background(), planmodifier.StringRequest{
+			Path: path.Root("id"), Config: tfsdk.Config{Raw: config, Schema: s}, ConfigValue: types.StringValue("s2"),
+			Plan: tfsdk.Plan{Raw: config, Schema: s}, PlanValue: types.StringValue("s2"),
+			State: tfsdk.State{Raw: prior, Schema: s}, StateValue: types.StringValue("s1"),
+		}, &resp)
+		if resp.RequiresReplace != want {
+			t.Errorf("allow_replace %s: RequiresReplace = %v, want %v", allow, resp.RequiresReplace, want)
+		}
+	}
+}
+
+// countWrapped walks attrs, every kind of attribute and however deep, fails
+// the test on a RequiresReplace modifier served bare, and counts the wrapped
+// ones.
+func countWrapped(t *testing.T, attrs map[string]schema.Attribute) int {
+	t.Helper()
+	wrapped := 0
+	var walk func(where string, v reflect.Value)
+	walk = func(where string, v reflect.Value) {
+		if v.Kind() == reflect.Interface {
+			v = v.Elem()
+		}
+		if v.Kind() != reflect.Struct {
+			return
+		}
+		if mods := v.FieldByName("PlanModifiers"); mods.IsValid() && mods.Kind() == reflect.Slice {
+			for i := range mods.Len() {
+				m := mods.Index(i).Interface()
+				if _, ok := m.(replacementWrapper); ok {
+					wrapped++
+					continue
+				}
+				if IsReplacementModifier(m) {
+					t.Errorf("%s serves %T unwrapped", where, m)
+				}
+			}
+		}
+		for _, field := range []string{"Attributes", "NestedObject"} {
+			f := v.FieldByName(field)
+			switch {
+			case !f.IsValid():
+			case f.Kind() == reflect.Map:
+				for _, k := range f.MapKeys() {
+					walk(where+"."+k.String(), f.MapIndex(k))
+				}
+			default:
+				walk(where, f)
+			}
+		}
+	}
+	for name, a := range attrs {
+		walk(name, reflect.ValueOf(a))
+	}
+	return wrapped
+}
+
+// Every RequiresReplace modifier a guarded resource serves is wrapped,
+// whatever kind of attribute carries it and however deep. One served bare
+// would plan a replacement Terraform carries out without the guard.
+func TestEveryServedReplacementIsWrapped(t *testing.T) {
+	for suffix, newResource := range tenantStateResources {
+		t.Run(suffix, func(t *testing.T) {
+			if countWrapped(t, schemaOf(t, newResource()).Attributes) == 0 {
+				t.Error("no wrapped modifier found, so the walk read nothing")
+			}
+		})
+	}
+	// No guarded resource has one inside a nested object today, so one is
+	// made here: the guard reads those too (ReplacingAttributes).
+	t.Run("nested", func(t *testing.T) {
+		attrs := map[string]schema.Attribute{"outer": schema.SingleNestedAttribute{
+			Optional: true,
+			Attributes: map[string]schema.Attribute{"inner": schema.StringAttribute{Optional: true,
+				PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}}},
+		}}
+		deferReplacements(attrs)
+		if got := countWrapped(t, attrs); got != 1 {
+			t.Errorf("%d wrapped, want the nested one", got)
+		}
+	})
 }
 
 // The values Terraform hands in are left as they were. The guard reads the
@@ -469,18 +685,18 @@ func TestAnUpdateThatDropsTheResourceKeepsItInState(t *testing.T) {
 
 // A replacement the resource plans on an attribute that isn't a string is
 // refused by name, like any other.
-func TestTheGuardRefusesAReplacementOfANumber(t *testing.T) {
+func TestTheGuardWarnsOfAReplacementOfANumber(t *testing.T) {
 	stub, r, s := guardedStub(t)
 	size := path.Root("size")
 	stub.replaceInPlan = &size
 	base := with(stubBase, map[string]tftypes.Value{"size": tftypes.NewValue(tftypes.Number, 1)})
 	resp := planStub(t, r, s, stubValue(t, s, base),
 		stubValue(t, s, with(base, map[string]tftypes.Value{"size": tftypes.NewValue(tftypes.Number, 2)})))
-	got := errorSummaries(resp.Diagnostics)
-	if len(got) != 1 || got[0] != "Changing `size` would replace this stub" {
-		t.Fatalf("errors = %q, want the refusal naming size", got)
+	got := replacementWarnings(resp.Diagnostics)
+	if len(got) != 1 || got[0] != "Changing `size` would replace this stub, so the apply will refuse it" {
+		t.Fatalf("warnings = %q, want the warning naming size", got)
 	}
-	if d := resp.Diagnostics.Errors()[0].Detail(); !strings.Contains(d, "goes from 1 to 2") {
-		t.Errorf("the refusal doesn't say what changed: %q", d)
+	if d := resp.Diagnostics.Warnings()[0].Detail(); !strings.Contains(d, "goes from 1 to 2") {
+		t.Errorf("the warning doesn't say what changed: %q", d)
 	}
 }

@@ -24,8 +24,9 @@ import (
 //
 //   - the attribute itself and the documentation that says what replaces the
 //     resource and how to permit it (declareReplacementGuard);
-//   - the plan-time refusal, run after the resource's own ModifyPlan, against
-//     the plan as Terraform will act on it (guardReplacement);
+//   - the refusal: a warning at plan, run after the resource's own ModifyPlan
+//     against the plan as Terraform will act on it (guardReplacement), and an
+//     error at apply, before the resource is called (replace_guard_refusal.go);
 //   - the opt-in's value in state: the plan's after a create or an update, the
 //     prior state's after a read, and null after an import, which is what each
 //     resource carried by hand before;
@@ -102,13 +103,16 @@ func (g *guardedResource) Metadata(ctx context.Context, req resource.MetadataReq
 	g.inner.Metadata(ctx, req, resp)
 }
 
-// Schema is the resource's, with the opt-in and the documentation added.
+// Schema is the resource's, with the opt-in and the documentation added, and
+// each RequiresReplace modifier wrapped so a replacement the configuration
+// doesn't permit plans as an update.
 func (g *guardedResource) Schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) {
 	g.inner.Schema(ctx, req, resp)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 	declareReplacementGuard(&resp.Schema, g.what)
+	deferReplacements(resp.Schema.Attributes)
 }
 
 func (g *guardedResource) Configure(ctx context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
@@ -256,10 +260,22 @@ func (g *guardedResource) Read(ctx context.Context, req resource.ReadRequest, re
 	g.carry(ctx, out.State, &resp.State, &resp.Diagnostics)
 }
 
-// Update answers a change to the opt-in alone itself: prior state with the
-// planned opt-in, and no request. Anything else goes to the resource, which
-// sees the change without the opt-in in it.
+// Update refuses an update the plan made out of a replacement the
+// configuration didn't permit, before any request. It answers a change to the
+// opt-in alone itself: prior state with the planned opt-in, and no request.
+// Anything else goes to the resource, which sees the change without the
+// opt-in in it.
 func (g *guardedResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
+	if refused := readRefusal(ctx, req.Private, &resp.Diagnostics); len(refused) > 0 || resp.Diagnostics.HasError() {
+		// Local: no request made. The framework keeps prior state on an
+		// error. The refusal is dropped from what's written back, so it
+		// can't outlive this apply.
+		refuseAtApply(&resp.Diagnostics, refused, g.what)
+		if resp.Private != nil {
+			resp.Diagnostics.Append(resp.Private.SetKey(ctx, refusedReplacementKey, nil)...)
+		}
+		return
+	}
 	optIn := g.optIn(ctx, req.Plan, &resp.Diagnostics)
 	in := resource.UpdateRequest{
 		Config:       g.hideConfig(ctx, req.Config, &resp.Diagnostics),

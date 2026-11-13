@@ -119,12 +119,9 @@ created, then keep it or destroy it.
 ## A refused plan stops `terraform destroy` too
 
 `terraform destroy` plans as if applying before it plans the delete, so a
-refusal in that plan stops the destroy as well. These refusals happen at plan
-on purpose: a replacement deletes the old object before it makes the new one,
-so a refusal at apply would come after the delete.
+refusal in that plan stops the destroy as well. These are still refused at
+plan:
 
-- A change that replaces a cluster, instance group, file store, subnet,
-  network or project, without `allow_replace = true`
 - A smaller `capacity_gib` on a file store
 - A `region` that isn't the project's
 
@@ -133,6 +130,27 @@ Set the configuration back to what's applied, or run
 
 A cluster's `cluster_type` version change is made in place, so its refusal
 waits for the apply and doesn't stop a destroy.
+
+## A refused replacement fails the apply, not the plan
+
+A change that would replace a cluster, instance group, file store, subnet,
+network or project, without `allow_replace = true`, doesn't fail the plan, so
+`terraform destroy` still works. What you see instead:
+
+- The plan shows `~ update in-place` with a warning that names the attribute,
+  where Terraform would otherwise show `-/+ must be replaced`.
+- `terraform plan -detailed-exitcode` exits 2, a plan with changes.
+- The apply refuses that resource's update before it sends any request, so
+  none of its changes in the plan are made. Other resources in the same apply
+  that don't depend on it are still changed.
+- An `allow_replace` known only after apply, such as one read from a resource
+  the same apply creates, can't permit the replacement. If it turns out
+  `true`, Terraform stops the apply with "Provider produced inconsistent final
+  plan" before it changes the resource. Set `allow_replace` to a value known
+  at plan time.
+
+Set `allow_replace = true` to let the replacement go ahead, or set the
+attribute back to its current value.
 
 ## Values you still have to hardcode
 

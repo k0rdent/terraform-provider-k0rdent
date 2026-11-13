@@ -59,8 +59,8 @@ func TestAccClusterSSHAccess(t *testing.T) {
 				ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{plancheck.ExpectEmptyPlan()}},
 			},
 			{
+				// The plan is an update the apply refuses before any request.
 				Config:      zoeOnly,
-				PlanOnly:    true,
 				ExpectError: refusal("ssh_access", "cluster"),
 			},
 			{

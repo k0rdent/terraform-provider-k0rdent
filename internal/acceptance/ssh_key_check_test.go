@@ -178,9 +178,9 @@ func TestAccAKeyChangedAfterAnImportReplaces(t *testing.T) {
 					ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{plancheck.ExpectEmptyPlan()}},
 				},
 				{
+					// The plan is an update the apply refuses before any request.
 					Config:      k.adoptedConfig(name, k.rotated, false),
-					PlanOnly:    true,
-					ExpectError: regexp.MustCompile(`would replace this ` + k.noun),
+					ExpectError: regexp.MustCompile(`would replace this ` + k.noun + `, so the apply refused it`),
 				},
 				{
 					Config:           k.adoptedConfig(name, k.rotated, true),
@@ -224,9 +224,9 @@ func TestAccKeysMovedToWriteOnlyPlanNoChange(t *testing.T) {
 					ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{plancheck.ExpectEmptyPlan()}},
 				},
 				{
+					// The plan is an update the apply refuses before any request.
 					Config:      k.config(name, "test", k.rotated),
-					PlanOnly:    true,
-					ExpectError: regexp.MustCompile(`would replace this ` + k.noun),
+					ExpectError: regexp.MustCompile(`would replace this ` + k.noun + `, so the apply refused it`),
 				},
 			},
 		})

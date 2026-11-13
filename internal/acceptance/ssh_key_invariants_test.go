@@ -55,7 +55,7 @@ var keyConfigs = []keyConfig{
 }
 
 // wantPlan is the rule for one combination: the plans it allows, of
-// "no-op", "update", "replace", and "refuse" for the guard's refusal at plan.
+// "no-op", "update" and "replace".
 //
 //   - Keys left out keep what state holds: no change.
 //   - The key the platform holds plans no change, whichever attribute names
@@ -63,7 +63,7 @@ var keyConfigs = []keyConfig{
 //     update that sends nothing.
 //   - Another key, or one not known until the apply, is a replacement, since
 //     the platform sets keys only when nodes are made. Without allow_replace
-//     the guard refuses it.
+//     it plans as an update, with a warning, which the apply refuses.
 //   - Keys that can't be checked never plan no change: the plan warns and
 //     shows an update, and the apply stops before sending anything
 //     (TestAccKeysThatCantBeCheckedStopTheApply), whichever attribute names
@@ -80,18 +80,13 @@ func wantPlan(start keyStart, c keyConfig, allowReplace bool) []string {
 		want = []string{"update"}
 	case c.key == "held":
 		want = []string{"no-op"}
+	case allowReplace:
+		want = []string{"replace"}
 	default:
-		want = []string{"refuse"}
+		want = []string{"update"}
 	}
-	if allowReplace {
-		for i, w := range want {
-			switch w {
-			case "refuse":
-				want[i] = "replace"
-			case "no-op":
-				want[i] = "update"
-			}
-		}
+	if allowReplace && want[0] == "no-op" {
+		want[0] = "update"
 	}
 	return want
 }
@@ -221,9 +216,6 @@ func TestSSHKeyPlansFollowTheDocumentedRules(t *testing.T) {
 							Config:           k.invariantConfig(address, name, keys, c, allow, true),
 							ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{plannedAs{address: addr, what: what, want: want}}},
 							ExpectError:      regexp.MustCompile(regexp.QuoteMeta(errPlanHeld.Error())),
-						}
-						if slices.Contains(want, "refuse") {
-							step.ExpectError = regexp.MustCompile(`would replace this ` + k.noun + `|` + regexp.QuoteMeta(errPlanHeld.Error()))
 						}
 						steps = append(steps, step)
 					}

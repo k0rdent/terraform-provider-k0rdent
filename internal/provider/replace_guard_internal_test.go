@@ -19,7 +19,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/setplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
-	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-go/tftypes"
 )
 
@@ -264,6 +263,7 @@ func planOf(t *testing.T, r resource.Resource, prior, planned map[string]tftypes
 	stateRaw, s := testValue(t, r, prior)
 	planRaw, _ := testValue(t, r, planned)
 	resp := resource.ModifyPlanResponse{Plan: tfsdk.Plan{Raw: planRaw, Schema: s.Schema}}
+	freshPrivate(t, &resp.Private, nil)
 	modifier, ok := r.(resource.ResourceWithModifyPlan)
 	if !ok {
 		t.Fatalf("%T has no ModifyPlan", r)
@@ -287,10 +287,41 @@ func with(base map[string]tftypes.Value, changes map[string]tftypes.Value) map[s
 	return out
 }
 
-// The refusal and the opt-in, on each tenant-state resource, through the
+// replacementWarnings is the summary of each warning the guard gave.
+func replacementWarnings(diags diag.Diagnostics) []string {
+	var out []string
+	for _, d := range diags.Warnings() {
+		if strings.Contains(d.Summary(), " would replace this ") {
+			out = append(out, d.Summary())
+		}
+	}
+	return out
+}
+
+// refusalRecorded is each path the plan recorded for the Update to refuse.
+func refusalRecorded(t *testing.T, private any) []string {
+	t.Helper()
+	p, ok := private.(privateState)
+	if !ok {
+		t.Fatal("private state cannot be read")
+	}
+	var diags diag.Diagnostics
+	var out []string
+	for _, r := range readRefusal(context.Background(), p, &diags) {
+		out = append(out, pathOf(r.Path).String())
+	}
+	if diags.HasError() {
+		t.Fatal(diags)
+	}
+	return out
+}
+
+// The warning and the opt-in, on each tenant-state resource, through the
 // resource's own ModifyPlan. Every change here is one Terraform would make by
-// replacement.
-func TestTenantStateReplacementIsRefused(t *testing.T) {
+// replacement. Without the opt-in the plan warns, naming the attribute, and
+// records the refusal for the apply. It never fails, so `terraform destroy`,
+// which runs this plan first, goes ahead.
+func TestTenantStateReplacementWarnsAndIsRecordedForTheApply(t *testing.T) {
 	allow := tftypes.NewValue(tftypes.Bool, true)
 	unknown := tftypes.NewValue(tftypes.Bool, tftypes.UnknownValue)
 	subnet := map[string]tftypes.Value{
@@ -317,22 +348,37 @@ func TestTenantStateReplacementIsRefused(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			refused := planOf(t, tc.r, tc.prior, with(tc.prior, tc.change))
-			if got := errorSummaries(refused.Diagnostics); len(got) != 1 || !strings.Contains(got[0], "Changing `"+tc.attribute+"` would replace") {
-				t.Fatalf("errors = %q, want one refusal naming %s", got, tc.attribute)
+			if refused.Diagnostics.HasError() {
+				t.Fatalf("the plan failed, so a destroy would too: %q", errorSummaries(refused.Diagnostics))
 			}
-			if d, ok := refused.Diagnostics.Errors()[0].(diag.DiagnosticWithPath); !ok || d.Path().String() != tc.attribute {
-				t.Errorf("the refusal does not point at %s: %v", tc.attribute, refused.Diagnostics.Errors()[0])
+			if got := replacementWarnings(refused.Diagnostics); len(got) != 1 || !strings.Contains(got[0], "Changing `"+tc.attribute+"` would replace") {
+				t.Fatalf("warnings = %q, want one naming %s", got, tc.attribute)
+			}
+			if d, ok := refused.Diagnostics.Warnings()[0].(diag.DiagnosticWithPath); !ok || d.Path().String() != tc.attribute {
+				t.Errorf("the warning does not point at %s: %v", tc.attribute, refused.Diagnostics.Warnings()[0])
+			}
+			if got := refusalRecorded(t, refused.Private); !slices.Equal(got, []string{tc.attribute}) {
+				t.Errorf("recorded for the apply: %q, want %s", got, tc.attribute)
+			}
+			if len(refused.RequiresReplace) != 0 {
+				t.Errorf("RequiresReplace = %v, want the update the apply refuses", refused.RequiresReplace)
 			}
 
 			permitted := planOf(t, tc.r, tc.prior, with(tc.prior, with(tc.change, map[string]tftypes.Value{allowReplaceAttribute: allow})))
-			if permitted.Diagnostics.HasError() {
-				t.Errorf("refused with the permission: %q", errorSummaries(permitted.Diagnostics))
+			if permitted.Diagnostics.HasError() || len(replacementWarnings(permitted.Diagnostics)) != 0 {
+				t.Errorf("refused with the permission: %v", permitted.Diagnostics)
+			}
+			if got := refusalRecorded(t, permitted.Private); len(got) != 0 {
+				t.Errorf("recorded with the permission: %q", got)
 			}
 
 			// A value known only at apply cannot be shown to be true.
 			pending := planOf(t, tc.r, tc.prior, with(tc.prior, with(tc.change, map[string]tftypes.Value{allowReplaceAttribute: unknown})))
-			if !pending.Diagnostics.HasError() {
+			if got := refusalRecorded(t, pending.Private); len(got) != 1 {
 				t.Error("an unknown allow_replace let the replacement through")
+			}
+			if w := pending.Diagnostics.Warnings(); len(w) != 1 || !strings.Contains(w[0].Detail(), "known only after apply, so this plan can't count it") {
+				t.Errorf("the warning doesn't say the opt-in isn't known yet: %v", w)
 			}
 		})
 	}
@@ -348,32 +394,72 @@ func TestInPlaceChangesAreNotRefused(t *testing.T) {
 		"a version":    {"cluster_type": str(verRef(4))},
 		"the opt-in":   {allowReplaceAttribute: tftypes.NewValue(tftypes.Bool, true)},
 	} {
-		if got := planOf(t, newClusterResource(), prior, with(prior, change)); got.Diagnostics.HasError() {
-			t.Errorf("%s: refused: %q", name, errorSummaries(got.Diagnostics))
+		got := planOf(t, newClusterResource(), prior, with(prior, change))
+		if got.Diagnostics.HasError() || len(replacementWarnings(got.Diagnostics)) != 0 {
+			t.Errorf("%s: refused: %v", name, got.Diagnostics)
+		}
+		if r := refusalRecorded(t, got.Private); len(r) != 0 {
+			t.Errorf("%s: recorded for the apply: %q", name, r)
 		}
 	}
 }
 
 // A moved region or project is decided in ModifyPlan rather than by a schema
-// modifier, so the guard reads it from the response.
-func TestAScopeMoveIsRefused(t *testing.T) {
+// modifier, so the guard reads it from the response, and takes it out so the
+// plan is the update the apply refuses.
+func TestAScopeMoveIsRefusedAtApply(t *testing.T) {
 	r := guardReplacements(&subnetResource{meta: &Meta{Region: "test", Project: "test"}}, subnetTenantState)
 	prior := map[string]tftypes.Value{"id": str("s1"), "network": str("n1"), "region": str("test"), "project": str("test")}
 	resp := planOf(t, r, prior, with(prior, map[string]tftypes.Value{"project": str("elsewhere")}))
-	if got := errorSummaries(resp.Diagnostics); len(got) != 1 || got[0] != "Changing `project` would replace this subnet" {
-		t.Errorf("errors = %q", got)
+	if got := replacementWarnings(resp.Diagnostics); len(got) != 1 || got[0] != "Changing `project` would replace this subnet, so the apply will refuse it" {
+		t.Errorf("warnings = %q", got)
 	}
-	if !slices.ContainsFunc(resp.RequiresReplace, path.Root("project").Equal) {
-		t.Error("the move is no longer planned as a replacement")
+	if resp.Diagnostics.HasError() {
+		t.Errorf("errors = %q", errorSummaries(resp.Diagnostics))
+	}
+	if len(resp.RequiresReplace) != 0 {
+		t.Errorf("RequiresReplace = %v, want the move planned as an update", resp.RequiresReplace)
+	}
+	if got := refusalRecorded(t, resp.Private); !slices.Equal(got, []string{"project"}) {
+		t.Errorf("recorded for the apply: %q", got)
+	}
+
+	permitted := planOf(t, r, prior, with(prior, map[string]tftypes.Value{"project": str("elsewhere"),
+		allowReplaceAttribute: tftypes.NewValue(tftypes.Bool, true)}))
+	if !slices.ContainsFunc(permitted.RequiresReplace, path.Root("project").Equal) {
+		t.Error("a permitted move is no longer planned as a replacement")
 	}
 }
 
-// Terraform plans a refresh before every destroy as if applying, and a
-// refusal there stops the destroy. The refusal says how to destroy anyway.
-func TestTheRefusalSaysHowToDestroyAnyway(t *testing.T) {
+// The plan's warning and the apply's error each say what would replace the
+// object, that the apply refuses before it sends any request, that
+// `terraform destroy` isn't affected, and the two ways out.
+func TestTheWarningAndTheRefusalSayWhatHappensAndWhatToDo(t *testing.T) {
 	var diags diag.Diagnostics
-	refuseReplacement(&diags, path.Root("ssh_access"), types.StringNull(), types.StringValue("x"), clusterTenantState)
-	if !diags.HasError() || !strings.Contains(diags.Errors()[0].Detail(), "terraform destroy -refresh=false") {
-		t.Errorf("the refusal doesn't say how to destroy anyway:\n%v", diags)
+	change := "`ssh_access` goes from nothing to \"x\"."
+	warnReplacement(&diags, path.Root("ssh_access"), change, false, clusterTenantState)
+	refuseAtApply(&diags, []refusedReplacement{{Path: []string{"ssh_access"}, Change: change}}, clusterTenantState)
+	if len(diags.Warnings()) != 1 || len(diags.Errors()) != 1 {
+		t.Fatalf("diagnostics = %v, want a warning and an error", diags)
+	}
+	for _, d := range []diag.Diagnostic{diags.Warnings()[0], diags.Errors()[0]} {
+		text := d.Summary() + " " + strings.Join(strings.Fields(d.Detail()), " ")
+		for _, want := range []string{
+			"Changing `ssh_access` would replace this cluster",
+			change,
+			"Terraform would destroy this cluster and create another",
+			clusterTenantState.loses,
+			"any request",
+			"`terraform destroy` isn't affected",
+			"add `allow_replace = true` to this resource",
+			"set `ssh_access` back to its current value",
+		} {
+			if !strings.Contains(text, want) {
+				t.Errorf("%s doesn't say %q:\n%s", d.Severity(), want, text)
+			}
+		}
+		if strings.Contains(text, "-refresh=false") {
+			t.Errorf("%s still sends a destroy to -refresh=false:\n%s", d.Severity(), text)
+		}
 	}
 }

@@ -10,11 +10,12 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/plancheck"
 )
 
-// A change that would replace a resource holding tenant
-// state fails the plan unless the configuration sets `allow_replace = true`,
-// and a change the platform makes in place is never refused. Each test below
-// makes the same change three times: refused, permitted, and then with the
-// permission removed again, which has to be an in-place update.
+// A change that would replace a resource holding tenant state plans as an
+// update with a warning, and the apply refuses it, unless the configuration
+// sets `allow_replace = true`. A change the platform makes in place is never
+// refused. Each test below makes the same change three times: refused,
+// permitted, and then with the permission removed again, which has to be an
+// in-place update.
 
 // permitReplace adds `allow_replace = true` to the resource block named
 // `<resourceType>.test`.
@@ -31,6 +32,16 @@ func permitReplace(config, resourceType string) string {
 func refusal(attribute, noun string) *regexp.Regexp {
 	return regexp.MustCompile("(?s)Changing `" + regexp.QuoteMeta(attribute) + "` would replace this " + noun +
 		".*add\\s+`allow_replace\\s+=\\s+true`\\s+to\\s+this\\s+resource")
+}
+
+// refusedStep applies config, whose change would replace addr: the plan is an
+// update, and the apply fails with the refusal naming attribute.
+func refusedStep(config, addr, attribute, noun string) resource.TestStep {
+	return resource.TestStep{
+		Config:           config,
+		ConfigPlanChecks: expect(addr, plancheck.ResourceActionUpdate),
+		ExpectError:      refusal(attribute, noun),
+	}
 }
 
 func expect(addr string, action plancheck.ResourceActionType) resource.ConfigPlanChecks {
@@ -54,11 +65,7 @@ func TestAccSubnetReplacementNeedsThePermission(t *testing.T) {
 		),
 		Steps: []resource.TestStep{
 			{Config: before},
-			{
-				Config:      after,
-				PlanOnly:    true,
-				ExpectError: refusal("description", "subnet"),
-			},
+			refusedStep(after, subnetAddr, "description", "subnet"),
 			{
 				Config:           permitReplace(after, subnetType),
 				ConfigPlanChecks: expect(subnetAddr, plancheck.ResourceActionReplace),
@@ -90,11 +97,7 @@ func TestAccSubnetPrefixChangeIsRefused(t *testing.T) {
 		),
 		Steps: []resource.TestStep{
 			{Config: before},
-			{
-				Config:      strings.Replace(before, "prefix_length    = 24", "prefix_length    = 25", 1),
-				PlanOnly:    true,
-				ExpectError: refusal("prefix_length", "subnet"),
-			},
+			refusedStep(strings.Replace(before, "prefix_length    = 24", "prefix_length    = 25", 1), subnetAddr, "prefix_length", "subnet"),
 		},
 	})
 }
@@ -107,11 +110,7 @@ func TestAccClusterReplacementNeedsThePermission(t *testing.T) {
 		CheckDestroy:             checkGone(clusterType, clusterPath),
 		Steps: []resource.TestStep{
 			{Config: clusterConfig(name, 1)},
-			{
-				Config:      clusterConfig(renamed, 1),
-				PlanOnly:    true,
-				ExpectError: refusal("id", "cluster"),
-			},
+			refusedStep(clusterConfig(renamed, 1), clusterAddr, "id", "cluster"),
 			{
 				// A change the platform makes in place is not refused.
 				Config:           strings.Replace(clusterConfig(name, 2), `"acceptance"`, `"renamed"`, 1),
@@ -173,11 +172,7 @@ func TestAccInstanceGroupShrinkNeedsThePermission(t *testing.T) {
 				Config:           instanceGroupConfig(name, 2),
 				ConfigPlanChecks: expect(instanceGroupAddr, plancheck.ResourceActionUpdate),
 			},
-			{
-				Config:      instanceGroupConfig(name, 1),
-				PlanOnly:    true,
-				ExpectError: refusal("node_pool", "instance group"),
-			},
+			refusedStep(instanceGroupConfig(name, 1), instanceGroupAddr, "node_pool", "instance group"),
 			{
 				Config:           permitReplace(instanceGroupConfig(name, 1), instanceGroupType),
 				ConfigPlanChecks: expect(instanceGroupAddr, plancheck.ResourceActionReplace),
@@ -203,11 +198,7 @@ resource %q "test" {
 		CheckDestroy:             checkGone(networkType, networkPath),
 		Steps: []resource.TestStep{
 			{Config: evpnConfig(name, "acceptance")},
-			{
-				Config:      ib,
-				PlanOnly:    true,
-				ExpectError: refusal("evpn", "network"),
-			},
+			refusedStep(ib, networkAddr, "evpn", "network"),
 			{
 				Config:           evpnConfig(name, "renamed"),
 				ConfigPlanChecks: expect(networkAddr, plancheck.ResourceActionUpdate),
@@ -224,11 +215,7 @@ func TestAccProjectReplacementNeedsThePermission(t *testing.T) {
 		CheckDestroy:             checkGone(projectType, projectPath),
 		Steps: []resource.TestStep{
 			{Config: projectConfig(id, "Acceptance", "guarded")},
-			{
-				Config:      projectConfig(renamed, "Acceptance", "guarded"),
-				PlanOnly:    true,
-				ExpectError: refusal("id", "project"),
-			},
+			refusedStep(projectConfig(renamed, "Acceptance", "guarded"), projectAddr, "id", "project"),
 			{
 				Config:           projectConfig(id, "Renamed", "guarded"),
 				ConfigPlanChecks: expect(projectAddr, plancheck.ResourceActionUpdate),

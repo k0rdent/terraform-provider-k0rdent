@@ -7,7 +7,7 @@ description: |-
   Unlike every other resource here it takes no project, and its region isn't part of its address: it lives on the global control-plane tier and is addressed inside an organization. It's created in one region and locked to it, and every regional resource in it has to be in that region. The value it produces in id is what goes in the provider block's project, or in another resource's project argument.
   The provider block cannot take a value that is unknown at plan time. When one configuration both creates a project and points the provider block at it, set id here so the value is known; a resource's own project argument has no such limit.
   This provider cannot create an organization. That is an operator-plane operation and is not reachable by a tenant credential, so organization_id is an input. The k0rdent_projects data source reports it per project.
-  What replaces it. Changing id, organization_id or region cannot be done in place and replaces the project. A project contains the tenant's clusters, networks, subnets and API keys, and a replacement deletes it and creates an empty one. So a plan that would replace it fails and names the attribute, unless allow_replace = true is set on the resource. Everything else changes in place.
+  What replaces it. Changing id, organization_id or region cannot be done in place and replaces the project. A project contains the tenant's clusters, networks, subnets and API keys, and a replacement deletes it and creates an empty one. So unless allow_replace = true is set on the resource, a change that would replace it plans as an update with a warning that names the attribute, and the apply refuses it before it sends any request. terraform destroy isn't affected. Everything else changes in place.
 ---
 
 # k0rdent_project (Resource)
@@ -20,7 +20,7 @@ The provider block cannot take a value that is unknown at plan time. When one co
 
 **This provider cannot create an organization.** That is an operator-plane operation and is not reachable by a tenant credential, so `organization_id` is an input. The `k0rdent_projects` data source reports it per project.
 
-**What replaces it.** Changing `id`, `organization_id` or `region` cannot be done in place and replaces the project. A project contains the tenant's clusters, networks, subnets and API keys, and a replacement deletes it and creates an empty one. So a plan that would replace it fails and names the attribute, unless `allow_replace = true` is set on the resource. Everything else changes in place.
+**What replaces it.** Changing `id`, `organization_id` or `region` cannot be done in place and replaces the project. A project contains the tenant's clusters, networks, subnets and API keys, and a replacement deletes it and creates an empty one. So unless `allow_replace = true` is set on the resource, a change that would replace it plans as an update with a warning that names the attribute, and the apply refuses it before it sends any request. `terraform destroy` isn't affected. Everything else changes in place.
 
 ## Example Usage
 
@@ -75,7 +75,7 @@ check "project_is_usable" {
 
 ### Optional
 
-- `allow_replace` (Boolean) Permit a plan that replaces this project. Left out or `false`, a change that cannot be made in place fails the plan, naming the attribute that forces the replacement, instead of destroying the project and creating another. Set it to `true` in the same configuration as the change to let the replacement go ahead, and remove it afterwards to put the guard back. It is read from the configuration being planned and must be known at plan time. It is never sent to the platform: setting or removing it on its own is an update that changes nothing there.
+- `allow_replace` (Boolean) Permit a plan that replaces this project. Left out or `false`, a change that cannot be made in place plans as an update with a warning that names the attribute forcing the replacement, and the apply refuses that update before it sends any request, so the project isn't destroyed and created again. `terraform destroy` isn't affected. Set it to `true` in the same configuration as the change to let the replacement go ahead, and remove it afterwards to put the guard back. It is read from the configuration being planned and must be known at plan time: a value known only after apply can't permit the replacement. It is never sent to the platform: setting or removing it on its own is an update that changes nothing there.
 - `description` (String) Free-form description. Mutable. Removing it clears it.
 - `display_name` (String) Human-friendly name. Mutable. Removing it clears it.
 - `id` (String) Project id, the value the provider block's `project` takes. Unique inside its organization. Omit it and the provider generates one, `tf-` and 16 hex digits, which is known only after apply, so that a create whose answer is lost can be read back rather than sent twice. **Forces replacement** (needs `allow_replace = true`). **Constraints:** Must be lower-case letters, digits and hyphens, starting with a letter and not ending with a hyphen (`[a-z]([-a-z0-9]*[a-z0-9])?`), because it becomes a segment of a request URL. String length must be at most 63.

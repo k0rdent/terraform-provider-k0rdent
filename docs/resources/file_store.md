@@ -7,7 +7,7 @@ description: |-
   This is storage the platform allocates and the tenant mounts. Storage inside a cluster is a CSI concern and is driven through the cluster's kubeconfig, not here.
   capacity_gib is expand-only and share_type is fixed for the life of the store. A store that still lists consumers cannot be deleted, so this resource empties them first, including any the platform lists that the configuration doesn't, and names those in a warning. If the destroy then fails, state records the consumers as detached, because they have lost access: running the destroy again carries on, and an apply grants them again. See the note on consumers.
   Requires region and project on the provider.
-  What replaces it. Changing id, project, region or share_type cannot be done in place and replaces the file store. A file store holds tenant data, and a replacement deletes the store and the data on it before an empty one is created. So a plan that would replace it fails and names the attribute, unless allow_replace = true is set on the resource. Everything else changes in place.
+  What replaces it. Changing id, project, region or share_type cannot be done in place and replaces the file store. A file store holds tenant data, and a replacement deletes the store and the data on it before an empty one is created. So unless allow_replace = true is set on the resource, a change that would replace it plans as an update with a warning that names the attribute, and the apply refuses it before it sends any request. terraform destroy isn't affected. Everything else changes in place.
 ---
 
 # k0rdent_file_store (Resource)
@@ -20,7 +20,7 @@ This is storage the platform allocates and the tenant mounts. Storage *inside* a
 
 Requires `region` and `project` on the provider.
 
-**What replaces it.** Changing `id`, `project`, `region` or `share_type` cannot be done in place and replaces the file store. A file store holds tenant data, and a replacement deletes the store and the data on it before an empty one is created. So a plan that would replace it fails and names the attribute, unless `allow_replace = true` is set on the resource. Everything else changes in place.
+**What replaces it.** Changing `id`, `project`, `region` or `share_type` cannot be done in place and replaces the file store. A file store holds tenant data, and a replacement deletes the store and the data on it before an empty one is created. So unless `allow_replace = true` is set on the resource, a change that would replace it plans as an update with a warning that names the attribute, and the apply refuses it before it sends any request. `terraform destroy` isn't affected. Everything else changes in place.
 
 ## Example Usage
 
@@ -100,7 +100,7 @@ output "checkpoint_grants" {
 
 ### Optional
 
-- `allow_replace` (Boolean) Permit a plan that replaces this file store. Left out or `false`, a change that cannot be made in place fails the plan, naming the attribute that forces the replacement, instead of destroying the file store and creating another. Set it to `true` in the same configuration as the change to let the replacement go ahead, and remove it afterwards to put the guard back. It is read from the configuration being planned and must be known at plan time. It is never sent to the platform: setting or removing it on its own is an update that changes nothing there.
+- `allow_replace` (Boolean) Permit a plan that replaces this file store. Left out or `false`, a change that cannot be made in place plans as an update with a warning that names the attribute forcing the replacement, and the apply refuses that update before it sends any request, so the file store isn't destroyed and created again. `terraform destroy` isn't affected. Set it to `true` in the same configuration as the change to let the replacement go ahead, and remove it afterwards to put the guard back. It is read from the configuration being planned and must be known at plan time: a value known only after apply can't permit the replacement. It is never sent to the platform: setting or removing it on its own is an update that changes nothing there.
 - `consumers` (Attributes Map) Who may mount the store, keyed by `ref`: the address for an `ipAddress` entry, or the instance group's id for an `instanceGroup` entry. This is the desired set, replaced wholesale on every change: to attach one, add an entry; to detach one, remove it.
 
 An empty or absent map is a store mountable by nobody, which is the intended default.

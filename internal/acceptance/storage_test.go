@@ -192,12 +192,8 @@ resource %q "test" {
 					resource.TestCheckResourceAttr(fileStoreAddr, "consumer_status.%", "0"),
 				),
 			},
-			{
-				// Refused without the permission: the store holds data.
-				Config:      config("high-speed", 256),
-				PlanOnly:    true,
-				ExpectError: refusal("share_type", "file store"),
-			},
+			// Refused without the permission, at apply: the store holds data.
+			refusedStep(config("high-speed", 256), fileStoreAddr, "share_type", "file store"),
 			{
 				// A new store, so a smaller capacity is not a shrink.
 				Config: permitReplace(config("high-speed", 256), fileStoreType),

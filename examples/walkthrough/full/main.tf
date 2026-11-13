@@ -387,8 +387,8 @@ resource "k0rdent_kubernetes_cluster" "this" {
 
   on_destroy_busy = local.on_destroy_busy
 
-  # A change that would replace the cluster fails the plan instead. Set true
-  # only if you mean it.
+  # A change that would replace the cluster plans with a warning instead, and
+  # the apply refuses it. Set true only if you mean it.
   allow_replace = false
 
   # Building or freeing hardware can take more than 2 hours.

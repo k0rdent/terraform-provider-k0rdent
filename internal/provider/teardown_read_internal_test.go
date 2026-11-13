@@ -109,7 +109,8 @@ func refreshThenPlan(t *testing.T, body map[string]any, applied, configured map[
 	configRaw, _ := testValue(t, r, configured)
 	config := tfsdk.Config{Raw: configRaw, Schema: s.Schema}
 	planned := tfsdk.Plan{Raw: configRaw, Schema: s.Schema}
-	resp := resource.ModifyPlanResponse{Plan: planned}
+	// The framework hands ModifyPlan the same private data in both.
+	resp := resource.ModifyPlanResponse{Plan: planned, Private: read.Private}
 	r.ModifyPlan(context.Background(), resource.ModifyPlanRequest{
 		Config: config, Plan: planned, State: read.State, Private: read.Private,
 	}, &resp)
@@ -188,8 +189,8 @@ func TestDroppingSSHAccessFromAReleasedGroupIsNotAReplacement(t *testing.T) {
 	} {
 		_, plan := refreshThenPlan(t, deletingGroupBody("failed"), opsGroup("active"),
 			with(opsGroup("active"), map[string]tftypes.Value{"ssh_access": dropped}))
-		if plan.Diagnostics.HasError() {
-			t.Errorf("ssh_access = %v: refused: %q", dropped, errorSummaries(plan.Diagnostics))
+		if plan.Diagnostics.HasError() || len(replacementWarnings(plan.Diagnostics)) != 0 {
+			t.Errorf("ssh_access = %v: refused: %v", dropped, plan.Diagnostics)
 		}
 	}
 }
@@ -199,8 +200,11 @@ func TestDroppingSSHAccessFromAReleasedGroupIsNotAReplacement(t *testing.T) {
 // shows.
 func TestAnActiveGroupThatLostItsSSHAccessStillPlansTheChange(t *testing.T) {
 	_, plan := refreshThenPlan(t, deletingGroupBody("active"), opsGroup("active"), opsGroup("active"))
-	if got := errorSummaries(plan.Diagnostics); len(got) != 1 || !strings.Contains(got[0], "Changing `ssh_access` would replace") {
-		t.Errorf("errors = %q, want the replacement refused", got)
+	if got := replacementWarnings(plan.Diagnostics); len(got) != 1 || !strings.Contains(got[0], "Changing `ssh_access` would replace") {
+		t.Errorf("warnings = %q, want the replacement refused", got)
+	}
+	if got := refusalRecorded(t, plan.Private); len(got) != 1 {
+		t.Errorf("recorded for the apply: %q, want ssh_access", got)
 	}
 }
 
@@ -219,8 +223,11 @@ func TestTheGuardStillRefusesAReplacementWhileDeleting(t *testing.T) {
 	})
 	_, plan := refreshThenPlan(t, deletingGroupBody("deleting"), opsGroup("active"),
 		with(opsGroup("active"), map[string]tftypes.Value{"ssh_access": other}))
-	if got := errorSummaries(plan.Diagnostics); len(got) != 1 || !strings.Contains(got[0], "Changing `ssh_access` would replace") {
-		t.Errorf("errors = %q, want the replacement refused", got)
+	if got := replacementWarnings(plan.Diagnostics); len(got) != 1 || !strings.Contains(got[0], "Changing `ssh_access` would replace") {
+		t.Errorf("warnings = %q, want the replacement refused", got)
+	}
+	if got := refusalRecorded(t, plan.Private); len(got) != 1 {
+		t.Errorf("recorded for the apply: %q, want ssh_access", got)
 	}
 }
 
