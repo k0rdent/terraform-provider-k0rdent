@@ -202,11 +202,12 @@ func (r *networkResource) Schema(ctx context.Context, _ resource.SchemaRequest, 
 					},
 					// Optional+Computed with a default: immutable either way.
 					"dhcp_enabled": schema.BoolAttribute{
-						Optional:            true,
-						Computed:            true,
-						Default:             booldefault.StaticBool(false),
-						MarkdownDescription: "Whether DHCP serves addresses on this network.",
-						PlanModifiers:       []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()},
+						Optional: true,
+						Computed: true,
+						Default:  booldefault.StaticBool(false),
+						MarkdownDescription: "Whether DHCP serves addresses on this network. A network the " +
+							"platform reports without it, such as one a cluster made, reads as `false`.",
+						PlanModifiers: []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()},
 					},
 					// A List, not a Set: resolver order is what decides which
 					// server is asked first, so it is significant and the
@@ -282,22 +283,23 @@ func (r *networkResource) Schema(ctx context.Context, _ resource.SchemaRequest, 
 						MarkdownDescription: "The PKey the platform reports, whether it was asked for or allocated.",
 						PlanModifiers:       []planmodifier.String{keepUnlessChanged().onceSettled(networkStates.settle)},
 					},
-					// Optional+Computed with a default: immutable, and the
-					// platform reports its own value when the request omits one.
+					// Optional+Computed with a default: immutable either way.
 					"index0": schema.BoolAttribute{
-						Optional:            true,
-						Computed:            true,
-						Default:             booldefault.StaticBool(false),
-						MarkdownDescription: "Store the PKey at index 0.",
-						PlanModifiers:       []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()},
+						Optional: true,
+						Computed: true,
+						Default:  booldefault.StaticBool(false),
+						MarkdownDescription: "Store the PKey at index 0. A network the platform reports " +
+							"without it reads as `false`.",
+						PlanModifiers: []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()},
 					},
 					// See index0.
 					"ip_over_ib": schema.BoolAttribute{
-						Optional:            true,
-						Computed:            true,
-						Default:             booldefault.StaticBool(false),
-						MarkdownDescription: "Whether the partition takes part in IP-over-InfiniBand multicast.",
-						PlanModifiers:       []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()},
+						Optional: true,
+						Computed: true,
+						Default:  booldefault.StaticBool(false),
+						MarkdownDescription: "Whether the partition takes part in IP-over-InfiniBand multicast. " +
+							"A network the platform reports without it reads as `false`.",
+						PlanModifiers: []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()},
 					},
 				},
 			},
@@ -1111,7 +1113,7 @@ func networkStateFrom(ctx context.Context, n k0rdent.Network, prior networkModel
 		e := &networkEVPNModel{
 			ServiceType:    types.StringValue(string(view.evpn.Evpn.Type)),
 			MTU:            int64OrNull(view.evpn.Mtu),
-			DHCPEnabled:    boolOrNull(view.evpn.DhcpEnabled),
+			DHCPEnabled:    boolOrFalse(view.evpn.DhcpEnabled),
 			VlanIDResolved: types.StringNull(),
 		}
 		if view.evpn.Vlan != nil {
@@ -1130,8 +1132,8 @@ func networkStateFrom(ctx context.Context, n k0rdent.Network, prior networkModel
 		i := &networkIBModel{
 			Partition:     stringOrNull(view.ib.Infiniband.Partition),
 			PkeyAllocated: stringOrNull(view.ib.Infiniband.Pkey),
-			Index0:        boolOrNull(view.ib.Infiniband.Index0),
-			IPOverIB:      boolOrNull(view.ib.Infiniband.IpOverIb),
+			Index0:        boolOrFalse(view.ib.Infiniband.Index0),
+			IPOverIB:      boolOrFalse(view.ib.Infiniband.IpOverIb),
 		}
 		// NICo ignores a requested PKey and answers with the partition's own,
 		// so a configured value has to survive the read or every plan against a

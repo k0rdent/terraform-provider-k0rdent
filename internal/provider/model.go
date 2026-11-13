@@ -256,6 +256,13 @@ func boolOrNull(p *bool) types.Bool {
 	return types.BoolValue(*p)
 }
 
+// boolOrFalse reads an absent flag as false. The platform leaves out a flag
+// nobody set, as on a network a cluster created, and the schema defaults it to
+// false, so a null here would plan a replacement after every import.
+func boolOrFalse(p *bool) types.Bool {
+	return types.BoolValue(p != nil && *p)
+}
+
 func deref(p *string) string {
 	if p == nil {
 		return ""

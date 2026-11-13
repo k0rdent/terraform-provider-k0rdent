@@ -623,6 +623,9 @@ resource %q "adopted" {
 				ImportStatePersist: true,
 				ImportStateVerify:  false,
 			},
+			// The platform leaves `dhcpEnabled` out of this network. Read as
+			// null, it planned a replacement that the guard refused.
+			{Config: adoption("cluster network"), PlanOnly: true},
 			{
 				Config:      adoption("renamed by the tenant"),
 				PlanOnly:    true,
