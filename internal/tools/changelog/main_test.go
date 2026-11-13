@@ -217,6 +217,59 @@ func TestDiffChangesReportsOnlyWhatTheBranchDid(t *testing.T) {
 	}
 }
 
+// In CI HEAD is the pull request merged into its base's current tip, but
+// the event's base sha can be older: a closed and reopened pull request, or a
+// rerun, keeps the sha from when the run was first made. Entries that reached
+// the base since then aren't this pull request's.
+func TestDiffChangesIgnoresWhatTheBaseGainedAfterTheEventsBase(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("no git")
+	}
+	repoDir := t.TempDir()
+	git := func(args ...string) string {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-C", repoDir, "-c", "user.name=t", "-c", "user.email=t@example.com",
+			"-c", "commit.gpgsign=false"}, args...)...)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	write := func(name string) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Join(repoDir, ".changelog"), 0o750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(repoDir, ".changelog", name), []byte(good), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	git("init", "-q", "-b", "main")
+	write("75.txt")
+	git("add", "-A")
+	git("commit", "-q", "-m", "base")
+	staleBase := git("rev-parse", "HEAD")
+	git("checkout", "-q", "-b", "pr")
+	write("115.txt")
+	git("add", "-A")
+	git("commit", "-q", "-m", "pr")
+	git("checkout", "-q", "main")
+	write("110.txt")
+	git("add", "-A")
+	git("commit", "-q", "-m", "another pull request lands")
+	// GitHub's merge ref: first parent the base's tip, second the pull request.
+	git("merge", "-q", "--no-ff", "-m", "merge", "pr")
+
+	got, err := diffChanges(repoDir, staleBase, ".changelog")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []change{{'A', "115.txt"}}; !slices.Equal(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+}
+
 func TestLabelsReadsJSONOrAList(t *testing.T) {
 	if got := labels(`["a, b","no-changelog-needed"]`); len(got) != 2 || got[0] != "a, b" {
 		t.Fatalf("JSON: %q", got)

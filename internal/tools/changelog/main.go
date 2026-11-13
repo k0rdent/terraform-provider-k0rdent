@@ -236,8 +236,18 @@ type change struct {
 // branch left base to HEAD. In CI HEAD is the pull request merged into its
 // base, and the three-dot form diffs from their merge base, so a base that
 // has moved on since doesn't show up as this pull request undoing it.
-// Renames are a delete and an add, so a renamed entry is judged as both.
+// When HEAD is that merge, its first parent is the base as it is now, so the
+// diff starts there instead: the event's base sha can be older (a reopened
+// pull request or a rerun keeps it), and what the base gained since isn't
+// this pull request's. Renames are a delete and an add, so a renamed entry is
+// judged as both.
 func diffChanges(repoDir, base, dir string) ([]change, error) {
+	if err := exec.Command("git", "-C", repoDir, "rev-parse", "--verify", "-q", "HEAD^2").Run(); err == nil {
+		if err := exec.Command("git", "-C", repoDir, "cat-file", "-e", base+"^{commit}").Run(); err != nil {
+			return nil, fmt.Errorf("git diff against %s: not a commit in this repository", base)
+		}
+		base = "HEAD^1"
+	}
 	out, err := exec.Command("git", "-C", repoDir, "diff", "--name-status", "--no-renames", "-z",
 		base+"...HEAD", "--", dir).Output()
 	if err != nil {
