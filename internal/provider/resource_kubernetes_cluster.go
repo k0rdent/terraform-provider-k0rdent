@@ -486,8 +486,14 @@ func (r *clusterResource) ModifyPlan(ctx context.Context, req resource.ModifyPla
 	warnUnrecordedSSHAccess(ctx, req, resp)
 	replaceOnChangedKeys(ctx, req, resp)
 
-	if !req.State.Raw.IsNull() && (req.Plan.Raw.IsNull() || len(resp.RequiresReplace) > 0) {
-		warnOnBusyDestroy(ctx, req.State, &resp.Diagnostics)
+	switch {
+	case req.State.Raw.IsNull():
+	case req.Plan.Raw.IsNull():
+		warnOnBusyDestroy(ctx, req.State, false, &resp.Diagnostics)
+	case len(resp.RequiresReplace) > 0:
+		// A replacement the configuration doesn't permit is refused at
+		// apply and destroys nothing, unless `-replace` asks for it.
+		warnOnBusyDestroy(ctx, req.State, !replacementPermitted(ctx), &resp.Diagnostics)
 	}
 	if req.State.Raw.IsNull() || req.Plan.Raw.IsNull() {
 		return // create or destroy; the framework already handles both

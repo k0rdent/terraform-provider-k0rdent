@@ -319,6 +319,33 @@ func TestTheGuardWarnsOfAReplacementTheResourcePlans(t *testing.T) {
 	}
 }
 
+// A refused value known only after apply may turn out unchanged, and then
+// Terraform's final plan has no replacement and plans the update with its
+// computed values unknown. So nothing is kept from prior state, or that
+// final plan would be inconsistent, and the warning says the apply refuses
+// only if the value differs.
+func TestAnUnknownRefusedValueKeepsNothing(t *testing.T) {
+	_, r, s := guardedStub(t)
+	prior := stubValue(t, s, stubBase)
+	resp := planStub(t, r, s, prior, stubValue(t, s, with(stubBase, map[string]tftypes.Value{
+		"id": tftypes.NewValue(tftypes.String, tftypes.UnknownValue)})))
+	if got := refusalRecorded(t, resp.Private); !reflect.DeepEqual(got, []string{"id"}) {
+		t.Errorf("recorded for the apply: %q, want id", got)
+	}
+	var state types.String
+	resp.Plan.GetAttribute(context.Background(), path.Root("state"), &state)
+	if !state.IsUnknown() {
+		t.Errorf("state = %v, want the unknown the resource planned", state)
+	}
+	if got := replacementWarnings(resp.Diagnostics); len(got) != 1 ||
+		got[0] != "Changing `id` would replace this stub, so the apply will refuse it if the new value differs" {
+		t.Errorf("warnings = %q", got)
+	}
+	if d := resp.Diagnostics.Warnings()[0].Detail(); !strings.Contains(d, "If it turns out to be the current value, the stub isn't replaced") {
+		t.Errorf("the warning doesn't say what happens if the value is unchanged: %q", d)
+	}
+}
+
 // A path both the resource's ModifyPlan and an attribute's modifier name is
 // one replacement, warned about and refused once.
 func TestAPathNamedTwiceIsRefusedOnce(t *testing.T) {

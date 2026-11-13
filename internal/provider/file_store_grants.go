@@ -359,13 +359,15 @@ func consumersRequest(in []keyedConsumer) *[]k0rdent.Consumer {
 // an error: destroying a store something mounts is sometimes exactly what was
 // meant. It reads prior state, so it needs no request and reports grants as of
 // the last refresh, the same basis as the rest of the plan.
-func warnOnDestroyingABoundStore(ctx context.Context, state fileStoreModel, diags *diag.Diagnostics) {
+// onlyIfReplaced is a replacement the apply refuses, which destroys the
+// store only if `-replace` asks for it.
+func warnOnDestroyingABoundStore(ctx context.Context, state fileStoreModel, onlyIfReplaced bool, diags *diag.Diagnostics) {
 	// Not worth failing a plan over: a status that cannot be read names nobody.
 	var ignored diag.Diagnostics
-	diags.Append(grantReportOf(ctx, state.ConsumerStatus, &ignored).destroyWarning(state.ID.ValueString())...)
+	diags.Append(grantReportOf(ctx, state.ConsumerStatus, &ignored).destroyWarning(state.ID.ValueString(), onlyIfReplaced)...)
 }
 
-func (r grantReport) destroyWarning(storeID string) diag.Diagnostics {
+func (r grantReport) destroyWarning(storeID string, onlyIfReplaced bool) diag.Diagnostics {
 	var held, maybe []string
 	for ref, cs := range r {
 		line := ref
@@ -390,6 +392,11 @@ func (r grantReport) destroyWarning(storeID string) diag.Diagnostics {
 		summary = fmt.Sprintf("Destroying %s may cut off %d consumer(s)", storeID, len(maybe))
 	}
 	var b strings.Builder
+	if onlyIfReplaced {
+		summary = "If `-replace` replaces it anyway: " + summary
+		b.WriteString("The apply refuses this replacement and destroys nothing, unless the plan was made " +
+			"with `-replace` for this store. Then Terraform destroys it and creates another.\n\n")
+	}
 	if len(held) > 0 {
 		fmt.Fprintf(&b, "These hold an enforced grant on the store as of the last refresh and will "+
 			"lose access when it is destroyed:\n\n  %s\n\n", strings.Join(held, "\n  "))

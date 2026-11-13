@@ -557,7 +557,7 @@ func TestAScopeMoveIsRefusedAtApply(t *testing.T) {
 func TestTheWarningAndTheRefusalSayWhatHappensAndWhatToDo(t *testing.T) {
 	var diags diag.Diagnostics
 	change := "`ssh_access` goes from nothing to \"x\"."
-	warnReplacement(&diags, path.Root("ssh_access"), change, false, clusterTenantState)
+	warnReplacement(&diags, path.Root("ssh_access"), change, false, true, clusterTenantState)
 	refuseAtApply(&diags, []refusedReplacement{{Path: []string{"ssh_access"}, Change: change}}, clusterTenantState)
 	if len(diags.Warnings()) != 1 || len(diags.Errors()) != 1 {
 		t.Fatalf("diagnostics = %v, want a warning and an error", diags)

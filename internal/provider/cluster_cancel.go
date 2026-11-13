@@ -55,7 +55,10 @@ func addClusterWaitError(diags *diag.Diagnostics, summary, advice string, err er
 // can't see a tainted cluster that's being replaced either: Terraform plans
 // that replacement with a null prior state, so the plan looks like a create,
 // and createGuard's warning names the cancel instead.
-func warnOnBusyDestroy(ctx context.Context, st tfsdk.State, diags *diag.Diagnostics) {
+//
+// onlyIfReplaced is a replacement the apply refuses, which destroys the
+// cluster only if `-replace` asks for it, which a plan can't see.
+func warnOnBusyDestroy(ctx context.Context, st tfsdk.State, onlyIfReplaced bool, diags *diag.Diagnostics) {
 	var prior, id, onBusy types.String
 	// Not worth failing a plan over: a state that can't be read warns nobody.
 	if st.GetAttribute(ctx, path.Root("state"), &prior).HasError() ||
@@ -67,10 +70,16 @@ func warnOnBusyDestroy(ctx context.Context, st tfsdk.State, diags *diag.Diagnost
 	if !cancellable(from) {
 		return
 	}
+	summaryIf, detailIf := "", ""
+	if onlyIfReplaced {
+		summaryIf = "If `-replace` replaces it anyway: "
+		detailIf = "The apply refuses this replacement and destroys nothing, unless the plan was made with " +
+			"`-replace` for this cluster. Then Terraform destroys it and creates another.\n\n"
+	}
 	if destroyBusyOf(onBusy) == destroyWaits {
 		// Local: decided from prior state, no request made.
-		diags.AddWarning(redactDiagnosticText(fmt.Sprintf("Destroying %s will wait for the operation it is running", id.ValueString())),
-			redactDiagnosticText(fmt.Sprintf("The cluster was `%s` at the last refresh. The platform deletes a cluster "+
+		diags.AddWarning(redactDiagnosticText(summaryIf+fmt.Sprintf("Destroying %s will wait for the operation it is running", id.ValueString())),
+			redactDiagnosticText(detailIf+fmt.Sprintf("The cluster was `%s` at the last refresh. The platform deletes a cluster "+
 				"only once it is `active` or `failed`, and `on_destroy_busy` is `wait`, so the destroy waits for "+
 				"the running operation to finish and then deletes the cluster. That can take as long as the "+
 				"operation does, up to the delete timeout. If the operation outlasts it, nothing is deleted.", from)))
@@ -78,8 +87,8 @@ func warnOnBusyDestroy(ctx context.Context, st tfsdk.State, diags *diag.Diagnost
 	}
 	// Local: decided from prior state, no request made. The id is the
 	// platform's word, so it's escaped.
-	diags.AddWarning(redactDiagnosticText(fmt.Sprintf("Destroying %s will cancel the operation it is running", id.ValueString())),
-		redactDiagnosticText(fmt.Sprintf("The cluster was `%s` at the last refresh. The platform deletes a cluster "+
+	diags.AddWarning(redactDiagnosticText(summaryIf+fmt.Sprintf("Destroying %s will cancel the operation it is running", id.ValueString())),
+		redactDiagnosticText(detailIf+fmt.Sprintf("The cluster was `%s` at the last refresh. The platform deletes a cluster "+
 			"only once it is `active` or `failed`, so the destroy cancels the running operation first and "+
 			"then deletes the cluster. Whatever that operation was doing will not finish, and a cancelled "+
 			"upgrade leaves the cluster `failed`, which the platform does not upgrade again. If the "+

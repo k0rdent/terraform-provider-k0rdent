@@ -233,7 +233,7 @@ func TestFailureWarningsTellDriftFromAFailedGrant(t *testing.T) {
 }
 
 func destroyWarnings(report grantReport) diag.Diagnostics {
-	return report.destroyWarning("training-datasets")
+	return report.destroyWarning("training-datasets", false)
 }
 
 func TestDestroyWarnsNamingEveryEnforcedConsumer(t *testing.T) {

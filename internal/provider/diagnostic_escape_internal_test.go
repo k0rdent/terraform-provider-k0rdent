@@ -143,7 +143,7 @@ func TestADestroyWarningIsEscaped(t *testing.T) {
 		state:     string(k0rdent.FileStoreConsumerStatusStateActive),
 		addresses: []string{"10.0.0.1", hostile},
 	}}
-	assertNoControlRunes(t, report.destroyWarning("fs-"+hostile))
+	assertNoControlRunes(t, report.destroyWarning("fs-"+hostile, false))
 }
 
 // A line or paragraph separator starts a new line in some terminals and

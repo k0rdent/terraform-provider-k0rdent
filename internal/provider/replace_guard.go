@@ -374,7 +374,7 @@ func guardReplacement(ctx context.Context, what tenantState, req resource.Modify
 	refused := make([]refusedReplacement, 0, len(replacing))
 	for _, r := range replacing {
 		change := describeChange(r, what)
-		warnReplacement(&resp.Diagnostics, r.path, change, pending, what)
+		warnReplacement(&resp.Diagnostics, r.path, change, pending, valueFullyKnown(ctx, r.to), what)
 		refused = append(refused, refusedReplacement{Path: pathSteps(r.path), Change: change})
 	}
 	// Fails closed: with nowhere to record the refusal, the Update couldn't
@@ -382,7 +382,26 @@ func guardReplacement(ctx context.Context, what tenantState, req resource.Modify
 	// private data, so this is unreachable.
 	recordRefusal(ctx, resp.Private, refused, &resp.Diagnostics)
 	resp.RequiresReplace = nil
+	for _, r := range replacing {
+		if !valueFullyKnown(ctx, r.to) {
+			// The value may turn out unchanged, and then Terraform's final
+			// plan at apply finds no replacement, plans the update with its
+			// computed values unknown, and would call one kept here an
+			// inconsistent final plan.
+			return
+		}
+	}
 	keepComputed(ctx, req, resp, replacing)
+}
+
+// valueFullyKnown reports whether a planned value holds nothing known only after
+// apply.
+func valueFullyKnown(ctx context.Context, v attr.Value) bool {
+	if v == nil {
+		return true
+	}
+	tv, err := v.ToTerraformValue(ctx)
+	return err == nil && tv.IsFullyKnown()
 }
 
 // keepComputed plans every computed value the configuration leaves null as
@@ -531,9 +550,17 @@ func describeChange(r plannedReplacement, what tenantState) string {
 
 // warnReplacement is the plan's half of a refusal: the plan shows an update,
 // and says that the apply will refuse it and why. pending is an opt-in known
-// only after apply, which this plan can't count as a permission.
-func warnReplacement(diags *diag.Diagnostics, p path.Path, change string, pending bool, what tenantState) {
+// only after apply, which this plan can't count as a permission. known is
+// false when the new value is known only after apply: the apply refuses only
+// if it differs.
+func warnReplacement(diags *diag.Diagnostics, p path.Path, change string, pending, known bool, what tenantState) {
 	name := p.String()
+	summary := fmt.Sprintf("Changing `%s` would replace this %s, so the apply will refuse it", name, what.noun)
+	if !known {
+		summary += " if the new value differs"
+		change += fmt.Sprintf(" If it turns out to be the current value, the %s isn't replaced, and the "+
+			"apply makes the rest of its changes in place.", what.noun)
+	}
 	optIn := fmt.Sprintf("To replace the %s on purpose, add `%s = true` to this resource and plan again.",
 		what.noun, allowReplaceAttribute)
 	if pending {
@@ -542,8 +569,7 @@ func warnReplacement(diags *diag.Diagnostics, p path.Path, change string, pendin
 			"inconsistent final plan\" before it changes the %[2]s. To replace the %[2]s on purpose, set "+
 			"`%[1]s = true` as a value known at plan time, and plan again.", allowReplaceAttribute, what.noun)
 	}
-	diags.AddAttributeWarning(p,
-		fmt.Sprintf("Changing `%s` would replace this %s, so the apply will refuse it", name, what.noun),
+	diags.AddAttributeWarning(p, summary,
 		fmt.Sprintf("%[1]s That can't be done in place: Terraform would destroy this %[2]s and create "+
 			"another. %[3]s\n\n"+
 			"So this plan shows the %[2]s updated in place, and the apply refuses that update before it "+

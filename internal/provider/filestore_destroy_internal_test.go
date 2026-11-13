@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -84,11 +85,17 @@ func TestFileStoreReplacementWarnsAboutEnforcedConsumers(t *testing.T) {
 		}
 	})
 	t.Run("refused replacement", func(t *testing.T) {
-		// Without the permission the apply refuses, and nothing is deleted,
-		// so the only warning is the guard's.
+		// Without the permission the apply refuses, and nothing is deleted
+		// unless `-replace` asks, which the plan can't see. So the consumer
+		// warning says it holds only then.
 		diags := modifyPlan(t, map[string]tftypes.Value{"share_type": str("high-speed")})
-		if diags.WarningsCount() != 1 || !strings.Contains(diags.Warnings()[0].Summary(), "would replace this file store") {
-			t.Errorf("warnings = %v, want only the refusal", diags)
+		var summaries []string
+		for _, w := range diags.Warnings() {
+			summaries = append(summaries, w.Summary())
+		}
+		if len(summaries) != 2 || !slices.ContainsFunc(summaries, func(s string) bool { return strings.Contains(s, "would replace this file store") }) ||
+			!slices.Contains(summaries, "If `-replace` replaces it anyway: Destroying fs1 will cut off 1 consumer(s)") {
+			t.Errorf("warnings = %q, want the refusal and the consumer warning for -replace", summaries)
 		}
 	})
 	t.Run("destroy", func(t *testing.T) {

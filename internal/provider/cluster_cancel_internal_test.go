@@ -564,8 +564,9 @@ func TestOnlyATimeoutSaysTheOperationKeepsRunning(t *testing.T) {
 }
 
 // planDestroyOf plans the destroy of a cluster that read prior at refresh, or
-// its replacement when replace is set.
-func planDestroyOf(t *testing.T, prior string, replace bool) resource.ModifyPlanResponse {
+// its replacement when replace is set, which the configuration permits when
+// permitted is set.
+func planDestroyOf(t *testing.T, prior string, replace, permitted bool) resource.ModifyPlanResponse {
 	t.Helper()
 	r := guardedModifier(t, &clusterResource{meta: testClusterMeta(t, "https://unused.invalid", time.Minute)},
 		clusterTenantState)
@@ -576,12 +577,15 @@ func planDestroyOf(t *testing.T, prior string, replace bool) resource.ModifyPlan
 	if replace {
 		values := clusterValues(verRef(1), verRef(1), 2, prior)
 		values["project"] = str("elsewhere")
-		values["allow_replace"] = tftypes.NewValue(tftypes.Bool, true)
+		if permitted {
+			values["allow_replace"] = tftypes.NewValue(tftypes.Bool, true)
+		}
 		planRaw, _ = testValue(t, r, values)
 		config = tfsdk.Config{Raw: planRaw, Schema: s.Schema}
 	}
 	plan := tfsdk.Plan{Raw: planRaw, Schema: s.Schema}
 	resp := resource.ModifyPlanResponse{Plan: plan}
+	freshPrivate(t, &resp.Private, nil)
 	if replace {
 		resp.RequiresReplace = path.Paths{path.Root("project")}
 	}
@@ -595,23 +599,31 @@ func planDestroyOf(t *testing.T, prior string, replace bool) resource.ModifyPlan
 // operation in flight.
 func TestPlanningTheDestroyOfABusyClusterSaysItCancels(t *testing.T) {
 	for _, tc := range []struct {
-		prior   string
-		replace bool
-		warns   bool
+		prior              string
+		replace, permitted bool
+		warns              bool
 	}{
-		{"updating", false, true},
-		{"creating", false, true},
-		{"updating", true, true},
-		{"active", false, false},
-		{"failed", false, false},
-		{"active", true, false},
+		{"updating", false, false, true},
+		{"creating", false, false, true},
+		{"updating", true, true, true},
+		{"active", false, false, false},
+		{"failed", false, false, false},
+		{"active", true, true, false},
+		// A replacement the configuration doesn't permit is refused at apply,
+		// and destroys nothing unless `-replace` asks. The warning says so.
+		{"updating", true, false, true},
 	} {
-		resp := planDestroyOf(t, tc.prior, tc.replace)
+		resp := planDestroyOf(t, tc.prior, tc.replace, tc.permitted)
 		if resp.Diagnostics.HasError() {
 			t.Fatalf("%s: plan: %v", tc.prior, resp.Diagnostics.Errors())
 		}
 		if got := hasWarning(resp.Diagnostics, "cancel"); got != tc.warns {
-			t.Errorf("%s, replace=%v: warned = %v, want %v: %v", tc.prior, tc.replace, got, tc.warns, resp.Diagnostics)
+			t.Errorf("%s, replace=%v, permitted=%v: warned = %v, want %v: %v", tc.prior, tc.replace, tc.permitted, got, tc.warns, resp.Diagnostics)
+		}
+		conditional := hasWarning(resp.Diagnostics, "If `-replace` replaces it anyway: Destroying")
+		if want := tc.warns && tc.replace && !tc.permitted; conditional != want {
+			t.Errorf("%s, replace=%v, permitted=%v: the warning is conditional on -replace = %v, want %v: %v",
+				tc.prior, tc.replace, tc.permitted, conditional, want, resp.Diagnostics)
 		}
 	}
 }
@@ -715,7 +727,7 @@ func TestPlanWarnsAboutTheDestroyItWillDo(t *testing.T) {
 			}
 			raw, s := testValue(t, r, values)
 			var diags diag.Diagnostics
-			warnOnBusyDestroy(context.Background(), tfsdk.State{Raw: raw, Schema: s.Schema}, &diags)
+			warnOnBusyDestroy(context.Background(), tfsdk.State{Raw: raw, Schema: s.Schema}, false, &diags)
 			if !hasWarning(diags, tc.want) || hasWarning(diags, tc.not) {
 				t.Errorf("warnings = %v, want one that says %q", diags.Warnings(), tc.want)
 			}

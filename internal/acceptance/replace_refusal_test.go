@@ -557,7 +557,11 @@ resource "terraform_data" "dependent" {
 	if strings.Contains(out, "terraform_data.dependent: Destroying") {
 		t.Errorf("the apply destroyed the dependent:\n%s", out)
 	}
-	if strings.Contains(out, "will cut off") {
+	// The store is destroyed only if `-replace` asks, so the consumer
+	// warning says so.
+	mustSay(t, "the apply", out, "Warning: If `-replace` replaces it anyway: Destroying "+name+" will cut off 1 consumer(s)",
+		"The apply refuses this replacement and destroys nothing, unless the plan was made with `-replace` for this store")
+	if strings.Contains(out, "Warning: Destroying") {
 		t.Errorf("the plan warned that the store's consumers lose access, though it deletes nothing:\n%s", out)
 	}
 	if n := r.served(http.MethodDelete, object) - deletes; n != 0 {
@@ -598,4 +602,183 @@ func TestAccARefusedChangeStillReplacesWhatReadsIt(t *testing.T) {
 		t.Errorf("the dependent is in state after the refusal:\n%s", list)
 	}
 	r.holds("after the refusal")
+}
+
+// fileStoreFrom is a file store whose share_type comes from a terraform_data
+// made in the same configuration, so a change to it is known only after
+// apply, and a terraform_data that reads its export server.
+func fileStoreFrom(name, class string, capacity int, extra string) string {
+	return fmt.Sprintf(`
+resource "terraform_data" "class" {
+  input = %[3]q
+}
+
+resource %[1]q "test" {
+  id           = %[2]q
+  display_name = "acceptance"
+  share_type   = terraform_data.class.output
+  capacity_gib = %[4]d
+  consumers    = %[5]s
+%[6]s
+}
+
+resource "terraform_data" "dependent" {
+  triggers_replace = %[1]s.test.preferred_export_location.server
+}
+`, fileStoreType, name, class, capacity, oneConsumer, extra)
+}
+
+// A refused attribute whose new value is known only after apply: the plan
+// warns that the apply refuses it if the value differs. If it turns out
+// unchanged, the apply makes the rest of the change in place. If it differs,
+// the apply refuses, sending nothing for the store. And under -replace the
+// store is replaced as the consumer warning says.
+func TestAccARefusedValueKnownOnlyAtApply(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS == "windows" {
+		skipTest(t, "the CLI sequence runs on unix")
+	}
+	start := func(t *testing.T, name string) (*refusalRun, string) {
+		t.Helper()
+		r := &refusalRun{cliRun: newCLIRun(t)}
+		r.write(fileStoreFrom(name, "general", 100, ""))
+		if out, ok := r.run("apply", "-auto-approve"); !ok {
+			t.Fatalf("the create failed:\n%s", out)
+		}
+		t.Cleanup(func() {
+			if out, ok := r.run("destroy", "-auto-approve", "-refresh=false"); !ok {
+				t.Errorf("cleanup destroy failed:\n%s", out)
+			}
+		})
+		return r, fileStorePath(map[string]string{"region": "us-texas-1", "project": "demo", "id": name})
+	}
+	warned := "Warning: Changing `share_type` would replace this file store, so the apply will refuse it if the new value differs"
+
+	t.Run("unchanged", func(t *testing.T) {
+		t.Parallel()
+		const name = "acc-refusal-late-same"
+		r, object := start(t, name)
+		// A new terraform_data with the same output: known only at apply.
+		r.write(strings.Replace(fileStoreFrom(name, "general", 200, ""), "input = \"general\"",
+			"input = \"general\"\n  triggers_replace = [\"again\"]", 1))
+		patches := r.served(http.MethodPatch, object)
+		out, code := r.runCode("apply", "-auto-approve")
+		if code != 0 {
+			t.Fatalf("the apply exited %d, want 0:\n%s", code, out)
+		}
+		mustSay(t, "the apply", out, warned, "If it turns out to be the current value, the file store isn't replaced, and the apply makes the rest of its changes in place")
+		if r.served(http.MethodPatch, object) == patches {
+			t.Error("the capacity change wasn't sent")
+		}
+		state, _ := r.run("state", "show", fileStoreType+".test")
+		mustSay(t, "the state", state, "capacity_gib = 200", `share_type = "general"`)
+		if out, code := r.runCode("plan", "-detailed-exitcode"); code != 0 {
+			t.Errorf("the plan after exited %d, want 0:\n%s", code, out)
+		}
+	})
+	t.Run("changed", func(t *testing.T) {
+		t.Parallel()
+		const name = "acc-refusal-late-other"
+		r, object := start(t, name)
+		r.write(fileStoreFrom(name, "high-speed", 200, ""))
+		before := map[string]int{http.MethodPatch: r.served(http.MethodPatch, object), http.MethodDelete: r.served(http.MethodDelete, object)}
+		out, code := r.runCode("apply", "-auto-approve")
+		if code != 1 {
+			t.Errorf("the apply exited %d, want 1:\n%s", code, out)
+		}
+		mustSay(t, "the apply", out, warned, "Error: Changing `share_type` would replace this file store, so the apply refused it")
+		for method, n := range before {
+			if got := r.served(method, object); got != n {
+				t.Errorf("the apply sent %d %s for the store", got-n, method)
+			}
+		}
+		state, _ := r.run("state", "show", fileStoreType+".test")
+		mustSay(t, "the state", state, "capacity_gib = 100", `share_type = "general"`)
+	})
+	t.Run("-replace", func(t *testing.T) {
+		t.Parallel()
+		const name = "acc-refusal-late-replace"
+		r, object := start(t, name)
+		r.write(strings.Replace(fileStoreFrom(name, "general", 100, ""), "terraform_data.class.output", `"high-speed"`, 1))
+		out, code := r.runCode("plan", "-replace="+fileStoreType+".test")
+		if code != 0 {
+			t.Fatalf("the plan exited %d:\n%s", code, out)
+		}
+		mustSay(t, "the plan", out, "Warning: If `-replace` replaces it anyway: Destroying "+name+" will cut off 1 consumer(s)",
+			"unless the plan was made with `-replace` for this store. Then Terraform destroys it and creates another")
+		deletes := r.served(http.MethodDelete, object)
+		out, code = r.runCode("apply", "-auto-approve", "-replace="+fileStoreType+".test")
+		if code != 0 {
+			t.Fatalf("apply -replace exited %d:\n%s", code, out)
+		}
+		if r.served(http.MethodDelete, object) == deletes {
+			t.Error("apply -replace sent no delete for the store")
+		}
+		state, _ := r.run("state", "show", fileStoreType+".test")
+		mustSay(t, "the state", state, `share_type = "high-speed"`)
+	})
+}
+
+// A cluster mid-operation with a refused replacement, a move to another
+// project here: the plan warns that destroying it would cancel the operation
+// only if `-replace` replaces it anyway, and `apply -replace` does: it
+// cancels, deletes and creates the cluster in the new project.
+func TestAccARefusedReplacementOfABusyClusterWarnsForReplace(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS == "windows" {
+		skipTest(t, "the CLI sequence runs on unix")
+	}
+	const name = "acc-refusal-busy"
+	other := ownProject(t, name+"-p")
+	config := func(project, display string) string {
+		line := ""
+		if project != "" {
+			line = fmt.Sprintf("  project = %q\n", project)
+		}
+		return fmt.Sprintf(`
+resource %q "test" {
+  id           = %q
+  cluster_type = %q
+  display_name = %q
+%s  node_pool = {
+    "gpu-workers" = { node_count = 2 }
+  }
+}
+`, clusterType, name, clusterTypeV2, display, line)
+	}
+	c := newCLIRun(t)
+	r := &refusalRun{cliRun: c}
+	t.Cleanup(func() {
+		if out, ok := c.run("destroy", "-auto-approve", "-refresh=false"); !ok {
+			t.Errorf("cleanup destroy failed:\n%s", out)
+		}
+	})
+	clusterOutside(t, name, neverSettles, "creating")
+	c.write(config("", neverSettles))
+	if out, ok := c.run("import", clusterAddr, scopedImport(name)); !ok {
+		t.Fatalf("the import failed:\n%s", out)
+	}
+
+	c.write(config(other, "acceptance"))
+	warned := "Warning: If `-replace` replaces it anyway: Destroying " + name + " will cancel the operation it is running"
+	out, code := r.runCode("plan")
+	if code != 0 {
+		t.Fatalf("the plan exited %d:\n%s", code, out)
+	}
+	mustSay(t, "the plan", out, warned,
+		"The apply refuses this replacement and destroys nothing, unless the plan was made with `-replace` for this cluster. Then Terraform destroys it and creates another",
+		"Warning: Changing `project` would replace this cluster, so the apply will refuse it")
+
+	old := clusterAPIPath(name)
+	cancels, deletes := r.served(http.MethodPost, old+"/cancel"), r.served(http.MethodDelete, old)
+	out, code = r.runCode("apply", "-auto-approve", "-replace="+clusterAddr)
+	if code != 0 {
+		t.Fatalf("apply -replace exited %d:\n%s", code, out)
+	}
+	mustSay(t, "apply -replace", out, warned)
+	if r.served(http.MethodPost, old+"/cancel") == cancels || r.served(http.MethodDelete, old) == deletes {
+		t.Error("apply -replace didn't cancel and delete the busy cluster")
+	}
+	state, _ := c.run("state", "show", clusterAddr)
+	mustSay(t, "the state", state, fmt.Sprintf("project = %q", other))
 }
