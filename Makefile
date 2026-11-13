@@ -461,6 +461,14 @@ install-syft-test: ## Refuse a syft download whose checksum isn't the pinned one
 workflow-actions-test: ## Refuse an unpinned action, a kept token or keyring, or a vulncheck that skips the release Go
 	./scripts/tests/test-workflow-actions.sh
 
+.PHONY: cli-releases-check
+cli-releases-check: ## Fail when ci.yml's acceptance matrices aren't the two newest Terraform and OpenTofu releases (reads both release sites)
+	./scripts/check-cli-releases.sh
+
+.PHONY: cli-releases-check-test
+cli-releases-check-test: ## Refuse a Terraform or OpenTofu matrix behind a new patch or minor, from local release indexes
+	./scripts/tests/test-cli-releases.sh
+
 .PHONY: major-release-gate-test
 major-release-gate-test: ## Verify the major version gate refuses and explains
 	./scripts/tests/test-major-release-gate.sh

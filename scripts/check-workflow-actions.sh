@@ -11,8 +11,10 @@
 # 4. A release toolchain named anywhere but .go-release-version, or a `make
 #    vulncheck` that doesn't scan under it. govulncheck only reports standard
 #    library advisories for the Go it runs under.
-# 5. A setup-terraform or setup-opentofu without an exact version, or two jobs
-#    on different versions.
+# 5. A setup-terraform or setup-opentofu without an exact version. Terraform
+#    or OpenTofu versions other than TESTING.md's two adjacent releases, a
+#    matrix check name that doesn't show the version, or a job outside the
+#    matrix on the older one.
 #
 # Usage: scripts/check-workflow-actions.sh [repository root]
 set -euo pipefail
@@ -195,11 +197,17 @@ awk '
   END { exit !found }' "$root/.github/workflows/ci.yml" 2>/dev/null ||
   report "ci.yml's vulncheck job doesn't run make vulncheck"
 
-# 5. Terraform and OpenTofu pinned to one exact version each.
+# 5. Terraform and OpenTofu pinned to exact versions. Each runs the two
+# releases TESTING.md names: an acceptance matrix of both, its check names
+# showing which, and every other job on the newer one. Which releases are
+# newest needs the network, so the nightly's make cli-releases-check holds
+# that, not this.
 exact='["\047]?[0-9]+\.[0-9]+\.[0-9]+["\047]?([[:space:]]|$)'
 for cli in terraform:hashicorp/setup-terraform tofu:opentofu/setup-opentofu; do
-  key="${cli%%:*}_version" action="${cli#*:}"
-  versions=()
+  name="${cli%%:*}" action="${cli#*:}"
+  key="${name}_version"
+  from_matrix='\$\{\{[[:space:]]*matrix\.'"$name"'[[:space:]]*\}\}'
+  pinned=() listed=()
 
   for file in "${files[@]}"; do
     rel="${file#"$root"/}"
@@ -208,24 +216,65 @@ for cli in terraform:hashicorp/setup-terraform tofu:opentofu/setup-opentofu; do
       report "$rel:$line uses $action but doesn't pin $key to an exact version such as 1.2.3"
     done < <(steps "$file" '
       step ~ /uses["\047]?[[:space:]]*:[[:space:]]*["\047]?'"${action//\//\\/}"'@/ &&
-      step !~ /'"$key"'["\047]?[[:space:]]*:[[:space:]]*'"$exact"'/')
+      step !~ /'"$key"'["\047]?[[:space:]]*:[[:space:]]*('"$exact|$from_matrix"')/')
 
-    while IFS= read -r version; do versions+=("$version"); done < <(awk -v key="$key" '
+    while IFS= read -r version; do pinned+=("$version"); done < <(awk -v key="$key" '
       /^[[:space:]]*#/ { next }
       {
         s = $0; sub(/[[:space:]]#.*$/, "", s)
         if (!match(s, "^[[:space:]]*[\"\047]?" key "[\"\047]?[[:space:]]*:[[:space:]]*")) next
-        v = substr(s, RLENGTH + 1); gsub(/[\"\047[:space:]]/, "", v); print v
+        v = substr(s, RLENGTH + 1); gsub(/[\"\047[:space:]]/, "", v)
+        if (v !~ /^\$\{\{/) print v
       }' "$file")
+
+    # One row per job that takes the version from its matrix: the line, then
+    # whether its name shows the version, then the matrix list.
+    while IFS='|' read -r line named list; do
+      [ "$named" = yes ] || report "$rel:$line runs $name from its matrix, but its name doesn't show \${{ matrix.$name }}"
+      entries=()
+      IFS=',' read -r -a entries <<< "$list"
+      [ "${#entries[@]}" -gt 0 ] || report "$rel:$line runs $name from its matrix, but matrix.$name isn't a [\"1.2.3\", ...] list"
+      for entry in "${entries[@]}"; do
+        if [[ "$entry" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then listed+=("$entry")
+        else report "$rel:$line lists $name \"$entry\", not an exact version such as 1.2.3"; fi
+      done
+    done < <(awk -v name="$name" -v key="$key" '
+      function flush() {
+        if (job != "" && uses) print line "|" (named ? "yes" : "no") "|" list
+        named = 0; uses = 0; list = ""
+      }
+      /^[[:space:]]*#/ { next }
+      { s = $0; sub(/[[:space:]]#.*$/, "", s) }
+      s ~ /^jobs:/ { injobs = 1; next }
+      injobs && s ~ /^  [A-Za-z0-9_-]+:[[:space:]]*$/ { flush(); job = s; line = NR; next }
+      job != "" && s ~ /^    name:/ && index(s, "matrix." name) { named = 1 }
+      job != "" && match(s, "^[[:space:]]+" name ":[[:space:]]*\\[") {
+        v = s; sub(/^[^\[]*\[/, "", v); sub(/\].*$/, "", v); gsub(/[\"\047[:space:]]/, "", v); list = v
+      }
+      job != "" && match(s, key "[\"\047]?[[:space:]]*:[[:space:]]*\\$\\{\\{[[:space:]]*matrix\\." name) { uses = 1 }
+      END { flush() }' "$file")
   done
 
-  if [ "${#versions[@]}" -gt 0 ] && [ "$(printf '%s\n' "${versions[@]}" | sort -u | wc -l)" -gt 1 ]; then
-    report "the workflows pin more than one ${cli%%:*} version: $(printf '%s\n' "${versions[@]}" | sort -u | tr '\n' ' ')"
+  versions=()
+  while IFS= read -r version; do [ -n "$version" ] && versions+=("$version"); done < <(
+    printf '%s\n' ${pinned[@]+"${pinned[@]}"} ${listed[@]+"${listed[@]}"} | sort -u -V)
+  [ "${#versions[@]}" -gt 1 ] || continue
+  older="${versions[0]}" newer="${versions[${#versions[@]}-1]}"
+  IFS=. read -r older_major older_minor _ <<< "$older"
+  IFS=. read -r newer_major newer_minor _ <<< "$newer"
+  if [ "${#versions[@]}" -gt 2 ]; then
+    report "the workflows pin ${#versions[@]} $name versions (${versions[*]}), and TESTING.md allows two"
+  elif [ "$older_major" != "$newer_major" ] || [ $((10#$newer_minor - 10#$older_minor)) -ne 1 ]; then
+    report "the workflows pin $name $older and $newer, which aren't two adjacent minor releases"
   fi
+  for version in ${pinned[@]+"${pinned[@]}"}; do
+    [ "$version" = "$newer" ] ||
+      report "a job outside the acceptance matrix pins $name $version, not the newer release, $newer"
+  done
 done
 
 if [ "$problems" -gt 0 ]; then
   echo "workflow actions: $problems problem(s)" >&2
   exit 1
 fi
-echo "workflow actions: every action is pinned, every checkout drops its token, the signing job keeps no keyring and restores no cache, vulncheck scans the release Go, terraform and tofu are pinned"
+echo "workflow actions: every action is pinned, every checkout drops its token, the signing job keeps no keyring and restores no cache, vulncheck scans the release Go, terraform and tofu are pinned to the releases TESTING.md names"

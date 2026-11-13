@@ -155,9 +155,55 @@ setup
 edit workflows/ci.yml 's{terraform_version: "[0-9][^"]*"}{terraform_version: "~1.16"}'
 expect_fail "a terraform_version range was accepted" "doesn't pin terraform_version"
 
-# Two jobs on two versions measure two different things under one name.
+# A matrix entry that's a range is no pin either.
 setup
-edit workflows/nightly.yml 's{terraform_version: "[^"]*"}{terraform_version: "1.15.0"}'
-expect_fail "two terraform versions across workflows were accepted" "more than one terraform version"
+edit workflows/ci.yml 's{terraform: \["1\.16\.\d+"}{terraform: ["1.16.*"}'
+expect_fail "a terraform matrix range was accepted" 'lists terraform "1.16.*"'
+
+# Two versions under one check name measure two things and report one.
+setup
+edit workflows/ci.yml 's{name: acceptance under Terraform \$\{\{ matrix\.terraform \}\}}{name: acceptance}'
+expect_fail "a matrix check name without its version was accepted" "doesn't show"
+
+# Only the two newest minors, so a third version or a gap between them is
+# testing a release HashiCorp no longer fixes.
+setup
+edit workflows/ci.yml 's{terraform: \["1\.16\.\d+",}{terraform: ["1.15.9", "1.16.7",}'
+expect_fail "three terraform versions were accepted" "TESTING.md allows two"
+
+setup
+edit workflows/ci.yml 's{terraform: \["1\.16\.\d+"}{terraform: ["1.15.9"}'
+expect_fail "terraform versions two minors apart were accepted" "aren't two adjacent minor releases"
+
+setup
+edit workflows/ci.yml 's{terraform: \["1\.16\.\d+"}{terraform: ["1.17.0"}'
+expect_fail "two patches of one minor were accepted" "aren't two adjacent minor releases"
+
+# A job outside the matrix on the older release tests what the matrix
+# already covers and skips the newer one.
+setup
+edit workflows/nightly.yml 's{terraform_version: "[^"]*"}{terraform_version: "1.16.7"}'
+expect_fail "a job outside the matrix on the older release was accepted" "not the newer release"
+
+# OpenTofu follows the same rule, with its own matrix.
+setup
+edit workflows/ci.yml 's{tofu: \["1\.12\.\d+"}{tofu: ["1.12.*"}'
+expect_fail "a tofu matrix range was accepted" 'lists tofu "1.12.*"'
+
+setup
+edit workflows/ci.yml 's{name: acceptance under OpenTofu \$\{\{ matrix\.tofu \}\}}{name: acceptance under OpenTofu}'
+expect_fail "a tofu matrix check name without its version was accepted" "doesn't show \${{ matrix.tofu }}"
+
+setup
+edit workflows/ci.yml 's{tofu: \["1\.12\.\d+",}{tofu: ["1.11.6", "1.12.12",}'
+expect_fail "three tofu versions were accepted" "pin 3 tofu versions"
+
+setup
+edit workflows/ci.yml 's{tofu: \["1\.12\.\d+"}{tofu: ["1.11.6"}'
+expect_fail "tofu versions two minors apart were accepted" "pin tofu 1.11.6 and 1.13.9, which aren't two adjacent"
+
+setup
+edit workflows/nightly.yml 's{tofu_version: "[^"]*"}{tofu_version: "1.12.12"}'
+expect_fail "a tofu job outside the matrix on the older release was accepted" "pins tofu 1.12.12, not the newer release"
 
 echo "workflow actions test: PASS"

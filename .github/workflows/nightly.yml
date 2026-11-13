@@ -45,20 +45,21 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
-      # Both CLIs pinned, as ci.yml pins terraform, so a nightly that turns
-      # red is the provider's change or the fake's and not a CLI that shipped
-      # that day. scripts/check-workflow-actions.sh holds every job to one
-      # version of each. Raise them deliberately, in every workflow at once.
+      # Both CLIs pinned, as ci.yml pins them, so a nightly that turns red is
+      # the provider's change or the fake's and not a CLI that shipped that
+      # day. The nightly runs the newer of the two versions of each CLI that
+      # ci.yml tests. scripts/check-workflow-actions.sh holds the pins to
+      # TESTING.md's rule. Move them deliberately, in every workflow at once.
       - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e  # v4.0.1
         id: setup-terraform
         if: matrix.cli == 'terraform'
         with:
-          terraform_version: "1.16.5"
+          terraform_version: "1.17.1"
           terraform_wrapper: false
       - uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4  # v2.0.2
         if: matrix.cli == 'tofu'
         with:
-          tofu_version: "1.12.6"
+          tofu_version: "1.13.9"
           tofu_wrapper: false
       - name: demo
         env:
@@ -124,6 +125,19 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           exit "$status"
 
+  # The two newest Terraform and OpenTofu releases against the ones ci.yml
+  # tests. A new release means moving the pins, and this turns the nightly
+  # red until they move. TESTING.md says how.
+  cli-releases:
+    name: Terraform and OpenTofu releases
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: ci.yml tests the two newest Terraform and OpenTofu releases
+        run: make cli-releases-check
+
   # One open issue while the key is due to rotate, so the yearly rotation
   # reaches a person rather than a log annotation. Its own job, so the
   # issues token never sits in a job that runs make. It opens the issue, or
@@ -159,7 +173,7 @@ jobs:
   # cancelled or skipped run says nothing either way.
   report:
     name: report the result
-    needs: [demo, signing-key]
+    needs: [demo, signing-key, cli-releases]
     if: ${{ always() && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     permissions:
@@ -172,15 +186,16 @@ jobs:
           GH_REPO: ${{ github.repository }}
           DEMO: ${{ needs.demo.result }}
           SIGNING_KEY: ${{ needs.signing-key.result }}
+          CLI_RELEASES: ${{ needs.cli-releases.result }}
           RUN_ID: ${{ github.run_id }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           label="nightly-failing"
-          # Red if either job failed, green only if both passed.
+          # Red if any job failed, green only if all of them passed.
           RESULT=other
-          if [[ "$DEMO" == failure || "$SIGNING_KEY" == failure ]]; then
+          if [[ "$DEMO" == failure || "$SIGNING_KEY" == failure || "$CLI_RELEASES" == failure ]]; then
             RESULT=failure
-          elif [[ "$DEMO" == success && "$SIGNING_KEY" == success ]]; then
+          elif [[ "$DEMO" == success && "$SIGNING_KEY" == success && "$CLI_RELEASES" == success ]]; then
             RESULT=success
           fi
           number="$(gh issue list --state open --label "$label" --json number --jq '.[0].number // empty')"
