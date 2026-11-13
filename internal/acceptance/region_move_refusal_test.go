@@ -403,3 +403,73 @@ func TestAccARefusedMoveKeepsComputedValuesForDependents(t *testing.T) {
 		t.Errorf("terraform_data.dependent is %s, was %s: it was replaced", after, before)
 	}
 }
+
+// Values known only after apply, around a region move. A region that
+// resolves to the current one applies as a plain update. A share_type that
+// resolves to the current one beside a refused region move leaves the region
+// refusal standing at apply. Neither fails with "Provider produced
+// inconsistent final plan", and the resource reading the store's export
+// server is kept in both.
+func TestAccARegionMoveWithValuesKnownOnlyAtApply(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS == "windows" {
+		skipTest(t, "the CLI sequence runs on unix")
+	}
+	for _, tc := range []struct {
+		name, region, shareType, display string
+		code                             int
+		say                              string
+	}{
+		{"region resolves to the current one", "terraform_data.v.output.region", `"general"`, "b", 0, "Apply complete!"},
+		{"share_type resolves equal beside a refused move", `"us-elsewhere-1"`, "terraform_data.v.output.share_type", "a", 1,
+			"so the apply refused the change"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			p := ownProject(t, "acc-rmove-unk-"+tc.display)
+			config := func(trigger, region, shareType, display string) string {
+				return inProject(p, fmt.Sprintf(`
+resource "terraform_data" "v" {
+  input            = { region = "us-texas-1", share_type = "general" }
+  triggers_replace = [%q]
+}
+resource %q "test" {
+  id           = "%s-fs"
+  display_name = %q
+  region       = %s
+  share_type   = %s
+  capacity_gib = 100
+  consumers    = %s
+}
+resource "terraform_data" "dependent" {
+  triggers_replace = %s.test.preferred_export_location.server
+}
+`, trigger, fileStoreType, p, display, region, shareType, oneConsumer, fileStoreType))
+			}
+			c := newCLIRun(t)
+			r := &refusalRun{cliRun: c}
+			c.write(config("a", `"us-texas-1"`, `"general"`, "a"))
+			if out, ok := c.run("apply", "-auto-approve"); !ok {
+				t.Fatalf("the create failed:\n%s", out)
+			}
+			t.Cleanup(func() {
+				if out, ok := c.run("destroy", "-auto-approve", "-refresh=false"); !ok {
+					t.Errorf("cleanup destroy failed:\n%s", out)
+				}
+			})
+			before := r.dependentID("after the create")
+			c.write(config("b", tc.region, tc.shareType, tc.display))
+			out, code := r.runCode("apply", "-auto-approve")
+			if code != tc.code {
+				t.Errorf("the apply exited %d, want %d:\n%s", code, tc.code, out)
+			}
+			mustSay(t, "the apply", out, tc.say)
+			if strings.Contains(out, "inconsistent final plan") {
+				t.Errorf("the apply failed on an inconsistent final plan:\n%s", out)
+			}
+			if after := r.dependentID("after the apply"); after != before {
+				t.Errorf("terraform_data.dependent is %s, was %s: it was replaced", after, before)
+			}
+		})
+	}
+}
