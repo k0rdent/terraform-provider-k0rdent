@@ -31,7 +31,7 @@ How to read a row:
 
 | Attribute | Kind | Changes | Import | Update |
 | --- | --- | --- | --- | --- |
-| `allow_replace` | optional | in place | **gap** | `TestReplacementsFollowTheDocumentedRules` |
+| `allow_replace` | optional | in place | **gap** | `TestAccARegionMoveIsRefusedAtApply`, `TestReplacementsFollowTheDocumentedRules` |
 | `capacity_gib` | required | in place | `TestAccFileStoreUpdateWaitsForACreatingStore`, `TestAccImport`, `TestAccQueryGeneratesConfigThatPlansClean`, `TestReplacementsFollowTheDocumentedRules` | `TestAccARefusedReplacementKeepsComputedValuesForDependents`, `TestAccARefusedValueKnownOnlyAtApply`, `TestAccFileStore`, `TestAccFileStoreAnUnrelatedRefusalDoesNotSuppressDrift`, `TestAccFileStoreFailedExpansionFailsTheApply`, `TestAccFileStoreRenamePlansOnlyTheNameAndRevision`, `TestAccFileStoreShareTypeReplaces`, `TestAccFileStoreUnresolvableDriftDoesNotBlockTheStore`, `TestReplacementsFollowTheDocumentedRules` |
 | `consumer_status` | computed | n/a | `TestAccImport`, `TestAccQueryGeneratesConfigThatPlansClean`, `TestReplacementsFollowTheDocumentedRules` | n/a (computed only) |
 | `consumer_status.resolved_addresses` | computed | n/a | `TestAccImport`, `TestAccQueryGeneratesConfigThatPlansClean`, `TestReplacementsFollowTheDocumentedRules` | n/a (computed only) |
@@ -46,7 +46,7 @@ How to read a row:
 | `consumers.network.type` | required | in place | **gap** | `TestAccFileStoreUngrantableGroupFailsThePlan` |
 | `consumers.type` | optional+computed | in place | `TestAccImport`, `TestAccQueryGeneratesConfigThatPlansClean`, `TestReplacementsFollowTheDocumentedRules` | `TestAccFileStoreUngrantableGroupFailsThePlan` |
 | `description` | optional | in place | **gap** | **gap** |
-| `display_name` | optional | in place | `TestAccFileStoreUpdateWaitsForACreatingStore`, `TestAccImport`, `TestAccQueryGeneratesConfigThatPlansClean`, `TestReplacementsFollowTheDocumentedRules` | `TestAccFileStore`, `TestAccFileStoreRenamePlansOnlyTheNameAndRevision`, `TestAccFileStoreUngrantableGroupFailsThePlan`, `TestReplacementsFollowTheDocumentedRules` |
+| `display_name` | optional | in place | `TestAccFileStoreUpdateWaitsForACreatingStore`, `TestAccImport`, `TestAccQueryGeneratesConfigThatPlansClean`, `TestReplacementsFollowTheDocumentedRules` | `TestAccARegionMoveWithValuesKnownOnlyAtApply`, `TestAccFileStore`, `TestAccFileStoreRenamePlansOnlyTheNameAndRevision`, `TestAccFileStoreUngrantableGroupFailsThePlan`, `TestReplacementsFollowTheDocumentedRules` |
 | `etag` | computed | n/a | `TestAccImport`, `TestAccQueryGeneratesConfigThatPlansClean`, `TestReplacementsFollowTheDocumentedRules` | n/a (computed only) |
 | `export_locations` | computed | n/a | `TestAccImport`, `TestAccQueryGeneratesConfigThatPlansClean`, `TestReplacementsFollowTheDocumentedRules` | n/a (computed only) |
 | `export_locations.admin_only` | computed | n/a | `TestAccImport`, `TestAccQueryGeneratesConfigThatPlansClean`, `TestReplacementsFollowTheDocumentedRules` | n/a (computed only) |
@@ -74,7 +74,7 @@ How to read a row:
 
 | Attribute | Kind | Changes | Import | Update |
 | --- | --- | --- | --- | --- |
-| `allow_replace` | optional | in place | **gap** | `TestReplacementsFollowTheDocumentedRules`, `TestSSHKeyPlansFollowTheDocumentedRules` |
+| `allow_replace` | optional | in place | **gap** | `TestAccARegionMoveIsRefusedAtApply`, `TestReplacementsFollowTheDocumentedRules`, `TestSSHKeyPlansFollowTheDocumentedRules` |
 | `cluster_type` | required | sometimes replaces | `TestAccAKeyChangedAfterAnImportReplaces`, `TestAccAKeyUnknownAtPlanThatCantBeCheckedStopsTheApply`, `TestAccARevokedKeyIsStillCheckedAfterAnImport`, `TestAccImport`, `TestAccKeysThatCantBeCheckedStopTheApply`, `TestAccQueryGeneratesConfigThatPlansClean`, `TestAccUIDAndAPIEndpointComeFromThePlatform`, `TestReplacementsFollowTheDocumentedRules`, `TestSSHKeyPlansFollowTheDocumentedRules` | `TestReplacementsFollowTheDocumentedRules` (update and replace) |
 | `cluster_type_resolved` | computed | n/a | `TestAccAKeyChangedAfterAnImportReplaces`, `TestAccAKeyUnknownAtPlanThatCantBeCheckedStopsTheApply`, `TestAccARevokedKeyIsStillCheckedAfterAnImport`, `TestAccImport`, `TestAccImportAPinToTheCurrentVersion`, `TestAccKeysThatCantBeCheckedStopTheApply`, `TestAccQueryGeneratesConfigThatPlansClean`, `TestAccUIDAndAPIEndpointComeFromThePlatform`, `TestReplacementsFollowTheDocumentedRules`, `TestSSHKeyPlansFollowTheDocumentedRules` | n/a (computed only) |
 | `description` | optional | in place | **gap** | `TestAccAMetadataChangeToAFailedNetworkOrInstanceGroup`, `TestAccAMetadataChangeToAnActiveNetworkOrInstanceGroup`, `TestAccAnEmptyDisplayNameSurvivesAnUpdate` |
@@ -103,7 +103,7 @@ How to read a row:
 
 | Attribute | Kind | Changes | Import | Update |
 | --- | --- | --- | --- | --- |
-| `allow_replace` | optional | in place | **gap** | `TestAccAClusterReplacementIsRefusedAtApply`, `TestReplacementsFollowTheDocumentedRules`, `TestSSHKeyPlansFollowTheDocumentedRules` |
+| `allow_replace` | optional | in place | **gap** | `TestAccAClusterReplacementIsRefusedAtApply`, `TestAccARegionMoveIsRefusedAtApply`, `TestReplacementsFollowTheDocumentedRules`, `TestSSHKeyPlansFollowTheDocumentedRules` |
 | `api_endpoint` | computed | n/a | `TestAccAKeyChangedAfterAnImportReplaces`, `TestAccAKeyUnknownAtPlanThatCantBeCheckedStopsTheApply`, `TestAccARevokedKeyIsStillCheckedAfterAnImport`, `TestAccCancelActionWithNothingToCancelSucceeds`, `TestAccImport`, `TestAccImportAPinToTheCurrentVersion`, `TestAccImportClusterSparsePools`, `TestAccImportForEachByIdentity`, `TestAccImportKeepsAnOlderClusterTypePin`, `TestAccKeysThatCantBeCheckedStopTheApply`, `TestAccQueryGeneratesConfigThatPlansClean`, `TestAccUIDAndAPIEndpointComeFromThePlatform`, `TestReplacementsFollowTheDocumentedRules`, `TestSSHKeyPlansFollowTheDocumentedRules` | n/a (computed only) |
 | `cluster_type` | required | sometimes replaces | `TestAccAKeyChangedAfterAnImportReplaces`, `TestAccAKeyUnknownAtPlanThatCantBeCheckedStopsTheApply`, `TestAccARevokedKeyIsStillCheckedAfterAnImport`, `TestAccCancelActionWithNothingToCancelSucceeds`, `TestAccImport`, `TestAccImportClusterSparsePools`, `TestAccImportForEachByIdentity`, `TestAccImportKeepsAnOlderClusterTypePin`, `TestAccKeysThatCantBeCheckedStopTheApply`, `TestAccQueryGeneratesConfigThatPlansClean`, `TestAccUIDAndAPIEndpointComeFromThePlatform`, `TestReplacementsFollowTheDocumentedRules`, `TestSSHKeyPlansFollowTheDocumentedRules` | `TestAccARefusedVersionChangeDoesNotStopADestroy` (update), `TestAccARefusedVersionChangeWarnsAtPlanAndFailsAtApply` (update), `TestAccAfterACancelledUpgrade` (update), `TestAccClusterUpgradeAndScaleDownInOneApply` (update), `TestAccClusterUpgradeOrdersScalesByBounds` (update), `TestAccClusterUpgradeRefusesARouteAtApply` (update), `TestAccClusterUpgradeStopsAtAFailedStep` (update), `TestAccClusterUpgradeThatBringsAPoolMovesTheNodeTotal` (update), `TestAccClusterUpgradeWithACountKnownOnlyAtApply` (update), `TestAccClusterUpgradesAcrossTwoVersions` (update), `TestAccClusterUpgradesToAVersionKnownOnlyAtApply` (update), `TestAccUpgradeWaitsOutAnotherRunsOperation` (update), `TestReplacementsFollowTheDocumentedRules` (update and replace) |
 | `cluster_type_resolved` | computed | n/a | `TestAccAKeyChangedAfterAnImportReplaces`, `TestAccAKeyUnknownAtPlanThatCantBeCheckedStopsTheApply`, `TestAccARevokedKeyIsStillCheckedAfterAnImport`, `TestAccCancelActionWithNothingToCancelSucceeds`, `TestAccImport`, `TestAccImportAPinToTheCurrentVersion`, `TestAccImportClusterSparsePools`, `TestAccImportForEachByIdentity`, `TestAccImportKeepsAnOlderClusterTypePin`, `TestAccKeysThatCantBeCheckedStopTheApply`, `TestAccQueryGeneratesConfigThatPlansClean`, `TestAccUIDAndAPIEndpointComeFromThePlatform`, `TestReplacementsFollowTheDocumentedRules`, `TestSSHKeyPlansFollowTheDocumentedRules` | n/a (computed only) |
@@ -141,7 +141,7 @@ How to read a row:
 
 | Attribute | Kind | Changes | Import | Update |
 | --- | --- | --- | --- | --- |
-| `allow_replace` | optional | in place | **gap** | `TestReplacementsFollowTheDocumentedRules` |
+| `allow_replace` | optional | in place | **gap** | `TestAccAProjectMoveIsRefusedAtApply`, `TestAccARegionMoveIsRefusedAtApply`, `TestReplacementsFollowTheDocumentedRules` |
 | `cluster_id` | computed | n/a | **gap** | n/a (computed only) |
 | `description` | optional | in place | **gap** | `TestAccNetworkClearsMetadata` |
 | `display_name` | optional | in place | `TestAccImport`, `TestAccNetworkImportDoesNotReplace`, `TestAccQueryGeneratesConfigThatPlansClean`, `TestReplacementsFollowTheDocumentedRules` | `TestAccAMetadataChangeToAFailedNetworkOrInstanceGroup`, `TestAccARefusedReplacementLeavesOtherChangesToTheApply`, `TestAccNetworkClearsMetadata`, `TestAccNetworkEVPN`, `TestAccNetworkRenamePlansOnlyTheName`, `TestAccNetworkReplacementNeedsThePermission`, `TestAccNetworkWithAGeneratedIDChangesInPlace`, `TestAccTheSameIDInTwoProjectsStaysApart`, `TestReplacementsFollowTheDocumentedRules` |
@@ -177,7 +177,7 @@ How to read a row:
 
 | Attribute | Kind | Changes | Import | Update |
 | --- | --- | --- | --- | --- |
-| `allow_replace` | optional | in place | **gap** | `TestReplacementsFollowTheDocumentedRules` |
+| `allow_replace` | optional | in place | **gap** | `TestAccARegionMoveIsRefusedAtApply`, `TestReplacementsFollowTheDocumentedRules` |
 | `description` | optional | in place | `TestAccImport`, `TestReplacementsFollowTheDocumentedRules` | `TestAccProject`, `TestAccProjectWithoutTheOptionalFields`, `TestReplacementsFollowTheDocumentedRules` |
 | `display_name` | optional | in place | `TestAccImport`, `TestAccQueryGeneratesConfigThatPlansClean`, `TestReplacementsFollowTheDocumentedRules` | `TestAccProject`, `TestAccProjectRenamePlansOnlyTheName`, `TestAccProjectReplacementNeedsThePermission`, `TestAccProjectWithoutTheOptionalFields`, `TestReplacementsFollowTheDocumentedRules` |
 | `id` | optional+computed | replaces | `TestAccImport`, `TestAccQueryGeneratesConfigThatPlansClean`, `TestReplacementsFollowTheDocumentedRules` | n/a (always replaces) |
@@ -226,7 +226,7 @@ How to read a row:
 | --- | --- | --- | --- | --- |
 | `address_pool` | required | replaces | `TestAccImport`, `TestAccQueryGeneratesConfigThatPlansClean`, `TestAccSubnetChangeAfterQuietImportReplaces`, `TestAccSubnetImportDoesNotReplace`, `TestReplacementsFollowTheDocumentedRules` | n/a (always replaces) |
 | `allocate_gateway` | optional+computed | sometimes replaces | `TestAccImport`, `TestAccQueryGeneratesConfigThatPlansClean`, `TestAccSubnetChangeAfterQuietImportReplaces`, `TestReplacementsFollowTheDocumentedRules` | `TestAccSubnetChangeAfterQuietImportReplaces` (replace), `TestReplacementsFollowTheDocumentedRules` (update and replace) |
-| `allow_replace` | optional | in place | **gap** | `TestAccASubnetReplacementIsRefusedAtApply`, `TestAccSubnetReplacementNeedsThePermission`, `TestReplacementsFollowTheDocumentedRules` |
+| `allow_replace` | optional | in place | **gap** | `TestAccARegionMoveIsRefusedAtApply`, `TestAccASubnetReplacementIsRefusedAtApply`, `TestAccSubnetReplacementNeedsThePermission`, `TestReplacementsFollowTheDocumentedRules` |
 | `cidr` | computed | n/a | `TestAccImport`, `TestAccQueryGeneratesConfigThatPlansClean`, `TestAccSubnetChangeAfterQuietImportReplaces`, `TestAccSubnetImportDoesNotReplace`, `TestReplacementsFollowTheDocumentedRules` | n/a (computed only) |
 | `cluster_id` | computed | n/a | **gap** | n/a (computed only) |
 | `description` | optional | replaces | **gap** | n/a (always replaces) |
