@@ -1,0 +1,27 @@
+```release-note:bug
+resource/k0rdent_kubernetes_cluster: Fix `terraform destroy` failing while the configuration has a change that would replace the cluster without `allow_replace = true`. The plan now warns, and the apply fails before it sends any request
+```
+
+```release-note:bug
+resource/k0rdent_instance_group: Fix `terraform destroy` failing while the configuration has a change that would replace the instance group without `allow_replace = true`. The plan now warns, and the apply fails before it sends any request
+```
+
+```release-note:bug
+resource/k0rdent_file_store: Fix `terraform destroy` failing while the configuration has a change that would replace the file store without `allow_replace = true`. The plan now warns, and the apply fails before it sends any request
+```
+
+```release-note:bug
+resource/k0rdent_subnet: Fix `terraform destroy` failing while the configuration has a change that would replace the subnet without `allow_replace = true`. The plan now warns, and the apply fails before it sends any request
+```
+
+```release-note:bug
+resource/k0rdent_network: Fix `terraform destroy` failing while the configuration has a change that would replace the network without `allow_replace = true`. The plan now warns, and the apply fails before it sends any request
+```
+
+```release-note:bug
+resource/k0rdent_project: Fix `terraform destroy` failing while the configuration has a change that would replace the project without `allow_replace = true`. The plan now warns, and the apply fails before it sends any request
+```
+
+```release-note:note
+provider: A change that would replace a cluster, instance group, file store, subnet, network or project without `allow_replace = true` no longer fails `terraform plan`. The plan shows an in-place update with a warning, and `terraform plan -detailed-exitcode` exits 2. A pipeline that relied on the plan failing has to rely on the apply's failure instead
+```
