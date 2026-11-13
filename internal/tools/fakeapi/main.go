@@ -996,6 +996,9 @@ func (s *state) listClusterTypes(w http.ResponseWriter, r *http.Request) {
 	clusterTypeList.serve(w, r, items)
 }
 
+// getClusterType answers as the contract after this provider's pinned one
+// has it: the ClusterType at its newest `available` version, and a 404 for one
+// with none unless `includeUnavailable=true`, which reports its newest version.
 func (s *state) getClusterType(w http.ResponseWriter, r *http.Request) {
 	region := r.PathValue("region")
 	ct, ok := findClusterType(r.PathValue("id"))
@@ -1003,7 +1006,45 @@ func (s *state) getClusterType(w http.ResponseWriter, r *http.Request) {
 		apiError(w, http.StatusNotFound, "NOT_FOUND", "no such cluster type")
 		return
 	}
-	writeJSON(w, http.StatusOK, clusterTypeJSON(region, ct, nil))
+	includeUnavailable := false
+	if q := r.URL.Query(); q.Has("includeUnavailable") {
+		v, err := strconv.ParseBool(strings.TrimSpace(q.Get("includeUnavailable")))
+		if err != nil {
+			apiError(w, http.StatusUnprocessableEntity, "INVALID_ARGUMENT", "includeUnavailable must be a boolean")
+			return
+		}
+		includeUnavailable = v
+	}
+	v, ok := reportedVersion(ct, includeUnavailable)
+	if !ok {
+		apiError(w, http.StatusNotFound, "NOT_FOUND", "cluster type not found")
+		return
+	}
+	out := clusterTypeJSON(region, ct, v)
+	out["selfLink"] = clusterTypePath(region, ct.id)
+	writeJSON(w, http.StatusOK, out)
+}
+
+// reportedVersion is the version getClusterType reports: the newest
+// `available` one, else the newest one when includeUnavailable is set. ok is
+// false when the read answers 404.
+func reportedVersion(ct fakeClusterType, includeUnavailable bool) (fakeVersion, bool) {
+	var newest, newestAvailable fakeVersion
+	for _, v := range ct.versions {
+		if v.version > newest.version {
+			newest = v
+		}
+		if v.status == "available" && v.version > newestAvailable.version {
+			newestAvailable = v
+		}
+	}
+	switch {
+	case newestAvailable.version > 0:
+		return newestAvailable, true
+	case includeUnavailable && newest.version > 0:
+		return newest, true
+	}
+	return fakeVersion{}, false
 }
 
 // listClusterTypeVersions answers the history, oldest first, unpaged.
@@ -1063,7 +1104,7 @@ func (s *state) getClusterTypeVersion(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, v := range ct.versions {
 		if v.versionID == id {
-			writeJSON(w, http.StatusOK, clusterTypeJSON(region, ct, &v))
+			writeJSON(w, http.StatusOK, clusterTypeJSON(region, ct, v))
 			return
 		}
 	}
@@ -1090,17 +1131,13 @@ func looksLikeUUID(s string) bool {
 	return true
 }
 
-// clusterTypeJSON renders a ClusterType, at its head when version is nil and at
-// the named version otherwise. The k0s version and the selfLink are what differ;
+// clusterTypeJSON renders a ClusterType at a version, with that version's
+// selfLink. The k0s version and the selfLink are what differ between versions;
 // the pools do not, apart from a pool that only a later version has.
-func clusterTypeJSON(region string, ct fakeClusterType, version *fakeVersion) map[string]any {
+func clusterTypeJSON(region string, ct fakeClusterType, version fakeVersion) map[string]any {
 	pools := make([]any, 0, len(ct.pools))
-	at := ct.version
-	if version != nil {
-		at = version.version
-	}
 	for _, p := range ct.pools {
-		if !p.at(at) {
+		if !p.at(version.version) {
 			continue
 		}
 		pool := map[string]any{
@@ -1122,42 +1159,32 @@ func clusterTypeJSON(region string, ct fakeClusterType, version *fakeVersion) ma
 		if p.max != nil {
 			pool["nodeCountMax"] = *p.max
 		}
-		if version != nil {
-			if min, ok := version.poolMin[p.id]; ok {
-				pool["nodeCountMin"] = min
-			}
-			if max, ok := version.poolMax[p.id]; ok {
-				pool["nodeCountMax"] = max
-			}
+		if min, ok := version.poolMin[p.id]; ok {
+			pool["nodeCountMin"] = min
+		}
+		if max, ok := version.poolMax[p.id]; ok {
+			pool["nodeCountMax"] = max
 		}
 		pools = append(pools, pool)
-	}
-
-	// The contract's floor is v1.34.0, so anything lower would be a value the
-	// real API rejects.
-	status, seq, selfLink, k0s := ct.status, ct.version, clusterTypePath(region, ct.id), "v1.34.0+k0s.0"
-	if version != nil {
-		status, seq, k0s = version.status, version.version, version.k0sVersion
-		selfLink = clusterTypePath(region, ct.id) + "/versions/" + version.versionID
 	}
 
 	out := map[string]any{
 		"id":          ct.id,
 		"displayName": ct.displayName,
 		"description": ct.description,
-		"status":      status,
-		"version":     seq,
-		"versionId":   versionIDOf(ct, version),
-		"selfLink":    selfLink,
+		"status":      version.status,
+		"version":     version.version,
+		"versionId":   version.versionID,
+		"selfLink":    clusterTypePath(region, ct.id) + "/versions/" + version.versionID,
 		"nodePools":   pools,
 		"k8s": map[string]any{
 			"clusterTemplateName":    "fake-template",
 			"clusterTemplateVersion": "v1-34-0",
-			"k0sVersion":             k0s,
+			"k0sVersion":             version.k0sVersion,
 		},
 		"networkSchema": map[string]any{},
 	}
-	if version != nil && version.bmaasOnly {
+	if version.bmaasOnly {
 		delete(out, "k8s")
 	}
 	return out
@@ -1178,20 +1205,6 @@ func boundVersion(ref string) (fakeClusterType, fakeVersion, bool) {
 		}
 	}
 	return ct, fakeVersion{}, false
-}
-
-func versionIDOf(ct fakeClusterType, version *fakeVersion) any {
-	if version != nil {
-		return version.versionID
-	}
-	if len(ct.versions) == 0 {
-		return nil
-	}
-	// The head is the newest, and the history is oldest first. The contract
-	// says getClusterType "always resolves to the head's literal latest
-	// version, whatever its status", which isn't what an unversioned create
-	// binds: that's the newest `available` one.
-	return ct.versions[len(ct.versions)-1].versionID
 }
 
 // ---------------------------------------------------------------------------

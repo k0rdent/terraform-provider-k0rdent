@@ -349,7 +349,7 @@ func (d *clusterTypeDataSource) Read(ctx context.Context, req datasource.ReadReq
 		return
 	}
 
-	got, err := d.meta.Client.GetClusterTypeWithResponse(ctx, region, data.ID.ValueString())
+	got, err := d.meta.Client.GetClusterTypeWithResponse(ctx, region, data.ID.ValueString(), includeUnavailable)
 	if err != nil || got.JSON200 == nil {
 		var body []byte
 		var httpResp *http.Response
@@ -394,6 +394,16 @@ func (d *clusterTypeDataSource) Read(ctx context.Context, req datasource.ReadReq
 	})
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+}
+
+// includeUnavailable asks getClusterType for a ClusterType with no `available`
+// version. From API 1.4 the read answers 404 for one without it, which would
+// fail every plan, destroy included. API 1.3 ignores the parameter.
+func includeUnavailable(_ context.Context, req *http.Request) error {
+	q := req.URL.Query()
+	q.Set("includeUnavailable", "true")
+	req.URL.RawQuery = q.Encode()
+	return nil
 }
 
 // ValidateConfig refuses `status = "deprecated"` beside
