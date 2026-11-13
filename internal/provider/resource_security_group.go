@@ -391,6 +391,7 @@ func (r *securityGroupResource) Create(ctx context.Context, req resource.CreateR
 			a := createAnswer{resp: created.HTTPResponse, body: created.Body}
 			if created.JSON201 != nil {
 				a.id, a.uid = created.JSON201.Id, uidOf(created.JSON201.Uid)
+				a.token = createTokenOfFreeform(presentMap(created.JSON201.Tags))
 			}
 			return a
 		},

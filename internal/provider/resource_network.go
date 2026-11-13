@@ -613,9 +613,11 @@ func (r *networkResource) Create(ctx context.Context, req resource.CreateRequest
 			a := createAnswer{resp: created.HTTPResponse, body: created.Body}
 			if created.JSON201 != nil {
 				// A 201 whose union does not decode still made the network
-				// it was sent, so its id is the one in the request.
+				// it was sent, so its id is the one in the request. That
+				// holds only while the platform makes a network under the
+				// id it's sent.
 				if view, err := networkViewOf(*created.JSON201); err == nil {
-					a.id, a.uid = view.id, view.uid
+					a.id, a.uid, a.token = view.id, view.uid, createTokenOf(view.tags)
 				}
 			}
 			return a

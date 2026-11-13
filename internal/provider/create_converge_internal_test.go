@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
@@ -532,6 +533,100 @@ func TestAnAnswerNamingAnotherIDIsRecordedUnderIt(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// An answer naming another id is this create's only when the resource it names
+// carries this create's token. One naming another apply's cluster, one made
+// outside Terraform, or, for a 504, one a read can't find or can't read, is
+// refused with nothing in state, so no later destroy can delete it, and the
+// cluster it names is left as it was.
+func TestAnAnswerNamingAnotherIDThatIsntThisCreatesIsRefused(t *testing.T) {
+	answers := map[string]func(*clusterAPI, http.ResponseWriter){
+		"201": func(api *clusterAPI, w http.ResponseWriter) {
+			w.WriteHeader(http.StatusCreated)
+			api.write(w, api.cluster("someone-else"))
+		},
+		"504": func(api *clusterAPI, w http.ResponseWriter) {
+			w.WriteHeader(http.StatusGatewayTimeout)
+			api.write(w, map[string]any{"error": map[string]any{
+				"code": 504, "message": "deadline exceeded", "reason": "DEADLINE_EXCEEDED",
+				"details": []any{map[string]any{"reason": "DEADLINE_EXCEEDED",
+					"metadata": map[string]any{"clusterId": "someone-else"}}},
+			}})
+		},
+	}
+	type held struct {
+		// exists says the named cluster is on the platform, with tags.
+		exists    bool
+		tags      map[string]string
+		readsFail bool
+		reason    string
+	}
+	for name, h := range map[string]held{
+		"another apply's token": {exists: true, tags: map[string]string{createTokenTag(): "0000feedfacefeedface0000feedface"},
+			reason: "it carries a create token from another apply"},
+		"no token":           {exists: true, reason: "it carries no create token from this apply"},
+		"not found, 504":     {reason: "reading it back found nothing under that id"},
+		"read failing, 504":  {exists: true, readsFail: true, reason: "reading it back failed"},
+		"no token, tags set": {exists: true, tags: map[string]string{"team": "a"}, reason: "it carries no create token from this apply"},
+	} {
+		for status, answer := range answers {
+			// A 201 names the cluster in its own body, so only a 504 is
+			// read back.
+			if status == "201" && (!h.exists || h.readsFail) {
+				continue
+			}
+			for _, configured := range []string{"", "c1"} {
+				t.Run(fmt.Sprintf("%s/%s/configured %q", name, status, configured), func(t *testing.T) {
+					api := newClusterAPI(t)
+					if h.exists {
+						api.tags["someone-else"] = h.tags
+					}
+					api.answer = func(_ int, id string, w http.ResponseWriter) bool {
+						// Nothing is made under the id sent.
+						delete(api.tags, id)
+						answer(api, w)
+						api.readsFail = h.readsFail
+						return true
+					}
+					resp := createCluster(t, api.serve(), configured)
+					if !resp.State.Raw.IsNull() {
+						t.Errorf("state was written for a cluster this create can't show it made: %v", resp.State.Raw)
+					}
+					errs := resp.Diagnostics.Errors()
+					if len(errs) != 1 || errs[0].Summary() != "The platform named a cluster this apply can't show it created" {
+						t.Fatalf("want one refusal, got %v", resp.Diagnostics)
+					}
+					for _, want := range []string{
+						`naming "someone-else", but ` + h.reason,
+						"nothing is recorded in state",
+						"terraform import <address> test/test/someone-else",
+					} {
+						if !strings.Contains(errs[0].Detail(), want) {
+							t.Errorf("the refusal doesn't say %q:\n%s", want, errs[0].Detail())
+						}
+					}
+					if _, still := api.tags["someone-else"]; still != h.exists {
+						t.Errorf("the named cluster's presence changed: exists %t, want %t", still, h.exists)
+					}
+					if len(api.sent) != 1 {
+						t.Errorf("creates sent = %v, want one", api.sent)
+					}
+				})
+			}
+		}
+	}
+}
+
+// A kind without tags has no token to check, so an answer naming another id
+// is trusted as the platform's answer to this request.
+func TestAKindWithoutTagsTrustsAnAnswerNamingAnotherID(t *testing.T) {
+	for _, generated := range []bool{true, false} {
+		c := convergingCreate{key: createKey{id: "sent", generated: generated}}
+		if reason := c.ownsNamed("", false); reason != "" {
+			t.Errorf("generated %t: refused with %q", generated, reason)
+		}
 	}
 }
 

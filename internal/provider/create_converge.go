@@ -65,7 +65,8 @@ import (
 // That answer is still this request's own: it says which resource this call
 // made. Refusing it would leave that resource on the platform with nothing in
 // state to destroy it, and every retry would make another. So the id the
-// answer names is the one recorded.
+// answer names is the one recorded, once the create token shows it is this
+// call's resource (see ownsNamed).
 //
 // A generated id was only ever this provider's handle, so the create carries
 // on under the platform's id. A configured id is the user's, and Terraform
@@ -218,10 +219,13 @@ type createAnswer struct {
 	// than the one sent is the platform's choice for this request's resource.
 	id string
 	// uid is the uid a 2xx answer named, empty when it named none.
-	uid  string
-	resp *http.Response
-	body []byte
-	err  error
+	uid string
+	// token is the create token a 2xx answer's tags carry, empty when they
+	// carry none or the kind has no tags.
+	token string
+	resp  *http.Response
+	body  []byte
+	err   error
 }
 
 // createLookup is what reading an id back found.
@@ -296,8 +300,9 @@ type convergingCreate struct {
 // run sends the create until it has an answer it can act on.
 //
 //   - 2xx: done, with the id the create sent and the uid the answer named. An
-//     answer naming another id is done under that id for a generated id, and
-//     recorded under it and failed for a configured one.
+//     answer naming another id that ownsNamed shows is this create's is done
+//     under that id for a generated id, and recorded under it and failed for
+//     a configured one. One it can't show is refused.
 //   - No answer at all: read the id back. Found and provably this call's:
 //     done. Found and not provable: refused. Not found: send again, up to
 //     createAttempts. The read failing too: unconfirmed, for a generated id.
@@ -308,8 +313,8 @@ type convergingCreate struct {
 //     exists.
 //   - 504 naming an id in its metadata: the service persisted that resource
 //     for this request and timed out starting its workflow. Done, with that id
-//     and the uid a read finds, unless it isn't the configured id sent. Then
-//     it is recorded and failed, as a 2xx naming another id is.
+//     and the uid a read finds. Another id than the one sent is held to
+//     ownsNamed through that read, and then treated as a 2xx naming it is.
 //   - Any other 502 or 504: the request may have been carried out behind the
 //     gateway. Read the id back. Found and provably this call's: done. Not
 //     found: the error is reported. The read failing: unconfirmed, for a
@@ -323,13 +328,19 @@ func (c convergingCreate) run(ctx context.Context) (createOutcome, createdAs, di
 	for {
 		a := c.send(ctx)
 		if a.err == nil && statusOf(a.resp)/100 == 2 {
-			// The platform names the resource by the id it was sent, so an
-			// answer that leaves it out still says which one it made. One
-			// that names another is still this request's resource, made
-			// under an id the platform chose.
+			// One that names another id is this request's resource only when
+			// it carries this create's token. See ownsNamed.
 			if a.id != "" && a.id != c.key.id {
+				if reason := c.ownsNamed(a.token, true); reason != "" {
+					c.addNotThisCreates(&diags, statusOf(a.resp), a.id, reason)
+					return createFailed, createdAs{}, diags
+				}
 				return c.underAnotherID(ctx, &diags, statusOf(a.resp), createdAs{id: a.id, uid: a.uid})
 			}
+			// An answer that names no id is taken as the one sent. That holds
+			// only while the platform makes a resource under the id it's
+			// sent: one that picks its own and answers without it leaves
+			// that resource out of state.
 			return createDone, createdAs{id: c.key.id, uid: a.uid}, diags
 		}
 
@@ -384,8 +395,27 @@ func (c convergingCreate) run(ctx context.Context) (createOutcome, createdAs, di
 
 		case status == http.StatusBadGateway || status == http.StatusGatewayTimeout:
 			if named := c.namedOnTimeout(a); named != "" {
-				if named != c.key.id && !c.key.generated {
-					return c.underAnotherID(ctx, &diags, status, createdAs{id: named})
+				// A 504 carries no uid, so it's read back now rather than on
+				// the first read after the wait, which may come too late.
+				l := c.lookup(ctx, named)
+				made := createdAs{id: named}
+				if l.found {
+					made.uid = l.uid
+				}
+				if named != c.key.id {
+					// A 504 carries no tags either, so the read is what
+					// shows the resource it names is this create's.
+					reason := c.ownsNamed(l.token, l.found)
+					if c.key.token != "" && l.failed() {
+						reason = "reading it back failed: " + lookupErrorText(l)
+					}
+					if reason != "" {
+						c.addNotThisCreates(&diags, status, named, reason)
+						return createFailed, createdAs{}, diags
+					}
+					if !c.key.generated {
+						return c.underAnotherID(ctx, &diags, status, made)
+					}
 				}
 				// The service's own answer to this request: it persisted the
 				// resource and timed out starting its workflow. That is proof
@@ -395,12 +425,6 @@ func (c convergingCreate) run(ctx context.Context) (createOutcome, createdAs, di
 					fmt.Sprintf("The platform answered %d and named %s %q as created, so this apply "+
 						"waits for it to settle rather than sending the create again.", status, c.kind, named),
 				)
-				// A 504 carries no uid, so it's read back now rather than on
-				// the first read after the wait, which may come too late.
-				made := createdAs{id: named}
-				if l := c.lookup(ctx, named); l.found {
-					made.uid = l.uid
-				}
 				return createDone, made, diags
 			}
 			l := c.lookup(ctx, c.key.id)
@@ -439,6 +463,51 @@ func (c convergingCreate) namedOnTimeout(a createAnswer) string {
 		return ""
 	}
 	return c.timeoutID(a.resp, a.body)
+}
+
+// ownsNamed says why a resource an answer names under another id than the one
+// sent can't be shown to be this create's, or "" when it can. token is the
+// create token the answer or a read of it carries, and found is false when a
+// read found nothing.
+//
+// A kind with tags carries this create's random token, so the resource is
+// this create's only when it carries that token: an answer naming another
+// apply's resource, or one made outside Terraform, is never taken over, since
+// a later destroy would delete it. A kind without tags, an instance group, a
+// file store or a project, has nothing to check, so the platform's answer to
+// this request is trusted as naming what the request made.
+func (c convergingCreate) ownsNamed(token string, found bool) string {
+	switch {
+	case c.key.token == "":
+		return ""
+	case !found:
+		return "reading it back found nothing under that id"
+	case token == c.key.token:
+		return ""
+	case token != "":
+		return "it carries a create token from another apply"
+	default:
+		return "it carries no create token from this apply"
+	}
+}
+
+// addNotThisCreates refuses an answer naming a resource, under another id than
+// the one sent, that ownsNamed can't show this create made. Nothing is
+// recorded, so nothing in state can later destroy a resource this
+// configuration doesn't own.
+func (c convergingCreate) addNotThisCreates(diags *diag.Diagnostics, status int, named, reason string) {
+	diags.AddError(
+		fmt.Sprintf("The platform named a %s this apply can't show it created", c.kind),
+		redactDiagnosticText(fmt.Sprintf("The create sent %s id %q, and the platform answered %d naming %q, "+
+			"but %s. So the provider doesn't take it over: nothing is recorded in state, and nothing on "+
+			"the platform is changed or deleted.\n\n"+
+			"If %q is the %s this configuration describes, import it, replacing <address> with this "+
+			"resource's address, such as %s.example:\n\n"+
+			"    terraform import <address> %s\n\n"+
+			"Otherwise check the platform for a %s this create may have made under another id before "+
+			"applying again.",
+			c.kind, c.key.id, status, named, reason, named, c.kind, c.resourceName, c.importID(named), c.kind)),
+	)
 }
 
 // underAnotherID ends a create whose own answer, status, names the resource
