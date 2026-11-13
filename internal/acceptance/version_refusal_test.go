@@ -122,7 +122,7 @@ func TestAccARefusedVersionChangeWarnsAtPlanAndFailsAtApply(t *testing.T) {
 				t.Errorf("the plan exited %d, want 2, a plan with changes:\n%s", code, out)
 			}
 			mustSay(t, "the plan", out, "Warning: "+versionRefused, "forward-only",
-				"fails before it sends any request, other changes included", "`terraform destroy` isn't affected",
+				"fails before it sends any request, so none of this plan's other changes are made either", "`terraform destroy` isn't affected",
 				clusterTypeV2, "0 to add, 1 to change, 0 to destroy")
 			sentNothing("the plan")
 
