@@ -149,6 +149,8 @@ func (g *guardedResource) ValidateConfig(ctx context.Context, req resource.Valid
 // goes last so that it judges the plan Terraform will act on, with region and
 // project already resolved and every value the resource set in place.
 func (g *guardedResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
+	// Each plan records its own create checks, and a destroy's none.
+	clearReplacementChecks(ctx, resp.Private, &resp.Diagnostics)
 	if m, ok := g.inner.(resource.ResourceWithModifyPlan); ok {
 		in := resource.ModifyPlanRequest{
 			Config:             g.hideConfig(ctx, req.Config, &resp.Diagnostics),
@@ -326,6 +328,9 @@ func (g *guardedResource) Delete(ctx context.Context, req resource.DeleteRequest
 		Diagnostics: resp.Diagnostics,
 	}
 	if resp.Diagnostics.HasError() {
+		return
+	}
+	if refuseRefusedReplacement(ctx, g.meta, req.Private, resp.Private, &resp.Diagnostics) {
 		return
 	}
 	g.inner.Delete(ctx, in, &out)

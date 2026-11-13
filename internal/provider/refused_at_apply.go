@@ -32,13 +32,12 @@ func updateSentNothing(what string) string {
 // checkedAtCreate ends the plan's warning of a create the apply refuses.
 const checkedAtCreate = " The apply checks this again. If it still holds, the apply fails before it sends " +
 	"the create, so this resource isn't created, and Terraform skips the resources that depend on it. The " +
-	"rest of the plan is applied. If this replaces a tainted object, Terraform deletes that object first and " +
-	"nothing takes its place: run `terraform untaint` to keep it. `terraform destroy` isn't affected."
+	"rest of the plan is applied. If this replaces a tainted object, the apply checks before it deletes " +
+	"that object, and keeps it. `terraform destroy` isn't affected."
 
 // createSentNothing ends the apply's refusal of a create.
 const createSentNothing = " This apply sent nothing to create this resource, so it doesn't exist. Terraform " +
-	"skips the resources that depend on it and applies the rest of the plan. If it was to replace a tainted " +
-	"object, Terraform deleted that object first."
+	"skips the resources that depend on it and applies the rest of the plan."
 
 // replacedOnThisPlan ends the plan's refusal of a replacement.
 const replacedOnThisPlan = " This plan replaces the resource, and Terraform would delete it before the apply " +

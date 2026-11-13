@@ -237,6 +237,12 @@ func modifyScopePlan(ctx context.Context, meta *Meta, req resource.ModifyPlanReq
 		if !region.IsUnknown() && !project.IsUnknown() {
 			checkRegionMatchesProject(ctx, meta, region.ValueString(), project.ValueString(),
 				!req.State.Raw.IsNull(), &resp.Diagnostics)
+			if req.State.Raw.IsNull() {
+				// Delete makes this check again when the create replaces a
+				// tainted object. See refused_replacement.go.
+				recordReplacementCheck(ctx, resp.Private, replacementCheck{Kind: "region",
+					Region: region.ValueString(), Project: project.ValueString()}, &resp.Diagnostics)
+			}
 		}
 	}
 }

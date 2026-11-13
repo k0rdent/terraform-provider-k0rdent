@@ -140,9 +140,13 @@ the resources that depend on it and applies the rest of the plan.
 - A lower `storage_ceiling_gib` on a cluster
 - A new resource in a `region` that isn't the project's
 
-A new resource also warns when it replaces a tainted one. Terraform deletes
-the tainted object before the create is refused, so neither is left. Run
-`terraform untaint` before the apply to keep it.
+A new resource also warns when it replaces a tainted one. The apply checks
+again before it deletes the tainted object, and if the check still fails,
+it refuses the delete and keeps the object, on the platform and in state.
+`terraform destroy` still deletes it. Two cases still lose the tainted
+object: a `region` the plan doesn't know yet isn't checked before the
+delete, and the create refuses it after, and a project the project list
+doesn't show is left to the platform, which refuses the create.
 
 ## Values you still have to hardcode
 

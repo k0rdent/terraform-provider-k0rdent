@@ -227,6 +227,8 @@ func (r *vpcPeeringResource) Configure(_ context.Context, req resource.Configure
 }
 
 func (r *vpcPeeringResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
+	// Each plan records its own create checks, and a destroy's none.
+	clearReplacementChecks(ctx, resp.Private, &resp.Diagnostics)
 	modifyScopePlan(ctx, r.meta, req, resp)
 	planTagsAllAtCreation(ctx, r.meta, "VPC peering", req, resp)
 	if resp.Diagnostics.HasError() {
@@ -486,6 +488,9 @@ func (r *vpcPeeringResource) Update(ctx context.Context, req resource.UpdateRequ
 }
 
 func (r *vpcPeeringResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
+	if refuseRefusedReplacement(ctx, r.meta, req.Private, resp.Private, &resp.Diagnostics) {
+		return
+	}
 	var state vpcPeeringModel
 	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {

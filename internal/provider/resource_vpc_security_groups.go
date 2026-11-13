@@ -229,6 +229,8 @@ func (r *vpcSecurityGroupsResource) scopedDefaultGroup(ctx context.Context, vpc,
 }
 
 func (r *vpcSecurityGroupsResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
+	// Each plan records its own create checks, and a destroy's none.
+	clearReplacementChecks(ctx, resp.Private, &resp.Diagnostics)
 	modifyScopePlan(ctx, r.meta, req, resp)
 	if resp.Diagnostics.HasError() {
 		return
@@ -588,6 +590,9 @@ func (r *vpcSecurityGroupsResource) Read(ctx context.Context, req resource.ReadR
 // first so the refused write isn't sent, and the refusal is handled too, for
 // a read that couldn't tell.
 func (r *vpcSecurityGroupsResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
+	if refuseRefusedReplacement(ctx, r.meta, req.Private, resp.Private, &resp.Diagnostics) {
+		return
+	}
 	var state vpcSecurityGroupsModel
 	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {

@@ -1,10 +1,12 @@
 package acceptance
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"runtime"
+	"slices"
 	"testing"
 
 	"github.com/k0rdent/terraform-provider-k0rdent/internal/provider"
@@ -582,4 +584,115 @@ func TestAccACreateInAnotherRegionThanItsProjectDoesNotStopADestroy(t *testing.T
 			done = true
 		})
 	}
+}
+
+// replacementRefused is the summary of a delete refused because the create
+// after it would be.
+const replacementRefused = "This replacement would be refused, so nothing was deleted"
+
+// stateOf is addr's status in this run's state, "" for present and clean,
+// "tainted" or "absent", and the keys of its private state.
+func (c *cliRun) stateOf(addr string) (string, []string) {
+	c.t.Helper()
+	out, err := c.command("state", "pull").Output()
+	if err != nil {
+		c.t.Fatalf("terraform state pull: %v", err)
+	}
+	var st struct {
+		Resources []struct {
+			Type, Name string
+			Instances  []struct {
+				Status  string `json:"status"`
+				Private string `json:"private"`
+			}
+		}
+	}
+	if err := json.Unmarshal(out, &st); err != nil {
+		c.t.Fatal(err)
+	}
+	for _, r := range st.Resources {
+		if r.Type+"."+r.Name != addr || len(r.Instances) == 0 {
+			continue
+		}
+		var keys []string
+		if raw, err := base64.StdEncoding.DecodeString(r.Instances[0].Private); err == nil && len(raw) > 0 {
+			var private map[string]json.RawMessage
+			if json.Unmarshal(raw, &private) == nil {
+				for k := range private {
+					keys = append(keys, k)
+				}
+			}
+		}
+		return r.Instances[0].Status, keys
+	}
+	return "absent", nil
+}
+
+// A tainted resource whose replacement the apply would refuse is kept: the
+// apply refuses the delete that starts the replacement, before it sends
+// anything. Through the real CLI, for a network moved to a region its
+// project isn't in:
+//
+//  1. `terraform apply` makes the network, and `terraform taint` marks it
+//  2. the configuration moves it to another region
+//  3. `terraform plan -detailed-exitcode` exits 2 with the warning
+//  4. `terraform apply` exits 1 with the replacement's refusal, sends no
+//     delete and no create, and the network stays, tainted, with nothing
+//     left in its private state
+//  5. back in the project's region, `terraform apply` replaces it, and its
+//     private state keeps nothing of the plan's checks
+//  6. `terraform destroy` removes it
+func TestAccATaintedReplacementTheApplyWouldRefuseIsKept(t *testing.T) {
+	t.Parallel()
+	skipOnWindows(t)
+	const name = "acc-region-tainted-kept"
+	addr := networkType + ".test"
+	kept := networkPath(map[string]string{"region": "us-texas-1", "project": "demo", "id": name})
+	c := newCLIRun(t)
+	done := false
+	c.cleanupDestroy(t, &done)
+	c.write(regionNetwork("test", name, ""))
+	if out, ok := c.run("apply", "-auto-approve"); !ok {
+		t.Fatalf("the create failed:\n%s", out)
+	}
+	if out, ok := c.run("taint", addr); !ok {
+		t.Fatalf("the taint failed:\n%s", out)
+	}
+
+	c.write(regionNetwork("test", name, "eu-refused-1"))
+	out, code := c.runCode("plan", "-detailed-exitcode")
+	if code != 2 {
+		t.Errorf("the plan exited %d, want 2:\n%s", code, out)
+	}
+	mustSay(t, "the plan", out, "Warning: "+regionRefused, createWarned,
+		"If this replaces a tainted object, the apply checks before it deletes that object, and keeps it.")
+
+	sentNothing := sentNoneOf(t, kept, http.MethodDelete)
+	sentNoCreate := sentNoneOf(t, "/v1/regions/eu-refused-1/projects/demo/networking/networks", http.MethodPost)
+	out, code = c.runCode("apply", "-auto-approve")
+	if code != 1 {
+		t.Errorf("the apply exited %d, want 1:\n%s", code, out)
+	}
+	mustSay(t, "the apply", out, "Error: "+replacementRefused, `Project "demo" is in region "us-texas-1"`,
+		"this apply sent nothing for this resource, and it's still on the platform and in state",
+		"`terraform destroy` still deletes it")
+	sentNothing("the apply")
+	sentNoCreate("the apply")
+	if status, _, err := readFakeStore(kept); err != nil || status != http.StatusOK {
+		t.Errorf("the network after the refused apply: %d %v, want it kept", status, err)
+	}
+	if status, keys := c.stateOf(addr); status != "tainted" || slices.Contains(keys, "replacement_checks") {
+		t.Errorf("state after the refused apply: %q with private keys %v, want tainted with no checks", status, keys)
+	}
+
+	c.write(regionNetwork("test", name, ""))
+	if out, ok := c.run("apply", "-auto-approve"); !ok {
+		t.Fatalf("the replacement in the project's region failed:\n%s", out)
+	}
+	if status, keys := c.stateOf(addr); status != "" || slices.Contains(keys, "replacement_checks") {
+		t.Errorf("state after the replacement: %q with private keys %v, want clean with no checks", status, keys)
+	}
+
+	c.destroyRemoves(t, "the network", 1, kept)
+	done = true
 }

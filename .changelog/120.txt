@@ -37,3 +37,7 @@ resource/k0rdent_vpc_peering: Fix `terraform destroy` failing while the configur
 ```release-note:bug
 resource/k0rdent_vpc_security_groups: Fix `terraform destroy` failing while the configuration has a new binding in a `region` that isn't its project's. The plan now warns, and the apply fails before it sends the binding
 ```
+
+```release-note:enhancement
+provider: Keep a tainted resource whose replacement would be refused for a `region` that isn't its project's. The apply checks the region again before the delete and refuses it before any request, and `terraform destroy` still deletes the resource
+```

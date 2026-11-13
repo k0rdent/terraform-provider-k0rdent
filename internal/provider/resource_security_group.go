@@ -326,6 +326,8 @@ func (r *securityGroupResource) Configure(_ context.Context, req resource.Config
 }
 
 func (r *securityGroupResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
+	// Each plan records its own create checks, and a destroy's none.
+	clearReplacementChecks(ctx, resp.Private, &resp.Diagnostics)
 	modifyScopePlan(ctx, r.meta, req, resp)
 	planTagsAll(ctx, r.meta, req, resp)
 	// "vpc" specifically: the attribute is populated for every group the
@@ -578,6 +580,9 @@ func (r *securityGroupResource) sendUpdate(ctx context.Context, target clusterTa
 }
 
 func (r *securityGroupResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
+	if refuseRefusedReplacement(ctx, r.meta, req.Private, resp.Private, &resp.Diagnostics) {
+		return
+	}
 	var state securityGroupModel
 	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
