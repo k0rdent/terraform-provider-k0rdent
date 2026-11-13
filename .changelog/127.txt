@@ -1,0 +1,35 @@
+```release-note:bug
+resource/k0rdent_kubernetes_cluster: Fix `terraform destroy` failing while `region` names a region the cluster's project isn't in. The plan now warns, and the apply fails before it sends any request, whatever `allow_replace` says
+```
+
+```release-note:bug
+resource/k0rdent_instance_group: Fix `terraform destroy` failing while `region` names a region the instance group's project isn't in. The plan now warns, and the apply fails before it sends any request, whatever `allow_replace` says
+```
+
+```release-note:bug
+resource/k0rdent_file_store: Fix `terraform destroy` failing while `region` names a region the file store's project isn't in. The plan now warns, and the apply fails before it sends any request, whatever `allow_replace` says
+```
+
+```release-note:bug
+resource/k0rdent_subnet: Fix `terraform destroy` failing while `region` names a region the subnet's project isn't in. The plan now warns, and the apply fails before it sends any request, whatever `allow_replace` says
+```
+
+```release-note:bug
+resource/k0rdent_network: Fix `terraform destroy` failing while `region` names a region the network's project isn't in. The plan now warns, and the apply fails before it sends any request, whatever `allow_replace` says
+```
+
+```release-note:bug
+resource/k0rdent_security_group: Fix `terraform destroy` failing while `region` names a region the security group's project isn't in. The plan now warns, and the apply fails before it sends any request
+```
+
+```release-note:bug
+resource/k0rdent_vpc_peering: Fix `terraform destroy` failing while `region` names a region the peering's project isn't in. The plan now warns, and the apply fails before it sends any request
+```
+
+```release-note:bug
+resource/k0rdent_vpc_security_groups: Fix `terraform destroy` failing while `region` names a region the binding's project isn't in. The plan now warns, and the apply fails before it sends any request
+```
+
+```release-note:bug
+resource/k0rdent_project: Fix `terraform destroy` failing while `region` names a region that can't hold a project. The plan now warns, and the apply fails before it sends any request, whatever `allow_replace` says
+```
