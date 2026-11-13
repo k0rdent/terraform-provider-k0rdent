@@ -99,8 +99,10 @@ resource "k0rdent_project" "production" {
   `region` out. The first refresh reads its region. A project made before
   regions existed has none, and setting `region` on it fails the plan.
 - **Regional resources must be in their project's region.** The platform
-  refuses anything else with `409 PROJECT_REGION_MISMATCH`, and the provider
-  catches it at plan where it can.
+  refuses anything else with `409 PROJECT_REGION_MISMATCH`. Where the
+  provider can read the project's region, a new resource in another region
+  plans with a warning and fails the apply, sending nothing, and a move to
+  one fails the plan.
 - **`global` works as a region** where the platform hosts projects in it.
 
 ### Quota read reshaped

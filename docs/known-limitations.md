@@ -50,9 +50,9 @@ plan says `# forced replacement`, but not why.
 
 ### 6. A file store's capacity isn't a hard limit
 
-`capacity_gib` can only grow, and the plan refuses a shrink. But storage
-can use more than the capacity, and the API doesn't report how much a store
-holds.
+`capacity_gib` can only grow. The plan warns of a shrink, and the apply
+fails before it sends anything. But storage can use more than the capacity,
+and the API doesn't report how much a store holds.
 
 ### 7. Default timeouts are estimates
 
@@ -125,14 +125,18 @@ so a refusal at apply would come after the delete.
 
 - A change that replaces a cluster, instance group, file store, subnet,
   network or project, without `allow_replace = true`
-- A smaller `capacity_gib` on a file store
-- A `region` that isn't the project's
+- A move to a `region` that isn't the project's
 
 Set the configuration back to what's applied, or run
 `terraform destroy -refresh=false`, which destroys from state as it is.
 
-A cluster's `cluster_type` version change is made in place, so its refusal
-waits for the apply and doesn't stop a destroy.
+A change that deletes nothing only warns at plan, and the apply fails before
+it sends anything, so it doesn't stop a destroy:
+
+- A cluster's `cluster_type` version change it can't take
+- A smaller `capacity_gib` on a file store
+- A lower `storage_ceiling_gib` on a cluster
+- A new resource in a `region` that isn't the project's
 
 ## Values you still have to hardcode
 

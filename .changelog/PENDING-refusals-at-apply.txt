@@ -1,0 +1,39 @@
+```release-note:bug
+resource/k0rdent_file_store: Fix `terraform destroy` failing while `capacity_gib` is lower than the store's. The plan now warns, and the apply fails before it sends any request
+```
+
+```release-note:bug
+resource/k0rdent_kubernetes_cluster: Fix `terraform destroy` failing while `storage_ceiling_gib` is lower than the cluster's. The plan now warns, and the apply fails before it sends any request
+```
+
+```release-note:bug
+resource/k0rdent_kubernetes_cluster: Fix `terraform destroy` failing while the configuration has a new cluster in a `region` that isn't its project's. The plan now warns, and the apply fails before it creates the cluster
+```
+
+```release-note:bug
+resource/k0rdent_instance_group: Fix `terraform destroy` failing while the configuration has a new instance group in a `region` that isn't its project's. The plan now warns, and the apply fails before it creates the instance group
+```
+
+```release-note:bug
+resource/k0rdent_file_store: Fix `terraform destroy` failing while the configuration has a new file store in a `region` that isn't its project's. The plan now warns, and the apply fails before it creates the file store
+```
+
+```release-note:bug
+resource/k0rdent_network: Fix `terraform destroy` failing while the configuration has a new network in a `region` that isn't its project's. The plan now warns, and the apply fails before it creates the network
+```
+
+```release-note:bug
+resource/k0rdent_subnet: Fix `terraform destroy` failing while the configuration has a new subnet in a `region` that isn't its project's. The plan now warns, and the apply fails before it creates the subnet
+```
+
+```release-note:bug
+resource/k0rdent_security_group: Fix `terraform destroy` failing while the configuration has a new security group in a `region` that isn't its project's. The plan now warns, and the apply fails before it creates the security group
+```
+
+```release-note:bug
+resource/k0rdent_vpc_peering: Fix `terraform destroy` failing while the configuration has a new VPC peering in a `region` that isn't its project's. The plan now warns, and the apply fails before it creates the peering
+```
+
+```release-note:bug
+resource/k0rdent_vpc_security_groups: Fix `terraform destroy` failing while the configuration has a new binding in a `region` that isn't its project's. The plan now warns, and the apply fails before it sends the binding
+```
