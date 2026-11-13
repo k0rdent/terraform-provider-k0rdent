@@ -54,6 +54,12 @@ expect 1 "a planted ticket key"
 grep -q "^planted.md:1:$ticket\$" "$work/out" || fail "the report doesn't name planted.md:1"
 grep -q '^== ticket (1 hits)' "$work/out" || fail "the report doesn't name the ticket rule"
 
+internal_doc="mistakes""-log"
+printf 'Why this test exists (see the %s).\n' "$internal_doc" > "$work/planted.md"
+track planted.md
+expect 1 "a planted internal document name"
+grep -q '^== internal-doc (1 hits)' "$work/out" || fail "the report doesn't name the internal-doc rule"
+
 printf 'Hashed with SHA-256, mailed from noreply@example.com.\n' > "$work/planted.md"
 track planted.md
 expect 0 "allowlisted standards and addresses"
