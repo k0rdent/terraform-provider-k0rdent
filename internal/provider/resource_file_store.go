@@ -678,8 +678,9 @@ func (r *fileStoreResource) ModifyPlan(ctx context.Context, req resource.ModifyP
 	// A replacement is a new store, so a smaller capacity there is no shrink.
 	replacing := len(resp.RequiresReplace) > 0 || !plan.ShareType.Equal(state.ShareType) ||
 		(!plan.ID.IsUnknown() && !plan.ID.Equal(state.ID))
-	if replacing {
-		// A replacement deletes this store too.
+	if replacing && replacementPermitted(ctx) {
+		// A replacement deletes this store too. One the configuration
+		// doesn't permit is refused at apply instead, and deletes nothing.
 		warnOnDestroyingABoundStore(ctx, state, &resp.Diagnostics)
 	}
 	if !replacing && !plan.CapacityGiB.IsUnknown() && !state.CapacityGiB.IsNull() &&

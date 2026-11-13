@@ -141,8 +141,16 @@ network or project, without `allow_replace = true`, doesn't fail the plan, so
   where Terraform would otherwise show `-/+ must be replaced`.
 - `terraform plan -detailed-exitcode` exits 2, a plan with changes.
 - The apply refuses that resource's update before it sends any request, so
-  none of its changes in the plan are made. Other resources in the same apply
-  that don't depend on it are still changed.
+  none of its changes in the plan are made. The rest of the plan still
+  applies.
+- A resource that depends on the refused change, such as a `terraform_data`
+  whose `triggers_replace` reads the changed attribute, is replaced as the
+  plan shows: Terraform destroys it before the apply refuses, and doesn't
+  create it again until the change is reverted or permitted. Computed values
+  the change would have left unknown keep their current values, so a
+  resource that reads only those isn't replaced.
+- `terraform apply -replace` replaces the resource anyway, as it asks, with
+  the change in it.
 - An `allow_replace` known only after apply, such as one read from a resource
   the same apply creates, can't permit the replacement. If it turns out
   `true`, Terraform stops the apply with "Provider produced inconsistent final

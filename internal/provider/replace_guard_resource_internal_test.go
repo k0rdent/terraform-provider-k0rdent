@@ -2,9 +2,11 @@ package provider
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -215,11 +217,19 @@ func planStub(t *testing.T, r resource.Resource, s schema.Schema, prior, planned
 	if !ok {
 		t.Fatal("a guarded resource has no ModifyPlan")
 	}
-	modifier.ModifyPlan(context.Background(), resource.ModifyPlanRequest{
-		Config: tfsdk.Config{Raw: planned, Schema: s},
+	// The configuration can't set `state`, which is computed alone.
+	attrs, err := attributesOf(planned)
+	if err != nil {
+		t.Fatal(err)
+	}
+	attrs["state"] = tftypes.NewValue(tftypes.String, nil)
+	req := resource.ModifyPlanRequest{
+		Config: tfsdk.Config{Raw: tftypes.NewValue(planned.Type(), attrs), Schema: s},
 		Plan:   tfsdk.Plan{Raw: planned, Schema: s},
 		State:  tfsdk.State{Raw: prior, Schema: s},
-	}, &resp)
+	}
+	runServedReplacementModifiers(t, req, &resp)
+	modifier.ModifyPlan(context.Background(), req, &resp)
 	return resp
 }
 
@@ -240,6 +250,15 @@ func TestTheGuardWarnsOfAReplacementTheResourceDoesntKnowAbout(t *testing.T) {
 	}
 	if got := refusalRecorded(t, refused.Private); !reflect.DeepEqual(got, []string{"id"}) {
 		t.Errorf("recorded for the apply: %q, want id", got)
+	}
+	// The resource planned `state` unknown. The apply refuses, so it keeps
+	// prior state's value, and a dependent that reads it isn't replaced. The
+	// refused attribute still shows its change.
+	var kept, id types.String
+	refused.Plan.GetAttribute(context.Background(), path.Root("state"), &kept)
+	refused.Plan.GetAttribute(context.Background(), path.Root("id"), &id)
+	if kept.ValueString() != "active" || id.ValueString() != "s2" {
+		t.Errorf("state = %v, id = %v, want prior state's \"active\" and the planned \"s2\"", kept, id)
 	}
 	if len(stub.calls) != 1 || stub.calls[0] != "ModifyPlan" {
 		t.Errorf("calls = %q, want the resource's ModifyPlan", stub.calls)
@@ -297,6 +316,18 @@ func TestTheGuardWarnsOfAReplacementTheResourcePlans(t *testing.T) {
 	}
 	if got := refusalRecorded(t, resp.Private); !reflect.DeepEqual(got, []string{"name"}) {
 		t.Errorf("recorded for the apply: %q, want name", got)
+	}
+}
+
+// A path both the resource's ModifyPlan and an attribute's modifier name is
+// one replacement, warned about and refused once.
+func TestAPathNamedTwiceIsRefusedOnce(t *testing.T) {
+	stub, r, s := guardedStub(t)
+	id := path.Root("id")
+	stub.replaceInPlan = &id
+	resp := planStub(t, r, s, stubValue(t, s, stubBase), stubValue(t, s, with(stubBase, map[string]tftypes.Value{"id": str("s2")})))
+	if got := refusalRecorded(t, resp.Private); !reflect.DeepEqual(got, []string{"id"}) {
+		t.Errorf("recorded for the apply: %q, want id once", got)
 	}
 }
 
@@ -412,23 +443,60 @@ func TestTheServedModifierDropsAReplacementTheConfigDoesntPermit(t *testing.T) {
 			"unknown": pending, "true": yes}[allow]
 		config := stubValue(t, s, with(stubBase, map[string]tftypes.Value{"id": str("s2"), allowReplaceAttribute: v}))
 		resp := planmodifier.StringResponse{PlanValue: types.StringValue("s2")}
+		freshPrivate(t, &resp.Private, nil)
 		m.PlanModifyString(context.Background(), planmodifier.StringRequest{
 			Path: path.Root("id"), Config: tfsdk.Config{Raw: config, Schema: s}, ConfigValue: types.StringValue("s2"),
 			Plan: tfsdk.Plan{Raw: config, Schema: s}, PlanValue: types.StringValue("s2"),
 			State: tfsdk.State{Raw: prior, Schema: s}, StateValue: types.StringValue("s1"),
 		}, &resp)
-		if resp.RequiresReplace != want {
-			t.Errorf("allow_replace %s: RequiresReplace = %v, want %v", allow, resp.RequiresReplace, want)
+		if resp.RequiresReplace != want || resp.Diagnostics.HasError() {
+			t.Errorf("allow_replace %s: RequiresReplace = %v, want %v: %v", allow, resp.RequiresReplace, want, resp.Diagnostics)
+		}
+		// What it dropped is recorded for the guard, and nothing else is.
+		var diags diag.Diagnostics
+		recorded := takeDropped(context.Background(), resp.Private, &diags)
+		if got := len(recorded) == 1 && recorded[0].Equal(path.Root("id")); got == want || diags.HasError() {
+			t.Errorf("allow_replace %s: recorded %v, want the drop recorded: %v", allow, recorded, !want)
 		}
 	}
 }
 
-// countWrapped walks attrs, every kind of attribute and however deep, fails
-// the test on a RequiresReplace modifier served bare, and counts the wrapped
-// ones.
-func countWrapped(t *testing.T, attrs map[string]schema.Attribute) int {
-	t.Helper()
-	wrapped := 0
+// The guard refuses a recorded path only when its final planned value
+// differs from prior state, as Terraform replaces only then. A modifier that
+// asked while the value was unknown, before UseStateForUnknown put the prior
+// value back, plans an update in place.
+func TestARecordedPathWhoseValueDidntChangeIsNotRefused(t *testing.T) {
+	_, r, s := guardedStub(t)
+	prior := stubValue(t, s, stubBase)
+	planned := stubValue(t, s, with(stubBase, map[string]tftypes.Value{"name": str("b")}))
+	resp := resource.ModifyPlanResponse{Plan: tfsdk.Plan{Raw: planned, Schema: s}}
+	freshPrivate(t, &resp.Private, nil)
+	var diags diag.Diagnostics
+	recordDropped(context.Background(), resp.Private, path.Root("id"), &diags)
+	if diags.HasError() {
+		t.Fatal(diags)
+	}
+	modifier, ok := r.(resource.ResourceWithModifyPlan)
+	if !ok {
+		t.Fatal("a guarded resource has no ModifyPlan")
+	}
+	modifier.ModifyPlan(context.Background(), resource.ModifyPlanRequest{
+		Config: tfsdk.Config{Raw: planned, Schema: s},
+		Plan:   tfsdk.Plan{Raw: planned, Schema: s},
+		State:  tfsdk.State{Raw: prior, Schema: s},
+	}, &resp)
+	if got := replacementWarnings(resp.Diagnostics); len(got) != 0 {
+		t.Errorf("warnings = %q, want none: id kept its value", got)
+	}
+	if got := refusalRecorded(t, resp.Private); len(got) != 0 {
+		t.Errorf("recorded for the apply: %q", got)
+	}
+}
+
+// servedReplacements walks a schema, every kind of attribute and block and
+// however deep, and returns the RequiresReplace modifiers it serves bare and
+// the number it serves wrapped.
+func servedReplacements(s schema.Schema) (bare []string, wrapped int) {
 	var walk func(where string, v reflect.Value)
 	walk = func(where string, v reflect.Value) {
 		if v.Kind() == reflect.Interface {
@@ -445,51 +513,61 @@ func countWrapped(t *testing.T, attrs map[string]schema.Attribute) int {
 					continue
 				}
 				if IsReplacementModifier(m) {
-					t.Errorf("%s serves %T unwrapped", where, m)
+					bare = append(bare, fmt.Sprintf("%s: %T", where, m))
 				}
 			}
 		}
-		for _, field := range []string{"Attributes", "NestedObject"} {
+		for _, field := range []string{"Attributes", "Blocks", "NestedObject"} {
 			f := v.FieldByName(field)
 			switch {
 			case !f.IsValid():
 			case f.Kind() == reflect.Map:
 				for _, k := range f.MapKeys() {
-					walk(where+"."+k.String(), f.MapIndex(k))
+					walk(strings.TrimPrefix(where+"."+k.String(), "."), f.MapIndex(k))
 				}
 			default:
 				walk(where, f)
 			}
 		}
 	}
-	for name, a := range attrs {
-		walk(name, reflect.ValueOf(a))
-	}
-	return wrapped
+	walk("", reflect.ValueOf(s))
+	slices.Sort(bare)
+	return bare, wrapped
 }
 
 // Every RequiresReplace modifier a guarded resource serves is wrapped,
-// whatever kind of attribute carries it and however deep. One served bare
-// would plan a replacement Terraform carries out without the guard.
+// whatever kind of attribute carries it and however deep. One served bare,
+// in a block too, would plan a replacement Terraform carries out without the
+// guard.
 func TestEveryServedReplacementIsWrapped(t *testing.T) {
 	for suffix, newResource := range tenantStateResources {
 		t.Run(suffix, func(t *testing.T) {
-			if countWrapped(t, schemaOf(t, newResource()).Attributes) == 0 {
+			bare, wrapped := servedReplacements(schemaOf(t, newResource()))
+			for _, b := range bare {
+				t.Errorf("%s is served unwrapped", b)
+			}
+			if wrapped == 0 {
 				t.Error("no wrapped modifier found, so the walk read nothing")
 			}
 		})
 	}
-	// No guarded resource has one inside a nested object today, so one is
-	// made here: the guard reads those too (ReplacingAttributes).
+	// No guarded resource has one inside a nested object or a block today,
+	// so they're made here: the walk has to find both.
 	t.Run("nested", func(t *testing.T) {
-		attrs := map[string]schema.Attribute{"outer": schema.SingleNestedAttribute{
-			Optional: true,
-			Attributes: map[string]schema.Attribute{"inner": schema.StringAttribute{Optional: true,
-				PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}}},
-		}}
-		deferReplacements(attrs)
-		if got := countWrapped(t, attrs); got != 1 {
-			t.Errorf("%d wrapped, want the nested one", got)
+		replacing := func() schema.StringAttribute {
+			return schema.StringAttribute{Optional: true,
+				PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}}
+		}
+		s := schema.Schema{
+			Attributes: map[string]schema.Attribute{"outer": schema.SingleNestedAttribute{Optional: true,
+				Attributes: map[string]schema.Attribute{"inner": replacing()}}},
+			Blocks: map[string]schema.Block{"rule": schema.ListNestedBlock{NestedObject: schema.NestedBlockObject{
+				Attributes: map[string]schema.Attribute{"port": replacing()}}}},
+		}
+		deferReplacements(s.Attributes)
+		bare, wrapped := servedReplacements(s)
+		if wrapped != 1 || !slices.Equal(bare, []string{"rule.port: stringplanmodifier.requiresReplaceIfModifier"}) {
+			t.Errorf("wrapped %d, bare %q: want the nested attribute wrapped and the block's reported", wrapped, bare)
 		}
 	})
 }

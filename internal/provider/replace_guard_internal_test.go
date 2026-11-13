@@ -16,9 +16,11 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/listplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/mapplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/objectplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/setplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
+	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-go/tftypes"
 )
 
@@ -268,12 +270,108 @@ func planOf(t *testing.T, r resource.Resource, prior, planned map[string]tftypes
 	if !ok {
 		t.Fatalf("%T has no ModifyPlan", r)
 	}
-	modifier.ModifyPlan(context.Background(), resource.ModifyPlanRequest{
+	req := resource.ModifyPlanRequest{
 		Config: tfsdk.Config{Raw: planRaw, Schema: s.Schema},
 		Plan:   tfsdk.Plan{Raw: planRaw, Schema: s.Schema},
 		State:  tfsdk.State{Raw: stateRaw, Schema: s.Schema},
-	}, &resp)
+	}
+	runServedReplacementModifiers(t, req, &resp)
+	modifier.ModifyPlan(context.Background(), req, &resp)
 	return resp
+}
+
+// runServedReplacementModifiers does what the framework does before a
+// resource's ModifyPlan, for the modifiers the guard wraps: runs each served
+// one, which records what it drops in resp.Private. A plan test that calls
+// ModifyPlan directly calls this first.
+func runServedReplacementModifiers(t *testing.T, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
+	t.Helper()
+	ctx := context.Background()
+	s, ok := req.Plan.Schema.(schema.Schema)
+	if !ok {
+		t.Fatal("the plan's schema isn't a resource schema")
+	}
+	if req.State.Raw.IsNull() || req.Plan.Raw.IsNull() {
+		return // the framework asks nothing to replace on a create or a destroy
+	}
+	in := probeInput{ctx: ctx, req: req, plan: req.Plan}
+	var walk func(attrs map[string]schema.Attribute, parent path.Path)
+	walk = func(attrs map[string]schema.Attribute, parent path.Path) {
+		for name, a := range attrs {
+			p := parent.AtName(name)
+			mods := reflect.ValueOf(a).FieldByName("PlanModifiers")
+			for i := 0; mods.IsValid() && i < mods.Len(); i++ {
+				m := mods.Index(i).Interface()
+				if _, wrapped := m.(replacementWrapper); !wrapped {
+					continue
+				}
+				var diags diag.Diagnostics
+				switch m := m.(type) {
+				case planmodifier.String:
+					var c, pl, st types.String
+					if values(in, p, &c, &pl, &st) {
+						out := planmodifier.StringResponse{PlanValue: pl, Private: resp.Private}
+						m.PlanModifyString(ctx, planmodifier.StringRequest{Path: p, Config: req.Config, ConfigValue: c,
+							Plan: req.Plan, PlanValue: pl, State: req.State, StateValue: st, Private: resp.Private}, &out)
+						diags = out.Diagnostics
+					}
+				case planmodifier.Int64:
+					var c, pl, st types.Int64
+					if values(in, p, &c, &pl, &st) {
+						out := planmodifier.Int64Response{PlanValue: pl, Private: resp.Private}
+						m.PlanModifyInt64(ctx, planmodifier.Int64Request{Path: p, Config: req.Config, ConfigValue: c,
+							Plan: req.Plan, PlanValue: pl, State: req.State, StateValue: st, Private: resp.Private}, &out)
+						diags = out.Diagnostics
+					}
+				case planmodifier.Bool:
+					var c, pl, st types.Bool
+					if values(in, p, &c, &pl, &st) {
+						out := planmodifier.BoolResponse{PlanValue: pl, Private: resp.Private}
+						m.PlanModifyBool(ctx, planmodifier.BoolRequest{Path: p, Config: req.Config, ConfigValue: c,
+							Plan: req.Plan, PlanValue: pl, State: req.State, StateValue: st, Private: resp.Private}, &out)
+						diags = out.Diagnostics
+					}
+				case planmodifier.List:
+					var c, pl, st types.List
+					if values(in, p, &c, &pl, &st) {
+						out := planmodifier.ListResponse{PlanValue: pl, Private: resp.Private}
+						m.PlanModifyList(ctx, planmodifier.ListRequest{Path: p, Config: req.Config, ConfigValue: c,
+							Plan: req.Plan, PlanValue: pl, State: req.State, StateValue: st, Private: resp.Private}, &out)
+						diags = out.Diagnostics
+					}
+				case planmodifier.Set:
+					var c, pl, st types.Set
+					if values(in, p, &c, &pl, &st) {
+						out := planmodifier.SetResponse{PlanValue: pl, Private: resp.Private}
+						m.PlanModifySet(ctx, planmodifier.SetRequest{Path: p, Config: req.Config, ConfigValue: c,
+							Plan: req.Plan, PlanValue: pl, State: req.State, StateValue: st, Private: resp.Private}, &out)
+						diags = out.Diagnostics
+					}
+				case planmodifier.Map:
+					var c, pl, st types.Map
+					if values(in, p, &c, &pl, &st) {
+						out := planmodifier.MapResponse{PlanValue: pl, Private: resp.Private}
+						m.PlanModifyMap(ctx, planmodifier.MapRequest{Path: p, Config: req.Config, ConfigValue: c,
+							Plan: req.Plan, PlanValue: pl, State: req.State, StateValue: st, Private: resp.Private}, &out)
+						diags = out.Diagnostics
+					}
+				case planmodifier.Object:
+					var c, pl, st types.Object
+					if values(in, p, &c, &pl, &st) {
+						out := planmodifier.ObjectResponse{PlanValue: pl, Private: resp.Private}
+						m.PlanModifyObject(ctx, planmodifier.ObjectRequest{Path: p, Config: req.Config, ConfigValue: c,
+							Plan: req.Plan, PlanValue: pl, State: req.State, StateValue: st, Private: resp.Private}, &out)
+						diags = out.Diagnostics
+					}
+				}
+				resp.Diagnostics.Append(diags...)
+			}
+			if nested, ok := a.(schema.SingleNestedAttribute); ok {
+				walk(nested.Attributes, p)
+			}
+		}
+	}
+	walk(s.Attributes, path.Empty())
 }
 
 func with(base map[string]tftypes.Value, changes map[string]tftypes.Value) map[string]tftypes.Value {
@@ -424,6 +522,28 @@ func TestAScopeMoveIsRefusedAtApply(t *testing.T) {
 		t.Errorf("recorded for the apply: %q", got)
 	}
 
+	// The move comes from the provider block, so the configuration leaves
+	// `project` null. The plan still shows where it would move.
+	moved := guardReplacements(&subnetResource{meta: &Meta{Region: "test", Project: "elsewhere"}}, subnetTenantState)
+	stateRaw, s := testValue(t, moved, prior)
+	configRaw, _ := testValue(t, moved, with(prior, map[string]tftypes.Value{"project": tftypes.NewValue(tftypes.String, nil)}))
+	fromDefault := resource.ModifyPlanResponse{Plan: tfsdk.Plan{Raw: stateRaw, Schema: s.Schema}}
+	freshPrivate(t, &fromDefault.Private, nil)
+	movedModifier, ok := moved.(resource.ResourceWithModifyPlan)
+	if !ok {
+		t.Fatal("a guarded resource has no ModifyPlan")
+	}
+	movedModifier.ModifyPlan(context.Background(), resource.ModifyPlanRequest{
+		Config: tfsdk.Config{Raw: configRaw, Schema: s.Schema},
+		Plan:   tfsdk.Plan{Raw: stateRaw, Schema: s.Schema},
+		State:  tfsdk.State{Raw: stateRaw, Schema: s.Schema},
+	}, &fromDefault)
+	var project types.String
+	fromDefault.Plan.GetAttribute(context.Background(), path.Root("project"), &project)
+	if got := refusalRecorded(t, fromDefault.Private); !slices.Equal(got, []string{"project"}) || project.ValueString() != "elsewhere" {
+		t.Errorf("recorded %q, planned project %v: want the move refused and still shown", got, project)
+	}
+
 	permitted := planOf(t, r, prior, with(prior, map[string]tftypes.Value{"project": str("elsewhere"),
 		allowReplaceAttribute: tftypes.NewValue(tftypes.Bool, true)}))
 	if !slices.ContainsFunc(permitted.RequiresReplace, path.Root("project").Equal) {
@@ -456,6 +576,14 @@ func TestTheWarningAndTheRefusalSayWhatHappensAndWhatToDo(t *testing.T) {
 		} {
 			if !strings.Contains(text, want) {
 				t.Errorf("%s doesn't say %q:\n%s", d.Severity(), want, text)
+			}
+		}
+		if d.Severity() == diag.SeverityWarning {
+			for _, want := range []string{"unless Terraform replaces the cluster anyway, as `-replace` asks",
+				"a resource this plan replaces because it depends on this change is destroyed before the apply refuses"} {
+				if !strings.Contains(text, want) {
+					t.Errorf("the warning doesn't say %q:\n%s", want, text)
+				}
 			}
 		}
 		if strings.Contains(text, "-refresh=false") {

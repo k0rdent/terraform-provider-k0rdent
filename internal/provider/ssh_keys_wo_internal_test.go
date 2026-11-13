@@ -369,6 +369,7 @@ func TestAChangedWriteOnlyKeyIsRefusedAsAReplacement(t *testing.T) {
 					t.Fatal(d)
 				}
 				resp := resource.ModifyPlanResponse{Plan: plan, Private: req.Private}
+				runServedReplacementModifiers(t, req, &resp)
 				r.ModifyPlan(context.Background(), req, &resp)
 				if resp.Diagnostics.HasError() {
 					t.Fatalf("the plan failed, so a destroy would too: %v", resp.Diagnostics)

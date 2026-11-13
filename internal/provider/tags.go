@@ -301,7 +301,7 @@ func planTagsAllAtCreation(ctx context.Context, meta *Meta, noun string, req res
 		planTagsAll(ctx, meta, req, resp)
 		return
 	}
-	replacing, ok := plannedReplacements(ctx, req, resp)
+	replacing, ok := modifierReplacements(ctx, req, resp)
 	if !ok || len(replacing) > 0 {
 		planTagsAll(ctx, meta, req, resp)
 		return

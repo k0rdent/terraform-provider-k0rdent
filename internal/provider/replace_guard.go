@@ -55,21 +55,19 @@ import (
 // `terraform taint` are not refused, because each is an explicit request for
 // exactly this replacement and neither changes an attribute.
 //
-// # Why the guard runs in ModifyPlan, and asks the modifiers again
+// # Why the guard runs in ModifyPlan, from the wrappers' record
 //
 // The framework collects RequiresReplace from attribute plan modifiers before a
 // resource's ModifyPlan runs, and does not show ModifyPlan which paths it
-// collected. It also runs an object's own modifiers before the modifiers of the
-// attributes inside it, and a modifier such as UseStateForUnknown can put a
-// prior value back after a RequiresReplace has already said yes to an unknown.
-// Terraform replaces only when the final planned value differs, so a guard that
-// trusted the first yes would refuse changes Terraform makes in place.
-//
-// So the guard runs from ModifyPlan, when every attribute has its final planned
-// value, and asks each attribute's replacement modifiers again against that
-// value. That is the answer Terraform reaches, so an in-place change is never
-// refused. Region and project are decided in ModifyPlan itself (scope.go), and
-// arrive in the response's RequiresReplace.
+// collected. So each wrapper records in planned private state the path it
+// took a replacement away from. A modifier can say yes to a value that's still
+// unknown, and a later one such as UseStateForUnknown can put the prior value
+// back, and Terraform replaces only when the final planned value differs. So
+// the guard runs from ModifyPlan, when every attribute has its final planned
+// value, and makes the same check on each recorded path. That is the answer
+// Terraform reaches, so an in-place change is never refused. Region and
+// project are decided in ModifyPlan itself (scope.go), and arrive in the
+// response's RequiresReplace.
 //
 // # One seam
 //
@@ -343,20 +341,23 @@ func replacementAllowed(ctx context.Context, config tfsdk.Config) bool {
 // guardReplacement turns every replacement in this plan that the
 // configuration doesn't permit into an update the apply refuses: a warning
 // per attribute, the refusal recorded in planned private state for the
-// guarded Update, and region and project taken out of RequiresReplace. The
+// guarded Update, region and project taken out of RequiresReplace, and the
+// computed values the plan would have left unknown kept as they are. The
 // attributes' own RequiresReplace answers were dropped already, by the
-// wrappers the served schema carries. The guarded resource's ModifyPlan calls
-// it after the resource's own, so region and project are already resolved
-// and the plan is final.
+// wrappers the served schema carries, which recorded each path they dropped.
+// The guarded resource's ModifyPlan calls it after the resource's own, so
+// region and project are already resolved and the plan is final.
 //
 // It runs on a plan the resource has already failed, too, so that the warning
 // is reported with the resource's own errors rather than only once they're
 // fixed.
 func guardReplacement(ctx context.Context, what tenantState, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
-	// A refused Update writes its planned private data back to state, so a
-	// refusal is cleared at the start of every plan, or it would outlive
-	// the plan that made it.
+	// Both records are this plan's alone. A refused Update writes its
+	// planned private data back to state, so a refusal is cleared at the
+	// start of every plan, or it would outlive the plan that made it.
+	var dropped []path.Path
 	if resp.Private != nil {
+		dropped = takeDropped(ctx, resp.Private, &resp.Diagnostics)
 		resp.Diagnostics.Append(resp.Private.SetKey(ctx, refusedReplacementKey, nil)...)
 	}
 	if req.State.Raw.IsNull() || req.Plan.Raw.IsNull() || resp.Plan.Raw.IsNull() {
@@ -365,25 +366,13 @@ func guardReplacement(ctx context.Context, what tenantState, req resource.Modify
 	if replacementAllowed(ctx, req.Config) {
 		return
 	}
-	replacing, ok := plannedReplacements(ctx, req, resp)
-	if !ok {
-		// Local: fails closed. Unreachable while every resource is built from
-		// resource/schema, and a plan that cannot be checked is not let through.
-		resp.Diagnostics.AddError("The replacement guard could not read this resource's schema",
-			fmt.Sprintf("The plan was refused because the provider cannot tell whether it replaces this %s.", what.noun))
-		return
-	}
+	replacing := plannedReplacements(ctx, req, resp, dropped)
 	if len(replacing) == 0 {
 		return
 	}
 	pending := optInUnknown(ctx, req.Config)
 	refused := make([]refusedReplacement, 0, len(replacing))
 	for _, r := range replacing {
-		// The resource's ModifyPlan and the attribute's modifier can both
-		// name one path.
-		if slices.ContainsFunc(refused, func(x refusedReplacement) bool { return slices.Equal(x.Path, pathSteps(r.path)) }) {
-			continue
-		}
 		change := describeChange(r, what)
 		warnReplacement(&resp.Diagnostics, r.path, change, pending, what)
 		refused = append(refused, refusedReplacement{Path: pathSteps(r.path), Change: change})
@@ -393,6 +382,46 @@ func guardReplacement(ctx context.Context, what tenantState, req resource.Modify
 	// private data, so this is unreachable.
 	recordRefusal(ctx, resp.Private, refused, &resp.Diagnostics)
 	resp.RequiresReplace = nil
+	keepComputed(ctx, req, resp, replacing)
+}
+
+// keepComputed plans every computed value the configuration leaves null as
+// prior state has it. The apply refuses this update, so none of them can
+// change, and one left unknown, such as a file store's export location,
+// would plan the replacement of every resource that reads it, which Terraform
+// makes before the refusal. The refused attributes keep their planned
+// values, so the plan still shows the change.
+func keepComputed(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse, refused []plannedReplacement) {
+	s, ok := req.Plan.Schema.(schema.Schema)
+	if !ok {
+		return
+	}
+	var walk func(attrs map[string]schema.Attribute, parent path.Path)
+	walk = func(attrs map[string]schema.Attribute, parent path.Path) {
+		for name, a := range attrs {
+			p := parent.AtName(name)
+			if slices.ContainsFunc(refused, func(r plannedReplacement) bool { return r.path.Equal(p) }) {
+				continue
+			}
+			var configured attr.Value
+			if d := req.Config.GetAttribute(ctx, p, &configured); d.HasError() || configured == nil {
+				continue
+			}
+			if nested, ok := a.(schema.SingleNestedAttribute); ok && !configured.IsNull() && !configured.IsUnknown() {
+				walk(nested.Attributes, p)
+				continue
+			}
+			if !a.IsComputed() || !configured.IsNull() {
+				continue
+			}
+			var prior attr.Value
+			if d := req.State.GetAttribute(ctx, p, &prior); d.HasError() || prior == nil {
+				continue
+			}
+			resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, p, prior)...)
+		}
+	}
+	walk(s.Attributes, path.Empty())
 }
 
 // optInUnknown reports whether the configuration sets the opt-in to a value
@@ -413,12 +442,44 @@ type plannedReplacement struct {
 }
 
 // plannedReplacements lists every attribute whose change in this plan replaces
-// the resource, the way Terraform will decide it: region and project from
-// ModifyPlan's own response, and every other attribute by asking its
-// replacement modifiers again against its final planned value. ok is false
-// when the schema can't be read, so a caller can fail closed. A create or a
-// destroy replaces nothing.
-func plannedReplacements(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) (out []plannedReplacement, ok bool) {
+// the resource, the way Terraform decides it: each path that asked for a
+// replacement, from the wrappers' record and from ModifyPlan's own response
+// (a moved region or project), whose final planned value differs from prior
+// state. A path a modifier asked about while its value was still unknown, and
+// that a later modifier put back, isn't a replacement, and Terraform doesn't
+// make one. A create or a destroy replaces nothing.
+func plannedReplacements(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse, dropped []path.Path) []plannedReplacement {
+	if req.State.Raw.IsNull() || req.Plan.Raw.IsNull() {
+		return nil
+	}
+	var out []plannedReplacement
+	for _, p := range append(slices.Clone(resp.RequiresReplace), dropped...) {
+		// The resource's ModifyPlan and an attribute's modifier can both
+		// name one path.
+		if slices.ContainsFunc(out, func(r plannedReplacement) bool { return r.path.Equal(p) }) {
+			continue
+		}
+		var prior, planned attr.Value
+		resp.Diagnostics.Append(req.State.GetAttribute(ctx, p, &prior)...)
+		resp.Diagnostics.Append(resp.Plan.GetAttribute(ctx, p, &planned)...)
+		if prior == nil || planned == nil || (!planned.IsUnknown() && planned.Equal(prior)) {
+			continue
+		}
+		out = append(out, plannedReplacement{path: p, from: prior, to: planned})
+	}
+	slices.SortFunc(out, func(a, b plannedReplacement) int { return strings.Compare(a.path.String(), b.path.String()) })
+	return out
+}
+
+// modifierReplacements lists every attribute whose change in this plan
+// would replace the resource: region and project from ModifyPlan's own
+// response, and every other attribute by asking its replacement modifiers
+// again against its final planned value. It's for a resource's own
+// ModifyPlan, which the framework doesn't show the modifiers' answers, and it
+// asks the modifiers a guard wraps too, so on a guarded resource it reports a
+// replacement the guard may refuse. ok is false when the schema can't be
+// read, so a caller can fail closed. A create or a destroy replaces nothing.
+func modifierReplacements(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) (out []plannedReplacement, ok bool) {
 	if req.State.Raw.IsNull() || req.Plan.Raw.IsNull() {
 		return nil, true
 	}
@@ -483,15 +544,15 @@ func warnReplacement(diags *diag.Diagnostics, p path.Path, change string, pendin
 	}
 	diags.AddAttributeWarning(p,
 		fmt.Sprintf("Changing `%s` would replace this %s, so the apply will refuse it", name, what.noun),
-		fmt.Sprintf("%s That can't be done in place: Terraform would destroy this %s and create "+
-			"another. %s\n\n"+
-			"So this plan shows the %s updated in place, and the apply refuses that update before it "+
-			"sends any request. None of this %s's changes in the plan are made. Other resources in the "+
-			"plan that don't depend on it are still changed. `terraform destroy` isn't affected.\n\n"+
-			"%s To keep the %s, set `%s` back to its current value.",
-			change, what.noun, what.loses,
-			what.noun, what.noun,
-			optIn, what.noun, name))
+		fmt.Sprintf("%[1]s That can't be done in place: Terraform would destroy this %[2]s and create "+
+			"another. %[3]s\n\n"+
+			"So this plan shows the %[2]s updated in place, and the apply refuses that update before it "+
+			"sends any request, unless Terraform replaces the %[2]s anyway, as `-replace` asks. None of "+
+			"this %[2]s's changes in the plan are made. The rest of the plan still applies: a resource "+
+			"this plan replaces because it depends on this change is destroyed before the apply refuses, "+
+			"and isn't created again. `terraform destroy` isn't affected.\n\n"+
+			"%[4]s To keep the %[2]s, set `%[5]s` back to its current value.",
+			change, what.noun, what.loses, optIn, name))
 }
 
 func describeValue(v attr.Value) string {

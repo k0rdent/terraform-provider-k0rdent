@@ -111,9 +111,9 @@ func refreshThenPlan(t *testing.T, body map[string]any, applied, configured map[
 	planned := tfsdk.Plan{Raw: configRaw, Schema: s.Schema}
 	// The framework hands ModifyPlan the same private data in both.
 	resp := resource.ModifyPlanResponse{Plan: planned, Private: read.Private}
-	r.ModifyPlan(context.Background(), resource.ModifyPlanRequest{
-		Config: config, Plan: planned, State: read.State, Private: read.Private,
-	}, &resp)
+	planReq := resource.ModifyPlanRequest{Config: config, Plan: planned, State: read.State, Private: read.Private}
+	runServedReplacementModifiers(t, planReq, &resp)
+	r.ModifyPlan(context.Background(), planReq, &resp)
 	return read, resp
 }
 

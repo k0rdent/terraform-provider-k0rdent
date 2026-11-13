@@ -297,6 +297,25 @@ func (k refusalKind) scenarios() map[string]func(t *testing.T, r *refusalRun) {
 		"-replace": func(t *testing.T, r *refusalRun) {
 			r.replaces("apply -replace", "apply", "-auto-approve", "-replace="+k.addr)
 		},
+		// -replace with the change in the configuration replaces it with the
+		// change, as an explicit request, whatever the warning says. The
+		// warning says that too.
+		"-replace with the change": func(t *testing.T, r *refusalRun) {
+			r.write(k.config(r.name, true, ""))
+			var out string
+			var code int
+			deletes, creates := r.sends(func() { out, code = r.runCode("apply", "-auto-approve", "-replace="+k.addr) })
+			if code != 0 || deletes == 0 || creates == 0 {
+				t.Errorf("apply -replace exited %d with %d deletes and %d creates, want a replacement:\n%s", code, deletes, creates, out)
+			}
+			mustSay(t, "the apply", out, "unless Terraform replaces the "+k.noun+" anyway, as `-replace` asks")
+			_, after := k.values(r.name)
+			state, ok := r.run("state", "show", k.addr)
+			if !ok {
+				t.Fatalf("terraform state show failed:\n%s", state)
+			}
+			mustSay(t, "the state", state, fmt.Sprintf("%s = %q", k.attr, after))
+		},
 		// 9: a removed block deletes.
 		"removed block": func(t *testing.T, r *refusalRun) {
 			r.write(k.without(r.name))
@@ -384,7 +403,7 @@ func TestAccARefusedReplacementLeavesOtherChangesToTheApply(t *testing.T) {
 		t.Errorf("the apply exited %d with %d deletes and %d creates, want 1 and none:\n%s", code, deletes, creates, out)
 	}
 	mustSay(t, "the apply", out, k.refusedAtApply()[0],
-		"Other resources in the plan that don't depend on it are still changed")
+		"The rest of the plan still applies")
 	if n := r.served(http.MethodPatch, network) - before; n != 1 {
 		t.Errorf("the network was sent %d PATCHes, want its rename", n)
 	}
@@ -465,4 +484,118 @@ func TestAccARefusedReplacementDoesNotStopADestroy(t *testing.T) {
 			}
 		})
 	}
+}
+
+// dependentID is the id terraform_data.dependent has in state.
+func (r *refusalRun) dependentID(step string) string {
+	r.t.Helper()
+	out, ok := r.run("state", "show", "terraform_data.dependent")
+	if !ok {
+		r.t.Fatalf("%s: terraform state show terraform_data.dependent failed:\n%s", step, out)
+	}
+	for _, line := range strings.Split(out, "\n") {
+		if f := strings.Fields(line); len(f) == 3 && f[0] == "id" && f[1] == "=" {
+			return strings.Trim(f[2], `"`)
+		}
+	}
+	r.t.Fatalf("%s: no id in:\n%s", step, out)
+	return ""
+}
+
+// A refused change that would leave a computed value unknown keeps it as it
+// is, so a resource that reads only that value isn't replaced. Here a file
+// store's share_type and capacity change together, and a terraform_data
+// reads its export server: the plan destroys nothing, the apply refuses, and
+// the terraform_data is the one it was.
+func TestAccARefusedReplacementKeepsComputedValuesForDependents(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS == "windows" {
+		skipTest(t, "the CLI sequence runs on unix")
+	}
+	const name = "acc-refusal-computed"
+	config := func(class string, capacity int) string {
+		return fmt.Sprintf(`
+resource %q "test" {
+  id           = %q
+  display_name = "acceptance"
+  share_type   = %q
+  capacity_gib = %d
+  consumers    = %s
+}
+
+resource "terraform_data" "dependent" {
+  triggers_replace = %s.test.preferred_export_location.server
+}
+`, fileStoreType, name, class, capacity, oneConsumer, fileStoreType)
+	}
+	object := fileStorePath(map[string]string{"region": "us-texas-1", "project": "demo", "id": name})
+	r := &refusalRun{cliRun: newCLIRun(t)}
+	r.write(config("general", 100))
+	if out, ok := r.run("apply", "-auto-approve"); !ok {
+		t.Fatalf("the create failed:\n%s", out)
+	}
+	t.Cleanup(func() {
+		if out, ok := r.run("destroy", "-auto-approve", "-refresh=false"); !ok {
+			t.Errorf("cleanup destroy failed:\n%s", out)
+		}
+	})
+	before := r.dependentID("after the create")
+
+	r.write(config("high-speed", 200))
+	out, code := r.runCode("plan")
+	if code != 0 {
+		t.Fatalf("the plan exited %d:\n%s", code, out)
+	}
+	mustSay(t, "the plan", out, "Warning: Changing `share_type` would replace this file store, so the apply will refuse it",
+		"0 to add, 1 to change, 0 to destroy")
+	deletes := r.served(http.MethodDelete, object)
+	out, code = r.runCode("apply", "-auto-approve")
+	if code != 1 {
+		t.Errorf("the apply exited %d, want 1:\n%s", code, out)
+	}
+	mustSay(t, "the apply", out, "Error: Changing `share_type` would replace this file store, so the apply refused it")
+	if strings.Contains(out, "terraform_data.dependent: Destroying") {
+		t.Errorf("the apply destroyed the dependent:\n%s", out)
+	}
+	if strings.Contains(out, "will cut off") {
+		t.Errorf("the plan warned that the store's consumers lose access, though it deletes nothing:\n%s", out)
+	}
+	if n := r.served(http.MethodDelete, object) - deletes; n != 0 {
+		t.Errorf("the apply sent %d deletes for the store", n)
+	}
+	if after := r.dependentID("after the refusal"); after != before {
+		t.Errorf("terraform_data.dependent is %s, was %s: it was replaced", after, before)
+	}
+}
+
+// A resource that reads the refused change itself is replaced as the plan
+// shows: Terraform destroys it before the apply refuses, and doesn't create
+// it again. The provider can't stop that, and the warning and
+// docs/known-limitations.md say so. This pins it.
+func TestAccARefusedChangeStillReplacesWhatReadsIt(t *testing.T) {
+	t.Parallel()
+	const name = "acc-refusal-reads"
+	k := refusalSubnet()
+	r := startRefusal(t, k, name)
+	dependent := "\nresource \"terraform_data\" \"dependent\" {\n  triggers_replace = " + k.addr + ".description\n}\n"
+	r.write(k.config(name, false, "") + dependent)
+	if out, ok := r.run("apply", "-auto-approve"); !ok {
+		t.Fatalf("adding the dependent failed:\n%s", out)
+	}
+	r.write(k.config(name, true, "") + dependent)
+	out, code := r.runCode("plan")
+	if code != 0 {
+		t.Fatalf("the plan exited %d:\n%s", code, out)
+	}
+	mustSay(t, "the plan", out, "terraform_data.dependent must be replaced", "1 to add, 1 to change, 1 to destroy",
+		"a resource this plan replaces because it depends on this change is destroyed before the apply refuses")
+	out, code = r.runCode("apply", "-auto-approve")
+	if code != 1 {
+		t.Errorf("the apply exited %d, want 1:\n%s", code, out)
+	}
+	mustSay(t, "the apply", out, "terraform_data.dependent: Destruction complete", k.refusedAtApply()[0])
+	if list, _ := r.run("state", "list"); strings.Contains(list, "terraform_data.dependent") {
+		t.Errorf("the dependent is in state after the refusal:\n%s", list)
+	}
+	r.holds("after the refusal")
 }

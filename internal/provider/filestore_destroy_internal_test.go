@@ -57,11 +57,14 @@ func TestFileStoreReplacementWarnsAboutEnforcedConsumers(t *testing.T) {
 		}
 		planRaw, _ := testValue(t, r, fileStorePlan(planned))
 		resp := resource.ModifyPlanResponse{Plan: tfsdk.Plan{Raw: planRaw, Schema: s.Schema}}
-		r.ModifyPlan(context.Background(), resource.ModifyPlanRequest{
+		freshPrivate(t, &resp.Private, nil)
+		req := resource.ModifyPlanRequest{
 			Config: tfsdk.Config{Raw: planRaw, Schema: s.Schema},
 			Plan:   tfsdk.Plan{Raw: planRaw, Schema: s.Schema},
 			State:  tfsdk.State{Raw: stateRaw, Schema: s.Schema},
-		}, &resp)
+		}
+		runServedReplacementModifiers(t, req, &resp)
+		r.ModifyPlan(context.Background(), req, &resp)
 		if resp.Diagnostics.HasError() {
 			t.Fatalf("ModifyPlan: %v", resp.Diagnostics.Errors())
 		}
@@ -78,6 +81,14 @@ func TestFileStoreReplacementWarnsAboutEnforcedConsumers(t *testing.T) {
 		}
 		if d := diags.Warnings()[0].Detail(); !strings.Contains(d, "10.0.1.7") {
 			t.Errorf("the warning does not name the consumer: %q", d)
+		}
+	})
+	t.Run("refused replacement", func(t *testing.T) {
+		// Without the permission the apply refuses, and nothing is deleted,
+		// so the only warning is the guard's.
+		diags := modifyPlan(t, map[string]tftypes.Value{"share_type": str("high-speed")})
+		if diags.WarningsCount() != 1 || !strings.Contains(diags.Warnings()[0].Summary(), "would replace this file store") {
+			t.Errorf("warnings = %v, want only the refusal", diags)
 		}
 	})
 	t.Run("destroy", func(t *testing.T) {

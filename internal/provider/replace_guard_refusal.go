@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 )
 
 // The replacement guard's refusal, made at apply.
@@ -17,10 +19,11 @@ import (
 // can't take back what an attribute's RequiresReplace modifier asked for. The
 // guard owns the served schema, so it wraps each of those modifiers instead:
 // the wrapper asks the real modifier, and drops its answer when the
-// configuration being planned doesn't set `allow_replace = true`. Terraform
-// then plans an update, so it never calls Delete. guardReplacement warns and
-// records the refusal in planned private state, and the guarded Update reads
-// it and refuses before it sends any request.
+// configuration being planned doesn't set `allow_replace = true`, recording
+// the path in planned private state. Terraform then plans an update, so it
+// never calls Delete. guardReplacement reads the record, warns and records
+// the refusal, and the guarded Update reads that and refuses before it sends
+// any request.
 //
 // An opt-in known only after apply drops the answer at plan, and Terraform's
 // final plan at apply, with the opt-in known, then asks for a replacement.
@@ -30,6 +33,94 @@ import (
 
 // refusedReplacementKey carries the refusal from the plan to the Update.
 const refusedReplacementKey = "replacement_refused"
+
+// droppedReplacementKey carries the paths the wrappers dropped a replacement
+// from to guardReplacement, within one plan. guardReplacement clears it, so
+// planned private state never holds it.
+const droppedReplacementKey = "replacement_dropped"
+
+// privateData is what the framework's private state offers.
+type privateData interface {
+	privateState
+	privateWriter
+}
+
+// recordDropped adds p to the paths this plan's wrappers dropped a
+// replacement from.
+func recordDropped(ctx context.Context, private privateData, p path.Path, diags *diag.Diagnostics) {
+	var paths [][]string
+	raw, d := private.GetKey(ctx, droppedReplacementKey)
+	diags.Append(d...)
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, &paths); err != nil {
+			// Local: fails closed. Only this file writes the record.
+			diags.AddError("The replacement guard could not read its record", err.Error())
+			return
+		}
+	}
+	steps := pathSteps(p)
+	if slices.ContainsFunc(paths, func(x []string) bool { return slices.Equal(x, steps) }) {
+		return
+	}
+	raw, err := json.Marshal(append(paths, steps))
+	if err != nil {
+		// Local: fails closed. A slice of strings always marshals.
+		diags.AddError("The replacement guard could not record a replacement", err.Error())
+		return
+	}
+	// Fails closed: the framework's SetKey refuses a nil private state.
+	diags.Append(private.SetKey(ctx, droppedReplacementKey, raw)...)
+}
+
+// takeDropped is the paths this plan's wrappers dropped a replacement from,
+// and clears the record.
+func takeDropped(ctx context.Context, private privateData, diags *diag.Diagnostics) []path.Path {
+	raw, d := private.GetKey(ctx, droppedReplacementKey)
+	diags.Append(d...)
+	if len(raw) == 0 {
+		return nil
+	}
+	diags.Append(private.SetKey(ctx, droppedReplacementKey, nil)...)
+	var paths [][]string
+	if err := json.Unmarshal(raw, &paths); err != nil {
+		// Local: fails closed. Only this file writes the record.
+		diags.AddError("The replacement guard could not read its record", err.Error())
+		return nil
+	}
+	out := make([]path.Path, 0, len(paths))
+	for _, steps := range paths {
+		out = append(out, pathOf(steps))
+	}
+	return out
+}
+
+// dropUnlessAllowed takes a replacement the configuration doesn't permit
+// away from a modifier's answer, and records it for guardReplacement.
+func dropUnlessAllowed(ctx context.Context, config tfsdk.Config, p path.Path, private privateData, requiresReplace *bool, diags *diag.Diagnostics) {
+	if !*requiresReplace || replacementAllowed(ctx, config) {
+		return
+	}
+	*requiresReplace = false
+	recordDropped(ctx, private, p, diags)
+}
+
+// permittedKey marks a context whose plan the configuration lets replace the
+// resource.
+type permittedKey struct{}
+
+// withReplacementPermitted is ctx carrying whether the configuration being
+// planned permits a replacement, for the resource's own ModifyPlan.
+func withReplacementPermitted(ctx context.Context, permitted bool) context.Context {
+	return context.WithValue(ctx, permittedKey{}, permitted)
+}
+
+// replacementPermitted reports whether a replacement this plan finds would go
+// ahead. A resource called outside the guard, as in its own tests, is told
+// yes.
+func replacementPermitted(ctx context.Context) bool {
+	permitted, ok := ctx.Value(permittedKey{}).(bool)
+	return !ok || permitted
+}
 
 // refusedReplacement is one attribute whose change the apply refuses, and the
 // sentence that says what the change was.
@@ -155,37 +246,37 @@ func (w refusedObject) wrappedReplacement() any { return w.Object }
 
 func (w refusedString) PlanModifyString(ctx context.Context, req planmodifier.StringRequest, resp *planmodifier.StringResponse) {
 	w.String.PlanModifyString(ctx, req, resp)
-	resp.RequiresReplace = resp.RequiresReplace && replacementAllowed(ctx, req.Config)
+	dropUnlessAllowed(ctx, req.Config, req.Path, resp.Private, &resp.RequiresReplace, &resp.Diagnostics)
 }
 
 func (w refusedInt64) PlanModifyInt64(ctx context.Context, req planmodifier.Int64Request, resp *planmodifier.Int64Response) {
 	w.Int64.PlanModifyInt64(ctx, req, resp)
-	resp.RequiresReplace = resp.RequiresReplace && replacementAllowed(ctx, req.Config)
+	dropUnlessAllowed(ctx, req.Config, req.Path, resp.Private, &resp.RequiresReplace, &resp.Diagnostics)
 }
 
 func (w refusedBool) PlanModifyBool(ctx context.Context, req planmodifier.BoolRequest, resp *planmodifier.BoolResponse) {
 	w.Bool.PlanModifyBool(ctx, req, resp)
-	resp.RequiresReplace = resp.RequiresReplace && replacementAllowed(ctx, req.Config)
+	dropUnlessAllowed(ctx, req.Config, req.Path, resp.Private, &resp.RequiresReplace, &resp.Diagnostics)
 }
 
 func (w refusedList) PlanModifyList(ctx context.Context, req planmodifier.ListRequest, resp *planmodifier.ListResponse) {
 	w.List.PlanModifyList(ctx, req, resp)
-	resp.RequiresReplace = resp.RequiresReplace && replacementAllowed(ctx, req.Config)
+	dropUnlessAllowed(ctx, req.Config, req.Path, resp.Private, &resp.RequiresReplace, &resp.Diagnostics)
 }
 
 func (w refusedSet) PlanModifySet(ctx context.Context, req planmodifier.SetRequest, resp *planmodifier.SetResponse) {
 	w.Set.PlanModifySet(ctx, req, resp)
-	resp.RequiresReplace = resp.RequiresReplace && replacementAllowed(ctx, req.Config)
+	dropUnlessAllowed(ctx, req.Config, req.Path, resp.Private, &resp.RequiresReplace, &resp.Diagnostics)
 }
 
 func (w refusedMap) PlanModifyMap(ctx context.Context, req planmodifier.MapRequest, resp *planmodifier.MapResponse) {
 	w.Map.PlanModifyMap(ctx, req, resp)
-	resp.RequiresReplace = resp.RequiresReplace && replacementAllowed(ctx, req.Config)
+	dropUnlessAllowed(ctx, req.Config, req.Path, resp.Private, &resp.RequiresReplace, &resp.Diagnostics)
 }
 
 func (w refusedObject) PlanModifyObject(ctx context.Context, req planmodifier.ObjectRequest, resp *planmodifier.ObjectResponse) {
 	w.Object.PlanModifyObject(ctx, req, resp)
-	resp.RequiresReplace = resp.RequiresReplace && replacementAllowed(ctx, req.Config)
+	dropUnlessAllowed(ctx, req.Config, req.Path, resp.Private, &resp.RequiresReplace, &resp.Diagnostics)
 }
 
 // wrapReplacements is mods with each RequiresReplace modifier wrapped, in a

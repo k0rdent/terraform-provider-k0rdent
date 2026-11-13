@@ -174,7 +174,9 @@ func (g *guardedResource) ModifyPlan(ctx context.Context, req resource.ModifyPla
 		if resp.Diagnostics.HasError() {
 			return // fails closed: the plan is refused
 		}
-		m.ModifyPlan(ctx, in, &out)
+		// The resource's own warnings about what a replacement destroys are
+		// for one that goes ahead.
+		m.ModifyPlan(withReplacementPermitted(ctx, replacementAllowed(ctx, req.Config)), in, &out)
 		resp.Identity, resp.RequiresReplace, resp.Private, resp.Diagnostics, resp.Deferred =
 			out.Identity, out.RequiresReplace, out.Private, out.Diagnostics, out.Deferred
 		if !out.Plan.Raw.IsNull() {

@@ -260,7 +260,7 @@ func (r *vpcSecurityGroupsResource) ModifyPlan(ctx context.Context, req resource
 	// never reaches this: Terraform decides it after ModifyPlan answers, and
 	// the plan it hands over looks like any other.
 	var prior types.String
-	replacing, ok := plannedReplacements(ctx, req, resp)
+	replacing, ok := modifierReplacements(ctx, req, resp)
 	oldDefault := defaultGroupUnknown
 	if !req.State.Raw.IsNull() {
 		var priorState vpcSecurityGroupsModel
