@@ -146,8 +146,9 @@ fail to create the new one, so `allow_replace` doesn't permit it.
 
 The plan shows `~ update in-place` with a warning, the apply refuses that
 resource's update before it sends any request, and `terraform destroy` isn't
-affected. This holds for every resource with a `region`. Set `region` or
-`project` back to its current value to clear it.
+affected. This holds for every resource with a `region`, when the project
+list shows the project's region, or for a project, when the region list shows
+the region. Set `region` or `project` back to its current value to clear it.
 
 ## A refused replacement fails the apply, not the plan
 
