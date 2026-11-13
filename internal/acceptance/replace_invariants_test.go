@@ -43,7 +43,7 @@ const (
 	// paragraph lists.
 	replaces
 	// refused is a refusal of its own, not the guard's, which allow_replace
-	// doesn't lift: a file store's shrink, a region its project isn't in.
+	// doesn't lift: a move to a region its project isn't in.
 	refused
 )
 
@@ -57,10 +57,6 @@ type invChange struct {
 	refusal *regexp.Regexp
 	// edit is the change, made on a copy of the start's block.
 	edit func(b block) block
-	// onCreate says a refusal of its own holds for a create too, so for the
-	// plan that replaces a tainted resource. The others are refusals of an
-	// update only.
-	onCreate bool
 	// silent says which part of this row's rule no doc states.
 	silent string
 }
@@ -173,21 +169,23 @@ type invKind struct {
 //     cluster description says the plan warns, not that it's refused. A
 //     cluster with no create token is the exception: a create of an id the
 //     platform holds for it is refused unless allow_replace = true, and a
-//     create that names another id or project finds nothing there.
+//     create that names another id, project or region finds nothing there.
 //   - A subscription the platform turned off is replaced on the next plan
 //     with secret_wo set, and only warned about without it (is_active doc).
 //     secret_wo is required to create or replace one (secret_wo doc), so
 //     without it a replacing change is refused.
 func wantReplacePlan(k invKind, start invStart, c invChange, allow bool) ([]string, *regexp.Regexp) {
 	tainted := start == taintedWithToken || start == taintedNoToken
-	if c.rule == refused && (c.onCreate || !tainted) {
+	// A refusal of its own is of an update: the plan that replaces a tainted
+	// resource is a create, which none refuses.
+	if c.rule == refused && !tainted {
 		return []string{"refuse"}, c.refusal
 	}
 	switch start {
 	case taintedWithToken:
 		return []string{"replace"}, nil
 	case taintedNoToken:
-		if allow || c.attr == "id" || c.attr == "project" {
+		if allow || c.attr == "id" || c.attr == "project" || c.attr == "region" {
 			return []string{"replace"}, nil
 		}
 		return []string{"refuse"}, takenID(k.noun)

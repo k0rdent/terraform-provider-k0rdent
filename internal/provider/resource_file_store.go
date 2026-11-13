@@ -209,8 +209,11 @@ func (r *fileStoreResource) UpgradeState(context.Context) map[int64]resource.Sta
 // `google_sql_database_instance` shipped exactly that on `disk_size` and it is
 // the origin of a standing warning in its documentation.
 //
-// So the shrink is refused in ModifyPlan instead, before the apply, and the
-// message names the only safe route: a new store and a migration.
+// So the shrink is refused instead, and the message names the only safe
+// route: a new store and a migration. ModifyPlan warns of it, and Update
+// refuses it before it sends anything (refuseShrink). A refusal at plan would
+// stop `terraform destroy` too, since destroy refreshes with a normal plan
+// first, and a shrink deletes nothing, so the apply can wait to refuse it.
 //
 // # Why share_type is RequiresReplace and capacity is not
 //
@@ -271,8 +274,10 @@ func (r *fileStoreResource) Schema(ctx context.Context, _ resource.SchemaRequest
 			"capacity_gib": schema.Int64Attribute{
 				Required: true,
 				MarkdownDescription: "Declared capacity in binary gibibytes. **Expand-only**: " +
-					"raising it grows the store, and lowering it is refused at plan time because " +
-					"releasing capacity means creating a smaller store and migrating the data.\n\n" +
+					"raising it grows the store, and lowering it is refused because releasing " +
+					"capacity means creating a smaller store and migrating the data. The plan warns " +
+					"of a lower value, and the apply fails before it sends any request, other changes " +
+					"included, so `terraform destroy` still works.\n\n" +
 					"**Not enforced as a quota.** The storage behind this API does not currently " +
 					"cap consumption at this figure, so it is a declaration for planning and " +
 					"accounting.",
@@ -671,11 +676,11 @@ func (r *fileStoreResource) ModifyPlan(ctx context.Context, req resource.ModifyP
 		return
 	}
 
-	// The shrink refusal. Deliberately not RequiresReplace: see Schema. An
-	// unknown capacity is left to the server, because a value interpolated from
-	// somewhere else cannot be compared here and refusing it would reject a
-	// configuration that is about to be fine.
-	// A replacement is a new store, so a smaller capacity there is no shrink.
+	// The shrink warning. Deliberately not RequiresReplace: see Schema. An
+	// unknown capacity is left to the apply, because a value interpolated from
+	// somewhere else cannot be compared here. Update refuses either before it
+	// sends anything. A replacement is a new store, so a smaller capacity there
+	// is no shrink.
 	replacing := len(resp.RequiresReplace) > 0 || !plan.ShareType.Equal(state.ShareType) ||
 		(!plan.ID.IsUnknown() && !plan.ID.Equal(state.ID))
 	if replacing {
@@ -684,19 +689,11 @@ func (r *fileStoreResource) ModifyPlan(ctx context.Context, req resource.ModifyP
 	}
 	if !replacing && !plan.CapacityGiB.IsUnknown() && !state.CapacityGiB.IsNull() &&
 		plan.CapacityGiB.ValueInt64() < state.CapacityGiB.ValueInt64() {
-		// Local: compared against prior state, no request made. The upstream
-		// 409 CONFLICT_IMMUTABLE this replaces would have carried a code and a
-		// request id; the point is that it is never sent.
-		resp.Diagnostics.AddAttributeError(path.Root("capacity_gib"),
-			"A file store cannot be shrunk",
-			fmt.Sprintf("`capacity_gib` goes from %d to %d. Capacity is expand-only: shrinking a "+
-				"filesystem that already holds data is not a safe online operation, so the "+
-				"platform refuses it.\n\nReleasing capacity means provisioning a smaller store "+
-				"and migrating the data. Terraform will not do that for you, and this resource "+
-				"deliberately does not replace the store on a shrink, because that would destroy "+
-				"the data it holds.",
-				state.CapacityGiB.ValueInt64(), plan.CapacityGiB.ValueInt64()))
-		return
+		from, to := state.CapacityGiB.ValueInt64(), plan.CapacityGiB.ValueInt64()
+		resp.Diagnostics.AddAttributeWarning(path.Root("capacity_gib"), shrinkRefusal,
+			shrinkText(from, to)+fmt.Sprintf("\n\nThe apply checks this again, and if it still holds, fails "+
+				"before it sends any request, other changes included. `terraform destroy` isn't affected. "+
+				"To plan no capacity change, set `capacity_gib` to %d.", from))
 	}
 
 	verdicts := judgeGrants(grantReportOf(ctx, state.ConsumerStatus, &resp.Diagnostics),
@@ -746,6 +743,11 @@ func (r *fileStoreResource) Create(ctx context.Context, req resource.CreateReque
 	ctx, cancel := withTimeout(ctx, plan.Timeouts.Create, fileStoreStates.timeout(r.meta.Wait), &resp.Diagnostics)
 	defer cancel()
 	if resp.Diagnostics.HasError() {
+		return
+	}
+	// The plan only warns about a region its project isn't in, so it's
+	// refused here, before anything is sent.
+	if refuseRegionMismatch(ctx, r.meta, target, &resp.Diagnostics) {
 		return
 	}
 
@@ -876,6 +878,11 @@ func (r *fileStoreResource) Update(ctx context.Context, req resource.UpdateReque
 	if resp.Diagnostics.HasError() {
 		return
 	}
+	// The plan only warns about a shrink, so it's refused here, before any
+	// write, or the rest would land without it.
+	if refuseShrink(plan, state, &resp.Diagnostics) {
+		return
+	}
 
 	md, metadataChanged, diags := plan.metadata().patch(ctx, state.metadata())
 	resp.Diagnostics.Append(diags...)
@@ -910,6 +917,36 @@ func (r *fileStoreResource) Update(ctx context.Context, req resource.UpdateReque
 		return
 	}
 	r.recordUpdate(ctx, target, id, plan, applied, resp)
+}
+
+// shrinkRefusal is the summary of a shrink's refusal: a warning at plan and
+// an error at apply.
+const shrinkRefusal = "A file store cannot be shrunk"
+
+// shrinkText says why a shrink is refused and what to do instead.
+func shrinkText(from, to int64) string {
+	return fmt.Sprintf("`capacity_gib` goes from %d to %d. Capacity is expand-only: shrinking a "+
+		"filesystem that already holds data is not a safe online operation, so the "+
+		"platform refuses it.\n\nReleasing capacity means provisioning a smaller store "+
+		"and migrating the data. Terraform will not do that for you, and this resource "+
+		"deliberately does not replace the store on a shrink, because that would destroy "+
+		"the data it holds.", from, to)
+}
+
+// refuseShrink is the plan's shrink check, made again before an update
+// sends anything, with the capacity the apply knows, which the plan may not
+// have. It reports whether the update stops here, having said why.
+func refuseShrink(plan, state fileStoreModel, diags *diag.Diagnostics) bool {
+	p, s := plan.CapacityGiB, state.CapacityGiB
+	if p.IsNull() || p.IsUnknown() || s.IsNull() || s.IsUnknown() || p.ValueInt64() >= s.ValueInt64() {
+		return false
+	}
+	// Local: compared against prior state, no request made. The upstream
+	// 409 CONFLICT_IMMUTABLE this replaces would have carried a code and a
+	// request id; the point is that it is never sent.
+	diags.AddAttributeError(path.Root("capacity_gib"), shrinkRefusal,
+		shrinkText(s.ValueInt64(), p.ValueInt64())+"\n\nThis apply sent nothing, so the file store is unchanged.")
+	return true
 }
 
 // updateRequest is the PATCH body for an update.

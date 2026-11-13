@@ -354,6 +354,15 @@ func (r *vpcSecurityGroupsResource) Create(ctx context.Context, req resource.Cre
 	if resp.Diagnostics.HasError() {
 		return
 	}
+	target, ok := resolveScope(r.meta, plan.Region, plan.Project, &resp.Diagnostics)
+	if !ok {
+		return
+	}
+	// The plan only warns about a region its project isn't in, so it's
+	// refused here, before anything is sent.
+	if refuseRegionMismatch(ctx, r.meta, target, &resp.Diagnostics) {
+		return
+	}
 
 	// The framework always hands a write its private state. Only a test
 	// calling this directly passes none, and then no token is kept.

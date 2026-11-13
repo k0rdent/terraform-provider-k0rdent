@@ -225,8 +225,9 @@ func modifyScopePlan(ctx context.Context, meta *Meta, req resource.ModifyPlanReq
 		}
 	}
 
-	// A create, or a move, in a region its project isn't in is refused here
-	// when the project list says where the project is. See region_mismatch.go.
+	// A create in a region its project isn't in is warned of here, and a
+	// move refused, when the project list says where the project is. See
+	// region_mismatch.go.
 	if req.State.Raw.IsNull() || len(resp.RequiresReplace) > 0 {
 		var region, project types.String
 		if resp.Plan.GetAttribute(ctx, path.Root("region"), &region).HasError() ||
@@ -234,7 +235,8 @@ func modifyScopePlan(ctx context.Context, meta *Meta, req resource.ModifyPlanReq
 			return
 		}
 		if !region.IsUnknown() && !project.IsUnknown() {
-			checkRegionMatchesProject(ctx, meta, region.ValueString(), project.ValueString(), &resp.Diagnostics)
+			checkRegionMatchesProject(ctx, meta, region.ValueString(), project.ValueString(),
+				!req.State.Raw.IsNull(), &resp.Diagnostics)
 		}
 	}
 }

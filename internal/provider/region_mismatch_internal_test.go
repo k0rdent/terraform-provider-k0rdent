@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -22,7 +23,7 @@ import (
 // with a 409 PROJECT_REGION_MISMATCH when the project is locked to another
 // region, and the message doesn't say which. These pin that the provider
 // says which, and that a create it can tell is in the wrong region is
-// refused at plan.
+// warned of at plan and refused at apply, and a move refused at plan.
 
 // mismatchAPI holds project p in region home. Every project-scoped route in
 // another region answers the contract's 409, and the project list answers
@@ -132,8 +133,14 @@ func TestARegionMismatchWithAnUnseenProjectSaysWhereToLook(t *testing.T) {
 	}
 }
 
-// planNetworkCreate runs modifyScopePlan for a network created in region.
+// planNetworkCreate runs modifyScopePlan for a network created in region,
+// or moved there from from when from isn't empty.
 func planNetworkCreate(t *testing.T, meta *Meta, region string) resource.ModifyPlanResponse {
+	t.Helper()
+	return planNetworkIn(t, meta, "", region)
+}
+
+func planNetworkIn(t *testing.T, meta *Meta, from, region string) resource.ModifyPlanResponse {
 	t.Helper()
 	r := &networkResource{meta: meta}
 	set := map[string]tftypes.Value{"id": str("n"), "project": str("p")}
@@ -142,41 +149,125 @@ func planNetworkCreate(t *testing.T, meta *Meta, region string) resource.ModifyP
 	}
 	configRaw, s := testValue(t, r, set)
 	plan := tfsdk.Plan{Raw: configRaw, Schema: s.Schema}
+	state := tfsdk.State{Raw: tftypes.NewValue(configRaw.Type(), nil), Schema: s.Schema}
+	if from != "" {
+		prior := map[string]tftypes.Value{"id": str("n"), "project": str("p"), "region": str(from)}
+		stateRaw, _ := testValue(t, r, prior)
+		state.Raw = stateRaw
+	}
 	resp := resource.ModifyPlanResponse{Plan: plan}
 	modifyScopePlan(context.Background(), meta, resource.ModifyPlanRequest{
 		Config: tfsdk.Config{Raw: configRaw, Schema: s.Schema},
 		Plan:   plan,
-		State:  tfsdk.State{Raw: tftypes.NewValue(configRaw.Type(), nil), Schema: s.Schema},
+		State:  state,
 	}, &resp)
 	return resp
 }
 
-// A create whose project is known to be in another region is refused at plan,
-// whether its region came from the resource or the provider block.
-func TestACreateInAnotherRegionThanItsProjectIsRefusedAtPlan(t *testing.T) {
+// A create whose project is known to be in another region only warns at
+// plan, whether its region came from the resource or the provider block: a
+// create deletes nothing, so the apply refuses it, and `terraform destroy`,
+// which plans the create of a resource state doesn't have, isn't stopped.
+func TestACreateInAnotherRegionThanItsProjectWarnsAtPlan(t *testing.T) {
 	api := &mismatchAPI{home: "us-east"}
 	meta := mismatchMeta(t, api)
 	for _, region := range []string{"eu", ""} {
 		resp := planNetworkCreate(t, meta, region)
-		if !resp.Diagnostics.HasError() {
-			t.Fatalf("region %q: planned", region)
+		if resp.Diagnostics.HasError() {
+			t.Fatalf("region %q: refused at plan: %v", region, resp.Diagnostics)
 		}
-		detail := resp.Diagnostics.Errors()[0].Detail()
-		for _, want := range []string{`"p"`, "us-east", "eu"} {
-			if !strings.Contains(detail, want) {
-				t.Errorf("region %q: diagnostic does not say %q:\n%s", region, want, detail)
+		var warning diag.Diagnostic
+		for _, w := range resp.Diagnostics.Warnings() {
+			if w.Summary() == regionRefusal {
+				warning = w
+			}
+		}
+		if warning == nil {
+			t.Fatalf("region %q: no warning: %v", region, resp.Diagnostics)
+		}
+		for _, want := range []string{`"p"`, "us-east", "eu", "fails before it creates anything",
+			"`terraform destroy` isn't affected"} {
+			if !strings.Contains(warning.Detail(), want) {
+				t.Errorf("region %q: warning does not say %q:\n%s", region, want, warning.Detail())
 			}
 		}
 	}
-	if resp := planNetworkCreate(t, meta, "us-east"); resp.Diagnostics.HasError() {
-		t.Errorf("the project's own region refused: %v", resp.Diagnostics)
+	if resp := planNetworkCreate(t, meta, "us-east"); len(resp.Diagnostics) > 0 {
+		t.Errorf("the project's own region warned: %v", resp.Diagnostics)
 	}
 
 	// A project the list doesn't show, being created in this apply or out of
 	// the credential's sight, is left to the platform.
 	api.hidden = true
-	if resp := planNetworkCreate(t, mismatchMeta(t, api), "eu"); resp.Diagnostics.HasError() {
-		t.Errorf("an unseen project refused: %v", resp.Diagnostics)
+	if resp := planNetworkCreate(t, mismatchMeta(t, api), "eu"); len(resp.Diagnostics) > 0 {
+		t.Errorf("an unseen project warned: %v", resp.Diagnostics)
+	}
+}
+
+// A move to a region the project isn't in is a replacement, whose delete
+// would come before the create's refusal, so it's refused at plan.
+func TestAMoveToAnotherRegionThanItsProjectIsRefusedAtPlan(t *testing.T) {
+	meta := mismatchMeta(t, &mismatchAPI{home: "us-east"})
+	resp := planNetworkIn(t, meta, "us-east", "eu")
+	if !resp.Diagnostics.HasError() {
+		t.Fatalf("the move planned: %v", resp.Diagnostics)
+	}
+	e := resp.Diagnostics.Errors()[0]
+	for _, want := range []string{`"p"`, "us-east", "deleting it first", "terraform destroy -refresh=false"} {
+		if !strings.Contains(e.Detail(), want) {
+			t.Errorf("the refusal does not say %q:\n%s", want, e.Detail())
+		}
+	}
+	if e.Summary() != regionRefusal {
+		t.Errorf("summary = %q", e.Summary())
+	}
+}
+
+// Every kind's create refuses a region its project isn't in before it sends
+// anything, since the plan only warned. The project list is the one request.
+func TestACreateInAnotherRegionThanItsProjectIsRefusedBeforeAnyRequest(t *testing.T) {
+	for kind, k := range pendingKinds() {
+		t.Run(kind, func(t *testing.T) {
+			var mu sync.Mutex
+			var sent []string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				mu.Lock()
+				sent = append(sent, r.Method+" "+r.URL.Path)
+				mu.Unlock()
+				if r.URL.Path == "/v1/regions/global/projects" {
+					writeJSON(w, map[string]any{"projects": []any{
+						map[string]any{"id": "elsewhere", "organizationId": "o", "region": "home"},
+					}, "totalCount": 1})
+					return
+				}
+				w.WriteHeader(http.StatusInternalServerError)
+			}))
+			t.Cleanup(server.Close)
+			r := k.build(testClusterMeta(t, server.URL, time.Minute))
+			planRaw, s := testValue(t, r, k.plan(t, r))
+			resp := resource.CreateResponse{State: tfsdk.State{Raw: tftypes.NewValue(planRaw.Type(), nil), Schema: s.Schema}}
+			r.Create(context.Background(), resource.CreateRequest{Plan: tfsdk.Plan{Raw: planRaw, Schema: s.Schema}}, &resp)
+			if !resp.Diagnostics.HasError() {
+				t.Fatal("the create wasn't refused")
+			}
+			e := resp.Diagnostics.Errors()[0]
+			if e.Summary() != regionRefusal {
+				t.Errorf("summary = %q: %s", e.Summary(), e.Detail())
+			}
+			for _, want := range []string{`"elsewhere"`, `"home"`, `"test"`, "This apply sent nothing"} {
+				if !strings.Contains(e.Detail(), want) {
+					t.Errorf("the refusal does not say %q:\n%s", want, e.Detail())
+				}
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			if got := strings.Join(sent, ", "); got != "GET /v1/regions/global/projects" {
+				t.Errorf("sent %s, want only the project list", got)
+			}
+			if !resp.State.Raw.IsNull() {
+				t.Error("the refused create wrote state")
+			}
+		})
 	}
 }
 

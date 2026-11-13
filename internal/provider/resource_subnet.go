@@ -285,6 +285,11 @@ func (r *subnetResource) Create(ctx context.Context, req resource.CreateRequest,
 	if resp.Diagnostics.HasError() {
 		return
 	}
+	// The plan only warns about a region its project isn't in, so it's
+	// refused here, before anything is sent.
+	if refuseRegionMismatch(ctx, r.meta, target, &resp.Diagnostics) {
+		return
+	}
 
 	excludes, diags := optionalStringList(ctx, plan.ExcludeRanges)
 	resp.Diagnostics.Append(diags...)

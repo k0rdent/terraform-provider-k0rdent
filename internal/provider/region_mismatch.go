@@ -165,21 +165,72 @@ func (m *Meta) projectRegion(ctx context.Context, project string) (string, bool)
 	return answer.region, answer.known
 }
 
-// checkRegionMatchesProject refuses at plan time a create in a region its
-// project isn't in, when the project list says where the project is. Only a
-// create asks: a resource that exists is in its project's region already, or
-// every read of it would have been refused.
-func checkRegionMatchesProject(ctx context.Context, meta *Meta, region, project string, diags *diag.Diagnostics) {
+// regionRefusal is the summary of every refusal of a region its project
+// isn't in: a warning at plan for a create, an error at plan for a move, and
+// an error at apply.
+const regionRefusal = "This resource's region isn't its project's"
+
+// regionMismatchOf is the region project is in, when the project list says
+// it's another than region. ok is false when it's the same, or the list
+// can't say.
+func regionMismatchOf(ctx context.Context, meta *Meta, region, project string) (home string, ok bool) {
 	if meta == nil || meta.Client == nil || region == "" || project == "" {
+		return "", false
+	}
+	home, known := meta.projectRegion(ctx, project)
+	if !known || home == region {
+		return "", false
+	}
+	return home, true
+}
+
+// regionMismatchText says where the project is and what to set.
+func regionMismatchText(project, home, region string) string {
+	return fmt.Sprintf("Project %q is in region %q, and this resource would be created in %q. A project is "+
+		"locked to one region, and the platform refuses every request for it in another, so set `region` to "+
+		"%q here, or in the provider block.", project, home, region, home)
+}
+
+// checkRegionMatchesProject checks at plan time a create, or a move, in a
+// region its project isn't in, when the project list says where the project
+// is. Only those ask: a resource that exists is in its project's region
+// already, or every read of it would have been refused.
+//
+// A create deletes nothing, so the plan only warns, and Create refuses it
+// (refuseRegionMismatch) before it sends anything. A refusal here would stop
+// `terraform destroy` too, since destroy plans the create of a resource the
+// configuration has and state doesn't before it plans the delete. A move is
+// a replacement, whose delete would come before Create's refusal, so a move
+// is refused here.
+func checkRegionMatchesProject(ctx context.Context, meta *Meta, region, project string, move bool, diags *diag.Diagnostics) {
+	home, ok := regionMismatchOf(ctx, meta, region, project)
+	if !ok {
 		return
 	}
-	home, ok := meta.projectRegion(ctx, project)
-	if !ok || home == region {
+	text := regionMismatchText(project, home, region)
+	if move {
+		// Local: decided from the project list, which the platform answered.
+		diags.AddAttributeError(path.Root("region"), regionRefusal, redactDiagnosticText(text+
+			" A move replaces the resource, deleting it first, so it's refused here, and `terraform destroy` "+
+			"with it. Set `region` back, or run `terraform destroy -refresh=false`."))
 		return
 	}
-	// Local: decided from the project list, which the platform answered.
-	diags.AddAttributeError(path.Root("region"), "This resource's region isn't its project's",
-		redactDiagnosticText(fmt.Sprintf("Project %q is in region %q, and this resource would be created in "+
-			"%q. A project is locked to one region, and the platform refuses every request for it in another, "+
-			"so set `region` to %q here, or in the provider block.", project, home, region, home)))
+	diags.AddAttributeWarning(path.Root("region"), regionRefusal, redactDiagnosticText(text+
+		" The apply checks this again, and if it still holds, fails before it creates anything. "+
+		"`terraform destroy` isn't affected."))
+}
+
+// refuseRegionMismatch is the plan's region check, made again before a
+// create sends anything, since the plan only warns. It reports whether the
+// create stops here, having said why.
+func refuseRegionMismatch(ctx context.Context, meta *Meta, target clusterTarget, diags *diag.Diagnostics) bool {
+	region, project := target.region, target.project
+	home, ok := regionMismatchOf(ctx, meta, region, project)
+	if !ok {
+		return false
+	}
+	// Local: the plan's warning, refused now that the create would be sent.
+	diags.AddAttributeError(path.Root("region"), regionRefusal, redactDiagnosticText(
+		regionMismatchText(project, home, region)+" This apply sent nothing for this resource."))
+	return true
 }

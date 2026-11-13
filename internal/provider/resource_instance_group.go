@@ -343,6 +343,11 @@ func (r *instanceGroupResource) Create(ctx context.Context, req resource.CreateR
 	if resp.Diagnostics.HasError() {
 		return
 	}
+	// The plan only warns about a region its project isn't in, so it's
+	// refused here, before anything is sent.
+	if refuseRegionMismatch(ctx, r.meta, target, &resp.Diagnostics) {
+		return
+	}
 
 	pools, diags := instanceGroupPoolsFrom(ctx, plan.NodePool)
 	resp.Diagnostics.Append(diags...)

@@ -252,6 +252,11 @@ func (r *vpcPeeringResource) Create(ctx context.Context, req resource.CreateRequ
 	if resp.Diagnostics.HasError() {
 		return
 	}
+	// The plan only warns about a region its project isn't in, so it's
+	// refused here, before anything is sent.
+	if refuseRegionMismatch(ctx, r.meta, target, &resp.Diagnostics) {
+		return
+	}
 
 	md, diags := plan.metadata().create(ctx)
 	resp.Diagnostics.Append(diags...)

@@ -140,28 +140,6 @@ func TestAccFileStore(t *testing.T) {
 	})
 }
 
-// A shrink is refused before the apply, and deliberately not by replacing the
-// store: replacing it would destroy the data it holds.
-func TestAccFileStoreShrinkIsRefusedAtPlanTime(t *testing.T) {
-	t.Parallel()
-	const name = "acc-shrink"
-
-	resource.Test(t, resource.TestCase{
-		ProtoV6ProviderFactories: protoV6,
-		CheckDestroy:             checkGone(fileStoreType, fileStorePath),
-		Steps: []resource.TestStep{
-			{
-				Config: fileStoreConfig(name, "acceptance", 2048, oneConsumer),
-			},
-			{
-				Config:      fileStoreConfig(name, "acceptance", 1024, oneConsumer),
-				PlanOnly:    true,
-				ExpectError: regexp.MustCompile(`cannot be shrunk`),
-			},
-		},
-	})
-}
-
 // The class is fixed for the life of the store, so a change is a replacement
 // rather than an update. Unlike a shrink, asking for a different class is
 // asking for a different store.

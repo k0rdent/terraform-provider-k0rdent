@@ -38,6 +38,10 @@ func peeringServer(t *testing.T, status int, back []map[string]any, refusal stri
 			body = ours
 		case r.URL.Path == peerLocal+"/peerings/p1" && r.Method == http.MethodGet:
 			body = ours
+		case r.URL.Path == "/v1/regions/global/projects" && r.Method == http.MethodGet:
+			// The create's check of its project's region. An empty list
+			// leaves the region to the platform.
+			body = map[string]any{"projects": []any{}, "totalCount": 0}
 		case r.URL.Path == peerRemote+"/peerings" && r.Method == http.MethodGet:
 			w.WriteHeader(status)
 			if status != http.StatusOK {

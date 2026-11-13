@@ -155,6 +155,12 @@ type pendingPlatform struct {
 
 func (p *pendingPlatform) serve(t *testing.T) *httptest.Server {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// The create's check of its project's region, before it sends
+		// anything. An empty list leaves the region to the platform.
+		if r.Method == http.MethodGet && r.URL.Path == "/v1/regions/global/projects" {
+			writeJSON(w, map[string]any{"projects": []any{}, "totalCount": 0})
+			return
+		}
 		p.mu.Lock()
 		p.requests = append(p.requests, r.Method+" "+r.URL.Path)
 		interrupt := p.interrupt

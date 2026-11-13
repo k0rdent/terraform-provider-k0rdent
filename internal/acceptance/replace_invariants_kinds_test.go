@@ -12,13 +12,14 @@ import (
 const invKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICalTR9icsm8WarWXVQxwy8TRDjP7bQ/eoJdFARMvUlQ inv-replace"
 
 var (
-	// A region its project isn't in, refused even with allow_replace, since a
-	// project is locked to one region (known-limitations: "A refused plan
-	// stops `terraform destroy` too", and the region attribute: a resource
-	// can't move between regions). allow_replace permits a region change only
-	// with a project in that region.
+	// A move to a region its project isn't in, refused even with
+	// allow_replace, since a project is locked to one region
+	// (known-limitations: "A refused plan stops `terraform destroy` too", and
+	// the region attribute: a resource can't move between regions).
+	// allow_replace permits a region change only with a project in that
+	// region. The plan that replaces a tainted resource is a create, which
+	// only warns: TestAccACreateInAnotherRegionThanItsProject* runs it.
 	regionNotProjects = regexp.MustCompile(`This resource's region isn't its project's`)
-	shrink            = regexp.MustCompile(`A file store cannot be shrunk`)
 	cantHoldProject   = regexp.MustCompile(`This region can't hold a project`)
 )
 
@@ -31,7 +32,7 @@ func scopeRows(idLine string) []invChange {
 		{label: "nothing", rule: unchanged, edit: nothing},
 		{label: "id", attr: "id", rule: replaces, edit: set("id", idLine)},
 		{label: "project", attr: "project", rule: replaces, edit: set("project", `project = "example"`)},
-		{label: "region", attr: "region", rule: refused, refusal: regionNotProjects, onCreate: true,
+		{label: "region", attr: "region", rule: refused, refusal: regionNotProjects,
 			edit: set("region", `region = "us-elsewhere-1"`), silent: "refused whatever allow_replace says"},
 	}
 }
@@ -143,8 +144,9 @@ func invKinds() []invKind {
 				invChange{label: "display_name", rule: changesInPlace, edit: set("display_name", q("display_name", "inv-renamed"))},
 				// capacity_gib doc: raising it grows the store.
 				invChange{label: "capacity_gib raised", rule: changesInPlace, edit: set("capacity_gib", "capacity_gib = 200")},
-				// capacity_gib doc: lowering it is refused at plan time.
-				invChange{label: "capacity_gib lowered", attr: "capacity_gib", rule: refused, refusal: shrink,
+				// capacity_gib doc: lowering it plans with a warning and fails
+				// the apply. TestAccAFileStoreShrink* runs both.
+				invChange{label: "capacity_gib lowered", rule: changesInPlace,
 					edit: set("capacity_gib", "capacity_gib = 50")},
 				invChange{label: "share_type", attr: "share_type", rule: replaces, edit: set("share_type", q("share_type", "high-speed"))},
 			),
@@ -351,7 +353,7 @@ resource %q "test" {
 				{label: "security_groups", rule: changesInPlace, edit: set("security_groups", "security_groups = []")},
 				{label: "vpc", attr: "vpc", rule: replaces, edit: set("vpc", q("vpc", "vpc-elsewhere"))},
 				{label: "project", attr: "project", rule: replaces, edit: set("project", `project = "example"`)},
-				{label: "region", attr: "region", rule: refused, refusal: regionNotProjects, onCreate: true,
+				{label: "region", attr: "region", rule: refused, refusal: regionNotProjects,
 					edit: set("region", `region = "us-elsewhere-1"`), silent: "refused"},
 			},
 			starts: []invStart{madeByApply},

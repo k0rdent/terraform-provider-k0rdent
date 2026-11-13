@@ -518,6 +518,12 @@ func TestATimedOutWaitSaysTheOperationKeepsRunning(t *testing.T) {
 			_, _ = fmt.Fprint(w, `{"id":"c1","state":"creating"}`)
 			return
 		}
+		// The create's check of its project's region. An empty list leaves
+		// the region to the platform.
+		if r.URL.Path == "/v1/regions/global/projects" {
+			writeJSON(w, map[string]any{"projects": []any{}, "totalCount": 0})
+			return
+		}
 		if reads.Add(1) == 2 {
 			ctx.expire()
 		}
