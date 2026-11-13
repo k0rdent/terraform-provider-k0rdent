@@ -7,8 +7,13 @@ import (
 	"reflect"
 	"sync"
 
+	dsschema "github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/types"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
@@ -136,4 +141,36 @@ func uidOf(u *openapi_types.UUID) string {
 		return ""
 	}
 	return u.String()
+}
+
+// uidValue is a uid the platform answered, as an attribute: null for none.
+func uidValue(u *openapi_types.UUID) types.String {
+	if u == nil {
+		return types.StringNull()
+	}
+	return types.StringValue(u.String())
+}
+
+func uidDescription(kind string) string {
+	return fmt.Sprintf("The platform's unique id for this %s, a UUID. Unlike `id`, it's never reused: another "+
+		"%s created later under the same `id` gets a different one.", kind, kind)
+}
+
+// uidAttribute is a resource's `uid`, read from the same answer as the uid
+// the row keeps in private state, so the two agree. A live object keeps its
+// uid, so an update plans the one state holds. A null there, from a state an
+// earlier version wrote or a create whose wait failed, plans as unknown: the
+// apply reads one back, and planning the null would fail it.
+func uidAttribute(kind string) schema.StringAttribute {
+	return schema.StringAttribute{
+		Computed: true,
+		MarkdownDescription: uidDescription(kind) + fmt.Sprintf(" A refresh that finds another uid under `id` "+
+			"drops the %s from state with a warning rather than adopting the other one.", kind),
+		PlanModifiers: []planmodifier.String{stringplanmodifier.UseNonNullStateForUnknown()},
+	}
+}
+
+// uidDataSourceAttribute is a data source's `uid`.
+func uidDataSourceAttribute(kind string) dsschema.StringAttribute {
+	return dsschema.StringAttribute{Computed: true, MarkdownDescription: uidDescription(kind)}
 }

@@ -1,0 +1,15 @@
+```release-note:enhancement
+resource/k0rdent_kubernetes_cluster: Add read-only `uid` and `api_endpoint` attributes
+```
+
+```release-note:enhancement
+resource/k0rdent_instance_group: Add read-only `uid` attribute
+```
+
+```release-note:enhancement
+data-source/k0rdent_kubernetes_cluster: Add `uid` attribute
+```
+
+```release-note:enhancement
+data-source/k0rdent_instance_group: Add `uid` attribute
+```

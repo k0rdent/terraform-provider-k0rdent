@@ -80,7 +80,7 @@ output "api_endpoint" {
 
 ### Read-Only
 
-- `api_endpoint` (String) URL of the Kubernetes API server. Null until the control plane has one. The certificate to trust it with is not returned here; see the `k0rdent_cluster_kubeconfig` ephemeral resource.
+- `api_endpoint` (String) URL of the Kubernetes API server. Null until the control plane has one. The certificate to trust it with isn't returned here: the `k0rdent_cluster_kubeconfig` ephemeral resource carries it.
 - `cluster_type` (String) The ClusterType version this cluster is bound to, as the platform reports it. Normally the pinned `/versions/{id}` form even where an unversioned reference was supplied at creation.
 - `cluster_type_name` (String) Display name of the bound ClusterType version, as of binding.
 - `control_plane_desired_replicas` (Number) Control plane replicas the hosted control plane's spec asks for. Null whenever `control_plane_state` is.
@@ -103,6 +103,7 @@ output "api_endpoint" {
 - `state_message` (String) The platform's own explanation of the current state. Null when there is nothing to explain.
 - `state_reason` (String) Machine-readable cause of a `failed` state, such as `INSUFFICIENT_CAPACITY`. Stable enough to branch on, unlike `state_message`. Null when no failure is recorded.
 - `tags` (Map of String) User-defined labels, as key-value pairs.
+- `uid` (String) The platform's unique id for this cluster, a UUID. Unlike `id`, it's never reused: another cluster created later under the same `id` gets a different one.
 - `upgrade_target_version_id` (String) Id of the ClusterType version an upgrade in flight is moving to. Null when no upgrade is in flight. On success `cluster_type` moves to it; on failure this is cleared and `cluster_type` stays where it was.
 
 <a id="nestedatt--node_pools"></a>

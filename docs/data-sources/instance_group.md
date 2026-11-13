@@ -63,6 +63,7 @@ output "execution_id" {
 - `state` (String) Lifecycle state. `active` is settled.
 - `state_message` (String) The platform's own explanation of the current state.
 - `state_reason` (String) Machine-readable cause of the last recorded failure, such as `INSUFFICIENT_CAPACITY`. Stable enough to branch on. Also set on a group that settled back to `active` after a failed scale. Null when no failure is recorded.
+- `uid` (String) The platform's unique id for this instance group, a UUID. Unlike `id`, it's never reused: another instance group created later under the same `id` gets a different one.
 
 <a id="nestedatt--node_pools"></a>
 ### Nested Schema for `node_pools`

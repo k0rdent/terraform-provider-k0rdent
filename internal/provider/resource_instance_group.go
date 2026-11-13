@@ -49,6 +49,7 @@ type instanceGroupResource struct {
 
 type instanceGroupModel struct {
 	ID                  types.String `tfsdk:"id"`
+	UID                 types.String `tfsdk:"uid"`
 	Region              types.String `tfsdk:"region"`
 	Project             types.String `tfsdk:"project"`
 	ClusterType         types.String `tfsdk:"cluster_type"`
@@ -67,7 +68,7 @@ type instanceGroupModel struct {
 	Timeouts      timeouts.Value `tfsdk:"timeouts"`
 
 	// uid is the platform's uid for the instance group read, which own_object.go
-	// keeps in private state. Not an attribute.
+	// keeps in private state. UID is the same value as an attribute.
 	uid string
 }
 
@@ -136,6 +137,7 @@ func (r *instanceGroupResource) Schema(ctx context.Context, _ resource.SchemaReq
 			"region":  regionAttribute(),
 			"project": projectAttribute(),
 			"id":      hardwareIDAttribute("Instance group"),
+			"uid":     uidAttribute("instance group"),
 			"cluster_type": schema.StringAttribute{
 				Required: true,
 				MarkdownDescription: "Reference to the ClusterType version whose node pools describe the hardware " +
@@ -965,6 +967,7 @@ func instanceGroupStateFrom(ctx context.Context, g k0rdent.InstanceGroup, prior 
 		DisplayName:         md.DisplayName,
 		Description:         md.Description,
 		SelfLink:            stringOrNull(g.SelfLink),
+		UID:                 uidValue(g.Uid),
 		ClusterTypeResolved: types.StringValue(g.ClusterType),
 		State:               types.StringNull(),
 		// Write-only: never held in state.

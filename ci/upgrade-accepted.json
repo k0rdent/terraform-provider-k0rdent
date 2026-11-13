@@ -5,6 +5,37 @@
     "not_covered: a resource type no walkthrough directory puts in state, so its upgrade is never tried. An entry for a type that is covered fails the run.",
     "Every entry needs a reason. TESTING.md has the rest."
   ],
-  "changes": [],
+  "changes": [
+    {
+      "from": "0.1.0",
+      "directory": "cluster",
+      "change": "k0rdent_kubernetes_cluster.walkthrough drift",
+      "reason": "The first refresh after the upgrade reads the cluster's new uid and api_endpoint from the platform, where the previous release stored neither. The plan is empty and nothing is sent."
+    },
+    {
+      "from": "0.1.0",
+      "directory": "cluster-own-project",
+      "change": "k0rdent_kubernetes_cluster.walkthrough drift",
+      "reason": "The first refresh after the upgrade reads the cluster's new uid and api_endpoint from the platform, where the previous release stored neither. The plan is empty and nothing is sent."
+    },
+    {
+      "from": "0.1.0",
+      "directory": "full",
+      "change": "k0rdent_kubernetes_cluster.this drift",
+      "reason": "The first refresh after the upgrade reads the cluster's new uid and api_endpoint from the platform, where the previous release stored neither. The plan is empty and nothing is sent."
+    },
+    {
+      "from": "0.1.0",
+      "directory": "full-everything",
+      "change": "k0rdent_instance_group.this[0] drift",
+      "reason": "The first refresh after the upgrade reads the instance group's new uid from the platform, where the previous release stored none. The plan is empty and nothing is sent."
+    },
+    {
+      "from": "0.1.0",
+      "directory": "full-everything",
+      "change": "k0rdent_kubernetes_cluster.this drift",
+      "reason": "The first refresh after the upgrade reads the cluster's new uid and api_endpoint from the platform, where the previous release stored neither. The plan is empty and nothing is sent."
+    }
+  ],
   "not_covered": []
 }
