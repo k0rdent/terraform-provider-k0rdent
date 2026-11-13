@@ -28,7 +28,9 @@ cp "$here/.github/public-text/denylist.txt" "$here/.github/public-text/allowlist
   "$gate" --hash repo - acme-vault
   "$gate" --hash channel i '#quill-'
   "$gate" --hash stack i blue-rig
-  # The internal document names are real, so they come from the repository's own list.
+  # The internal documents' file names are real, so the list is the repository's
+  # own and this file never spells them. Matching by hash is tested above with
+  # made-up names.
   grep '^internal-doc:' "$here/.github/public-text/hashed.txt" \
     || fail "hashed.txt has no internal-doc lines"
 } > "$work/.github/public-text/hashed.txt"
@@ -57,12 +59,10 @@ expect 1 "a planted ticket key"
 grep -q "^planted.md:1:$ticket\$" "$work/out" || fail "the report doesn't name planted.md:1"
 grep -q '^== ticket (1 hits)' "$work/out" || fail "the report doesn't name the ticket rule"
 
-# Each way the internal documents get named: prose in any case and joiner,
-# and the file names, which match through hashed.txt.
-doc="mistakes"; items="items"; tp="terraform-provider"
+# Each way the internal documents get named in prose: any case and joiner.
+doc="mistakes"; items="items"
 for form in "$doc log" "$doc-log" "M${doc#m} Log" "${doc%s} log" "${doc}_log" \
-  "open $items file" "open-$items file" \
-  "MISTAKES-$tp.md" "OPEN-$tp.md" "notes/OPEN-$tp" "OPEN_${tp//-/_}.md"; do
+  "open $items file" "open-$items file"; do
   printf 'Why this test exists (see the %s).\n' "$form" > "$work/planted.md"
   track planted.md
   expect 1 "a planted internal document name: $form"
