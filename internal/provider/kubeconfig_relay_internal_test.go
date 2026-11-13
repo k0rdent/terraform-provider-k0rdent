@@ -319,6 +319,20 @@ func TestTheRelayFetchesBeforeTheTokenExpires(t *testing.T) {
 	}
 }
 
+// waitForRelayFetchErr waits for a fetch in the background to fail.
+func waitForRelayFetchErr(t *testing.T, r *kubeconfigRelay) {
+	t.Helper()
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
+		r.mu.Lock()
+		err := r.fetchErr
+		r.mu.Unlock()
+		if err != nil {
+			return
+		}
+	}
+	t.Fatal("the fetch never failed")
+}
+
 func waitForRelayToken(t *testing.T, r *kubeconfigRelay, token string) {
 	t.Helper()
 	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
@@ -1078,12 +1092,21 @@ func TestASuccessfulFetchClearsTheLastFailure(t *testing.T) {
 	if code, body := relayDo(t, client, http.MethodGet, r.host+"/api", "Bearer "+r.secret, ""); code != http.StatusOK {
 		t.Fatalf("with 30 seconds left: got %d %s", code, body)
 	}
+	// That request started a fetch in the background. Let it fail before the
+	// fetcher is changed to succeed, or a slow start would return the second
+	// token from it.
+	waitForRelayFetchErr(t, r)
 	f.set(nil, second)
+	// The next fetch waits for the gate, so the request that starts it goes
+	// with the first token, still good, whatever the scheduler does. Setting
+	// the gate without f.mu is safe: the only fetch so far read it before it
+	// recorded its failure, which waitForRelayFetchErr saw under r.mu.
+	f.gate = make(chan struct{})
 	clock.advance(relayMaxFetchGap + time.Second)
-	// This request starts the fetch and goes with the first token, still good.
 	if code, body := relayDo(t, client, http.MethodGet, r.host+"/api", "Bearer "+r.secret, ""); code != http.StatusOK {
 		t.Fatalf("with 19 seconds left: got %d %s", code, body)
 	}
+	close(f.gate)
 	waitForRelayToken(t, r, second)
 	r.mu.Lock()
 	err := r.fetchErr
