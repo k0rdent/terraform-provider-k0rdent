@@ -1,0 +1,3 @@
+```release-note:bug
+resource/k0rdent_network: Fix an import planning a refused replacement of a network the platform reports without `dhcpEnabled`, `index0` or `ipOverIb`, such as one a cluster made
+```
