@@ -27,9 +27,16 @@ import (
 // is in region from, with region to in its configuration.
 func planNetworkMove(t *testing.T, meta *Meta, from, to string, private map[string][]byte) resource.ModifyPlanResponse {
 	t.Helper()
+	return planNetworkScope(t, meta, [2]string{from, "p"}, [2]string{to, "p"}, private)
+}
+
+// planNetworkScope runs modifyScopePlan for network n moved from one region
+// and project to another.
+func planNetworkScope(t *testing.T, meta *Meta, from, to [2]string, private map[string][]byte) resource.ModifyPlanResponse {
+	t.Helper()
 	r := &networkResource{meta: meta}
-	configRaw, s := testValue(t, r, map[string]tftypes.Value{"id": str("n"), "project": str("p"), "region": str(to)})
-	stateRaw, _ := testValue(t, r, map[string]tftypes.Value{"id": str("n"), "project": str("p"), "region": str(from)})
+	configRaw, s := testValue(t, r, map[string]tftypes.Value{"id": str("n"), "region": str(to[0]), "project": str(to[1])})
+	stateRaw, _ := testValue(t, r, map[string]tftypes.Value{"id": str("n"), "region": str(from[0]), "project": str(from[1])})
 	plan := tfsdk.Plan{Raw: configRaw, Schema: s.Schema}
 	resp := resource.ModifyPlanResponse{Plan: plan}
 	freshPrivate(t, &resp.Private, nil)
@@ -89,6 +96,16 @@ func TestAMoveOutOfTheProjectsRegionIsRecordedForTheApply(t *testing.T) {
 	}
 	if got := scopeRefused(t, resp.Private); !reflect.DeepEqual(got, want) {
 		t.Errorf("recorded %+v, want %+v", got, want)
+	}
+
+	// A move into a project in another region is refused the same way.
+	resp = planNetworkScope(t, mismatchMeta(t, api), [2]string{"eu", "q"}, [2]string{"eu", "p"}, nil)
+	if resp.Diagnostics.HasError() || len(resp.RequiresReplace) != 0 {
+		t.Errorf("into p: errors = %q, RequiresReplace = %v, want neither", errorSummaries(resp.Diagnostics), resp.RequiresReplace)
+	}
+	if got := scopeRefused(t, resp.Private); got == nil || got.Where != `region "eu" with project "p"` ||
+		!reflect.DeepEqual(got.Moves, []scopeMove{{Attr: "project", From: "q", To: "p", Configured: true}}) {
+		t.Errorf("into p: recorded %+v", got)
 	}
 
 	// The project's own region, and one the list doesn't show the project
