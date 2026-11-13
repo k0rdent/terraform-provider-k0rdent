@@ -230,6 +230,8 @@ func (r *vpcSecurityGroupsResource) scopedDefaultGroup(ctx context.Context, vpc,
 
 func (r *vpcSecurityGroupsResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
 	modifyScopePlan(ctx, r.meta, req, resp)
+	// Last, against the final plan.
+	defer recordedScopeMove(ctx, "binding", false, req, resp)
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -375,6 +377,9 @@ func (r *vpcSecurityGroupsResource) Create(ctx context.Context, req resource.Cre
 }
 
 func (r *vpcSecurityGroupsResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
+	if refuseRecordedScopeMove(ctx, "binding", false, req, resp) {
+		return // scope_refusal.go
+	}
 	defer syncIdentity(ctx, r.meta, resp.Identity, &resp.Diagnostics, &resp.State)
 	var plan vpcSecurityGroupsModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)

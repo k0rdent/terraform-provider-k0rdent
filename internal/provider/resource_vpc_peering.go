@@ -228,6 +228,8 @@ func (r *vpcPeeringResource) Configure(_ context.Context, req resource.Configure
 
 func (r *vpcPeeringResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
 	modifyScopePlan(ctx, r.meta, req, resp)
+	// Last, against the final plan.
+	defer recordedScopeMove(ctx, "peering", false, req, resp)
 	planTagsAllAtCreation(ctx, r.meta, "VPC peering", req, resp)
 	if resp.Diagnostics.HasError() {
 		return
@@ -434,6 +436,9 @@ func (r *vpcPeeringResource) Read(ctx context.Context, req resource.ReadRequest,
 // here, and only needs writing to state, and so does a create an earlier
 // apply stopped waiting for, which this waits for.
 func (r *vpcPeeringResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
+	if refuseRecordedScopeMove(ctx, "peering", false, req, resp) {
+		return // scope_refusal.go
+	}
 	defer syncIdentity(ctx, r.meta, resp.Identity, &resp.Diagnostics, &resp.State)
 	var plan, state vpcPeeringModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)

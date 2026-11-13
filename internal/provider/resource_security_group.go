@@ -327,6 +327,8 @@ func (r *securityGroupResource) Configure(_ context.Context, req resource.Config
 
 func (r *securityGroupResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
 	modifyScopePlan(ctx, r.meta, req, resp)
+	// Last, against the final plan.
+	defer recordedScopeMove(ctx, "security group", false, req, resp)
 	planTagsAll(ctx, r.meta, req, resp)
 	// "vpc" specifically: the attribute is populated for every group the
 	// platform owns, and `vpc` is the only owner kind the contract declares.
@@ -451,6 +453,9 @@ func (r *securityGroupResource) Read(ctx context.Context, req resource.ReadReque
 }
 
 func (r *securityGroupResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
+	if refuseRecordedScopeMove(ctx, "security group", false, req, resp) {
+		return // scope_refusal.go
+	}
 	defer syncIdentity(ctx, r.meta, resp.Identity, &resp.Diagnostics, &resp.State)
 	var plan, state securityGroupModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)

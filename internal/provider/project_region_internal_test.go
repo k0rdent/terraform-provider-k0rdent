@@ -113,6 +113,7 @@ func planProject(t *testing.T, meta *Meta, config, state map[string]tftypes.Valu
 	}
 	plan := tfsdk.Plan{Raw: planRaw, Schema: s.Schema}
 	resp := resource.ModifyPlanResponse{Plan: plan}
+	freshPrivate(t, &resp.Private, nil)
 	r.ModifyPlan(context.Background(), resource.ModifyPlanRequest{
 		Config: tfsdk.Config{Raw: configRaw, Schema: s.Schema},
 		Plan:   plan,

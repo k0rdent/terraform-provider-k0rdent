@@ -107,18 +107,27 @@ func whereProjectsGo(ctx context.Context, meta *Meta) string {
 // says can't hold one. It's a better error than the platform's 422, and no
 // more than that: a list it can't read leaves the decision to the create.
 func checkProjectRegion(ctx context.Context, meta *Meta, region string, diags *diag.Diagnostics) {
+	if why := projectRegionRefusal(ctx, meta, region); why != "" {
+		// Local: decided from the region list, which the platform answered.
+		diags.AddAttributeError(path.Root("region"), "This region can't hold a project", why)
+	}
+}
+
+// projectRegionRefusal says why the region list shows region can't hold a
+// project, or is empty when it can or the list can't be read.
+func projectRegionRefusal(ctx context.Context, meta *Meta, region string) string {
 	if meta == nil {
-		return
+		return ""
 	}
 	rows, err := meta.regions(ctx)
 	if err != nil {
 		tflog.Debug(ctx, "could not read the region list, so the project's region is left to the create",
 			map[string]any{"region": region, "error": redactDiagnosticText(err.Error())})
-		return
+		return ""
 	}
 	for _, r := range rows {
 		if r.Id == region && r.HostsProjects {
-			return
+			return ""
 		}
 	}
 	why := "isn't in the region list"
@@ -131,8 +140,6 @@ func checkProjectRegion(ctx context.Context, meta *Meta, region string, diags *d
 			}
 		}
 	}
-	// Local: decided from the region list, which the platform answered.
-	diags.AddAttributeError(path.Root("region"), "This region can't hold a project",
-		redactDiagnosticText(fmt.Sprintf("The platform creates a project only in a region whose `hostsProjects` "+
-			"is true, and %q %s. %s", region, why, whereProjectsGo(ctx, meta))))
+	return redactDiagnosticText(fmt.Sprintf("The platform creates a project only in a region whose `hostsProjects` "+
+		"is true, and %q %s. %s", region, why, whereProjectsGo(ctx, meta)))
 }

@@ -13,10 +13,11 @@ const invKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICalTR9icsm8WarWXVQxwy8TRDjP
 
 var (
 	// A region its project isn't in, refused even with allow_replace, since a
-	// project is locked to one region (known-limitations: "A refused plan
-	// stops `terraform destroy` too", and the region attribute: a resource
-	// can't move between regions). allow_replace permits a region change only
-	// with a project in that region.
+	// project is locked to one region (known-limitations: "A region move the
+	// platform can't make fails the apply", and the region attribute: a
+	// resource can't move between regions). allow_replace permits a region
+	// change only with a project in that region. This is the create's
+	// refusal, at plan: a move's plans as an update the apply refuses.
 	regionNotProjects = regexp.MustCompile(`This resource's region isn't its project's`)
 	shrink            = regexp.MustCompile(`A file store cannot be shrunk`)
 	cantHoldProject   = regexp.MustCompile(`This region can't hold a project`)
@@ -31,7 +32,7 @@ func scopeRows(idLine string) []invChange {
 		{label: "nothing", rule: unchanged, edit: nothing},
 		{label: "id", attr: "id", rule: replaces, edit: set("id", idLine)},
 		{label: "project", attr: "project", rule: replaces, edit: set("project", `project = "example"`)},
-		{label: "region", attr: "region", rule: refused, refusal: regionNotProjects, onCreate: true,
+		{label: "region", attr: "region", rule: refusedAtApply, refusal: regionNotProjects,
 			edit: set("region", `region = "us-elsewhere-1"`), silent: "refused whatever allow_replace says"},
 	}
 }
@@ -254,7 +255,7 @@ resource %[1]q "other" {
 				{label: "organization_id", attr: "organization_id", rule: replaces, edit: set("organization_id", q("organization_id", "org-other"))},
 				// region doc: the region has to be one that can hold a project.
 				// The fake has one, so a region move can only be this refusal.
-				{label: "region", attr: "region", rule: refused, refusal: cantHoldProject,
+				{label: "region", attr: "region", rule: refusedAtApply, refusal: cantHoldProject,
 					edit: set("region", `region = "us-elsewhere-1"`)},
 			},
 			starts: []invStart{madeByApply, imported},
@@ -351,7 +352,7 @@ resource %q "test" {
 				{label: "security_groups", rule: changesInPlace, edit: set("security_groups", "security_groups = []")},
 				{label: "vpc", attr: "vpc", rule: replaces, edit: set("vpc", q("vpc", "vpc-elsewhere"))},
 				{label: "project", attr: "project", rule: replaces, edit: set("project", `project = "example"`)},
-				{label: "region", attr: "region", rule: refused, refusal: regionNotProjects, onCreate: true,
+				{label: "region", attr: "region", rule: refusedAtApply, refusal: regionNotProjects,
 					edit: set("region", `region = "us-elsewhere-1"`), silent: "refused"},
 			},
 			starts: []invStart{madeByApply},

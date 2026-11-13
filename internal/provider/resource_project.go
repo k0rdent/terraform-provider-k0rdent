@@ -198,6 +198,7 @@ func (r *projectResource) planRegion(ctx context.Context, req resource.ModifyPla
 	if req.Plan.Raw.IsNull() {
 		return // a destroy
 	}
+	clearScopeRefusal(ctx, resp)
 	at := path.Root("region")
 	var config, state types.String
 	resp.Diagnostics.Append(req.Config.GetAttribute(ctx, at, &config)...)
@@ -242,12 +243,24 @@ func (r *projectResource) planRegion(ctx context.Context, req resource.ModifyPla
 		return
 	}
 	resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, at, out.Value)...)
-	if out.Replace {
-		resp.RequiresReplace = append(resp.RequiresReplace, at)
-	}
-	if creating || out.Replace {
+	switch {
+	case creating:
 		checkProjectRegion(ctx, r.meta, out.Value.ValueString(), &resp.Diagnostics)
+		return
+	case !out.Replace:
+		return
 	}
+	if why := projectRegionRefusal(ctx, r.meta, out.Value.ValueString()); why != "" {
+		// A move to a region that can't hold a project would delete this one
+		// and fail the create, so it's refused at apply (scope_refusal.go).
+		recordScopeRefusal(ctx, resp, scopeRefusal{
+			Moves: []scopeMove{{Attr: "region", From: state.ValueString(), To: out.Value.ValueString(),
+				Configured: !config.IsNull()}},
+			Where: fmt.Sprintf("region %q", out.Value.ValueString()), Reason: why,
+		})
+		return
+	}
+	resp.RequiresReplace = append(resp.RequiresReplace, at)
 }
 
 func (r *projectResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {

@@ -184,11 +184,23 @@ func warnScopeMoves(diags *diag.Diagnostics, attr, stored, resolved string) {
 
 // modifyScopePlan resolves region and project in the plan and flags replacement
 // when either moves. No-op on a destroy.
+//
+// A move to a region the project list shows the project isn't in can't be
+// made: the platform would refuse the replacement's create after Terraform
+// had deleted the resource. So it isn't a replacement. It's recorded for the
+// resource's Update to refuse at apply, and the plan only warns, so that
+// `terraform destroy`, which runs this plan first, isn't stopped
+// (scope_refusal.go).
 func modifyScopePlan(ctx context.Context, meta *Meta, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
-	if req.Plan.Raw.IsNull() || meta == nil {
+	if req.Plan.Raw.IsNull() {
+		return
+	}
+	clearScopeRefusal(ctx, resp)
+	if meta == nil {
 		return
 	}
 
+	var moves []scopeMove
 	for _, attr := range []struct {
 		name  string
 		deflt string
@@ -218,25 +230,50 @@ func modifyScopePlan(ctx context.Context, meta *Meta, req resource.ModifyPlanReq
 			return
 		}
 		if out.Replace {
-			resp.RequiresReplace = append(resp.RequiresReplace, p)
-			if config.IsNull() {
-				warnScopeMoves(&resp.Diagnostics, attr.name, state.ValueString(), out.Value.ValueString())
-			}
+			moves = append(moves, scopeMove{Attr: attr.name, From: state.ValueString(), To: out.Value.ValueString(),
+				Configured: !config.IsNull()})
 		}
 	}
 
-	// A create, or a move, in a region its project isn't in is refused here
-	// when the project list says where the project is. See region_mismatch.go.
-	if req.State.Raw.IsNull() || len(resp.RequiresReplace) > 0 {
-		var region, project types.String
-		if resp.Plan.GetAttribute(ctx, path.Root("region"), &region).HasError() ||
-			resp.Plan.GetAttribute(ctx, path.Root("project"), &project).HasError() {
-			return
-		}
-		if !region.IsUnknown() && !project.IsUnknown() {
-			checkRegionMatchesProject(ctx, meta, region.ValueString(), project.ValueString(), &resp.Diagnostics)
+	if refuseScopeMove(ctx, meta, req, moves, resp) {
+		return
+	}
+	for _, m := range moves {
+		resp.RequiresReplace = append(resp.RequiresReplace, path.Root(m.Attr))
+		if !m.Configured {
+			warnScopeMoves(&resp.Diagnostics, m.Attr, m.From, m.To)
 		}
 	}
+}
+
+// refuseScopeMove checks the planned region against the project's, when the
+// project list says where the project is. A create in another region is
+// refused here (region_mismatch.go). A move there is recorded for the Update
+// to refuse, and reports true so that it isn't planned as a replacement.
+func refuseScopeMove(ctx context.Context, meta *Meta, req resource.ModifyPlanRequest, moves []scopeMove, resp *resource.ModifyPlanResponse) bool {
+	var region, project types.String
+	if resp.Plan.GetAttribute(ctx, path.Root("region"), &region).HasError() ||
+		resp.Plan.GetAttribute(ctx, path.Root("project"), &project).HasError() ||
+		region.IsUnknown() || project.IsUnknown() {
+		return false
+	}
+	if req.State.Raw.IsNull() {
+		checkRegionMatchesProject(ctx, meta, region.ValueString(), project.ValueString(), &resp.Diagnostics)
+		return false
+	}
+	if len(moves) == 0 {
+		return false
+	}
+	home, mismatched := projectRegionMismatch(ctx, meta, region.ValueString(), project.ValueString())
+	if !mismatched {
+		return false
+	}
+	recordScopeRefusal(ctx, resp, scopeRefusal{Moves: moves,
+		Where: fmt.Sprintf("region %q with project %q", region.ValueString(), project.ValueString()),
+		Reason: fmt.Sprintf("Project %q is in region %q. A project is locked to one region, and the platform "+
+			"refuses every request for it in another.", project.ValueString(), home),
+	})
+	return true
 }
 
 // clusterTarget is the region and project pair every project-scoped request

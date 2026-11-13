@@ -166,15 +166,11 @@ func (m *Meta) projectRegion(ctx context.Context, project string) (string, bool)
 }
 
 // checkRegionMatchesProject refuses at plan time a create in a region its
-// project isn't in, when the project list says where the project is. Only a
-// create asks: a resource that exists is in its project's region already, or
-// every read of it would have been refused.
+// project isn't in, when the project list says where the project is. A move
+// of a resource that exists is refused at apply instead (scope_refusal.go).
 func checkRegionMatchesProject(ctx context.Context, meta *Meta, region, project string, diags *diag.Diagnostics) {
-	if meta == nil || meta.Client == nil || region == "" || project == "" {
-		return
-	}
-	home, ok := meta.projectRegion(ctx, project)
-	if !ok || home == region {
+	home, mismatched := projectRegionMismatch(ctx, meta, region, project)
+	if !mismatched {
 		return
 	}
 	// Local: decided from the project list, which the platform answered.
@@ -182,4 +178,14 @@ func checkRegionMatchesProject(ctx context.Context, meta *Meta, region, project 
 		redactDiagnosticText(fmt.Sprintf("Project %q is in region %q, and this resource would be created in "+
 			"%q. A project is locked to one region, and the platform refuses every request for it in another, "+
 			"so set `region` to %q here, or in the provider block.", project, home, region, home)))
+}
+
+// projectRegionMismatch is the region project is in, when the project list
+// says it's another than region.
+func projectRegionMismatch(ctx context.Context, meta *Meta, region, project string) (home string, mismatched bool) {
+	if meta == nil || meta.Client == nil || region == "" || project == "" {
+		return "", false
+	}
+	home, ok := meta.projectRegion(ctx, project)
+	return home, ok && home != region
 }

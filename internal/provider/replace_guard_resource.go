@@ -184,6 +184,7 @@ func (g *guardedResource) ModifyPlan(ctx context.Context, req resource.ModifyPla
 		}
 	}
 	guardReplacement(ctx, g.what, req, resp)
+	recordedScopeMove(ctx, g.what.noun, true, req, resp)
 	if c, ok := g.inner.(createGuard); ok && req.State.Raw.IsNull() && !resp.Plan.Raw.IsNull() &&
 		!resp.Diagnostics.HasError() && !replacementAllowed(ctx, req.Config) {
 		c.refuseExisting(ctx, resp.Plan, &resp.Diagnostics)
@@ -268,6 +269,9 @@ func (g *guardedResource) Read(ctx context.Context, req resource.ReadRequest, re
 // Anything else goes to the resource, which sees the change without the
 // opt-in in it.
 func (g *guardedResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
+	// A move the platform can't make is refused whatever allow_replace says,
+	// with an error that stops the update below (scope_refusal.go).
+	refuseRecordedScopeMove(ctx, g.what.noun, true, req, resp)
 	if refused := readRefusal(ctx, req.Private, &resp.Diagnostics); len(refused) > 0 || resp.Diagnostics.HasError() {
 		// Local: no request made. The framework keeps prior state on an
 		// error. The refusal is dropped from what's written back, so it

@@ -43,8 +43,14 @@ const (
 	// paragraph lists.
 	replaces
 	// refused is a refusal of its own, not the guard's, which allow_replace
-	// doesn't lift: a file store's shrink, a region its project isn't in.
+	// doesn't lift: a file store's shrink.
 	refused
+	// refusedAtApply is a move the platform can't make, a region its project
+	// isn't in or one that can't hold a project. It plans as an update the
+	// apply refuses, whatever allow_replace says, so it doesn't stop a
+	// destroy. A create in that region, so the plan that replaces a tainted
+	// resource, is refused at plan with the row's refusal.
+	refusedAtApply
 )
 
 // invChange is one row: what the configuration changes from the start.
@@ -57,10 +63,6 @@ type invChange struct {
 	refusal *regexp.Regexp
 	// edit is the change, made on a copy of the start's block.
 	edit func(b block) block
-	// onCreate says a refusal of its own holds for a create too, so for the
-	// plan that replaces a tainted resource. The others are refusals of an
-	// update only.
-	onCreate bool
 	// silent says which part of this row's rule no doc states.
 	silent string
 }
@@ -167,7 +169,9 @@ type invKind struct {
 //   - A change to an attribute "What replaces it" lists is a replacement. On
 //     a guarded resource without allow_replace = true it plans as an update,
 //     with a warning naming the attribute, which the apply refuses.
-//   - A refusal of its own is refused whatever allow_replace says.
+//   - A refusal of its own is refused whatever allow_replace says. A move
+//     the platform can't make is an update the apply refuses, whatever
+//     allow_replace says, and a refusal at plan on a create.
 //   - allow_replace appearing is itself an update, in place.
 //   - A tainted resource's plan is a replacement whatever changed: the
 //     cluster description says the plan warns, not that it's refused. A
@@ -180,8 +184,15 @@ type invKind struct {
 //     without it a replacing change is refused.
 func wantReplacePlan(k invKind, start invStart, c invChange, allow bool) ([]string, *regexp.Regexp) {
 	tainted := start == taintedWithToken || start == taintedNoToken
-	if c.rule == refused && (c.onCreate || !tainted) {
+	// A shrink is an update's refusal only, so a tainted store is replaced.
+	if c.rule == refused && !tainted {
 		return []string{"refuse"}, c.refusal
+	}
+	if c.rule == refusedAtApply {
+		if tainted {
+			return []string{"refuse"}, c.refusal
+		}
+		return []string{"update"}, nil
 	}
 	switch start {
 	case taintedWithToken:
@@ -358,9 +369,10 @@ func TestReplacementsFollowTheDocumentedRules(t *testing.T) {
 //     `terraform destroy` too" in docs/known-limitations.md. The test's own
 //     destroy, with -refresh=false, then has to remove it.
 //   - A change that would replace a guarded resource only warns at plan
-//     ("A refused replacement fails the apply, not the plan"), so the destroy
-//     passes with it in the configuration, from every start (Class 1). An
-//     unguarded kind's destroy runs with the start's own configuration.
+//     ("A refused replacement fails the apply, not the plan"), and so does a
+//     region move the platform can't make, so the destroy passes with both
+//     in the configuration, from every start but a tainted one (Class 1). An
+//     unguarded kind's destroy runs with its region moved.
 //   - A tainted cluster with no create token is the exception, which the
 //     cluster description says refuses destroy until it's untainted.
 func (k invKind) destroySteps(start invStart, base block, render func(block) string) []destroyRow {
@@ -375,12 +387,22 @@ func (k invKind) destroySteps(start invStart, base block, render func(block) str
 	}
 	final := destroyRow{what: "nothing changed, rule: destroyed",
 		step: resource.TestStep{Config: render(base), Destroy: true, ExpectError: noRefusal}}
+	changed, labels := base, []string(nil)
 	for _, c := range k.changes {
-		if k.guarded && c.rule == replaces {
-			final.what = c.label + " changed, which the apply would refuse, rule: destroyed"
-			final.step.Config = render(c.edit(base))
+		if c.rule == refusedAtApply && start != taintedWithToken && start != taintedNoToken {
+			changed, labels = c.edit(changed), append(labels, c.label)
 			break
 		}
+	}
+	for _, c := range k.changes {
+		if k.guarded && c.rule == replaces {
+			changed, labels = c.edit(changed), append(labels, c.label)
+			break
+		}
+	}
+	if len(labels) > 0 {
+		final.what = strings.Join(labels, " and ") + " changed, which the apply would refuse, rule: destroyed"
+		final.step.Config = render(changed)
 	}
 	if start == taintedNoToken {
 		final.what = "nothing changed, rule: refuse until untainted"

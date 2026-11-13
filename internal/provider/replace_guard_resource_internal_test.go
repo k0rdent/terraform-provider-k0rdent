@@ -44,6 +44,9 @@ type stubResource struct {
 	// replaceInPlan is a path the stub's ModifyPlan marks as a replacement,
 	// the way scope.go marks a moved region.
 	replaceInPlan *path.Path
+	// moveRefused makes the stub's ModifyPlan record a scope move the
+	// platform can't make, the way scope.go does.
+	moveRefused *scopeRefusal
 	// gone makes Read find the resource deleted.
 	gone bool
 	// updateFails makes Update fail after writing what it planned, the way
@@ -100,6 +103,9 @@ func (s *stubResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRe
 	s.sees("ModifyPlan", req.Config.Raw, req.Plan.Raw, req.State.Raw, resp.Plan.Raw)
 	if s.replaceInPlan != nil && !req.State.Raw.IsNull() && !req.Plan.Raw.IsNull() {
 		resp.RequiresReplace = append(resp.RequiresReplace, *s.replaceInPlan)
+	}
+	if s.moveRefused != nil && !req.State.Raw.IsNull() && !req.Plan.Raw.IsNull() {
+		recordScopeRefusal(ctx, resp, *s.moveRefused)
 	}
 	if !req.Plan.Raw.IsNull() {
 		resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, path.Root("state"), types.StringUnknown())...)
