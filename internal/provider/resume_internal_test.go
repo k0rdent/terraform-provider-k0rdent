@@ -941,7 +941,13 @@ func TestADeleteThePlatformEndedSaysWhatNext(t *testing.T) {
 	var running diag.Diagnostics
 	addDeleteWaitError(&running, "cluster", ResourceName(clusterResourceSuffix), "The cluster did not finish deleting",
 		fmt.Errorf("%w: %w", errWaitTimeout, provisionalFailure{platformRefusal{"failed"}}))
-	if d := running.Errors()[0].Detail(); strings.Contains(d, deleteRefusedAdvice) {
+	d := running.Errors()[0].Detail()
+	if strings.Contains(d, deleteRefusedAdvice) {
 		t.Errorf("a delete still running got the advice for one the platform ended:\n%s", d)
+	}
+	// Raising the timeout and applying can't help a tainted resource, whose
+	// replacement destroys with the old timeout, so the advice says so.
+	if !strings.Contains(strings.Join(strings.Fields(d), " "), "That doesn't work for a tainted cluster: apply replaces it") {
+		t.Errorf("the timeout advice doesn't cover a tainted cluster:\n%s", d)
 	}
 }

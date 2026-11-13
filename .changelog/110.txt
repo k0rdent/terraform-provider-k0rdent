@@ -1,0 +1,15 @@
+```release-note:bug
+resource/k0rdent_subnet: Fix `terraform destroy` failing with 409 `CONFLICT_IN_USE` while the subnet is `creating`
+```
+
+```release-note:bug
+resource/k0rdent_security_group: Fix `terraform destroy` failing with 409 `CONFLICT_IN_USE` while the security group is `creating` or `updating`
+```
+
+```release-note:bug
+resource/k0rdent_vpc_peering: Fix `terraform destroy` failing with 409 `CONFLICT_IN_USE` while the peering is `creating`
+```
+
+```release-note:bug
+resource/k0rdent_network: Fix `terraform destroy` failing with 409 `CONFLICT_IN_USE` while the network is `creating` or `updating`
+```

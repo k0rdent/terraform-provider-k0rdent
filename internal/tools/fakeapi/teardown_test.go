@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 )
 
@@ -211,4 +212,38 @@ func TestAGroupMarkedToFailItsCreateSettlesFailedAndDeletes(t *testing.T) {
 		}
 	}
 	t.Error("the failed group was never torn down")
+}
+
+// A subnet marked to create slowly stays `creating` for slowReads reads, and a
+// DELETE meanwhile is the CONFLICT_IN_USE 409 the platform answers: its
+// StartSubnetDelete moves a subnet to `deleting` only from `active` or
+// `failed`. Once it settles, the DELETE is taken.
+func TestASubnetMarkedToCreateSlowlyRefusesADeleteUntilItSettles(t *testing.T) {
+	s := newState()
+	if code, out := in(t, s.createNetwork, http.MethodPost, "r", "p", nil,
+		`{"id":"n","type":"evpn","evpn":{"type":"l3vpn"}}`); code != http.StatusCreated {
+		t.Fatalf("network: %d %v", code, out)
+	}
+	path := map[string]string{"networkId": "n"}
+	settleIn(t, s.getNetwork, "p", withID(map[string]string{}, "n"))
+	body := `{"id":"s","addressPool":"/v1/regions/us-texas-1/networking/address-pools/tenant","prefixLength":24,` +
+		`"displayName":"` + createsSlowly + `"}`
+	if code, out := in(t, s.createSubnet, http.MethodPost, "r", "p", path, body); code != http.StatusCreated {
+		t.Fatalf("create: %d %v", code, out)
+	}
+	for i := range slowReads {
+		if _, out := in(t, s.getSubnet, http.MethodGet, "r", "p", withID(path, "s"), ""); out["state"] != "creating" {
+			t.Fatalf("read %d: state %v, want creating", i+1, out["state"])
+		}
+	}
+	code, out := in(t, s.deleteSubnet, http.MethodDelete, "r", "p", withID(path, "s"), "")
+	if code != http.StatusConflict || !strings.Contains(fmt.Sprint(out), "CONFLICT_IN_USE") {
+		t.Fatalf("a delete while creating answered %d %v, want the CONFLICT_IN_USE 409", code, out)
+	}
+	if _, out := in(t, s.getSubnet, http.MethodGet, "r", "p", withID(path, "s"), ""); out["state"] != "active" {
+		t.Fatalf("read %d: state %v, want active", slowReads+1, out["state"])
+	}
+	if code, out := in(t, s.deleteSubnet, http.MethodDelete, "r", "p", withID(path, "s"), ""); code != http.StatusNoContent {
+		t.Errorf("a delete once active answered %d %v, want 204", code, out)
+	}
 }
