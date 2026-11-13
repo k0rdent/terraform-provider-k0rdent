@@ -337,9 +337,9 @@ func (r *clusterResource) Schema(ctx context.Context, _ resource.SchemaRequest, 
 			// plans as unknown, so one published during the update lands.
 			"api_endpoint": schema.StringAttribute{
 				Computed: true,
-				MarkdownDescription: apiEndpointDescription() + " Each refresh reads it from the platform, so " +
-					"one reported after the create fills in then, and one that changes is updated in state. " +
-					"Neither plans a change to the cluster.",
+				MarkdownDescription: apiEndpointDescription() + " A refresh reads it from the platform, so a URL " +
+					"that appears after the create, or changes later, reaches state without planning a change " +
+					"to the cluster.",
 				PlanModifiers: []planmodifier.String{stringplanmodifier.UseNonNullStateForUnknown()},
 			},
 			"vpc": schema.StringAttribute{
