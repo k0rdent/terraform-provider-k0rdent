@@ -113,11 +113,7 @@ func deleteWithChecks(t *testing.T, r resource.Resource, api http.HandlerFunc, c
 	}))
 	t.Cleanup(server.Close)
 	meta := testClusterMeta(t, server.URL, time.Minute)
-	var cr resource.ConfigureResponse
-	r.(resource.ResourceWithConfigure).Configure(context.Background(), resource.ConfigureRequest{ProviderData: meta}, &cr)
-	if cr.Diagnostics.HasError() {
-		t.Fatal(cr.Diagnostics)
-	}
+	configureWith(t, r, meta)
 	stateRaw, s := testValue(t, r, scopedValues(r, "x1"))
 	req := resource.DeleteRequest{State: tfsdk.State{Raw: stateRaw, Schema: s.Schema}}
 	withChecks(t, &req.Private, checks...)
@@ -138,6 +134,20 @@ func scopedValues(r resource.Resource, id string) map[string]tftypes.Value {
 		v["id"] = str(id)
 	}
 	return v
+}
+
+// configureWith hands r the provider's meta, as the framework does.
+func configureWith(t *testing.T, r resource.Resource, meta *Meta) {
+	t.Helper()
+	c, ok := r.(resource.ResourceWithConfigure)
+	if !ok {
+		t.Fatal("no Configure")
+	}
+	var resp resource.ConfigureResponse
+	c.Configure(context.Background(), resource.ConfigureRequest{ProviderData: meta}, &resp)
+	if resp.Diagnostics.HasError() {
+		t.Fatal(resp.Diagnostics)
+	}
 }
 
 // projectsIn answers the project list with project p in home, and refuses
@@ -222,9 +232,7 @@ func TestADeleteGoesAheadWhenTheCheckPassesNowOrCantDecide(t *testing.T) {
 func TestEveryPlanClearsTheChecksAnEarlierOneLeft(t *testing.T) {
 	for name, r := range regionKinds(t) {
 		t.Run(name, func(t *testing.T) {
-			var cr resource.ConfigureResponse
-			r.(resource.ResourceWithConfigure).Configure(context.Background(),
-				resource.ConfigureRequest{ProviderData: testClusterMeta(t, "http://127.0.0.1:1", time.Minute)}, &cr)
+			configureWith(t, r, testClusterMeta(t, "http://127.0.0.1:1", time.Minute))
 			stateRaw, s := testValue(t, r, scopedValues(r, "x1"))
 			req := resource.ModifyPlanRequest{
 				State:  tfsdk.State{Raw: stateRaw, Schema: s.Schema},
@@ -234,7 +242,11 @@ func TestEveryPlanClearsTheChecksAnEarlierOneLeft(t *testing.T) {
 			withChecks(t, &req.Private, replacementCheck{Kind: "region", Region: "eu", Project: "p"})
 			resp := resource.ModifyPlanResponse{Plan: req.Plan}
 			withChecks(t, &resp.Private, replacementCheck{Kind: "region", Region: "eu", Project: "p"})
-			r.(resource.ResourceWithModifyPlan).ModifyPlan(context.Background(), req, &resp)
+			m, ok := r.(resource.ResourceWithModifyPlan)
+			if !ok {
+				t.Fatal("no ModifyPlan")
+			}
+			m.ModifyPlan(context.Background(), req, &resp)
 			if got := checksIn(t, resp.Private); len(got) != 0 {
 				t.Errorf("the destroy's plan kept %+v", got)
 			}
