@@ -205,8 +205,9 @@ func (r *networkResource) Schema(ctx context.Context, _ resource.SchemaRequest, 
 						Optional: true,
 						Computed: true,
 						Default:  booldefault.StaticBool(false),
-						MarkdownDescription: "Whether DHCP serves addresses on this network. A network the " +
-							"platform reports without it, such as one a cluster made, reads as `false`.",
+						MarkdownDescription: "Whether DHCP serves addresses on this network. When the platform " +
+							"reports no value, as for a network created without one, state holds `false`, the " +
+							"fabric's default.",
 						PlanModifiers: []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()},
 					},
 					// A List, not a Set: resolver order is what decides which
@@ -288,18 +289,17 @@ func (r *networkResource) Schema(ctx context.Context, _ resource.SchemaRequest, 
 						Optional: true,
 						Computed: true,
 						Default:  booldefault.StaticBool(false),
-						MarkdownDescription: "Store the PKey at index 0. A network the platform reports " +
-							"without it reads as `false`.",
+						MarkdownDescription: "Store the PKey at index 0. When the platform reports no value, as " +
+							"for a network created without one, state holds `false`, the fabric's default.",
 						PlanModifiers: []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()},
 					},
 					// See index0.
 					"ip_over_ib": schema.BoolAttribute{
-						Optional: true,
-						Computed: true,
-						Default:  booldefault.StaticBool(false),
-						MarkdownDescription: "Whether the partition takes part in IP-over-InfiniBand multicast. " +
-							"A network the platform reports without it reads as `false`.",
-						PlanModifiers: []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()},
+						Optional:            true,
+						Computed:            true,
+						Default:             booldefault.StaticBool(false),
+						MarkdownDescription: "Whether the partition takes part in IP-over-InfiniBand multicast.",
+						PlanModifiers:       []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()},
 					},
 				},
 			},
@@ -1133,7 +1133,8 @@ func networkStateFrom(ctx context.Context, n k0rdent.Network, prior networkModel
 			Partition:     stringOrNull(view.ib.Infiniband.Partition),
 			PkeyAllocated: stringOrNull(view.ib.Infiniband.Pkey),
 			Index0:        boolOrFalse(view.ib.Infiniband.Index0),
-			IPOverIB:      boolOrFalse(view.ib.Infiniband.IpOverIb),
+			// Null when absent: the fabric's default for an unset value is on.
+			IPOverIB: boolOrNull(view.ib.Infiniband.IpOverIb),
 		}
 		// NICo ignores a requested PKey and answers with the partition's own,
 		// so a configured value has to survive the read or every plan against a

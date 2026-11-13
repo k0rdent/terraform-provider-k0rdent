@@ -256,9 +256,10 @@ func boolOrNull(p *bool) types.Bool {
 	return types.BoolValue(*p)
 }
 
-// boolOrFalse reads an absent flag as false. The platform leaves out a flag
-// nobody set, as on a network a cluster created, and the schema defaults it to
-// false, so a null here would plan a replacement after every import.
+// boolOrFalse reads an absent flag as false, for a flag whose unset value the
+// fabric treats as off. The platform omits a flag nobody set and passes it on
+// unset, and the schema defaults it to false, so a null would plan a
+// replacement after every import.
 func boolOrFalse(p *bool) types.Bool {
 	return types.BoolValue(p != nil && *p)
 }
