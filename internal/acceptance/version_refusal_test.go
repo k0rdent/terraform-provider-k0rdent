@@ -174,7 +174,7 @@ func TestAccARefusedVersionChangeWarnsAtPlanAndFailsAtApply(t *testing.T) {
 }
 
 // `terraform destroy` runs a normal plan first, so a version change refused
-// at plan would stop it (mistakes log, Class 1). It's refused at apply, so
+// at plan would stop it. It's refused at apply, so
 // with `cluster_type` pinned to a version the cluster can't take, the plan
 // warns and `terraform destroy` removes the cluster, in each state the
 // platform can report it in. Through the real CLI, for each state:
