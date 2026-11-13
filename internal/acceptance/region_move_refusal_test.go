@@ -294,3 +294,73 @@ func TestAccARegionMoveWithAReplacementIsRefusedAtPlan(t *testing.T) {
 		})
 	}
 }
+
+// A `project` move alone is refused the same way, and the warning and the
+// error point at `project`. The fake's project made before regions isn't
+// locked to one, so a resource in it can be in a region "demo" isn't in.
+func TestAccAProjectMoveIsRefusedAtApply(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS == "windows" {
+		skipTest(t, "the CLI sequence runs on unix")
+	}
+	const legacy, region = "before-regions", "us-elsewhere-1"
+	at := func(p, rest string) string { return "/v1/regions/" + region + "/projects/" + p + rest }
+	for _, tc := range []struct {
+		short, noun, typ, body, rest string
+		guarded                      bool
+	}{
+		{"net", "network", networkType, `evpn = { service_type = "l3vpn", vlan_id = "auto" }`, "/networking/networks", true},
+		{"sg", "security group", securityGroupType, moveEgress, "/networking/security-groups", false},
+	} {
+		t.Run(tc.short, func(t *testing.T) {
+			t.Parallel()
+			id := "acc-pmove-" + tc.short
+			config := func(project, extra string) string {
+				return fmt.Sprintf("\nresource %q \"test\" {\n  id      = %q\n  region  = %q\n  project = %q\n  %s\n%s\n}\n",
+					tc.typ, id, region, project, tc.body, extra)
+			}
+			object := at(legacy, tc.rest+"/"+id)
+			writes := append(objectWrites(object, at(legacy, tc.rest)), fakeRequest{http.MethodPost, at("demo", tc.rest)})
+			r := &moveRun{cliRun: newCLIRun(t)}
+			r.cliRun.write(config(legacy, ""))
+			if out, ok := r.run("apply", "-auto-approve"); !ok {
+				t.Fatalf("the create failed:\n%s", out)
+			}
+			t.Cleanup(func() {
+				if out, ok := r.run("destroy", "-auto-approve", "-refresh=false"); !ok {
+					t.Errorf("cleanup destroy failed:\n%s", out)
+				}
+			})
+			where := fmt.Sprintf(`region %q with project "demo"`, region)
+			back := "set `project` back to \"" + legacy + "\""
+
+			r.cliRun.write(config("demo", ""))
+			var out string
+			var code int
+			if n := r.sent(writes, func() { out, code = r.runCode("plan", "-detailed-exitcode") }); code != 2 || n != 0 {
+				t.Errorf("the plan exited %d with %d writes, want 2 and none:\n%s", code, n, out)
+			}
+			mustSay(t, "the plan", out, fmt.Sprintf("Warning: This %s can't be in %s, so the apply will refuse the change", tc.noun, where),
+				`project = "demo"`, fmt.Sprintf(`from project %q to "demo"`, legacy), back)
+
+			extras := []string{""}
+			if tc.guarded {
+				extras = append(extras, "  allow_replace = true")
+			}
+			for _, extra := range extras {
+				r.cliRun.write(config("demo", extra))
+				if n := r.sent(writes, func() { out, code = r.runCode("apply", "-auto-approve") }); code != 1 || n != 0 {
+					t.Errorf("the apply (%q) exited %d with %d writes, want 1 and none:\n%s", extra, code, n, out)
+				}
+				mustSay(t, "the apply", out, fmt.Sprintf("Error: This %s can't be in %s, so the apply refused the change", tc.noun, where),
+					`project = "demo"`, back)
+			}
+
+			r.cliRun.write(config("demo", ""))
+			deleted := []fakeRequest{{http.MethodDelete, object}}
+			if n := r.sent(deleted, func() { out, code = r.runCode("destroy", "-auto-approve") }); code != 0 || n != 1 {
+				t.Errorf("the destroy exited %d with %d deletes, want 0 and one:\n%s", code, n, out)
+			}
+		})
+	}
+}

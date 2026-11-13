@@ -127,8 +127,8 @@ plan:
   `region` that isn't its project's, or a project in a region that can't hold
   one
 - A move of `region` or `project` that the apply would refuse, below, together
-  with another change that replaces the resource, since Terraform would delete
-  it before the apply could refuse
+  with another change that replaces the resource, since the replacement is a
+  create in that region
 
 Set the configuration back to what's applied, or run
 `terraform destroy -refresh=false`, which destroys from state as it is.
@@ -141,14 +141,14 @@ waits for the apply and doesn't stop a destroy.
 A project is locked to one region, and the platform refuses every request for
 it in another. So a resource that exists can't move to a `region` its project
 isn't in, or to a `project` in another region, and a project can't move to a
-region that can't hold one. A replacement would delete the resource and then
-fail to create the new one, so `allow_replace` doesn't permit it.
+region that can't hold one. A replacement would have to create it there, so
+`allow_replace` doesn't permit it.
 
 The plan shows `~ update in-place` with a warning, the apply refuses that
 resource's update before it sends any request, and `terraform destroy` isn't
 affected. This holds for every resource with a `region`, when the project
-list shows the project's region, or for a project, when the region list shows
-the region. Set `region` or `project` back to its current value to clear it.
+list shows the project's region, or for a project, when the region list can be
+read. Set `region` or `project` back to its current value to clear it.
 
 ## A refused replacement fails the apply, not the plan
 

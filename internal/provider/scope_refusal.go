@@ -17,8 +17,7 @@ import (
 // and the platform refuses every request for it in another. A project itself
 // can only be in a region that holds projects. So a move of region or project
 // that lands the resource where its project can't be would be a replacement
-// whose create fails after Terraform has deleted the resource. allow_replace
-// can't permit that.
+// whose create the platform refuses. allow_replace can't permit that.
 //
 // Refusing it at plan stops `terraform destroy` too, which runs that plan
 // first. So the plan doesn't replace: it plans an update and warns, and the
@@ -32,7 +31,8 @@ import (
 // One case can't be held at apply: another change the plan still replaces
 // the resource for, a guarded one's with allow_replace = true or any on an
 // unguarded one. Terraform deletes before the provider sees an update, so
-// that plan is refused.
+// that plan is refused. The plan of the replacement's create would refuse it
+// too (checkRegionMatchesProject), and this says so in the resource's terms.
 
 // scopeRefusedKey carries the refusal from the plan to the Update.
 const scopeRefusedKey = "scope_move_refused"
@@ -73,7 +73,7 @@ func recordScopeRefusal(ctx context.Context, resp *resource.ModifyPlanResponse, 
 	raw, err := json.Marshal(r)
 	if err != nil || resp.Private == nil {
 		// Local: fails closed.
-		resp.Diagnostics.AddAttributeError(path.Root("region"), "The provider could not record a refused move",
+		resp.Diagnostics.AddAttributeError(r.at(), "The provider could not record a refused move",
 			fmt.Sprintf("The plan was refused because the apply couldn't refuse it: this resource can't be in %s.", r.Where))
 		return
 	}
@@ -126,17 +126,17 @@ func recordedScopeMove(ctx context.Context, noun string, guarded bool, req resou
 	}
 	if len(replacing) > 0 {
 		// Local: decided from the plan and the project or region list.
-		resp.Diagnostics.AddAttributeError(path.Root("region"),
+		resp.Diagnostics.AddAttributeError(r.at(),
 			fmt.Sprintf("This %s can't be in %s, and this plan replaces it", noun, r.Where),
 			redactDiagnosticText(fmt.Sprintf("%s The %s can't be created there. The plan also replaces the %s "+
-				"for its change to %s, so Terraform would delete it and then fail to create the new one. The "+
-				"plan is refused, and nothing is changed. `terraform destroy` runs this plan first, so it's "+
+				"for its change to %s, and the new one would be created there, so the plan is refused, and "+
+				"nothing is changed. `terraform destroy` runs this plan first, so it's "+
 				"refused too, and `terraform destroy -refresh=false` destroys from state as it is.\n\n"+
 				"To keep the %s where it is, %s, and plan again.",
 				r.moved(noun), noun, noun, orList(replacing), noun, r.keep())))
 		return
 	}
-	resp.Diagnostics.AddAttributeWarning(path.Root("region"),
+	resp.Diagnostics.AddAttributeWarning(r.at(),
 		fmt.Sprintf("This %s can't be in %s, so the apply will refuse the change", noun, r.Where),
 		redactDiagnosticText(fmt.Sprintf("%s\n\n"+
 			"So this plan shows the %s updated in place, and the apply refuses that update before it sends "+
@@ -160,7 +160,7 @@ func refuseRecordedScopeMove(ctx context.Context, noun string, guarded bool, req
 	}
 	// Local: decided from the plan, no request made. The framework keeps
 	// prior state on an error.
-	resp.Diagnostics.AddAttributeError(path.Root("region"),
+	resp.Diagnostics.AddAttributeError(r.at(),
 		fmt.Sprintf("This %s can't be in %s, so the apply refused the change", noun, r.Where),
 		redactDiagnosticText(fmt.Sprintf("%s\n\n"+
 			"The plan warned about this. The apply refused before it sent any request, so the %s is "+
@@ -171,6 +171,14 @@ func refuseRecordedScopeMove(ctx context.Context, noun string, guarded bool, req
 		resp.Diagnostics.Append(resp.Private.SetKey(ctx, scopeRefusedKey, nil)...)
 	}
 	return true
+}
+
+// at is the attribute a diagnostic points at: the first one that moved.
+func (r scopeRefusal) at() path.Path {
+	if len(r.Moves) == 0 {
+		return path.Root("region")
+	}
+	return path.Root(r.Moves[0].Attr)
 }
 
 // moved says what the plan does to the resource, and why the platform can't.
@@ -187,8 +195,8 @@ func (r scopeRefusal) moved(noun string) string {
 
 // why is moved, and what a replacement would do.
 func (r scopeRefusal) why(noun string, guarded bool) string {
-	out := fmt.Sprintf("%s The %s can't be created there, so replacing it would delete it and then fail to "+
-		"create the new one.", r.moved(noun), noun)
+	out := fmt.Sprintf("%s The %s can't be created there, so a replacement can't move it either.",
+		r.moved(noun), noun)
 	if guarded {
 		out += fmt.Sprintf(" `%s` doesn't change that.", allowReplaceAttribute)
 	}

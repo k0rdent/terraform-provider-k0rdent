@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -235,12 +236,21 @@ func TestTheGuardWarnsOfARefusedMoveAndRefusesOneThatsStillReplaced(t *testing.T
 // move, as the plan left it.
 func updateWithMove(t *testing.T, r resource.Resource, s schema.Schema, prior, planned tftypes.Value) resource.UpdateResponse {
 	t.Helper()
+	return updateWithRefusal(t, r, s, prior, planned, scopeRefusal{
+		Moves: []scopeMove{{Attr: "region", From: "us-east", To: "eu", Configured: true}},
+		Where: `region "eu" with project "p"`, Reason: `Project "p" is in region "us-east".`})
+}
+
+func updateWithRefusal(t *testing.T, r resource.Resource, s schema.Schema, prior, planned tftypes.Value, refusal scopeRefusal) resource.UpdateResponse {
+	t.Helper()
 	req := resource.UpdateRequest{Config: tfsdk.Config{Raw: planned, Schema: s},
 		Plan: tfsdk.Plan{Raw: planned, Schema: s}, State: tfsdk.State{Raw: prior, Schema: s}}
 	freshPrivate(t, &req.Private, nil)
-	writePrivate(t, req.Private, scopeRefusedKey,
-		[]byte(`{"moves":[{"attr":"region","from":"us-east","to":"eu","configured":true}],`+
-			`"where":"region \"eu\" with project \"p\"","reason":"Project \"p\" is in region \"us-east\"."}`))
+	raw, err := json.Marshal(refusal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writePrivate(t, req.Private, scopeRefusedKey, raw)
 	resp := resource.UpdateResponse{State: tfsdk.State{Raw: prior, Schema: s}, Private: req.Private}
 	r.Update(context.Background(), req, &resp)
 	return resp
@@ -330,5 +340,36 @@ func TestEveryRegionalUpdateRefusesARecordedMoveWithoutARequest(t *testing.T) {
 	}
 	if n := requests.Load(); n != 0 {
 		t.Errorf("%d requests, want none", n)
+	}
+}
+
+// A refusal points at the attribute that moved, so a moved `project` is the
+// line Terraform shows, at plan and at apply.
+func TestARefusedMovePointsAtTheAttributeThatMoved(t *testing.T) {
+	stub, r, s := guardedStub(t)
+	moved := scopeRefusal{Moves: []scopeMove{{Attr: "project", From: "q", To: "p", Configured: true}},
+		Where: `region "eu" with project "p"`, Reason: `Project "p" is in region "us-east".`}
+	stub.moveRefused = &moved
+	prior := stubValue(t, s, stubBase)
+	planned := stubValue(t, s, with(stubBase, map[string]tftypes.Value{"name": str("b")}))
+	at := func(diags []diag.Diagnostic) []string {
+		var out []string
+		for _, d := range diags {
+			if p, ok := d.(diag.DiagnosticWithPath); ok {
+				out = append(out, p.Path().String())
+			}
+		}
+		return out
+	}
+	plan := planStub(t, r, s, prior, planned)
+	if got := at(plan.Diagnostics.Warnings()); !reflect.DeepEqual(got, []string{"project"}) {
+		t.Errorf("the warning points at %q, want project", got)
+	}
+	update := updateWithRefusal(t, r, s, prior, planned, moved)
+	if got := at(update.Diagnostics.Errors()); !reflect.DeepEqual(got, []string{"project"}) {
+		t.Errorf("the refusal points at %q, want project", got)
+	}
+	if d := update.Diagnostics.Errors(); len(d) == 1 && !strings.Contains(d[0].Detail(), "set `project` back to \"q\"") {
+		t.Errorf("the refusal doesn't say to set project back: %s", d[0].Detail())
 	}
 }

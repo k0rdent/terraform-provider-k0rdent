@@ -186,8 +186,8 @@ func warnScopeMoves(diags *diag.Diagnostics, attr, stored, resolved string) {
 // when either moves. No-op on a destroy.
 //
 // A move to a region the project list shows the project isn't in can't be
-// made: the platform would refuse the replacement's create after Terraform
-// had deleted the resource. So it isn't a replacement. It's recorded for the
+// made: the platform refuses the replacement's create, and the plan of that
+// create is refused too. So it isn't a replacement. It's recorded for the
 // resource's Update to refuse at apply, and the plan only warns, so that
 // `terraform destroy`, which runs this plan first, isn't stopped
 // (scope_refusal.go).

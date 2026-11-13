@@ -251,8 +251,8 @@ func (r *projectResource) planRegion(ctx context.Context, req resource.ModifyPla
 		return
 	}
 	if why := projectRegionRefusal(ctx, r.meta, out.Value.ValueString()); why != "" {
-		// A move to a region that can't hold a project would delete this one
-		// and fail the create, so it's refused at apply (scope_refusal.go).
+		// A move to a region that can't hold a project is a replacement the
+		// platform can't create, so it's refused at apply (scope_refusal.go).
 		recordScopeRefusal(ctx, resp, scopeRefusal{
 			Moves: []scopeMove{{Attr: "region", From: state.ValueString(), To: out.Value.ValueString(),
 				Configured: !config.IsNull()}},
