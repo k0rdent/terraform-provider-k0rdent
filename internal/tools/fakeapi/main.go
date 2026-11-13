@@ -1001,11 +1001,8 @@ func (s *state) listClusterTypes(w http.ResponseWriter, r *http.Request) {
 // with none unless `includeUnavailable=true`, which reports its newest version.
 func (s *state) getClusterType(w http.ResponseWriter, r *http.Request) {
 	region := r.PathValue("region")
-	ct, ok := findClusterType(r.PathValue("id"))
-	if !ok {
-		apiError(w, http.StatusNotFound, "NOT_FOUND", "no such cluster type")
-		return
-	}
+	// The parameter is checked before the lookup, as the API does, so an
+	// unknown id with a malformed value answers 422, not 404.
 	includeUnavailable := false
 	if q := r.URL.Query(); q.Has("includeUnavailable") {
 		v, err := strconv.ParseBool(strings.TrimSpace(q.Get("includeUnavailable")))
@@ -1014,6 +1011,11 @@ func (s *state) getClusterType(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		includeUnavailable = v
+	}
+	ct, ok := findClusterType(r.PathValue("id"))
+	if !ok {
+		apiError(w, http.StatusNotFound, "NOT_FOUND", "no such cluster type")
+		return
 	}
 	v, ok := reportedVersion(ct, includeUnavailable)
 	if !ok {

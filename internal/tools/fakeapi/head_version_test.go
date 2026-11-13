@@ -81,6 +81,15 @@ func TestClusterTypeReadOfATypeWithNoAvailableVersion(t *testing.T) {
 			t.Errorf("GET gpu-training%s answered %d %s, want v3", q, rec.Code, rec.Body)
 		}
 	}
+	// The API checks the parameter before it looks the type up.
+	req := httptest.NewRequest(http.MethodGet, "/?includeUnavailable=yes", nil)
+	req.SetPathValue("region", "r")
+	req.SetPathValue("id", "no-such-type")
+	rec := httptest.NewRecorder()
+	s.getClusterType(rec, req)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("GET no-such-type?includeUnavailable=yes answered %d, want 422: %s", rec.Code, rec.Body)
+	}
 }
 
 // The list reports each type's status and version from the catalog's own
