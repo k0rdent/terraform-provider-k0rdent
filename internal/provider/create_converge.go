@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -292,6 +293,14 @@ type convergingCreate struct {
 	// timeoutID is the id a 504 names in its metadata, if it names one. Nil
 	// for a kind whose 504 names none.
 	timeoutID func(resp *http.Response, body []byte) string
+	// interval is the first pause before reading a 504's named id again.
+	// Zero means DefaultPollInterval.
+	interval time.Duration
+	// readWindow bounds how long those reads are tried, within the create's
+	// own deadline. Zero means DefaultProvisionalFailureWindow.
+	readWindow time.Duration
+	// sleep pauses between those reads. Nil means sleepOrCancel.
+	sleep func(context.Context, time.Duration) error
 	// busy waits out a 409 the platform answers while something the create
 	// depends on is mid-change. Nil for a kind whose create has no such 409.
 	busy *busyRetry
@@ -397,7 +406,7 @@ func (c convergingCreate) run(ctx context.Context) (createOutcome, createdAs, di
 			if named := c.namedOnTimeout(a); named != "" {
 				// A 504 carries no uid, so it's read back now rather than on
 				// the first read after the wait, which may come too late.
-				l := c.lookup(ctx, named)
+				l := c.readNamed(ctx, named)
 				made := createdAs{id: named}
 				if l.found {
 					made.uid = l.uid
@@ -456,6 +465,40 @@ func (c convergingCreate) unconfirmed(diags diag.Diagnostics) (createOutcome, cr
 	return createUnconfirmed, createdAs{id: c.key.id}, diags
 }
 
+// readNamed reads back the id a 504 named. For a kind with tags another id
+// than the one sent is this create's only if the read shows its token, and a
+// refusal would leave the resource behind, so a read that fails is tried
+// again, the pause doubling from the poll interval to a minute, for up to
+// readWindow or until the create's deadline, whichever comes first. Otherwise
+// the one read is for the uid alone.
+func (c convergingCreate) readNamed(ctx context.Context, named string) createLookup {
+	l := c.lookup(ctx, named)
+	if c.key.token == "" || named == c.key.id {
+		return l
+	}
+	window := c.readWindow
+	if window <= 0 {
+		window = DefaultProvisionalFailureWindow
+	}
+	// The retries stop at the window, and the last read keeps the create's
+	// own deadline.
+	retryCtx, cancel := context.WithTimeout(ctx, window)
+	defer cancel()
+	sleep := c.sleep
+	if sleep == nil {
+		sleep = sleepOrCancel
+	}
+	for n := 0; l.failed(); n++ {
+		if sleep(retryCtx, backoffCeiling(waitConfig{Interval: c.interval}, n, time.Minute)) != nil {
+			return l
+		}
+		tflog.Info(ctx, "reading back the id a 504 named failed, so reading it again",
+			map[string]any{"id": named, "attempt": n + 2, "error": redactDiagnosticText(lookupErrorText(l))})
+		l = c.lookup(ctx, named)
+	}
+	return l
+}
+
 // namedOnTimeout is the id a 504 from the service names, if any. Only a 504
 // carries one: the gateway's own timeouts do not.
 func (c convergingCreate) namedOnTimeout(a createAnswer) string {
@@ -496,17 +539,23 @@ func (c convergingCreate) ownsNamed(token string, found bool) string {
 // recorded, so nothing in state can later destroy a resource this
 // configuration doesn't own.
 func (c convergingCreate) addNotThisCreates(diags *diag.Diagnostics, status int, named, reason string) {
+	// A configured id names another object, so the import alone would leave
+	// the next plan replacing it to change the id.
+	importIt := "import it"
+	if !c.key.generated {
+		importIt = c.configEdit(named) + ", then import it"
+	}
 	diags.AddError(
 		fmt.Sprintf("The platform named a %s this apply can't show it created", c.kind),
 		redactDiagnosticText(fmt.Sprintf("The create sent %s id %q, and the platform answered %d naming %q, "+
 			"but %s. So the provider doesn't take it over: nothing is recorded in state, and nothing on "+
 			"the platform is changed or deleted.\n\n"+
-			"If %q is the %s this configuration describes, import it, replacing <address> with this "+
+			"If %q is the %s this configuration describes, %s, replacing <address> with this "+
 			"resource's address, such as %s.example:\n\n"+
 			"    terraform import <address> %s\n\n"+
 			"Otherwise check the platform for a %s this create may have made under another id before "+
 			"applying again.",
-			c.kind, c.key.id, status, named, reason, named, c.kind, c.resourceName, c.importID(named), c.kind)),
+			c.kind, c.key.id, status, named, reason, named, c.kind, importIt, c.resourceName, c.importID(named), c.kind)),
 	)
 }
 
@@ -535,10 +584,7 @@ func (c convergingCreate) underAnotherID(ctx context.Context, diags *diag.Diagno
 // row can hold an id the configuration doesn't. A create that succeeded with
 // one would be refused as an inconsistent result, which is why this fails.
 func (c convergingCreate) addChoseAnotherID(diags *diag.Diagnostics, status int, named string) {
-	edit := fmt.Sprintf("remove `id` from this resource's configuration, or set it to %q", named)
-	if c.idRequired {
-		edit = fmt.Sprintf("set `id` in this resource's configuration to %q", named)
-	}
+	edit := c.configEdit(named)
 	diags.AddError(
 		fmt.Sprintf("The platform chose another id for the %s", c.kind),
 		redactDiagnosticText(fmt.Sprintf("The create sent %s id %q, and the platform answered %d naming %q "+
@@ -552,6 +598,16 @@ func (c convergingCreate) addChoseAnotherID(diags *diag.Diagnostics, status int,
 			"the platform picks a new id for that one too, and this error comes back.",
 			c.kind, c.key.id, status, named, c.kind, named, c.kind, edit, c.resourceName, c.kind)),
 	)
+}
+
+// configEdit is the change to the configuration that makes it describe the
+// resource under named: remove `id`, where the kind can leave it out, or set
+// it to named.
+func (c convergingCreate) configEdit(named string) string {
+	if c.idRequired {
+		return fmt.Sprintf("set `id` in this resource's configuration to %q", named)
+	}
+	return fmt.Sprintf("remove `id` from this resource's configuration, or set it to %q", named)
 }
 
 // claim decides whether a resource found under id is this call's. why says

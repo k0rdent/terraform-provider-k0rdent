@@ -404,7 +404,9 @@ func (r *securityGroupResource) Create(ctx context.Context, req resource.CreateR
 				return createTokenOfFreeform(presentMap(got.JSON200.Tags)), uidOf(got.JSON200.Uid)
 			})
 		},
-		timeoutID: timeoutMetadataID("securityGroupId"),
+		timeoutID:  timeoutMetadataID("securityGroupId"),
+		interval:   r.meta.Wait.Interval,
+		readWindow: r.meta.Wait.ProvisionalFailureWindow,
 		// A group still tearing down holds its id, so a replacement under a
 		// configured id waits for the old one to go rather than failing.
 		busy: newBusyRetry("createSecurityGroup", r.meta.Wait, dependsOn(fmt.Sprintf("the security group %q", key.id),

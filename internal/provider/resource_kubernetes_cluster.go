@@ -619,7 +619,9 @@ func (r *clusterResource) Create(ctx context.Context, req resource.CreateRequest
 				return createTokenOf(presentMap(got.JSON200.Tags)), uidOf(got.JSON200.Uid)
 			})
 		},
-		timeoutID: timeoutMetadataID("clusterId"),
+		timeoutID:  timeoutMetadataID("clusterId"),
+		interval:   r.meta.Wait.Interval,
+		readWindow: r.meta.Wait.ProvisionalFailureWindow,
 	}
 	created, found := createFinish[clusterModel]{
 		operation: "createCluster", target: target,

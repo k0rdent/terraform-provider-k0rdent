@@ -42,6 +42,12 @@ type clusterAPI struct {
 	answer func(n int, id string, w http.ResponseWriter) bool
 	// readsFail makes every read answer 500.
 	readsFail bool
+	// readsFailFor makes that many reads answer 500 before any answers.
+	readsFailFor int
+	// reads counts the reads it was sent.
+	reads int
+	// deleted is the id of every DELETE it was sent, in order.
+	deleted []string
 }
 
 func newClusterAPI(t *testing.T) *clusterAPI {
@@ -82,7 +88,17 @@ func (a *clusterAPI) handle(w http.ResponseWriter, r *http.Request) {
 		}
 		w.WriteHeader(http.StatusCreated)
 		a.write(w, a.cluster(body.ID))
+	case http.MethodDelete:
+		a.deleted = append(a.deleted, r.URL.Path[strings.LastIndex(r.URL.Path, "/")+1:])
+		w.WriteHeader(http.StatusAccepted)
 	case http.MethodGet:
+		a.reads++
+		if a.readsFailFor > 0 {
+			a.readsFailFor--
+			w.WriteHeader(http.StatusInternalServerError)
+			a.write(w, map[string]any{"error": map[string]any{"code": 500, "message": "read failed"}})
+			return
+		}
 		if a.readsFail {
 			w.WriteHeader(http.StatusInternalServerError)
 			a.write(w, map[string]any{"error": map[string]any{"code": 500, "message": "read failed"}})
@@ -140,8 +156,18 @@ func loseAnswer(t *testing.T, w http.ResponseWriter) bool {
 // createCluster runs Create with the given configured id, empty for none.
 func createCluster(t *testing.T, server *httptest.Server, id string) resource.CreateResponse {
 	t.Helper()
-	meta := testClusterMeta(t, server.URL, time.Minute)
+	return createClusterWithin(t, server, id, time.Minute)
+}
+
+// createClusterWithin is createCluster with the create's timeout.
+// Each option changes the provider's settings first.
+func createClusterWithin(t *testing.T, server *httptest.Server, id string, timeout time.Duration, options ...func(*Meta)) resource.CreateResponse {
+	t.Helper()
+	meta := testClusterMeta(t, server.URL, timeout)
 	meta.Wait.Interval = time.Millisecond
+	for _, option := range options {
+		option(meta)
+	}
 	r := &clusterResource{meta: meta}
 	plan := testClusterState(t, id, "/v1/regions/test/compute/cluster-types/test")
 	resp := resource.CreateResponse{State: tfsdk.State{Raw: tftypes.NewValue(plan.Raw.Type(), nil), Schema: plan.Schema}}
@@ -590,7 +616,9 @@ func TestAnAnswerNamingAnotherIDThatIsntThisCreatesIsRefused(t *testing.T) {
 						api.readsFail = h.readsFail
 						return true
 					}
-					resp := createCluster(t, api.serve(), configured)
+					// A read that keeps failing is tried until the create's
+					// timeout, so that case is given a short one.
+					resp := createClusterWithin(t, api.serve(), configured, 300*time.Millisecond)
 					if !resp.State.Raw.IsNull() {
 						t.Errorf("state was written for a cluster this create can't show it made: %v", resp.State.Raw)
 					}
@@ -598,17 +626,24 @@ func TestAnAnswerNamingAnotherIDThatIsntThisCreatesIsRefused(t *testing.T) {
 					if len(errs) != 1 || errs[0].Summary() != "The platform named a cluster this apply can't show it created" {
 						t.Fatalf("want one refusal, got %v", resp.Diagnostics)
 					}
+					// A configured id has to name the cluster before the
+					// import, or the next plan replaces it to change the id.
+					importIt := "describes, import it,"
+					if configured != "" {
+						importIt = "describes, set `id` in this resource's configuration to \"someone-else\", then import it,"
+					}
 					for _, want := range []string{
 						`naming "someone-else", but ` + h.reason,
 						"nothing is recorded in state",
+						importIt,
 						"terraform import <address> test/test/someone-else",
 					} {
 						if !strings.Contains(errs[0].Detail(), want) {
 							t.Errorf("the refusal doesn't say %q:\n%s", want, errs[0].Detail())
 						}
 					}
-					if _, still := api.tags["someone-else"]; still != h.exists {
-						t.Errorf("the named cluster's presence changed: exists %t, want %t", still, h.exists)
+					if len(api.deleted) > 0 {
+						t.Errorf("the refusal deleted %v", api.deleted)
 					}
 					if len(api.sent) != 1 {
 						t.Errorf("creates sent = %v, want one", api.sent)
@@ -616,6 +651,76 @@ func TestAnAnswerNamingAnotherIDThatIsntThisCreatesIsRefused(t *testing.T) {
 				})
 			}
 		}
+	}
+}
+
+// A 504's named id that can't be read is read again until it answers, since a
+// refusal would leave this create's cluster behind. Once the read shows this
+// create's token, the cluster is this create's.
+func TestA504NamedIDIsReadAgainUntilItAnswers(t *testing.T) {
+	for _, configured := range []string{"", "c1"} {
+		t.Run(fmt.Sprintf("configured %q", configured), func(t *testing.T) {
+			api := newClusterAPI(t)
+			api.answer = func(_ int, id string, w http.ResponseWriter) bool {
+				// The platform keeps this create's cluster under its own id.
+				api.tags["cls-chosen"] = api.tags[id]
+				delete(api.tags, id)
+				w.WriteHeader(http.StatusGatewayTimeout)
+				api.write(w, map[string]any{"error": map[string]any{
+					"code": 504, "message": "deadline exceeded", "reason": "DEADLINE_EXCEEDED",
+					"details": []any{map[string]any{"reason": "DEADLINE_EXCEEDED",
+						"metadata": map[string]any{"clusterId": "cls-chosen"}}},
+				}})
+				api.readsFailFor = 3
+				return true
+			}
+			resp := createCluster(t, api.serve(), configured)
+			if got := stateID(t, resp.State); got != "cls-chosen" {
+				t.Errorf("id in state = %q, want the platform's %q: %v", got, "cls-chosen", resp.Diagnostics)
+			}
+			if api.reads < 4 {
+				t.Errorf("reads = %d, want the 3 failures and one that answered", api.reads)
+			}
+			errs := resp.Diagnostics.Errors()
+			if configured == "" && len(errs) > 0 {
+				t.Errorf("a generated id failed: %v", errs)
+			}
+			if configured != "" && (len(errs) != 1 || errs[0].Summary() != "The platform chose another id for the cluster") {
+				t.Errorf("want the error saying the platform chose the id, got %v", errs)
+			}
+		})
+	}
+}
+
+// Those reads stop at the short window a failed cluster is given, well before
+// a create timeout of hours, and the cluster is then refused.
+func TestA504NamedIDReadStopsAtTheShortWindow(t *testing.T) {
+	api := newClusterAPI(t)
+	api.answer = func(_ int, id string, w http.ResponseWriter) bool {
+		api.tags["cls-chosen"] = api.tags[id]
+		delete(api.tags, id)
+		w.WriteHeader(http.StatusGatewayTimeout)
+		api.write(w, map[string]any{"error": map[string]any{
+			"code": 504, "message": "deadline exceeded", "reason": "DEADLINE_EXCEEDED",
+			"details": []any{map[string]any{"reason": "DEADLINE_EXCEEDED",
+				"metadata": map[string]any{"clusterId": "cls-chosen"}}},
+		}})
+		api.readsFail = true
+		return true
+	}
+	start := time.Now()
+	resp := createClusterWithin(t, api.serve(), "c1", time.Hour, func(m *Meta) {
+		m.Wait.ProvisionalFailureWindow = 200 * time.Millisecond
+	})
+	if took := time.Since(start); took < 200*time.Millisecond || took > 30*time.Second {
+		t.Errorf("the create took %s, want the 200ms window and not the hour", took)
+	}
+	if api.reads < 2 {
+		t.Errorf("reads = %d, want the read tried again inside the window", api.reads)
+	}
+	errs := resp.Diagnostics.Errors()
+	if len(errs) != 1 || !strings.Contains(errs[0].Detail(), "but reading it back failed") {
+		t.Errorf("want the refusal for a read that failed, got %v", resp.Diagnostics)
 	}
 }
 
