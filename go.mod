@@ -1,10 +1,11 @@
 module github.com/k0rdent/terraform-provider-k0rdent
 
-// 1.26.10 is the first 1.26 with the crypto/x509 certificate validation fix,
-// so a build from source can't pick up an older 1.26. golang.org/x/net v0.60.0
+// 1.26.11 is the first 1.26 with both the crypto/x509 certificate validation
+// fix and the net/http fix for GO-2026-6859, so a build from source can't pick
+// up an older 1.26. golang.org/x/net v0.60.0
 // sets the 1.26 floor itself: it declares `go 1.26.0`, and Go refuses to build
 // a module against a dependency that declares a newer version than it does.
-go 1.26.10
+go 1.26.11
 
 require (
 	github.com/google/uuid v1.6.0
