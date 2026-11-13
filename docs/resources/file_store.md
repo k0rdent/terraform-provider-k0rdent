@@ -93,7 +93,7 @@ output "checkpoint_grants" {
 
 ### Required
 
-- `capacity_gib` (Number) Declared capacity in binary gibibytes. **Expand-only**: raising it grows the store, and lowering it is refused because releasing capacity means creating a smaller store and migrating the data. The plan warns of a lower value, and the apply fails before it sends any request, other changes included, so `terraform destroy` still works.
+- `capacity_gib` (Number) Declared capacity in binary gibibytes. **Expand-only**: raising it grows the store, and lowering it is refused because releasing capacity means creating a smaller store and migrating the data. The plan warns of a lower value, and the apply fails before it sends any request for the store, so none of the store's changes in that apply are made. `terraform destroy` still works.
 
 **Not enforced as a quota.** The storage behind this API does not currently cap consumption at this figure, so it is a declaration for planning and accounting. **Constraints:** Value must be between 1 and 1048576.
 - `share_type` (String) Capability class to provision from, as listed by `k0rdent_share_types`. Named by capability, for example `general` or `high-speed`, never after a vendor or an array. Immutable: moving a store between classes is a data migration, so changing this replaces the store. **Forces replacement** (needs `allow_replace = true`). **Constraints:** Must be lower-case letters, digits and hyphens, starting with a letter and not ending with a hyphen (`[a-z]([-a-z0-9]*[a-z0-9])?`), because it becomes a segment of a request URL. String length must be at most 63.

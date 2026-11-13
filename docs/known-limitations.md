@@ -51,8 +51,8 @@ plan says `# forced replacement`, but not why.
 ### 6. A file store's capacity isn't a hard limit
 
 `capacity_gib` can only grow. The plan warns of a shrink, and the apply
-fails before it sends anything. But storage can use more than the capacity,
-and the API doesn't report how much a store holds.
+fails before it sends any request for the store. But storage can use more
+than the capacity, and the API doesn't report how much a store holds.
 
 ### 7. Default timeouts are estimates
 
@@ -130,13 +130,19 @@ so a refusal at apply would come after the delete.
 Set the configuration back to what's applied, or run
 `terraform destroy -refresh=false`, which destroys from state as it is.
 
-A change that deletes nothing only warns at plan, and the apply fails before
-it sends anything, so it doesn't stop a destroy:
+A change that deletes nothing only warns at plan, so it doesn't stop a
+destroy. The apply checks it again and fails before it sends any request for
+that resource, so none of that resource's changes are made. Terraform skips
+the resources that depend on it and applies the rest of the plan.
 
 - A cluster's `cluster_type` version change it can't take
 - A smaller `capacity_gib` on a file store
 - A lower `storage_ceiling_gib` on a cluster
 - A new resource in a `region` that isn't the project's
+
+A new resource also warns when it replaces a tainted one. Terraform deletes
+the tainted object before the create is refused, so neither is left. Run
+`terraform untaint` before the apply to keep it.
 
 ## Values you still have to hardcode
 

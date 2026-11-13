@@ -185,8 +185,7 @@ func TestACreateInAnotherRegionThanItsProjectWarnsAtPlan(t *testing.T) {
 		if warning == nil {
 			t.Fatalf("region %q: no warning: %v", region, resp.Diagnostics)
 		}
-		for _, want := range []string{`"p"`, "us-east", "eu", "fails before it creates anything",
-			"`terraform destroy` isn't affected"} {
+		for _, want := range []string{`"p"`, "us-east", "eu", checkedAtCreate} {
 			if !strings.Contains(warning.Detail(), want) {
 				t.Errorf("region %q: warning does not say %q:\n%s", region, want, warning.Detail())
 			}
@@ -213,7 +212,7 @@ func TestAMoveToAnotherRegionThanItsProjectIsRefusedAtPlan(t *testing.T) {
 		t.Fatalf("the move planned: %v", resp.Diagnostics)
 	}
 	e := resp.Diagnostics.Errors()[0]
-	for _, want := range []string{`"p"`, "us-east", "deleting it first", "terraform destroy -refresh=false"} {
+	for _, want := range []string{`"p"`, "us-east", replacedOnThisPlan} {
 		if !strings.Contains(e.Detail(), want) {
 			t.Errorf("the refusal does not say %q:\n%s", want, e.Detail())
 		}
@@ -254,7 +253,7 @@ func TestACreateInAnotherRegionThanItsProjectIsRefusedBeforeAnyRequest(t *testin
 			if e.Summary() != regionRefusal {
 				t.Errorf("summary = %q: %s", e.Summary(), e.Detail())
 			}
-			for _, want := range []string{`"elsewhere"`, `"home"`, `"test"`, "This apply sent nothing"} {
+			for _, want := range []string{`"elsewhere"`, `"home"`, `"test"`, createSentNothing} {
 				if !strings.Contains(e.Detail(), want) {
 					t.Errorf("the refusal does not say %q:\n%s", want, e.Detail())
 				}

@@ -17,13 +17,29 @@ import (
 // it sends anything.
 
 const (
-	shrinkRefused  = "A file store cannot be shrunk"
+	shrinkRefused  = "A file store can't be shrunk"
 	ceilingRefused = "The storage ceiling can't be lowered"
 	regionRefused  = "This resource's region isn't its project's"
-	// warnsAtPlan and destroyUnaffected are what each warning says.
-	warnsAtPlan       = "fails before it sends any request, other changes included"
+	// The rest of each warning and refusal: what the apply does, and what it
+	// leaves.
 	destroyUnaffected = "`terraform destroy` isn't affected"
+	restApplied       = "Terraform skips the resources that depend on it. The rest of the plan is applied."
+	restAppliedNow    = "Terraform skips the resources that depend on it and applies the rest of the plan."
+	createWarned      = "the apply fails before it sends the create, so this resource isn't created"
+	createSentNothing = "This apply sent nothing to create this resource, so it doesn't exist."
 )
+
+// updateWarned is what the plan's warning of a refused update says the apply
+// does, for a resource of kind what.
+func updateWarned(what string) string {
+	return fmt.Sprintf("the apply fails before it sends any request for this %s, so none of its changes "+
+		"in this plan are made", what)
+}
+
+// updateSentNothing is what the apply's refusal of an update says it did.
+func updateSentNothing(what string) string {
+	return fmt.Sprintf("This apply sent nothing for this %s, so it's unchanged.", what)
+}
 
 // sentNoneOf counts each method on path from the moment it's called, and
 // the function it returns fails the test for any sent since.
@@ -84,8 +100,9 @@ func fileStoreAPIPath(name string) string {
 }
 
 // A shrink plans as an update with a warning, and the apply fails before it
-// sends any request, the other changes in the same apply included. Through
-// the real CLI, for each change that would otherwise go out with it:
+// sends any request for the store, so its other changes in the same apply
+// aren't made either. Through the real CLI, for each change that would
+// otherwise go out with it:
 //
 //  1. `terraform apply` makes the store at 2048 GiB with one consumer
 //  2. the configuration asks for 1024, with the change
@@ -120,15 +137,16 @@ func TestAccAFileStoreShrinkWarnsAtPlanAndFailsAtApply(t *testing.T) {
 			if code != 2 {
 				t.Errorf("the plan exited %d, want 2, a plan with changes:\n%s", code, out)
 			}
-			mustSay(t, "the plan", out, "Warning: "+shrinkRefused, "goes from 2048 to 1024", warnsAtPlan,
-				destroyUnaffected, "set `capacity_gib` to 2048", "0 to add, 1 to change, 0 to destroy")
+			mustSay(t, "the plan", out, "Warning: "+shrinkRefused, "goes from 2048 to 1024", updateWarned("file store"),
+				restApplied, destroyUnaffected, "Set `capacity_gib` back to 2048", "0 to add, 1 to change, 0 to destroy")
 			sentNothing("the plan")
 
 			out, code = c.runCode("apply", "-auto-approve")
 			if code != 1 {
 				t.Errorf("the apply exited %d, want 1:\n%s", code, out)
 			}
-			mustSay(t, "the apply", out, "Error: "+shrinkRefused, "goes from 2048 to 1024", "This apply sent nothing")
+			mustSay(t, "the apply", out, "Error: "+shrinkRefused, "goes from 2048 to 1024",
+				updateSentNothing("file store"), "Set `capacity_gib` back to 2048")
 			sentNothing("the apply")
 
 			status, body, err := readFakeStore(path)
@@ -151,6 +169,60 @@ func TestAccAFileStoreShrinkWarnsAtPlanAndFailsAtApply(t *testing.T) {
 			done = true
 		})
 	}
+}
+
+// When the apply refuses one resource, Terraform skips the resources that
+// depend on it and applies the rest of the plan, as each warning and refusal
+// says. Through the real CLI:
+//
+//  1. `terraform apply` makes a store at 2048 GiB
+//  2. the configuration shrinks it, and adds one store that depends on it
+//     and one that doesn't
+//  3. `terraform apply` exits 1 with the shrink's refusal
+//  4. the platform holds the store that doesn't depend on it, and not the
+//     one that does
+func TestAccARefusedUpdateSkipsOnlyTheResourcesThatDependOnIt(t *testing.T) {
+	t.Parallel()
+	skipOnWindows(t)
+	const name = "acc-shrink-rest"
+	c := newCLIRun(t)
+	done := false
+	c.cleanupDestroy(t, &done)
+	c.write(fileStoreConfig(name, "acceptance", 2048, oneConsumer))
+	if out, ok := c.run("apply", "-auto-approve"); !ok {
+		t.Fatalf("the create failed:\n%s", out)
+	}
+
+	added := func(address, id, display string) string {
+		return fmt.Sprintf(`
+resource %q %q {
+  id           = %q
+  display_name = %s
+  share_type   = "general"
+  capacity_gib = 100
+  consumers    = %s
+}
+`, fileStoreType, address, id, display, oneConsumer)
+	}
+	c.write(fileStoreConfig(name, "acceptance", 1024, oneConsumer) +
+		added("apart", name+"-apart", `"apart"`) +
+		added("after", name+"-after", fileStoreType+".test.display_name"))
+	out, code := c.runCode("apply", "-auto-approve")
+	if code != 1 {
+		t.Errorf("the apply exited %d, want 1:\n%s", code, out)
+	}
+	mustSay(t, "the apply", out, "Error: "+shrinkRefused, updateSentNothing("file store"), restAppliedNow)
+
+	if status, _, err := readFakeStore(fileStoreAPIPath(name + "-apart")); err != nil || status != http.StatusOK {
+		t.Errorf("the store that doesn't depend on the refused one: %d %v, want it created", status, err)
+	}
+	if status, _, err := readFakeStore(fileStoreAPIPath(name + "-after")); err != nil || status != http.StatusNotFound {
+		t.Errorf("the store that depends on the refused one: %d %v, want it skipped", status, err)
+	}
+
+	c.write(fileStoreConfig(name, "acceptance", 2048, oneConsumer) + added("apart", name+"-apart", `"apart"`))
+	c.destroyRemoves(t, "both stores", 2, fileStoreAPIPath(name+"-apart"))
+	done = true
 }
 
 // With `capacity_gib` lower than the store's, the plan warns and `terraform
@@ -231,8 +303,8 @@ provider %q {
 }
 
 // A lower storage ceiling plans as an update with a warning, and the apply
-// fails before it sends any request, the other changes in the same apply
-// included. Through the real CLI, for each change that would otherwise go
+// fails before it sends any request for the cluster, so its other changes in
+// the same apply aren't made either. Through the real CLI, for each change that would otherwise go
 // out with it:
 //
 //  1. `terraform apply` makes the cluster with a 500 GiB ceiling
@@ -271,14 +343,14 @@ func TestAccALoweredStorageCeilingWarnsAtPlanAndFailsAtApply(t *testing.T) {
 				t.Errorf("the plan exited %d, want 2, a plan with changes:\n%s", code, out)
 			}
 			mustSay(t, "the plan", out, "Warning: "+ceilingRefused, "is 500 GiB and the configuration asks for 100",
-				warnsAtPlan, destroyUnaffected, "0 to add, 1 to change, 0 to destroy")
+				updateWarned("cluster"), restApplied, destroyUnaffected, "0 to add, 1 to change, 0 to destroy")
 			sentNothing("the plan")
 
 			out, code = c.runCode("apply", "-auto-approve")
 			if code != 1 {
 				t.Errorf("the apply exited %d, want 1:\n%s", code, out)
 			}
-			mustSay(t, "the apply", out, "Error: "+ceilingRefused, "This apply sent nothing")
+			mustSay(t, "the apply", out, "Error: "+ceilingRefused, updateSentNothing("cluster"))
 			sentNothing("the apply")
 
 			status, body, err := readFakeStore(path)
@@ -431,7 +503,7 @@ func TestAccACreateInAnotherRegionThanItsProjectWarnsAtPlanAndFailsAtApply(t *te
 		t.Errorf("the plan exited %d, want 2, a plan with changes:\n%s", code, out)
 	}
 	mustSay(t, "the plan", out, "Warning: "+regionRefused, `Project "demo" is in region "us-texas-1"`,
-		`would be created in "eu-refused-1"`, "fails before it creates anything", destroyUnaffected,
+		`would be created in "eu-refused-1"`, createWarned, restApplied, destroyUnaffected,
 		"1 to add, 0 to change, 0 to destroy")
 	sentNothing("the plan")
 
@@ -440,7 +512,7 @@ func TestAccACreateInAnotherRegionThanItsProjectWarnsAtPlanAndFailsAtApply(t *te
 		t.Errorf("the apply exited %d, want 1:\n%s", code, out)
 	}
 	mustSay(t, "the apply", out, "Error: "+regionRefused, `Project "demo" is in region "us-texas-1"`,
-		"This apply sent nothing for this resource")
+		createSentNothing)
 	sentNothing("the apply")
 
 	c.destroyRemoves(t, "the network", 1, networkPath(map[string]string{

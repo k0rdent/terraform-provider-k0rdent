@@ -276,8 +276,8 @@ func (r *fileStoreResource) Schema(ctx context.Context, _ resource.SchemaRequest
 				MarkdownDescription: "Declared capacity in binary gibibytes. **Expand-only**: " +
 					"raising it grows the store, and lowering it is refused because releasing " +
 					"capacity means creating a smaller store and migrating the data. The plan warns " +
-					"of a lower value, and the apply fails before it sends any request, other changes " +
-					"included, so `terraform destroy` still works.\n\n" +
+					"of a lower value, and the apply fails before it sends any request for the store, so " +
+					"none of the store's changes in that apply are made. `terraform destroy` still works.\n\n" +
 					"**Not enforced as a quota.** The storage behind this API does not currently " +
 					"cap consumption at this figure, so it is a declaration for planning and " +
 					"accounting.",
@@ -691,9 +691,7 @@ func (r *fileStoreResource) ModifyPlan(ctx context.Context, req resource.ModifyP
 		plan.CapacityGiB.ValueInt64() < state.CapacityGiB.ValueInt64() {
 		from, to := state.CapacityGiB.ValueInt64(), plan.CapacityGiB.ValueInt64()
 		resp.Diagnostics.AddAttributeWarning(path.Root("capacity_gib"), shrinkRefusal,
-			shrinkText(from, to)+fmt.Sprintf("\n\nThe apply checks this again, and if it still holds, fails "+
-				"before it sends any request, other changes included. `terraform destroy` isn't affected. "+
-				"To plan no capacity change, set `capacity_gib` to %d.", from))
+			shrinkText(from, to)+"\n\n"+strings.TrimSpace(checkedAtUpdate("file store")))
 	}
 
 	verdicts := judgeGrants(grantReportOf(ctx, state.ConsumerStatus, &resp.Diagnostics),
@@ -921,16 +919,15 @@ func (r *fileStoreResource) Update(ctx context.Context, req resource.UpdateReque
 
 // shrinkRefusal is the summary of a shrink's refusal: a warning at plan and
 // an error at apply.
-const shrinkRefusal = "A file store cannot be shrunk"
+const shrinkRefusal = "A file store can't be shrunk"
 
 // shrinkText says why a shrink is refused and what to do instead.
 func shrinkText(from, to int64) string {
-	return fmt.Sprintf("`capacity_gib` goes from %d to %d. Capacity is expand-only: shrinking a "+
-		"filesystem that already holds data is not a safe online operation, so the "+
-		"platform refuses it.\n\nReleasing capacity means provisioning a smaller store "+
-		"and migrating the data. Terraform will not do that for you, and this resource "+
-		"deliberately does not replace the store on a shrink, because that would destroy "+
-		"the data it holds.", from, to)
+	return fmt.Sprintf("`capacity_gib` goes from %[1]d to %[2]d. Capacity is expand-only: shrinking a "+
+		"filesystem that already holds data isn't a safe online operation, so the platform refuses it.\n\n"+
+		"Set `capacity_gib` back to %[1]d. To release capacity, create a smaller store and move the data to "+
+		"it. This resource never replaces a store to shrink it, because the replacement would delete the "+
+		"data the store holds.", from, to)
 }
 
 // refuseShrink is the plan's shrink check, made again before an update
@@ -945,7 +942,7 @@ func refuseShrink(plan, state fileStoreModel, diags *diag.Diagnostics) bool {
 	// 409 CONFLICT_IMMUTABLE this replaces would have carried a code and a
 	// request id; the point is that it is never sent.
 	diags.AddAttributeError(path.Root("capacity_gib"), shrinkRefusal,
-		shrinkText(s.ValueInt64(), p.ValueInt64())+"\n\nThis apply sent nothing, so the file store is unchanged.")
+		shrinkText(s.ValueInt64(), p.ValueInt64())+"\n\n"+strings.TrimSpace(updateSentNothing("file store")))
 	return true
 }
 

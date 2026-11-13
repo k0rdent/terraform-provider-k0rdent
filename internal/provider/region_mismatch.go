@@ -210,14 +210,10 @@ func checkRegionMatchesProject(ctx context.Context, meta *Meta, region, project 
 	text := regionMismatchText(project, home, region)
 	if move {
 		// Local: decided from the project list, which the platform answered.
-		diags.AddAttributeError(path.Root("region"), regionRefusal, redactDiagnosticText(text+
-			" A move replaces the resource, deleting it first, so it's refused here, and `terraform destroy` "+
-			"with it. Set `region` back, or run `terraform destroy -refresh=false`."))
+		diags.AddAttributeError(path.Root("region"), regionRefusal, redactDiagnosticText(text+replacedOnThisPlan))
 		return
 	}
-	diags.AddAttributeWarning(path.Root("region"), regionRefusal, redactDiagnosticText(text+
-		" The apply checks this again, and if it still holds, fails before it creates anything. "+
-		"`terraform destroy` isn't affected."))
+	diags.AddAttributeWarning(path.Root("region"), regionRefusal, redactDiagnosticText(text+checkedAtCreate))
 }
 
 // refuseRegionMismatch is the plan's region check, made again before a
@@ -231,6 +227,6 @@ func refuseRegionMismatch(ctx context.Context, meta *Meta, target clusterTarget,
 	}
 	// Local: the plan's warning, refused now that the create would be sent.
 	diags.AddAttributeError(path.Root("region"), regionRefusal, redactDiagnosticText(
-		regionMismatchText(project, home, region)+" This apply sent nothing for this resource."))
+		regionMismatchText(project, home, region)+createSentNothing))
 	return true
 }

@@ -129,8 +129,7 @@ func TestLoweringTheStorageCeilingWarnsAtPlan(t *testing.T) {
 	}
 	w := resp.Diagnostics.Warnings()[0]
 	text := w.Summary() + "\n" + w.Detail()
-	for _, want := range []string{"lowered", "500", "100", "fails before it sends any request",
-		"`terraform destroy` isn't affected"} {
+	for _, want := range []string{"lowered", "500", "100", checkedAtUpdate("cluster")} {
 		if !strings.Contains(text, want) {
 			t.Errorf("diagnostic does not say %q:\n%s", want, text)
 		}
@@ -175,7 +174,7 @@ func TestALowerCeilingIsRefusedAtApplyBeforeAnythingIsSent(t *testing.T) {
 		t.Fatal("a lower ceiling applied")
 	}
 	text := resp.Diagnostics.Errors()[0].Summary() + "\n" + resp.Diagnostics.Errors()[0].Detail()
-	for _, want := range []string{"can't be lowered", "500", "100", "This apply sent nothing"} {
+	for _, want := range []string{"can't be lowered", "500", "100", updateSentNothing("cluster")} {
 		if !strings.Contains(text, want) {
 			t.Errorf("diagnostic does not say %q:\n%s", want, text)
 		}

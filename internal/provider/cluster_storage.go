@@ -38,10 +38,11 @@ func storageCeilingAttribute() schema.Int64Attribute {
 		MarkdownDescription: fmt.Sprintf("Storage the cluster declares, in GiB. It's charged against the "+
 			"organization's and the project's `storage_gib` quota, and isn't enforced on the storage array. "+
 			"From %d to %d.\n\n"+
-			"It can be raised in place and never lowered, since the platform refuses a lower value: the plan "+
-			"warns of one, and the apply fails before it sends any request, other changes included, so "+
-			"`terraform destroy` still works. Left out, the cluster keeps whatever ceiling it has, and "+
-			"removing it from configuration doesn't clear it. A raise is sent once the cluster is `active`, and one "+
+			"It can be raised in place and never lowered, since the platform refuses a lower value. The plan "+
+			"warns of a lower value, and the apply fails before it sends any request for the cluster, so none of "+
+			"the cluster's changes in that apply are made. `terraform destroy` still works. Left out, the cluster "+
+			"keeps whatever ceiling it has, and removing it from configuration doesn't clear it. A raise is sent "+
+			"once the cluster is `active`, and one "+
 			"refused while the cluster or its quota accounting is settling is sent again after the cluster "+
 			"settles. A raise past a quota is refused with the amount that would be admitted.",
 			k0rdent.ClusterStorageCeilingGiBMinimum, k0rdent.ClusterStorageCeilingGiBMaximum),
@@ -73,10 +74,8 @@ func (neverLowered) PlanModifyInt64(_ context.Context, req planmodifier.Int64Req
 	if from.IsNull() || from.IsUnknown() || to.IsNull() || to.IsUnknown() || to.ValueInt64() >= from.ValueInt64() {
 		return
 	}
-	f, t := from.ValueInt64(), to.ValueInt64()
 	resp.Diagnostics.AddAttributeWarning(path.Root("storage_ceiling_gib"), loweredCeilingRefusal,
-		loweredCeilingText(f, t)+" The apply checks this again, and if it still holds, fails before it "+
-			"sends any request, other changes included. `terraform destroy` isn't affected.")
+		loweredCeilingText(from.ValueInt64(), to.ValueInt64())+checkedAtUpdate("cluster"))
 }
 
 // loweredCeilingRefusal is the summary of a lower ceiling's refusal: a
@@ -94,7 +93,7 @@ func loweredCeilingText(from, to int64) string {
 // anything is sent. Local: decided from state and the plan.
 func addLoweredCeilingError(diags *diag.Diagnostics, from, to int64) {
 	diags.AddAttributeError(path.Root("storage_ceiling_gib"), loweredCeilingRefusal,
-		loweredCeilingText(from, to)+" This apply sent nothing, so the cluster is unchanged.")
+		loweredCeilingText(from, to)+updateSentNothing("cluster"))
 }
 
 // storageLowered reports whether the plan, as the apply resolved it, lowers
