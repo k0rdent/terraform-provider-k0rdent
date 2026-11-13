@@ -112,7 +112,7 @@ func recordedScopeMove(ctx context.Context, noun string, guarded bool, req resou
 	}
 	var replacing []string
 	if !guarded || replacementAllowed(ctx, req.Config) {
-		planned, ok := plannedReplacements(ctx, req, resp)
+		planned, ok := modifierReplacements(ctx, req, resp)
 		if !ok {
 			// Local: fails closed, as the guard does. Unreachable while every
 			// resource is built from resource/schema.
@@ -144,6 +144,19 @@ func recordedScopeMove(ctx context.Context, noun string, guarded bool, req resou
 			"don't depend on it are still changed. `terraform destroy` isn't affected.\n\n"+
 			"To keep the %s where it is, %s.",
 			r.why(noun, guarded), noun, noun, noun, r.keep())))
+	// The apply refuses this update, so no computed value can change. One
+	// left unknown, such as a cluster's api_endpoint, would plan the
+	// replacement of a resource that reads it, which Terraform makes before
+	// the refusal. The moved attributes, and any the guard refused, keep
+	// their planned values, so the plan still shows the change.
+	kept := make([]plannedReplacement, 0, len(r.Moves))
+	for _, m := range r.Moves {
+		kept = append(kept, plannedReplacement{path: path.Root(m.Attr)})
+	}
+	for _, refused := range readRefusal(ctx, resp.Private, &resp.Diagnostics) {
+		kept = append(kept, plannedReplacement{path: pathOf(refused.Path)})
+	}
+	keepComputed(ctx, req, resp, kept)
 }
 
 // refuseRecordedScopeMove is the apply's half: it refuses an update the plan

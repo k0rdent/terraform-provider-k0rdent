@@ -185,12 +185,18 @@ const moveLine = `  region = "us-elsewhere-1"`
 
 func startMove(t *testing.T, k moveKind) *moveRun {
 	t.Helper()
+	return startMoveWith(t, k, "")
+}
+
+// startMoveWith is startMove with more configuration beside the resource.
+func startMoveWith(t *testing.T, k moveKind, more string) *moveRun {
+	t.Helper()
 	if runtime.GOOS == "windows" {
 		skipTest(t, "the CLI sequence runs on unix")
 	}
 	r := &moveRun{cliRun: newCLIRun(t), k: k}
 	r.p = ownProject(t, "acc-rmove-"+k.short)
-	r.write("")
+	r.cliRun.write(inProject(r.p, k.config(r.p, "")) + more)
 	if out, ok := r.run("apply", "-auto-approve"); !ok {
 		t.Fatalf("the create failed:\n%s", out)
 	}
@@ -362,5 +368,38 @@ func TestAccAProjectMoveIsRefusedAtApply(t *testing.T) {
 				t.Errorf("the destroy exited %d with %d deletes, want 0 and one:\n%s", code, n, out)
 			}
 		})
+	}
+}
+
+// A refused move plans every computed value the configuration leaves null
+// as it is, so a resource reading one isn't replaced before the refusal.
+// Here terraform_data reads the cluster's api_endpoint, which the fake
+// holds back for this cluster, so it's null in state and a plan of an update
+// would otherwise leave it unknown.
+func TestAccARefusedMoveKeepsComputedValuesForDependents(t *testing.T) {
+	t.Parallel()
+	k := moveKinds()[0]
+	k.short = "cl-dep"
+	config := k.config
+	k.config = func(p, extra string) string { return config(p, "  display_name = \"fake-endpoint-late\"\n"+extra) }
+	dependent := "\nresource \"terraform_data\" \"dependent\" {\n  triggers_replace = " + clusterType + ".test.api_endpoint\n}\n"
+	r := startMoveWith(t, k, dependent)
+	before := (&refusalRun{cliRun: r.cliRun}).dependentID("after the create")
+
+	r.cliRun.write(inProject(r.p, k.config(r.p, moveLine)) + dependent)
+	out, code := r.runCode("plan")
+	if code != 0 {
+		t.Fatalf("the plan exited %d:\n%s", code, out)
+	}
+	mustSay(t, "the plan", out, "0 to add, 1 to change, 0 to destroy")
+	n := r.sent(k.writes(r.p), func() { out, code = r.runCode("apply", "-auto-approve") })
+	if code != 1 || n != 0 {
+		t.Errorf("the apply exited %d with %d writes, want 1 and none:\n%s", code, n, out)
+	}
+	if strings.Contains(out, "terraform_data.dependent: Destroying") {
+		t.Errorf("the apply destroyed the dependent:\n%s", out)
+	}
+	if after := (&refusalRun{cliRun: r.cliRun}).dependentID("after the refusal"); after != before {
+		t.Errorf("terraform_data.dependent is %s, was %s: it was replaced", after, before)
 	}
 }
