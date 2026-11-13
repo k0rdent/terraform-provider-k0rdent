@@ -1,0 +1,31 @@
+```release-note:bug
+resource/k0rdent_kubernetes_cluster: Fix a cluster left on the platform with nothing in state when the create's answer names an `id` other than the one sent. State now records the platform's `id`, so `terraform destroy` removes the cluster, and the apply fails with the steps to keep it
+```
+
+```release-note:bug
+resource/k0rdent_instance_group: Fix an instance group left on the platform with nothing in state when the create's answer names an `id` other than the one sent. State now records the platform's `id`, so `terraform destroy` removes the instance group, and the apply fails with the steps to keep it
+```
+
+```release-note:bug
+resource/k0rdent_network: Fix a network left on the platform with nothing in state when the create's answer names an `id` other than the one sent. A generated `id` now becomes the platform's. A configured one is recorded as the platform's, so `terraform destroy` removes the network, and the apply fails with the steps to keep it
+```
+
+```release-note:bug
+resource/k0rdent_subnet: Fix a subnet left on the platform with nothing in state when the create's answer names an `id` other than the one sent. A generated `id` now becomes the platform's. A configured one is recorded as the platform's, so `terraform destroy` removes the subnet, and the apply fails with the steps to keep it
+```
+
+```release-note:bug
+resource/k0rdent_security_group: Fix a security group left on the platform with nothing in state when the create's answer names an `id` other than the one sent. A generated `id` now becomes the platform's. A configured one is recorded as the platform's, so `terraform destroy` removes the security group, and the apply fails with the steps to keep it
+```
+
+```release-note:bug
+resource/k0rdent_file_store: Fix a file store left on the platform with nothing in state when the create's answer names an `id` other than the one sent. A generated `id` now becomes the platform's. A configured one is recorded as the platform's, so `terraform destroy` removes the file store, and the apply fails with the steps to keep it
+```
+
+```release-note:bug
+resource/k0rdent_vpc_peering: Fix a peering left on the platform with nothing in state when the create's answer names an `id` other than the one sent. A generated `id` now becomes the platform's. A configured one is recorded as the platform's, so `terraform destroy` removes the peering, and the apply fails with the steps to keep it
+```
+
+```release-note:bug
+resource/k0rdent_project: Fix a project left on the platform with nothing in state when the create's answer names an `id` other than the one sent. A generated `id` now becomes the platform's. A configured one is recorded as the platform's, so `terraform destroy` removes the project, and the apply fails with the steps to keep it
+```

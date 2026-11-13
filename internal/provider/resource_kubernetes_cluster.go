@@ -596,6 +596,7 @@ func (r *clusterResource) Create(ctx context.Context, req resource.CreateRequest
 	create := convergingCreate{
 		key: key, kind: "cluster", what: "create the cluster",
 		resourceName: ResourceName(clusterResourceSuffix),
+		idRequired:   true,
 		importID:     scopedImportID(target),
 		send: func(ctx context.Context) createAnswer {
 			created, err := r.meta.Client.CreateClusterWithResponse(ctx, target.region, target.project, body)

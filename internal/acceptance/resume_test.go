@@ -89,6 +89,9 @@ type cliRun struct {
 	terraform string
 	dir       string
 	rc        string
+	// env is added to every command's environment, after the rest, so it
+	// can point the provider somewhere else.
+	env []string
 }
 
 func newCLIRun(t *testing.T) *cliRun {
@@ -96,9 +99,16 @@ func newCLIRun(t *testing.T) *cliRun {
 	if os.Getenv("TF_ACC") == "" {
 		skipTest(t, "TF_ACC is not set, so there is no fake to run against")
 	}
+	return newCLIRunWith(t, builtProvider(t))
+}
+
+// newCLIRunWith is newCLIRun with a provider already built into dir, for
+// tests that share one build.
+func newCLIRunWith(t *testing.T, dir string) *cliRun {
+	t.Helper()
 	c := &cliRun{t: t, terraform: terraformForMigration(t), dir: t.TempDir()}
 	c.rc = filepath.Join(c.dir, "terraformrc")
-	writeFile(t, c.rc, devOverridesRC(t, builtProvider(t)))
+	writeFile(t, c.rc, devOverridesRC(t, dir))
 	return c
 }
 
@@ -125,6 +135,7 @@ func (c *cliRun) command(args ...string) *exec.Cmd {
 	cmd.Env = append(quietEnviron(), "TF_CLI_CONFIG_FILE="+c.rc, "TF_IN_AUTOMATION=1", "TF_INPUT=0",
 		"CHECKPOINT_DISABLE=1")
 	cmd.Env = append(cmd.Env, matrixTestEnv(c.t)...)
+	cmd.Env = append(cmd.Env, c.env...)
 	return cmd
 }
 

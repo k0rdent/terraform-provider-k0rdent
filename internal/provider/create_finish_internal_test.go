@@ -55,6 +55,8 @@ func finishPlan(t *testing.T) tfsdk.Plan {
 
 // finishCase is one create, from its first send to its finished state.
 type finishCase struct {
+	// configured is the configured id, empty for a generated one.
+	configured string
 	// answers are what each send gets, in order. The last repeats.
 	answers []createAnswer
 	// lookup is what reading the id back finds.
@@ -77,6 +79,8 @@ type finishCase struct {
 	wantWarning string
 	// wantState is the state attribute values to check, "" for null.
 	wantState map[string]string
+	// wantID is the id state must hold, empty for the one the create sent.
+	wantID string
 	// wantNullState says nothing at all may be written.
 	wantNullState bool
 }
@@ -141,6 +145,18 @@ func TestCreateFinish(t *testing.T) {
 			wantError: "Could not confirm the thing was created",
 			wantState: map[string]string{"network": "n1", "region": "test", "project": "elsewhere", "name": "web", "state": ""},
 		},
+		// The platform made it under an id of its own. That id goes to state
+		// with the plan, as for a lost answer, and nothing is waited for: the
+		// apply fails, and the wait is the next apply's, after the untaint.
+		"a configured id the platform didn't use": {
+			configured: "mine",
+			answers: []createAnswer{{resp: &http.Response{StatusCode: http.StatusCreated, Status: "201 Created"},
+				id: "thing-9"}},
+			wantSends: 1,
+			wantError: "The platform chose another id for the thing",
+			wantID:    "thing-9",
+			wantState: waitFailedRow,
+		},
 		"refused": {
 			answers:   []createAnswer{{resp: &http.Response{StatusCode: http.StatusBadRequest, Status: "400 Bad Request"}}},
 			wantSends: 1, wantError: "Could not create the thing", wantNullState: true,
@@ -148,7 +164,11 @@ func TestCreateFinish(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			ctx := context.Background()
-			key, err := newCreateKey(types.StringNull(), false)
+			configured := types.StringNull()
+			if tc.configured != "" {
+				configured = types.StringValue(tc.configured)
+			}
+			key, err := newCreateKey(configured, false)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -221,8 +241,12 @@ func TestCreateFinish(t *testing.T) {
 			}
 			// A created resource is never lost from state: every way out
 			// after the create carries its id.
-			if got := stateID(t, state); got != key.id {
-				t.Errorf("id in state = %q, want the generated %q", got, key.id)
+			wantID := key.id
+			if tc.wantID != "" {
+				wantID = tc.wantID
+			}
+			if got := stateID(t, state); got != wantID {
+				t.Errorf("id in state = %q, want %q", got, wantID)
 			}
 			for attr, want := range tc.wantState {
 				var v types.String

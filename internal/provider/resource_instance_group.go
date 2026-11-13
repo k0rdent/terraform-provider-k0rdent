@@ -398,6 +398,7 @@ func (r *instanceGroupResource) Create(ctx context.Context, req resource.CreateR
 	create := convergingCreate{
 		key: key, kind: "instance group", what: "create the instance group",
 		resourceName: ResourceName(instanceGroupResourceSuffix),
+		idRequired:   true,
 		importID:     scopedImportID(target),
 		send: func(ctx context.Context) createAnswer {
 			created, err := r.meta.Client.CreateInstanceGroupWithResponse(ctx, target.region, target.project, body)

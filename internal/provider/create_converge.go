@@ -58,6 +58,20 @@ import (
 // it stops with the import command. With a generated id the next run
 // generates another, and a second resource is made.
 //
+// # An answer that names another id
+//
+// The platform makes a resource under the id it is sent. A platform that
+// chooses its own ids instead may drop the one sent and answer with another.
+// That answer is still this request's own: it says which resource this call
+// made. Refusing it would leave that resource on the platform with nothing in
+// state to destroy it, and every retry would make another. So the id the
+// answer names is the one recorded.
+//
+// A generated id was only ever this provider's handle, so the create carries
+// on under the platform's id. A configured id is the user's, and Terraform
+// plans this resource by it, so the create records the platform's id and
+// fails, saying how to keep the resource. See addChoseAnotherID.
+//
 // # Proof of ownership
 //
 // A 409 on a create says something with that id exists, not who made it. The
@@ -200,8 +214,8 @@ func createTokenOfFreeform(tags *map[string]any) string {
 
 // createAnswer is what one create request came back with.
 type createAnswer struct {
-	// id is the id a 2xx answer named, empty when it named none. It is
-	// compared with the id sent, never adopted in its place.
+	// id is the id a 2xx answer named, empty when it named none. An id other
+	// than the one sent is the platform's choice for this request's resource.
 	id string
 	// uid is the uid a 2xx answer named, empty when it named none.
 	uid  string
@@ -237,6 +251,11 @@ const (
 	// the create landed. Record the id in state, so the next run refreshes it
 	// rather than creating again, and fail.
 	createUnconfirmed
+	// createUnderAnotherID: the platform made the resource under an id other
+	// than the configured one. Record that id in state, so the resource is
+	// managed and a destroy removes it, and fail: the configuration still
+	// names the id that was sent.
+	createUnderAnotherID
 )
 
 // createdAs is the object a converging create ended on.
@@ -257,6 +276,9 @@ type convergingCreate struct {
 	what apiCall
 	// resourceName is the Terraform type, for the import command.
 	resourceName string
+	// idRequired is set for a kind whose configuration must name its id, so
+	// the advice for an id the platform chose is to set it, not to remove it.
+	idRequired bool
 	// importID turns an id into the form `terraform import` takes for it.
 	importID func(id string) string
 	// send makes the create request.
@@ -274,7 +296,8 @@ type convergingCreate struct {
 // run sends the create until it has an answer it can act on.
 //
 //   - 2xx: done, with the id the create sent and the uid the answer named. An
-//     answer naming another id is refused.
+//     answer naming another id is done under that id for a generated id, and
+//     recorded under it and failed for a configured one.
 //   - No answer at all: read the id back. Found and provably this call's:
 //     done. Found and not provable: refused. Not found: send again, up to
 //     createAttempts. The read failing too: unconfirmed, for a generated id.
@@ -285,7 +308,8 @@ type convergingCreate struct {
 //     exists.
 //   - 504 naming an id in its metadata: the service persisted that resource
 //     for this request and timed out starting its workflow. Done, with that id
-//     when it is the one sent, and refused when it isn't. Its uid is read back.
+//     and the uid a read finds, unless it isn't the configured id sent. Then
+//     it is recorded and failed, as a 2xx naming another id is.
 //   - Any other 502 or 504: the request may have been carried out behind the
 //     gateway. Read the id back. Found and provably this call's: done. Not
 //     found: the error is reported. The read failing: unconfirmed, for a
@@ -300,11 +324,11 @@ func (c convergingCreate) run(ctx context.Context) (createOutcome, createdAs, di
 		a := c.send(ctx)
 		if a.err == nil && statusOf(a.resp)/100 == 2 {
 			// The platform names the resource by the id it was sent, so an
-			// answer that leaves it out still says which one it made, and
-			// one that names another is refused rather than believed.
+			// answer that leaves it out still says which one it made. One
+			// that names another is still this request's resource, made
+			// under an id the platform chose.
 			if a.id != "" && a.id != c.key.id {
-				c.addNamedAnother(&diags, statusOf(a.resp), a.id)
-				return createFailed, createdAs{}, diags
+				return c.underAnotherID(ctx, &diags, statusOf(a.resp), createdAs{id: a.id, uid: a.uid})
 			}
 			return createDone, createdAs{id: c.key.id, uid: a.uid}, diags
 		}
@@ -360,9 +384,8 @@ func (c convergingCreate) run(ctx context.Context) (createOutcome, createdAs, di
 
 		case status == http.StatusBadGateway || status == http.StatusGatewayTimeout:
 			if named := c.namedOnTimeout(a); named != "" {
-				if named != c.key.id {
-					c.addNamedAnother(&diags, status, named)
-					return createFailed, createdAs{}, diags
+				if named != c.key.id && !c.key.generated {
+					return c.underAnotherID(ctx, &diags, status, createdAs{id: named})
 				}
 				// The service's own answer to this request: it persisted the
 				// resource and timed out starting its workflow. That is proof
@@ -418,26 +441,47 @@ func (c convergingCreate) namedOnTimeout(a createAnswer) string {
 	return c.timeoutID(a.resp, a.body)
 }
 
-// addNamedAnother refuses an answer that names a resource by an id this create
-// did not send.
+// underAnotherID ends a create whose own answer, status, names the resource
+// it made by an id other than the one sent. A generated id was this
+// provider's handle and nothing else, so the create carries on under the
+// platform's. A configured one is recorded under the platform's id and fails,
+// with addChoseAnotherID's advice.
+func (c convergingCreate) underAnotherID(ctx context.Context, diags *diag.Diagnostics, status int, made createdAs) (createOutcome, createdAs, diag.Diagnostics) {
+	if c.key.generated {
+		tflog.Info(ctx, "the platform made the resource under an id of its own, so that id is the one recorded",
+			map[string]any{"sent": c.key.id, "named": made.id, "status": status})
+		return createDone, made, *diags
+	}
+	c.addChoseAnotherID(diags, status, made.id)
+	return createUnderAnotherID, made, *diags
+}
+
+// addChoseAnotherID reports a create whose configured id the platform didn't
+// use. State records the platform's id, so nothing is left behind. Terraform
+// taints the row, since the create failed, and the configuration still names
+// the id that was sent. Removing `id`, where the kind can leave it out, or
+// setting it to the platform's, then an untaint, keeps the resource.
 //
-// Every create names its id, and the platform makes the resource under the id
-// it was sent, so a 2xx or a 504 naming another one is not an answer to this
-// request in any way the provider can account for. Adopting it would put an id
-// in state that this apply never chose, and a later destroy would delete
-// whatever that id names. Nothing is recorded: the id this create sent may
-// still read back, and the one the answer named may not be this
-// configuration's at all, so both are left for the operator to look at.
-func (c convergingCreate) addNamedAnother(diags *diag.Diagnostics, status int, named string) {
+// Terraform doesn't check a failed create's result against the plan, so the
+// row can hold an id the configuration doesn't. A create that succeeded with
+// one would be refused as an inconsistent result, which is why this fails.
+func (c convergingCreate) addChoseAnotherID(diags *diag.Diagnostics, status int, named string) {
+	edit := fmt.Sprintf("remove `id` from this resource's configuration, or set it to %q", named)
+	if c.idRequired {
+		edit = fmt.Sprintf("set `id` in this resource's configuration to %q", named)
+	}
 	diags.AddError(
-		fmt.Sprintf("The platform named another %s than the one this create sent", c.kind),
-		redactDiagnosticText(fmt.Sprintf("The create sent %s %q, and the platform answered %d naming %q. "+
-			"The platform makes a resource under the id it is sent, so the provider doesn't take "+
-			"the answer at its word, and nothing is recorded in state.\n\n"+
-			"Check which of the two exists. If %q is the one this configuration describes, import it, "+
-			"replacing <address> with this resource's address, such as %s.example:\n\n"+
-			"    terraform import <address> %s",
-			c.kind, c.key.id, status, named, named, c.resourceName, c.importID(named))),
+		fmt.Sprintf("The platform chose another id for the %s", c.kind),
+		redactDiagnosticText(fmt.Sprintf("The create sent %s id %q, and the platform answered %d naming %q "+
+			"as the %s it made. The platform chose that id itself. State records %q, so this configuration "+
+			"manages the %s and `terraform destroy` removes it.\n\n"+
+			"Terraform marks it tainted because its create returned this error. To keep it, %s. Then run "+
+			"these, replacing <address> with this resource's address, such as %s.example:\n\n"+
+			"    terraform untaint <address>\n"+
+			"    terraform apply\n\n"+
+			"An apply before both steps replaces it: Terraform deletes this %s and creates another, "+
+			"the platform picks a new id for that one too, and this error comes back.",
+			c.kind, c.key.id, status, named, c.kind, named, c.kind, edit, c.resourceName, c.kind)),
 	)
 }
 
@@ -670,7 +714,8 @@ type createFinish[M any] struct {
 // returns the read back state, already set, and true once the read back found
 // the resource, so a kind can add what it says about a new one. A failed
 // create writes nothing. An unconfirmed one writes the plan under its id, as
-// recordUnconfirmed says, and stops there. So does one whose wait fails.
+// recordUnconfirmed says, and stops there. So does one the platform made under
+// another id than the configured one, and one whose wait fails.
 func (f createFinish[M]) run(ctx context.Context, create convergingCreate, plan tfsdk.Plan, state *tfsdk.State, private privateWriter, diags *diag.Diagnostics) (M, bool) {
 	var none M
 	outcome, made, createDiags := create.run(ctx)
@@ -685,7 +730,7 @@ func (f createFinish[M]) run(ctx context.Context, create convergingCreate, plan 
 	}
 	setCreatedScope(ctx, f.target, state, diags)
 	diags.Append(recordUID(ctx, private, made.uid)...)
-	if outcome == createUnconfirmed {
+	if outcome == createUnconfirmed || outcome == createUnderAnotherID {
 		return none, false
 	}
 

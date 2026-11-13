@@ -466,22 +466,24 @@ func TestAFileStore409WithAConfiguredIDIsRefused(t *testing.T) {
 	}
 }
 
-// The platform names the resource by the id it was sent. An answer that names
-// another one is not taken at its word: adopting it would put an id in state
-// that this create never asked for, and a later destroy would delete whatever
-// it names. The create is refused, with both ids, and nothing is recorded.
-func TestAnAnswerNamingAnotherIDIsRefused(t *testing.T) {
+// A platform that chooses its own ids may drop the one a create sends and
+// answer with another. That answer still names the resource this request
+// made, so it's recorded under the platform's id and never left behind. A
+// generated id carries on under it with no error. A configured one fails,
+// with the platform's id in state and the way to keep it. One create is sent
+// either way.
+func TestAnAnswerNamingAnotherIDIsRecordedUnderIt(t *testing.T) {
 	for name, answer := range map[string]func(*clusterAPI, string, http.ResponseWriter){
 		"201": func(api *clusterAPI, _ string, w http.ResponseWriter) {
 			w.WriteHeader(http.StatusCreated)
-			api.write(w, api.cluster("someone-else"))
+			api.write(w, api.cluster("cls-chosen"))
 		},
 		"504": func(api *clusterAPI, _ string, w http.ResponseWriter) {
 			w.WriteHeader(http.StatusGatewayTimeout)
 			api.write(w, map[string]any{"error": map[string]any{
 				"code": 504, "message": "deadline exceeded", "reason": "DEADLINE_EXCEEDED",
 				"details": []any{map[string]any{"reason": "DEADLINE_EXCEEDED",
-					"metadata": map[string]any{"clusterId": "someone-else"}}},
+					"metadata": map[string]any{"clusterId": "cls-chosen"}}},
 			}})
 		},
 	} {
@@ -489,28 +491,63 @@ func TestAnAnswerNamingAnotherIDIsRefused(t *testing.T) {
 			for _, configured := range []string{"", "c1"} {
 				api := newClusterAPI(t)
 				api.answer = func(_ int, id string, w http.ResponseWriter) bool {
+					// The platform keeps the resource under the id it chose.
+					api.tags["cls-chosen"] = api.tags[id]
+					delete(api.tags, id)
 					answer(api, id, w)
 					return true
 				}
 				resp := createCluster(t, api.serve(), configured)
-				if !resp.State.Raw.IsNull() {
-					t.Errorf("configured %q: state was written for an id the create never sent: %v",
-						configured, resp.State.Raw)
-				}
-				found := false
-				for _, d := range resp.Diagnostics.Errors() {
-					found = found || (strings.Contains(d.Summary(), "named another") &&
-						strings.Contains(d.Detail(), `"someone-else"`) &&
-						strings.Contains(d.Detail(), `"`+api.sent[0]+`"`))
-				}
-				if !found {
-					t.Errorf("configured %q: no refusal naming both ids in %v", configured, resp.Diagnostics)
+				if got := stateID(t, resp.State); got != "cls-chosen" {
+					t.Errorf("configured %q: id in state = %q, want the platform's %q", configured, got, "cls-chosen")
 				}
 				if len(api.sent) != 1 {
 					t.Errorf("configured %q: creates sent = %v, want one", configured, api.sent)
 				}
+				if configured == "" {
+					if resp.Diagnostics.HasError() {
+						t.Errorf("a generated id failed: %v", resp.Diagnostics.Errors())
+					}
+					// A 504 that names what it saved is waited out like a 201,
+					// and says so.
+					if name == "504" && !hasWarning(resp.Diagnostics, "its workflow was slow to start") {
+						t.Errorf("no warning that the workflow was slow to start in %v", resp.Diagnostics)
+					}
+					continue
+				}
+				errs := resp.Diagnostics.Errors()
+				if len(errs) != 1 || errs[0].Summary() != "The platform chose another id for the cluster" {
+					t.Fatalf("configured %q: want one error saying the platform chose the id, got %v", configured, errs)
+				}
+				for _, want := range []string{
+					`The create sent cluster id "c1", and the platform answered ` + name + ` naming "cls-chosen" as the cluster it made.`,
+					`State records "cls-chosen"`,
+					// A cluster's id is required, so it can't be removed.
+					"To keep it, set `id` in this resource's configuration to \"cls-chosen\".",
+					"terraform untaint <address>\n    terraform apply",
+				} {
+					if !strings.Contains(errs[0].Detail(), want) {
+						t.Errorf("configured %q: the error doesn't say %q:\n%s", configured, want, errs[0].Detail())
+					}
+				}
 			}
 		})
+	}
+}
+
+// A kind whose configuration can leave `id` out is advised to remove it, and a
+// kind that must name one to set it to the platform's.
+func TestTheAdviceForAnIDThePlatformChoseFitsTheKind(t *testing.T) {
+	for _, required := range []bool{false, true} {
+		c := convergingCreate{key: createKey{id: "mine"}, kind: "thing", resourceName: ResourceName("thing"), idRequired: required}
+		var diags diag.Diagnostics
+		c.addChoseAnotherID(&diags, http.StatusCreated, "thing-1")
+		detail := diags.Errors()[0].Detail()
+		remove := strings.Contains(detail, "remove `id` from this resource's configuration, or set it to \"thing-1\"")
+		set := strings.Contains(detail, "set `id` in this resource's configuration to \"thing-1\"")
+		if remove == required || set != required {
+			t.Errorf("idRequired %t: advice is wrong:\n%s", required, detail)
+		}
 	}
 }
 
