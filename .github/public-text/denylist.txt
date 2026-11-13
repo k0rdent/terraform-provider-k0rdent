@@ -34,7 +34,8 @@ partner:i:\bpartners?\b
 prd:-:\bPRD\b|\bMVP[- ]?[0-9]*\b
 # Environment names
 staging:i:\bstaging\b
-# AI attribution
+# AI attribution. ai-tool also checks the author and committer of each commit
+# a pull request adds: a squash merge credits each one as a co-author on main.
 ai-trailer:i:co-authored-by|generated with
 ai-tool:-:\bClaude\b|claude\.ai|\bCursor\b|cursoragent|anthropic\.com
 # AWS account ids: 12 digits within 40 characters after aws or account

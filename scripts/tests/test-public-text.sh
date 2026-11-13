@@ -171,6 +171,26 @@ expect 0 "Dependabot's sign-off and a Go advisory id" --commits "HEAD~1..HEAD"
 g log -1 --format=%B > "$work/body"
 expect 1 "Dependabot's address outside a commit" --text body "$work/body"
 
+# Each commit's author and committer, under the ai-tool rule only: a tool's
+# name or address is a hit, and a person's name and address aren't.
+ai_name="$(printf 'Cla%s' ude)"
+ai_mail="noreply@$(printf 'anthro%s' pic.com)"
+g -c user.name="$ai_name" -c user.email="$ai_mail" commit -q --allow-empty -m "Link the registry pages"
+hit="$(g rev-parse --short=12 HEAD)"
+expect 1 "a tool as a commit's author" --commits "HEAD~1..HEAD"
+grep -q "^commit $hit author:1:$ai_name\$" "$work/out" || fail "the report doesn't name the commit's author"
+GIT_COMMITTER_NAME="$ai_name" GIT_COMMITTER_EMAIL="$ai_mail" g commit -q --allow-empty -m "Fix the docs"
+hit="$(g rev-parse --short=12 HEAD)"
+expect 1 "a tool as a commit's committer" --commits "HEAD~1..HEAD"
+grep -q "^commit $hit committer:1:$ai_name\$" "$work/out" || fail "the report doesn't name the commit's committer"
+if grep -q "^commit $hit author:" "$work/out"; then fail "a person as the author was reported"; fi
+g -c user.name=Zorvath -c user.email="zorvath@$(printf 'quill%s' mail.net)" commit -q --allow-empty -m "Fix the plan"
+expect 0 "a person's name and address as the author" --commits "HEAD~1..HEAD"
+cp "$work/.github/public-text/denylist.txt" "$work/deny.bak"
+grep -v "^ai-tool:" "$work/deny.bak" > "$work/.github/public-text/denylist.txt"
+expect 2 "--commits with no ai-tool rule to check authors against" --commits "HEAD~1..HEAD"
+mv "$work/deny.bak" "$work/.github/public-text/denylist.txt"
+
 # The workflow's own step, run as written, on a merge commit like CI's
 # checkout. Text run as a command would print the machine type, a hit.
 mkdir -p "$work/scripts" "$work/runner"
@@ -205,6 +225,13 @@ grep -q '^body:2:Zorvath$' "$work/out" || fail "the workflow step doesn't name t
 pr named-pr "Thanks Zorvath"
 step 1 "a hashed name in a commit message" "Fix the tests" null
 grep -q '^commit [0-9a-f]\{12\}:1:Zorvath$' "$work/out" || fail "the workflow step doesn't name the commit"
+# A tool's commit, squash-merged, would put its name on main as a co-author.
+g checkout -q -b tool-pr
+g -c user.name="$ai_name" -c user.email="$ai_mail" commit -q --allow-empty -m "Fix the tests"
+g checkout -q -
+g merge -q --no-ff --no-edit tool-pr
+step 1 "a tool as the author of a pull request's commit" "Fix the tests" null
+grep -q "^commit [0-9a-f]\{12\} author:1:$ai_name\$" "$work/out" || fail "the workflow step doesn't name the commit's author"
 
 # Can't run is never clean.
 expect 2 "a range git can't read" --commits "nothing..HEAD"
