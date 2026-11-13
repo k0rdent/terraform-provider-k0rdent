@@ -148,7 +148,10 @@ func recordedScopeMove(ctx context.Context, noun string, guarded bool, req resou
 	// left unknown, such as a cluster's api_endpoint, would plan the
 	// replacement of a resource that reads it, which Terraform makes before
 	// the refusal. The moved attributes, and any the guard refused, keep
-	// their planned values, so the plan still shows the change.
+	// their planned values, so the plan still shows the change. Unlike the
+	// guard's, this refusal holds at apply whatever else resolves then: a move
+	// is only recorded from a region and project known at plan, so the final
+	// plan records it again and keeps the same values.
 	kept := make([]plannedReplacement, 0, len(r.Moves))
 	for _, m := range r.Moves {
 		kept = append(kept, plannedReplacement{path: path.Root(m.Attr)})

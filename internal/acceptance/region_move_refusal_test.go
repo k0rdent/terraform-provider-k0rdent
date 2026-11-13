@@ -404,51 +404,50 @@ func TestAccARefusedMoveKeepsComputedValuesForDependents(t *testing.T) {
 	}
 }
 
-// Values known only after apply, around a region move. A region that
-// resolves to the current one applies as a plain update. A share_type that
-// resolves to the current one beside a refused region move leaves the region
-// refusal standing at apply. Neither fails with "Provider produced
-// inconsistent final plan", and the resource reading the store's export
-// server is kept in both.
+// A region known only after apply. Resolved to the current one, the plan
+// applies as a plain update. Resolved to one the project isn't in, the apply
+// refuses it before it sends a write to the store. Neither fails with
+// "Provider produced inconsistent final plan", and the resource reading the
+// store's export server is kept in both.
 func TestAccARegionMoveWithValuesKnownOnlyAtApply(t *testing.T) {
 	t.Parallel()
 	if runtime.GOOS == "windows" {
 		skipTest(t, "the CLI sequence runs on unix")
 	}
 	for _, tc := range []struct {
-		name, region, shareType, display string
-		code                             int
-		say                              string
+		name, region, display string
+		code                  int
+		say                   string
 	}{
-		{"region resolves to the current one", "terraform_data.v.output.region", `"general"`, "b", 0, "Apply complete!"},
-		{"share_type resolves equal beside a refused move", `"us-elsewhere-1"`, "terraform_data.v.output.share_type", "a", 1,
+		{"region resolves to the current one", "terraform_data.v.output.region", "b", 0, "Apply complete!"},
+		{"region resolves to one the project isn't in", "terraform_data.v.output.moved", "c", 1,
 			"so the apply refused the change"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			p := ownProject(t, "acc-rmove-unk-"+tc.display)
-			config := func(trigger, region, shareType, display string) string {
+			config := func(trigger, region, display string) string {
 				return inProject(p, fmt.Sprintf(`
 resource "terraform_data" "v" {
-  input            = { region = "us-texas-1", share_type = "general" }
+  input            = { region = "us-texas-1", moved = "us-elsewhere-1" }
   triggers_replace = [%q]
 }
 resource %q "test" {
   id           = "%s-fs"
   display_name = %q
   region       = %s
-  share_type   = %s
+  share_type   = "general"
   capacity_gib = 100
   consumers    = %s
 }
 resource "terraform_data" "dependent" {
   triggers_replace = %s.test.preferred_export_location.server
 }
-`, trigger, fileStoreType, p, display, region, shareType, oneConsumer, fileStoreType))
+`, trigger, fileStoreType, p, display, region, oneConsumer, fileStoreType))
 			}
 			c := newCLIRun(t)
 			r := &refusalRun{cliRun: c}
-			c.write(config("a", `"us-texas-1"`, `"general"`, "a"))
+			c.write(config("a", `"us-texas-1"`, "a"))
 			if out, ok := c.run("apply", "-auto-approve"); !ok {
 				t.Fatalf("the create failed:\n%s", out)
 			}
@@ -458,8 +457,15 @@ resource "terraform_data" "dependent" {
 				}
 			})
 			before := r.dependentID("after the create")
-			c.write(config("b", tc.region, tc.shareType, tc.display))
-			out, code := r.runCode("apply", "-auto-approve")
+			c.write(config("b", tc.region, tc.display))
+			object := fileStorePath(map[string]string{"region": "us-texas-1", "project": p, "id": p + "-fs"})
+			writes := []fakeRequest{{http.MethodDelete, object}, {http.MethodPatch, object}, {http.MethodPut, object}}
+			var out string
+			var code int
+			n := (&moveRun{cliRun: c}).sent(writes, func() { out, code = r.runCode("apply", "-auto-approve") })
+			if tc.code == 1 && n != 0 {
+				t.Errorf("the refused apply sent %d writes to the store", n)
+			}
 			if code != tc.code {
 				t.Errorf("the apply exited %d, want %d:\n%s", code, tc.code, out)
 			}
@@ -471,5 +477,48 @@ resource "terraform_data" "dependent" {
 				t.Errorf("terraform_data.dependent is %s, was %s: it was replaced", after, before)
 			}
 		})
+	}
+}
+
+// A refused move beside a replacing change known only after apply, here a
+// cluster `id` that resolves to the current one. The guard can't plan the
+// cluster's computed values as they are, since its refusal may not hold at
+// apply. The move's refusal does hold, so the move plans them as they are,
+// and terraform_data reading the cluster's api_endpoint isn't replaced before
+// the apply refuses the move.
+func TestAccARefusedMoveBesideALateReplacingChangeKeepsDependents(t *testing.T) {
+	t.Parallel()
+	k := moveKinds()[0]
+	k.short = "cl-late"
+	config := k.config
+	k.config = func(p, extra string) string { return config(p, "  display_name = \"fake-endpoint-late\"\n"+extra) }
+	late := func(trigger string) string {
+		return fmt.Sprintf("\nresource \"terraform_data\" \"id\" {\n  input            = \"acc-rmove-cl-late-x\"\n  triggers_replace = [%q]\n}\n", trigger) +
+			"\nresource \"terraform_data\" \"dependent\" {\n  triggers_replace = " + clusterType + ".test.api_endpoint\n}\n"
+	}
+	r := startMoveWith(t, k, late("a"))
+	dep := &refusalRun{cliRun: r.cliRun}
+	before := dep.dependentID("after the create")
+
+	moved := strings.Replace(inProject(r.p, k.config(r.p, moveLine)), `id = "acc-rmove-cl-late-x"`, "id = terraform_data.id.output", 1)
+	if !strings.Contains(moved, "terraform_data.id.output") {
+		t.Fatalf("the configuration doesn't read the id from terraform_data:\n%s", moved)
+	}
+	r.cliRun.write(moved + late("b"))
+	n := 0
+	out, code := "", 0
+	n = r.sent(k.writes(r.p), func() { out, code = r.runCode("apply", "-auto-approve") })
+	if code != 1 || n != 0 {
+		t.Errorf("the apply exited %d with %d writes, want 1 and none:\n%s", code, n, out)
+	}
+	mustSay(t, "the apply", out, "so the apply refused the change")
+	if strings.Contains(out, "inconsistent final plan") {
+		t.Errorf("the apply failed on an inconsistent final plan:\n%s", out)
+	}
+	if strings.Contains(out, "terraform_data.dependent: Destroying") {
+		t.Errorf("the apply destroyed the dependent:\n%s", out)
+	}
+	if after := dep.dependentID("after the refusal"); after != before {
+		t.Errorf("terraform_data.dependent is %s, was %s: it was replaced", after, before)
 	}
 }
