@@ -43,8 +43,7 @@ const (
 	// paragraph lists.
 	replaces
 	// refused is a refusal of its own, not the guard's, which allow_replace
-	// doesn't lift: a file store's shrink, a cluster's earlier version, a
-	// region its project isn't in.
+	// doesn't lift: a file store's shrink, a region its project isn't in.
 	refused
 )
 
@@ -62,9 +61,6 @@ type invChange struct {
 	// plan that replaces a tainted resource. The others are refusals of an
 	// update only.
 	onCreate bool
-	// whenFailed is this change's refusal on a cluster the platform reports
-	// `failed`, where it isn't refused otherwise.
-	whenFailed *regexp.Regexp
 	// silent says which part of this row's rule no doc states.
 	silent string
 }
@@ -186,9 +182,6 @@ func wantReplacePlan(k invKind, start invStart, c invChange, allow bool) ([]stri
 	tainted := start == taintedWithToken || start == taintedNoToken
 	if c.rule == refused && (c.onCreate || !tainted) {
 		return []string{"refuse"}, c.refusal
-	}
-	if c.whenFailed != nil && (start == failedWaits || start == failedKept) {
-		return []string{"refuse"}, c.whenFailed
 	}
 	switch start {
 	case taintedWithToken:

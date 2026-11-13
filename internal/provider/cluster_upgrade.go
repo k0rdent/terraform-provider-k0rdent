@@ -22,17 +22,27 @@ import (
 	"github.com/k0rdent/terraform-provider-k0rdent/internal/k0rdent"
 )
 
-// versionRefusal is the summary of every plan-time refusal of a version change.
+// versionRefusal is the summary of every refusal of a version change: a
+// warning at plan and an error at apply.
+//
+// A version change is an update in place, so refusing it at apply deletes
+// nothing. A refusal at plan would stop `terraform destroy` too, since destroy
+// refreshes with a normal plan first and the provider can't tell that plan
+// from any other.
 const versionRefusal = "Cannot move the cluster to a different version of its ClusterType"
 
-// destroyAdvice ends every plan-time refusal. `terraform destroy` refreshes
-// with a normal plan first, and the provider cannot tell that plan from any
-// other, so the refusal stops a destroy too, `-target` or not. Naming the
-// bound version matters: after a failed step it is not the one the
-// configuration had before the edit.
-func destroyAdvice(bound string) string {
-	return fmt.Sprintf(" To destroy the cluster, set `cluster_type` to %q, what it is bound to now, "+
-		"then run `terraform destroy`. Or run `terraform destroy -refresh=false`.", bound)
+// refusedAtApply ends the plan's warning. Naming the bound version matters:
+// after a failed step it isn't the one the configuration had before the edit.
+func refusedAtApply(bound string) string {
+	return fmt.Sprintf(" The apply checks this again. If it still holds, the apply fails before it sends any "+
+		"request, so none of this plan's other changes are made either. `terraform destroy` isn't affected. "+
+		"To keep the cluster on its current version, set `cluster_type` to %q.", bound)
+}
+
+// sentNothing ends the apply's refusal.
+func sentNothing(bound string) string {
+	return fmt.Sprintf(" This apply sent nothing, so the cluster is unchanged. To apply the rest of the "+
+		"configuration, set `cluster_type` back to %q, the version the cluster is on now.", bound)
 }
 
 // upgradePath returns the versions an upgrade from boundID to targetID passes
@@ -244,9 +254,10 @@ func earliestStep(pool string, c, n int, route []versionBounds) (int, bool) {
 }
 
 // planVersionChange decides what a `cluster_type` naming another version of
-// the same ClusterType plans as: an in-place upgrade with its step count, or a
-// refusal. With no configured client it cannot read the version list, so it
-// plans the update and leaves the check to the apply, which makes it again.
+// the same ClusterType plans as: an in-place upgrade with its step count, or
+// an update the apply refuses, with a warning that says so. With no configured
+// client it cannot read the version list, so it plans the update and leaves
+// the check to the apply, which makes it again (refuseVersionChange).
 func (r *clusterResource) planVersionChange(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
 	var configured types.String
 	var prior clusterModel
@@ -272,8 +283,7 @@ func (r *clusterResource) planVersionChange(ctx context.Context, req resource.Mo
 
 	attr := path.Root("cluster_type")
 	if change == refRefused {
-		// Local: a plan-time refusal, no request made.
-		resp.Diagnostics.AddAttributeError(attr, versionRefusal, redactDiagnosticText(refusal+destroyAdvice(bound)))
+		resp.Diagnostics.AddAttributeWarning(attr, versionRefusal, redactDiagnosticText(refusal+refusedAtApply(bound)))
 		return
 	}
 	if r.meta == nil || r.meta.Client == nil {
@@ -296,8 +306,7 @@ func (r *clusterResource) planVersionChange(ctx context.Context, req resource.Mo
 		}
 	}
 	if refusal != "" {
-		// Local: a plan-time refusal; the reads report their own failures.
-		resp.Diagnostics.AddAttributeError(attr, versionRefusal, redactDiagnosticText(refusal+destroyAdvice(bound)))
+		resp.Diagnostics.AddAttributeWarning(attr, versionRefusal, redactDiagnosticText(refusal+refusedAtApply(bound)))
 		return
 	}
 	if len(rt.steps) == 0 {
@@ -485,15 +494,16 @@ func (r *clusterResource) recordPass(ctx context.Context, target clusterTarget, 
 	return reached.ClusterTypeResolved.ValueString(), have, true
 }
 
-// replan makes the plan-time check again against the platform as it is now:
-// the route from bound to want, and where each node pool change goes on it.
-// It returns ok false when there is no way there, having said why.
-func (r *clusterResource) replan(ctx context.Context, target clusterTarget, want, bound string, have, wantPools map[string]int, diags *diag.Diagnostics) (upgradeRoute, map[string]int, bool) {
+// checkRoute makes the plan-time check against the platform as it is now:
+// the route from bound to want, and where each node pool change goes on it. A
+// refusal says why there is no way there. ok is false when a read failed,
+// which has already reported itself.
+func (r *clusterResource) checkRoute(ctx context.Context, target clusterTarget, want, bound string, have, wantPools map[string]int, diags *diag.Diagnostics) (upgradeRoute, map[string]int, string, bool) {
 	typeID, boundVersion := refTypeAndVersion(bound)
 	_, wantVersion := refTypeAndVersion(want)
 	rt, refusal, ok := r.route(ctx, target.region, typeID, boundVersion, wantVersion, diags)
 	if !ok {
-		return upgradeRoute{}, nil, false
+		return upgradeRoute{}, nil, "", false
 	}
 	var at map[string]int
 	if refusal == "" && len(rt.steps) == 0 {
@@ -503,12 +513,53 @@ func (r *clusterResource) replan(ctx context.Context, target clusterTarget, want
 	if refusal == "" {
 		at, refusal = schedulePools(have, wantPools, rt.bounds)
 	}
+	return rt, at, refusal, true
+}
+
+// replan is checkRoute before each step of an upgrade. It returns ok false
+// when there is no way there, having said why.
+func (r *clusterResource) replan(ctx context.Context, target clusterTarget, want, bound string, have, wantPools map[string]int, diags *diag.Diagnostics) (upgradeRoute, map[string]int, bool) {
+	rt, at, refusal, ok := r.checkRoute(ctx, target, want, bound, have, wantPools, diags)
+	if !ok {
+		return upgradeRoute{}, nil, false
+	}
 	if refusal != "" {
 		// Local: the plan-time check, made again against the platform as it is now.
 		diags.AddAttributeError(path.Root("cluster_type"), versionRefusal, redactDiagnosticText(refusal))
 		return upgradeRoute{}, nil, false
 	}
 	return rt, at, true
+}
+
+// refuseVersionChange is the plan's version check, made again before an
+// apply sends anything: the plan only warns, so that `terraform destroy`
+// isn't stopped by it. It classifies against the state the apply was planned
+// from, and checks the route and the node pool schedule against the platform
+// as it is now, with the counts the apply knows, which the plan may not have.
+// It reports whether the apply stops here, having said why.
+func (r *clusterResource) refuseVersionChange(ctx context.Context, target clusterTarget, id string, plan, state clusterModel, diags *diag.Diagnostics) bool {
+	want, bound := plan.ClusterType.ValueString(), boundRef(state)
+	change, refusal := classifyRefChange(want, bound, k0rdent.ClusterState(state.State.ValueString()))
+	if change == refUpgrade {
+		wantPools, d := clusterPoolsFromModel(ctx, plan.NodePool)
+		diags.Append(d...)
+		if diags.HasError() {
+			return true
+		}
+		have, ok := r.settledCounts(ctx, target, id, diags)
+		if !ok {
+			return true
+		}
+		if _, _, refusal, ok = r.checkRoute(ctx, target, want, bound, have, wantPools, diags); !ok {
+			return true
+		}
+	}
+	if refusal == "" {
+		return false
+	}
+	// Local: the plan's warning, refused now that the change would be sent.
+	diags.AddAttributeError(path.Root("cluster_type"), versionRefusal, redactDiagnosticText(refusal+sentNothing(bound)))
+	return true
 }
 
 // takeStep makes the node pool changes due before the route's first step,

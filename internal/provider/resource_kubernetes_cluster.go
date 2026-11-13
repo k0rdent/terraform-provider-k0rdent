@@ -216,18 +216,22 @@ func (r *clusterResource) Schema(ctx context.Context, _ resource.SchemaRequest, 
 					"apply waits out each before the next, skipping any `draft` or `deprecated` " +
 					"version between. The update timeout bounds the whole apply. If a step fails, the " +
 					"apply stops, state records the version the cluster reached, and nothing is " +
-					"deleted; the platform does not retry an upgrade from `failed`. So while the platform " +
-					"reports the cluster `failed`, a plan that pins another version of its ClusterType " +
-					"fails with \"" + versionRefusal + "\", whatever `on_failed` and `allow_replace` " +
-					"say. That includes the plan after a failed step, until you set `cluster_type` back " +
-					"to the version in `cluster_type_resolved`, the one the error names. Pin the later " +
+					"deleted. The platform does not retry an upgrade from `failed`, so while it " +
+					"reports the cluster `failed`, pinning another version of its ClusterType is " +
+					"refused, whatever `on_failed` and `allow_replace` say. That includes the " +
+					"configuration after a failed step, until you set `cluster_type` back to the " +
+					"version in `cluster_type_resolved`, the one the refusal names. Pin the later " +
 					"version again once the platform reports the cluster `active`.\n\n" +
 					"Node count changes in the same apply are made before or after each step, " +
 					"wherever the versions' node pool bounds admit them, since a scale is checked " +
 					"against the version the cluster is on and an upgrade against the one it moves " +
-					"to. The plan fails when no order works, and for an earlier version, one that is " +
-					"not `available`, a version the ClusterType does not have, or a BMaaS-only version " +
-					"in the way. See `cluster_type_resolved` for what the platform bound." +
+					"to. A version change is refused when no order works, and for an earlier version, " +
+					"one that isn't `available`, a version the ClusterType doesn't have, or a " +
+					"BMaaS-only version in the way. A refused version change plans with the warning \"" +
+					versionRefusal + "\", and the apply fails with it before sending any request, " +
+					"so none of the plan's other changes are made either. Nothing is deleted, and " +
+					"`terraform destroy` still works. See `cluster_type_resolved` for what the " +
+					"platform bound." +
 					knownGap("A tenant can't read the hardware or the image behind a ClusterType's machine types, "+
 						"so choosing a ClusterType for its hardware means writing one an operator named."),
 				PlanModifiers: []planmodifier.String{clusterTypeVersionGuard()},
@@ -747,6 +751,11 @@ func (r *clusterResource) Update(ctx context.Context, req resource.UpdateRequest
 		addLoweredCeilingError(&resp.Diagnostics, from, to)
 		return
 	}
+	// The plan only warns about a version change the apply refuses, so it's
+	// refused here, before any write, or the rest would land without it.
+	if r.refuseVersionChange(ctx, target, id, plan, state, &resp.Diagnostics) {
+		return
+	}
 
 	// Two different operations, chosen by what moved. `updateCluster` carries
 	// the metadata fields; node counts go through `scaleCluster`, which is a
@@ -842,9 +851,9 @@ func (r *clusterResource) Update(ctx context.Context, req resource.UpdateRequest
 		}
 	}
 
-	// The plan refuses a refRefused change, so one never reaches here. Were it
-	// to, the upgrade waits on the cluster and reports what it finds, which is
-	// what this did before plan and apply shared the classification.
+	// refuseVersionChange stopped a refRefused change before anything was
+	// sent, so one never reaches here. Were it to, the upgrade waits on the
+	// cluster and reports what it finds.
 	switch change, _ := classifyRefChange(plan.ClusterType.ValueString(), boundRef(state),
 		k0rdent.ClusterState(state.State.ValueString())); change {
 	case refUpgrade, refRefused:

@@ -186,7 +186,8 @@ func TestEveryClusterTypeChangeAtPlan(t *testing.T) {
 	for _, tc := range []struct {
 		name, stored, configured, state string
 		replace, resolvedUnknown        bool
-		refusal                         string
+		// warning is the plan's warning that the apply refuses the change.
+		warning string
 	}{
 		{name: "the same reference", stored: verRef(1), configured: verRef(1), state: "active"},
 		{name: "the same reference with an origin", stored: verRef(1), configured: origin + verRef(1), state: "active"},
@@ -194,7 +195,7 @@ func TestEveryClusterTypeChangeAtPlan(t *testing.T) {
 		{name: "another version", stored: verRef(1), configured: verRef(4), state: "active", resolvedUnknown: true},
 		{name: "another version while creating", stored: verRef(1), configured: verRef(4), state: "creating", resolvedUnknown: true},
 		{name: "another version while failed", stored: verRef(1), configured: verRef(4), state: "failed",
-			resolvedUnknown: true, refusal: "does not retry an upgrade from `failed`"},
+			resolvedUnknown: true, warning: "does not retry an upgrade from `failed`"},
 		{name: "another ClusterType", stored: verRef(1), configured: other, state: "active", replace: true},
 		{name: "another ClusterType while failed", stored: verRef(1), configured: other, state: "failed", replace: true},
 		{name: "another host", stored: "https://api.k0rdent.test" + verRef(1),
@@ -232,12 +233,13 @@ func TestEveryClusterTypeChangeAtPlan(t *testing.T) {
 			if got := resolvedIsUnknown(t, plan); got != tc.resolvedUnknown {
 				t.Errorf("cluster_type_resolved unknown = %v, want %v", got, tc.resolvedUnknown)
 			}
-			got := detailOf(plan.Diagnostics)
-			switch {
-			case tc.refusal == "" && plan.Diagnostics.HasError():
-				t.Errorf("plan refused: %s", got)
-			case tc.refusal != "" && !strings.Contains(got, tc.refusal):
-				t.Errorf("plan does not refuse with %q:\n%s", tc.refusal, got)
+			// A version change is made in place, so even one the apply
+			// refuses only warns at plan, and `terraform destroy` still runs.
+			if plan.Diagnostics.HasError() {
+				t.Errorf("plan refused: %s", detailOf(plan.Diagnostics))
+			}
+			if tc.warning != "" && !hasWarning(plan.Diagnostics, tc.warning) {
+				t.Errorf("plan does not warn with %q: %v", tc.warning, plan.Diagnostics)
 			}
 		})
 	}
