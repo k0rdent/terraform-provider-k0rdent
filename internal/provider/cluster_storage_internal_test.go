@@ -116,13 +116,21 @@ func planCeiling(t *testing.T, state, config types.Int64) planmodifier.Int64Resp
 	return resp
 }
 
-func TestLoweringTheStorageCeilingIsRefusedAtPlan(t *testing.T) {
+// A lower ceiling deletes nothing, so the plan only warns, and the apply
+// refuses it: `terraform destroy` refreshes with a normal plan first, and a
+// refusal there would stop it too.
+func TestLoweringTheStorageCeilingWarnsAtPlan(t *testing.T) {
 	resp := planCeiling(t, types.Int64Value(500), types.Int64Value(100))
-	if !resp.Diagnostics.HasError() {
-		t.Fatal("lowering the ceiling planned")
+	if resp.Diagnostics.HasError() {
+		t.Fatalf("lowering the ceiling was refused at plan: %v", resp.Diagnostics)
 	}
-	text := resp.Diagnostics.Errors()[0].Summary() + "\n" + resp.Diagnostics.Errors()[0].Detail()
-	for _, want := range []string{"lowered", "500", "100"} {
+	if len(resp.Diagnostics.Warnings()) != 1 {
+		t.Fatalf("warnings = %v, want one", resp.Diagnostics)
+	}
+	w := resp.Diagnostics.Warnings()[0]
+	text := w.Summary() + "\n" + w.Detail()
+	for _, want := range []string{"lowered", "500", "100", "fails before it sends any request",
+		"`terraform destroy` isn't affected"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("diagnostic does not say %q:\n%s", want, text)
 		}
@@ -156,18 +164,18 @@ func TestTheStorageCeilingIsReadFromTheCluster(t *testing.T) {
 	}
 }
 
-// A ceiling that was unknown at plan, say from another resource's output,
-// gets past the plan-time refusal. Lower than the cluster's at apply, it's
-// refused there with the same words, before anything is sent, rather than
-// sending nothing and failing on an inconsistent result.
-func TestALowerCeilingKnownOnlyAtApplyIsRefusedBeforeAnythingIsSent(t *testing.T) {
+// A lower ceiling, warned of at plan or unknown there, say from another
+// resource's output, is refused at apply with the same words, before
+// anything is sent, rather than sending the rest and failing on the
+// platform's refusal.
+func TestALowerCeilingIsRefusedAtApplyBeforeAnythingIsSent(t *testing.T) {
 	api := &upgradeAPI{bound: 1, workers: 2, state: "active", ceiling: 500}
 	resp := runRaise(t, api, 100)
 	if !resp.Diagnostics.HasError() {
 		t.Fatal("a lower ceiling applied")
 	}
 	text := resp.Diagnostics.Errors()[0].Summary() + "\n" + resp.Diagnostics.Errors()[0].Detail()
-	for _, want := range []string{"can't be lowered", "500", "100"} {
+	for _, want := range []string{"can't be lowered", "500", "100", "This apply sent nothing"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("diagnostic does not say %q:\n%s", want, text)
 		}

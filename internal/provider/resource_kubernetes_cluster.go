@@ -762,9 +762,10 @@ func (r *clusterResource) Update(ctx context.Context, req resource.UpdateRequest
 		return
 	}
 
-	// A ceiling unknown at plan time got past neverLowered. Lower than the
-	// cluster's, it's refused before anything is sent, since the platform
-	// would refuse it and sending the rest would leave half an update.
+	// neverLowered only warns, and a ceiling unknown at plan time got past
+	// it. Lower than the cluster's, it's refused before anything is sent,
+	// since the platform would refuse it and sending the rest would leave half
+	// an update.
 	if from, to, lowered := storageLowered(plan, state); lowered {
 		addLoweredCeilingError(&resp.Diagnostics, from, to)
 		return

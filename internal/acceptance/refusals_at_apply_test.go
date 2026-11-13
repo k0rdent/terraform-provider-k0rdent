@@ -10,14 +10,16 @@ import (
 	"github.com/k0rdent/terraform-provider-k0rdent/internal/provider"
 )
 
-// Refusals of a change that deletes nothing: a file store's shrink, and a
-// create in a region the project isn't in. `terraform destroy` runs a normal
-// plan first, so a refusal at plan would stop it too. Each plans with a
-// warning instead, and the apply fails before it sends anything.
+// Refusals of a change that deletes nothing: a file store's shrink, a
+// cluster's lower storage ceiling, and a create in a region the project isn't
+// in. `terraform destroy` runs a normal plan first, so a refusal at plan would
+// stop it too. Each plans with a warning instead, and the apply fails before
+// it sends anything.
 
 const (
-	shrinkRefused = "A file store cannot be shrunk"
-	regionRefused = "This resource's region isn't its project's"
+	shrinkRefused  = "A file store cannot be shrunk"
+	ceilingRefused = "The storage ceiling can't be lowered"
+	regionRefused  = "This resource's region isn't its project's"
 	// warnsAtPlan and destroyUnaffected are what each warning says.
 	warnsAtPlan       = "fails before it sends any request, other changes included"
 	destroyUnaffected = "`terraform destroy` isn't affected"
@@ -223,6 +225,159 @@ provider %q {
 			}
 
 			c.destroyRemoves(t, "the "+tc.state+" store", 1, path)
+			done = true
+		})
+	}
+}
+
+// A lower storage ceiling plans as an update with a warning, and the apply
+// fails before it sends any request, the other changes in the same apply
+// included. Through the real CLI, for each change that would otherwise go
+// out with it:
+//
+//  1. `terraform apply` makes the cluster with a 500 GiB ceiling
+//  2. the configuration asks for 100, with the change
+//  3. `terraform plan -detailed-exitcode` exits 2 with the warning
+//  4. `terraform apply` exits 1 with the refusal and sends nothing
+//  5. the platform's cluster is as it was, and `terraform destroy` removes it
+func TestAccALoweredStorageCeilingWarnsAtPlanAndFailsAtApply(t *testing.T) {
+	t.Parallel()
+	skipOnWindows(t)
+	for i, tc := range []struct {
+		name    string
+		display string
+		workers int
+	}{
+		{"alone", "acceptance", 1},
+		{"with a node count", "acceptance", 2},
+		{"with a display name", "renamed", 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			name := fmt.Sprintf("acc-lowered-ceiling-%d", i)
+			path := clusterAPIPath(name)
+			c := newCLIRun(t)
+			done := false
+			c.cleanupDestroy(t, &done)
+			c.write(versionedCluster(name, clusterTypeV2, "acceptance", 1, 500))
+			if out, ok := c.run("apply", "-auto-approve"); !ok {
+				t.Fatalf("the create failed:\n%s", out)
+			}
+
+			c.write(versionedCluster(name, clusterTypeV2, tc.display, tc.workers, 100))
+			sentNothing := clusterWrites(t, path)
+			out, code := c.runCode("plan", "-detailed-exitcode")
+			if code != 2 {
+				t.Errorf("the plan exited %d, want 2, a plan with changes:\n%s", code, out)
+			}
+			mustSay(t, "the plan", out, "Warning: "+ceilingRefused, "is 500 GiB and the configuration asks for 100",
+				warnsAtPlan, destroyUnaffected, "0 to add, 1 to change, 0 to destroy")
+			sentNothing("the plan")
+
+			out, code = c.runCode("apply", "-auto-approve")
+			if code != 1 {
+				t.Errorf("the apply exited %d, want 1:\n%s", code, out)
+			}
+			mustSay(t, "the apply", out, "Error: "+ceilingRefused, "This apply sent nothing")
+			sentNothing("the apply")
+
+			status, body, err := readFakeStore(path)
+			if err != nil || status != http.StatusOK {
+				t.Fatalf("reading the cluster: %d %v", status, err)
+			}
+			var got struct {
+				DisplayName string `json:"displayName"`
+				NodePools   []struct {
+					ID        string `json:"id"`
+					NodeCount int    `json:"nodeCount"`
+				} `json:"nodePools"`
+				Storage struct {
+					CeilingGiB int `json:"ceilingGiB"`
+				} `json:"storage"`
+			}
+			if err := json.Unmarshal(body, &got); err != nil {
+				t.Fatal(err)
+			}
+			workers := -1
+			for _, p := range got.NodePools {
+				if p.ID == "gpu-workers" {
+					workers = p.NodeCount
+				}
+			}
+			if got.DisplayName != "acceptance" || workers != 1 || got.Storage.CeilingGiB != 500 {
+				t.Errorf("the cluster changed: %s", body)
+			}
+
+			c.destroyRemoves(t, "the cluster", 1, path)
+			done = true
+		})
+	}
+}
+
+// With `storage_ceiling_gib` lower than the cluster's, the plan warns and
+// `terraform destroy` removes the cluster, in each state the platform can
+// report it in. Through the real CLI, for each state:
+//
+//  1. the cluster is made with a 500 GiB ceiling, by `terraform apply` or
+//     outside Terraform and imported, and taken to the state
+//  2. the configuration asks for 100
+//  3. `terraform plan -detailed-exitcode` exits 2 with the warning
+//  4. `terraform destroy` removes the cluster, and the platform no longer has it
+func TestAccALoweredStorageCeilingDoesNotStopADestroy(t *testing.T) {
+	t.Parallel()
+	skipOnWindows(t)
+	for _, tc := range []struct {
+		state, display string
+	}{
+		{"creating", neverSettles},
+		{"updating", "acceptance " + holdsUpgrade},
+		{"active", "acceptance"},
+		{"failed", createFails},
+	} {
+		t.Run(tc.state, func(t *testing.T) {
+			t.Parallel()
+			name := "acc-lowered-ceiling-destroy-" + tc.state
+			path := clusterAPIPath(name)
+			c := newCLIRun(t)
+			done := false
+			c.cleanupDestroy(t, &done)
+
+			if tc.state == "active" {
+				c.write(versionedCluster(name, clusterTypeV2, tc.display, 2, 500))
+				if out, ok := c.run("apply", "-auto-approve"); !ok {
+					t.Fatalf("the create failed:\n%s", out)
+				}
+			} else {
+				want := tc.state
+				if tc.state == "updating" {
+					want = "active"
+				}
+				if err := postFake("/v1/regions/us-texas-1/projects/demo/compute/clusters", fmt.Sprintf(
+					`{"id":%q,"clusterType":%q,"displayName":%q,"storage":{"ceilingGiB":500},`+
+						`"nodePools":[{"id":"gpu-workers","nodeCount":2}]}`, name, clusterTypeV2, tc.display)); err != nil {
+					t.Fatal(err)
+				}
+				awaitFakeState(t, path, want)
+				c.write(versionedCluster(name, clusterTypeV2, tc.display, 2, 500))
+				if out, ok := c.run("import", clusterType+".test", scopedImport(name)); !ok {
+					t.Fatalf("the import failed:\n%s", out)
+				}
+			}
+			if tc.state == "updating" {
+				if err := postFake(path+"/upgrade", `{}`); err != nil {
+					t.Fatal(err)
+				}
+				awaitFakeState(t, path, "updating")
+			}
+
+			c.write(versionedCluster(name, clusterTypeV2, tc.display, 2, 100))
+			out, code := c.runCode("plan", "-detailed-exitcode")
+			if code != 2 {
+				t.Errorf("the plan of the %s cluster exited %d, want 2:\n%s", tc.state, code, out)
+			}
+			mustSay(t, "the plan", out, "Warning: "+ceilingRefused, destroyUnaffected)
+
+			c.destroyRemoves(t, "the "+tc.state+" cluster", 1, path)
 			done = true
 		})
 	}

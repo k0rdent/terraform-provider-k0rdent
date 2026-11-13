@@ -23,7 +23,8 @@ resource %q "test" {
 }
 
 // v1.3.0-dev.4's storage ceiling: sent on the create, raised in place, kept
-// when it's left out, and refused at plan when it would go down.
+// when it's left out, and refused at apply when it would go down. The plan
+// only warns of that: TestAccALoweredStorageCeiling* runs it through the CLI.
 func TestAccClusterStorageCeiling(t *testing.T) {
 	t.Parallel()
 	const name = "acc-storage"
@@ -44,8 +45,7 @@ func TestAccClusterStorageCeiling(t *testing.T) {
 			{Config: ceilingConfig(name, 250), PlanOnly: true},
 			{
 				Config:      ceilingConfig(name, 50),
-				PlanOnly:    true,
-				ExpectError: regexp.MustCompile(`(?s)storage ceiling can't be lowered.*250.*50`),
+				ExpectError: regexp.MustCompile(`(?s)storage ceiling can't be lowered.*250.*50.*This apply sent\s+nothing`),
 			},
 			{
 				// Left out, the ceiling the cluster has stays.
