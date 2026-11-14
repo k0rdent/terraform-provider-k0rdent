@@ -271,6 +271,46 @@ func TestAccClusterTypesDataSourceFindsADraftType(t *testing.T) {
 	})
 }
 
+// From API 1.4 getClusterType answers 404 for a ClusterType with no
+// `available` version unless the read asks for it, as the fake does. A data
+// source that didn't ask failed every plan on gpu-preview, the destroy step's
+// refresh included. A type with an available version reads at the version an
+// unversioned create binds, v3 for gpu-training, not its newest row, the v4
+// draft.
+func TestAccClusterTypeDataSourceReadsATypeWithNoAvailableVersion(t *testing.T) {
+	t.Parallel()
+	clusterTypeDS := provider.ResourceName("cluster_type")
+	previewAddr := "data." + clusterTypeDS + ".preview"
+	trainingAddr := "data." + clusterTypeDS + ".training"
+	config := fmt.Sprintf(`data %q "preview" {
+  id = "gpu-preview"
+}
+
+data %q "training" {
+  id = "gpu-training"
+}
+`, clusterTypeDS, clusterTypeDS)
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: protoV6,
+		Steps: []resource.TestStep{
+			{
+				Config: config,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr(previewAddr, "status", "draft"),
+					resource.TestCheckResourceAttr(previewAddr, "version", "1"),
+					resource.TestCheckResourceAttr(previewAddr, "kubernetes_version", "v1.36.0+k0s.0"),
+					resource.TestCheckResourceAttr(previewAddr, "node_pools.#", "1"),
+					resource.TestCheckResourceAttr(trainingAddr, "status", "available"),
+					resource.TestCheckResourceAttr(trainingAddr, "version", "3"),
+					resource.TestCheckResourceAttr(trainingAddr, "kubernetes_version", "v1.35.1+k0s.0"),
+					resource.TestCheckResourceAttr(trainingAddr, "self_link", clusterTypeRef),
+				),
+			},
+			{Config: config, Destroy: true},
+		},
+	})
+}
+
 // `status = "draft"` beside `include_deprecated = false` planned on v0.1.0-rc.1
 // and still finds the draft type: Read asks for the hidden types anyway. A
 // refusal at plan would also block `terraform destroy`, whose refresh plan

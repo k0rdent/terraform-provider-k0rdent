@@ -252,7 +252,12 @@ func (d *clusterTypeDataSource) Schema(_ context.Context, _ datasource.SchemaReq
 		MarkdownDescription: "One ClusterType, including its node pools.\n\n" +
 			"The catalog list does not carry node pools, and pool ids are what a cluster's " +
 			"`node_pool` map is keyed by, so this is the data source that tells you which pools " +
-			"exist, what they are for, and what node counts they accept.",
+			"exist, what they are for, and what node counts they accept.\n\n" +
+			"It reads the ClusterType at its latest `available` version, the one a cluster " +
+			"created from `self_link` binds. A ClusterType with no `available` version is read " +
+			"at its latest version, `status` shows that version's `draft` or `deprecated`, and a " +
+			"cluster can't be created from its `self_link`. Platform API 1.3 reads every " +
+			"ClusterType at its latest version, whatever its status.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
 				Required:            true,
@@ -267,22 +272,28 @@ func (d *clusterTypeDataSource) Schema(_ context.Context, _ datasource.SchemaReq
 			"display_name": schema.StringAttribute{Computed: true, MarkdownDescription: "Human-readable name, for display only."},
 			"description":  schema.StringAttribute{Computed: true, MarkdownDescription: "Free-form text describing it, for people to read, when one was set."},
 			"status": schema.StringAttribute{
-				Computed:            true,
-				MarkdownDescription: "Lifecycle status of the current version.",
+				Computed: true,
+				MarkdownDescription: "Lifecycle status of the version read: `available`, or `draft` or " +
+					"`deprecated` for a ClusterType with no `available` version, which a cluster " +
+					"can't be created from.",
 			},
 			"version": schema.Int64Attribute{
-				Computed:            true,
-				MarkdownDescription: "Sequential version number of the current version, for display.",
+				Computed: true,
+				MarkdownDescription: "Sequential number of the version read, for display: the latest " +
+					"`available` version, or the latest version when none is `available`.",
 			},
 			"self_link": schema.StringAttribute{
 				Computed: true,
 				MarkdownDescription: "Reference to this ClusterType, for a cluster's `cluster_type`. " +
-					"Head-scoped: it binds whatever the current version is at create time.",
+					"Head-scoped: a cluster created from it binds the latest `available` version " +
+					"at create time. While the ClusterType has no `available` version, a create " +
+					"from it is refused.",
 			},
 			"kubernetes_version": schema.StringAttribute{
 				Computed: true,
-				MarkdownDescription: "The k0s version clusters of this type are provisioned with, " +
-					"as `vX.Y.Z` or `vX.Y.Z+k0s.N`. Null for a ClusterType that is not " +
+				MarkdownDescription: "The k0s version of the version read, as `vX.Y.Z` or " +
+					"`vX.Y.Z+k0s.N`, which a cluster created from `self_link` is provisioned with. " +
+					"Null for a ClusterType that is not " +
 					"Kubernetes-flavoured. There is no catalogue of supported versions, this is " +
 					"the version this type gives you.",
 			},
@@ -290,7 +301,7 @@ func (d *clusterTypeDataSource) Schema(_ context.Context, _ datasource.SchemaReq
 			// content, which gives no usable position.
 			"node_pools": schema.ListNestedAttribute{
 				Computed:            true,
-				MarkdownDescription: "Node pools defined at the current version. Sorted by `id`.",
+				MarkdownDescription: "Node pools defined at the version read. Sorted by `id`.",
 				NestedObject:        schema.NestedAttributeObject{Attributes: clusterTypePoolAttributes()},
 			},
 		},
@@ -349,7 +360,7 @@ func (d *clusterTypeDataSource) Read(ctx context.Context, req datasource.ReadReq
 		return
 	}
 
-	got, err := d.meta.Client.GetClusterTypeWithResponse(ctx, region, data.ID.ValueString())
+	got, err := d.meta.Client.GetClusterTypeWithResponse(ctx, region, data.ID.ValueString(), includeUnavailable)
 	if err != nil || got.JSON200 == nil {
 		var body []byte
 		var httpResp *http.Response
@@ -394,6 +405,16 @@ func (d *clusterTypeDataSource) Read(ctx context.Context, req datasource.ReadReq
 	})
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+}
+
+// includeUnavailable asks getClusterType for a ClusterType with no `available`
+// version. From API 1.4 the read answers 404 for one without it, which would
+// fail every plan, destroy included. API 1.3 ignores the parameter.
+func includeUnavailable(_ context.Context, req *http.Request) error {
+	q := req.URL.Query()
+	q.Set("includeUnavailable", "true")
+	req.URL.RawQuery = q.Encode()
+	return nil
 }
 
 // ValidateConfig refuses `status = "deprecated"` beside

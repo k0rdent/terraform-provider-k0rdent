@@ -5,6 +5,7 @@ subcategory: ""
 description: |-
   One ClusterType, including its node pools.
   The catalog list does not carry node pools, and pool ids are what a cluster's node_pool map is keyed by, so this is the data source that tells you which pools exist, what they are for, and what node counts they accept.
+  It reads the ClusterType at its latest available version, the one a cluster created from self_link binds. A ClusterType with no available version is read at its latest version, status shows that version's draft or deprecated, and a cluster can't be created from its self_link. Platform API 1.3 reads every ClusterType at its latest version, whatever its status.
 ---
 
 # k0rdent_cluster_type (Data Source)
@@ -12,6 +13,8 @@ description: |-
 One ClusterType, including its node pools.
 
 The catalog list does not carry node pools, and pool ids are what a cluster's `node_pool` map is keyed by, so this is the data source that tells you which pools exist, what they are for, and what node counts they accept.
+
+It reads the ClusterType at its latest `available` version, the one a cluster created from `self_link` binds. A ClusterType with no `available` version is read at its latest version, `status` shows that version's `draft` or `deprecated`, and a cluster can't be created from its `self_link`. Platform API 1.3 reads every ClusterType at its latest version, whatever its status.
 
 ## Example Usage
 
@@ -41,11 +44,11 @@ output "kubernetes_version" {
 
 - `description` (String) Free-form text describing it, for people to read, when one was set.
 - `display_name` (String) Human-readable name, for display only.
-- `kubernetes_version` (String) The k0s version clusters of this type are provisioned with, as `vX.Y.Z` or `vX.Y.Z+k0s.N`. Null for a ClusterType that is not Kubernetes-flavoured. There is no catalogue of supported versions, this is the version this type gives you.
-- `node_pools` (Attributes List) Node pools defined at the current version. Sorted by `id`. (see [below for nested schema](#nestedatt--node_pools))
-- `self_link` (String) Reference to this ClusterType, for a cluster's `cluster_type`. Head-scoped: it binds whatever the current version is at create time.
-- `status` (String) Lifecycle status of the current version.
-- `version` (Number) Sequential version number of the current version, for display.
+- `kubernetes_version` (String) The k0s version of the version read, as `vX.Y.Z` or `vX.Y.Z+k0s.N`, which a cluster created from `self_link` is provisioned with. Null for a ClusterType that is not Kubernetes-flavoured. There is no catalogue of supported versions, this is the version this type gives you.
+- `node_pools` (Attributes List) Node pools defined at the version read. Sorted by `id`. (see [below for nested schema](#nestedatt--node_pools))
+- `self_link` (String) Reference to this ClusterType, for a cluster's `cluster_type`. Head-scoped: a cluster created from it binds the latest `available` version at create time. While the ClusterType has no `available` version, a create from it is refused.
+- `status` (String) Lifecycle status of the version read: `available`, or `draft` or `deprecated` for a ClusterType with no `available` version, which a cluster can't be created from.
+- `version` (Number) Sequential number of the version read, for display: the latest `available` version, or the latest version when none is `available`.
 
 <a id="nestedatt--node_pools"></a>
 ### Nested Schema for `node_pools`
