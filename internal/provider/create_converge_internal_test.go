@@ -345,6 +345,22 @@ func TestA409WithoutThisCreatesTokenIsRefused(t *testing.T) {
 	}
 }
 
+// A kind without tags is refused on its configured id alone, and the reason
+// names the kind with the article English gives it.
+func TestA409ForAKindWithoutTagsNamesTheKindWithItsArticle(t *testing.T) {
+	for kind, want := range map[string]string{
+		"instance group": "since an instance group has no tags to carry a create token",
+		"network":        "since a network has no tags to carry a create token",
+	} {
+		c := convergingCreate{kind: kind, resourceName: ResourceName("test"), importID: func(id string) string { return id }}
+		var diags diag.Diagnostics
+		c.addNotOurs(&diags, "x", createLookup{}, "answered 409", createAnswer{})
+		if errs := diags.Errors(); len(errs) != 1 || !strings.Contains(errs[0].Detail(), want) {
+			t.Errorf("%s: the refusal doesn't say %q: %v", kind, want, errs)
+		}
+	}
+}
+
 // A 504 whose workflow start timed out names the cluster it persisted. That
 // cluster is recorded and waited out like a 201.
 func TestACluster504NamingTheClusterIsWaitedOut(t *testing.T) {

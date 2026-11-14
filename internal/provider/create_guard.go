@@ -156,6 +156,12 @@ func (e existing) warnReplacing(diags *diag.Diagnostics) {
 			"waiting leaves it, %s\n\n%s\n\n%s", e.kind, e.id, e.state, origin, does, keep, notHeld)+destroyToo))
 }
 
+// aKindMidSentence is aKind for the middle of a sentence: "an instance group".
+func aKindMidSentence(kind string) string {
+	s := aKind(kind)
+	return strings.ToLower(s[:1]) + s[1:]
+}
+
 // aKind is kind with its indefinite article, capitalized to start a sentence:
 // "A cluster", "An instance group".
 func aKind(kind string) string {

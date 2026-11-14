@@ -477,7 +477,7 @@ func (c convergingCreate) proof(id string, l createLookup) string {
 func (c convergingCreate) addNotOurs(diags *diag.Diagnostics, id string, l createLookup, why string, a createAnswer) {
 	cannot := "it carries no create token from this apply"
 	if c.key.token == "" {
-		cannot = fmt.Sprintf("a %s has no tags to carry a create token, and its id was set in configuration", c.kind)
+		cannot = aKindMidSentence(c.kind) + " has no tags to carry a create token, and its id was set in configuration"
 	}
 	// Another apply's token. Terraform saves nothing for a run killed before
 	// its create returned, so the next apply meets the object that run left.
