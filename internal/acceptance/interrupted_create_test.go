@@ -145,9 +145,11 @@ resource %q "test" {
 //
 //  1. `terraform apply` is killed while it waits, and there's no state
 //  2. `terraform destroy` finds nothing to destroy and leaves the cluster
-//  3. `terraform apply` fails with "already exists", names the interrupted
+//  3. `terraform plan` warns that applying replaces nothing, and gives the
+//     import the apply's error gives
+//  4. `terraform apply` fails with "already exists", names the interrupted
 //     apply, and gives the import
-//  4. that import takes the cluster back, and `terraform destroy` removes it
+//  5. that import takes the cluster back, and `terraform destroy` removes it
 func TestAccAKilledCreateIsTakenBackByTheImportItsErrorGives(t *testing.T) {
 	t.Parallel()
 	if runtime.GOOS == "windows" {
@@ -189,6 +191,14 @@ func TestAccAKilledCreateIsTakenBackByTheImportItsErrorGives(t *testing.T) {
 	}
 	mustSay(t, "the destroy", out, "No objects need to be destroyed")
 	checkFakeStateNow(t, name, "creating")
+
+	out, ok = c.run("plan")
+	if !ok {
+		t.Fatalf("the plan over the killed run's cluster was refused:\n%s", out)
+	}
+	mustSay(t, "the plan", out, "1 to add, 0 to change, 0 to destroy", "If this state doesn't hold it",
+		`the create fails with "already exists" and nothing is deleted`,
+		"terraform import <address> us-texas-1/demo/"+name)
 
 	out, ok = c.run("apply", "-auto-approve")
 	if ok {
