@@ -30,6 +30,8 @@ gh-login:i:\b(retrospct|jeremypruitt)\b
 # Commercial wording. The bracket keeps this file from holding the word itself.
 commercial:i:\bc[u]stomers?\b
 partner:i:\bpartners?\b
+# Internal working documents, by their prose names. Their file names are in hashed.txt.
+internal-doc:i:\bmistakes?[-_ ]*log\b|\bopen[-_ ]items[-_ ]file\b
 # Internal requirement documents
 prd:-:\bPRD\b|\bMVP[- ]?[0-9]*\b
 # Environment names

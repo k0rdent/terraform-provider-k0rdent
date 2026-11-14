@@ -351,7 +351,7 @@ func TestReplacementsFollowTheDocumentedRules(t *testing.T) {
 // the start's own configuration, each through a Destroy step: a plan with
 // -destroy and a refresh, which runs the normal plan `terraform destroy`
 // runs first. terraform-plugin-testing's own destroy at the end passes
-// -refresh=false, so it never runs that plan (mistakes log, Class 1).
+// -refresh=false, so it never runs that plan.
 //
 //   - A configuration whose change the guard refuses refuses `terraform
 //     destroy` too, since destroy runs that plan first: "A refused plan stops
