@@ -74,12 +74,13 @@ request.
   platform's reason.
 
 The token request has a limit of its own. Terraform starts the provider once
-for each provider block, aliases included, and each one asks for one access
-token and reuses it until shortly before it expires. A `terraform plan` takes
-one token per provider block, and so does an `apply` with nothing to change.
-An `apply` that changes something, or a `destroy`, takes two per provider
-block, because Terraform starts the provider again to make the change. A run
-that outlasts its token takes another. By default the platform gives a
+for each provider block, aliases included, and each one that calls the
+platform asks for one access token and reuses it until shortly before it
+expires. A `terraform plan` takes up to one token per provider block, and so
+does an `apply` with nothing to change. An `apply` that changes something, or
+a `destroy`, takes up to two per provider block, because Terraform starts the
+provider again to make the change. A run that outlasts its token takes
+another. By default the platform gives a
 credential 10 tokens a minute, and a refused request counts too, so runs that
 use one credential and start in the same minute share those 10. Start them
 further apart, or give pipelines that run at the same time credentials of

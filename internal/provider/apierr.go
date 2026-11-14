@@ -200,7 +200,8 @@ func mintThrottledAdvice(err error, apiErr *k0rdent.APIError) string {
 			"address, or apply again in a minute."
 	}
 	return waits + fmt.Sprintf("The platform gives a credential %[1]d access tokens a minute by default, and "+
-		"refused requests count too. Each provider block, aliases included, asks for its own token, so runs "+
+		"refused requests count too. Each provider block that calls the platform, aliases included, asks for "+
+		"its own token, so runs "+
 		"that share this credential and start in the same minute share those %[1]d.\n\n"+
 		"%[2]s To stop it happening again, start those runs further apart, or give pipelines that run at "+
 		"the same time credentials of their own.", mintsPerMinute, next)

@@ -160,7 +160,7 @@ func mintThrottled(t *testing.T, retryAfter string) (*k0rdent.ClientWithResponse
 func TestA429OnTheTokenRequestNamesTheWaitAndTheNextStep(t *testing.T) {
 	const (
 		perCredential = "10 access tokens a minute by default"
-		perBlock      = "Each provider block, aliases included, asks for its own token"
+		perBlock      = "Each provider block that calls the platform, aliases included, asks for its own token"
 		ownCredential = "give pipelines that run at the same time credentials of their own"
 		honourWait    = "Wait as long as the platform asked, then run again."
 		again         = "Run again in a minute."
