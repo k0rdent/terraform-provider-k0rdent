@@ -118,6 +118,20 @@ Use 1.16.5 or later, or OpenTofu, which doesn't have it.
 If it already happened, [import](guides/import.md) each resource the run
 created, then keep it or destroy it.
 
+## A run killed during a create
+
+A run killed after it sends a create and before the create returns, such as
+by `kill -9` or a lost CI runner, saves nothing to state. The object stays on
+the platform.
+
+- With `id` set, the next apply fails with "already exists" and gives the
+  `terraform import` that takes the object back.
+- With `id` left out, the next apply generates another id and creates a
+  second object. The first has a `tf-` id other than the one
+  `terraform state show` gives, and this resource's display name if it sets
+  one. A data source such as `k0rdent_security_groups` lists them.
+  [Import](guides/import.md) it to keep it or destroy it.
+
 ## A refused plan stops `terraform destroy` too
 
 `terraform destroy` plans as if applying before it plans the delete, so a
