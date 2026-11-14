@@ -130,7 +130,7 @@ func TestAccARefusedVersionChangeWarnsAtPlanAndFailsAtApply(t *testing.T) {
 			if code != 1 {
 				t.Errorf("the apply exited %d, want 1:\n%s", code, out)
 			}
-			mustSay(t, "the apply", out, "Error: "+versionRefused, "forward-only", "This apply sent nothing")
+			mustSay(t, "the apply", out, "Error: "+versionRefused, "forward-only", "This apply sent nothing that changes the cluster")
 			sentNothing("the apply")
 
 			status, body, err := readFakeStore(path)

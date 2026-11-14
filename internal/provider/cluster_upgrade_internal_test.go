@@ -737,7 +737,7 @@ func TestApplyRefusesAVersionChangeBeforeAnyRequest(t *testing.T) {
 				t.Fatal("the apply wasn't refused")
 			}
 			e := resp.Diagnostics.Errors()[0]
-			for _, want := range []string{tc.want, "This apply sent nothing", tc.bound} {
+			for _, want := range []string{tc.want, "This apply sent nothing that changes the cluster", tc.bound} {
 				if !strings.Contains(e.Detail(), want) {
 					t.Errorf("the error doesn't say %q:\n%s\n%s", want, e.Summary(), e.Detail())
 				}
