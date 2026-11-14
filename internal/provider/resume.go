@@ -200,7 +200,7 @@ func (p resumable[M]) resume(ctx context.Context, req resource.UpdateRequest, re
 	}
 	if err := p.wait(ctx); err != nil {
 		switch {
-		case stillRunning(err):
+		case stillRunning(err) && !failedWhenStopped(err):
 			addCreateStillRunning(&resp.Diagnostics, p.kind, p.resourceName, err, false)
 		case failed:
 			addAdvisedError(&resp.Diagnostics, fmt.Sprintf("The %s is still failed", p.kind),
