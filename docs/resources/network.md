@@ -98,7 +98,7 @@ Required:
 
 Optional:
 
-- `dhcp_enabled` (Boolean) Whether DHCP serves addresses on this network. Defaults to `false`.
+- `dhcp_enabled` (Boolean) Whether DHCP serves addresses on this network. When the platform reports no value, as for a network created without one, state holds `false`, the fabric's default. Defaults to `false`.
 - `dns_servers` (List of String) Resolver addresses, in order. A List rather than a Set because resolver order is significant.
 - `mtu` (Number) Maximum transmission unit. The platform applies its own when unset. **Constraints:** Value must be between 68 and 65535.
 - `vlan_id` (String) VLAN id as a string, e.g. `"100"`, or `"auto"` to let the platform allocate one. See `vlan_id_resolved` for what it chose. **Constraints:** Must be "auto" or a VLAN number from 1 to 9999 with no leading zero.
@@ -113,7 +113,7 @@ Read-Only:
 
 Optional:
 
-- `index0` (Boolean) Store the PKey at index 0. Defaults to `false`.
+- `index0` (Boolean) Store the PKey at index 0. When the platform reports no value, as for a network created without one, state holds `false`, the fabric's default. Defaults to `false`.
 - `ip_over_ib` (Boolean) Whether the partition takes part in IP-over-InfiniBand multicast. Defaults to `false`.
 - `partition` (String) Name of an operator-defined InfiniBand Partition in the region. Required on the `nico` backend. The contract does not gate by backend, so the server decides and this attribute cannot. **Known gap.** No operation in the contract lists partitions, so the name comes from the operator. The [hardcoded values](../guides/hardcoded-values.md) guide names the side that has to change. **Constraints:** String length must be at least 1.
 - `pkey` (String) Partition key in hex, e.g. `0x1234`. Omitted, the platform may allocate one. The `nico` backend ignores it and uses the partition name. See `pkey_allocated`. An import cannot recover the requested value, so the first apply after one records the configured value without replacing the network. **Constraints:** Must be 0x and hex digits, such as 0x1234.
