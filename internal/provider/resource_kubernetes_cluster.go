@@ -231,9 +231,8 @@ func (r *clusterResource) Schema(ctx context.Context, _ resource.SchemaRequest, 
 					"to. A version change is refused when no order works, and for an earlier version, " +
 					"one that isn't `available`, a version the ClusterType doesn't have, or a " +
 					"BMaaS-only version in the way. A refused version change plans with the warning \"" +
-					versionRefusal + "\", and the apply fails with it before sending any request, " +
-					"so none of the plan's other changes are made either. Nothing is deleted, and " +
-					"`terraform destroy` still works. See `cluster_type_resolved` for what the " +
+					versionRefusal + "\", and the apply fails with it before changing anything on the " +
+					"cluster. `terraform destroy` still works. See `cluster_type_resolved` for what the " +
 					"platform bound." +
 					knownGap("A tenant can't read the hardware or the image behind a ClusterType's machine types, "+
 						"so choosing a ClusterType for its hardware means writing one an operator named."),
