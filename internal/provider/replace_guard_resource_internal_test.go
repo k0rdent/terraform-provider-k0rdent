@@ -341,8 +341,10 @@ func TestAnUnknownRefusedValueKeepsNothing(t *testing.T) {
 		got[0] != "Changing `id` would replace this stub, so the apply will refuse it if the new value differs" {
 		t.Errorf("warnings = %q", got)
 	}
-	if d := resp.Diagnostics.Warnings()[0].Detail(); !strings.Contains(d, "If it turns out to be the current value, the stub isn't replaced") {
-		t.Errorf("the warning doesn't say what happens if the value is unchanged: %q", d)
+	// A paragraph of its own, so the one after it still follows from the
+	// change it describes.
+	if d := resp.Diagnostics.Warnings()[0].Detail(); !strings.Contains(d, "\n\nThe new value is known only after apply. If it turns out to be the current value, the stub isn't replaced, and the apply makes the rest of its changes in place.\n\nSo this plan shows") {
+		t.Errorf("the warning doesn't say, in a paragraph of its own, what happens if the value is unchanged: %q", d)
 	}
 }
 

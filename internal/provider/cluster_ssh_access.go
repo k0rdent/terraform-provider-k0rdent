@@ -258,7 +258,11 @@ func replaceOnChangedKeys(ctx context.Context, req resource.ModifyPlanRequest, r
 	// Keys written as text are checked the same way, against the platform's
 	// fingerprints where a refresh read them.
 	for user, ks := range text {
-		if have, ok := held[user]; ok && ks != nil && !sameFingerprints(fingerprintList(ks), have) {
+		have, ok := held[user]
+		// A text key not known until the apply may differ too, like a
+		// write-only one. Marking it now keeps the apply's final plan the
+		// same shape as this one when it does.
+		if ok && (ks == nil || !sameFingerprints(fingerprintList(ks), have)) {
 			changed = append(changed, user)
 		}
 	}

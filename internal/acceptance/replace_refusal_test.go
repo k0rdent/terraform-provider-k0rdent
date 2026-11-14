@@ -719,23 +719,32 @@ func TestAccARefusedValueKnownOnlyAtApply(t *testing.T) {
 	})
 }
 
-// A cluster mid-operation with a refused replacement, a move to another
-// project here: the plan warns that destroying it would cancel the operation
-// only if `-replace` replaces it anyway, and `apply -replace` does: it
-// cancels, deletes and creates the cluster in the new project.
+// A cluster mid-operation with a refused replacement: a move to another
+// project, which the cluster's ModifyPlan decides, or a renamed id, which the
+// attribute's modifier does. The plan warns that destroying it would cancel
+// the operation only if `-replace` replaces it anyway, and `apply -replace`
+// does: it cancels, deletes and creates the cluster as configured.
 func TestAccARefusedReplacementOfABusyClusterWarnsForReplace(t *testing.T) {
 	t.Parallel()
 	if runtime.GOOS == "windows" {
 		skipTest(t, "the CLI sequence runs on unix")
 	}
-	const name = "acc-refusal-busy"
-	other := ownProject(t, name+"-p")
-	config := func(project, display string) string {
-		line := ""
-		if project != "" {
-			line = fmt.Sprintf("  project = %q\n", project)
-		}
-		return fmt.Sprintf(`
+	for _, tc := range []struct{ change, attr string }{{"project", "project"}, {"id", "id"}} {
+		t.Run(tc.change, func(t *testing.T) {
+			t.Parallel()
+			name := "acc-refusal-busy-" + tc.change
+			project, id := "", name
+			if tc.change == "project" {
+				project = ownProject(t, name+"-p")
+			} else {
+				id = name + "-2"
+			}
+			config := func(id, project, display string) string {
+				line := ""
+				if project != "" {
+					line = fmt.Sprintf("  project = %q\n", project)
+				}
+				return fmt.Sprintf(`
 resource %q "test" {
   id           = %q
   cluster_type = %q
@@ -744,41 +753,120 @@ resource %q "test" {
     "gpu-workers" = { node_count = 2 }
   }
 }
-`, clusterType, name, clusterTypeV2, display, line)
+`, clusterType, id, clusterTypeV2, display, line)
+			}
+			c := newCLIRun(t)
+			r := &refusalRun{cliRun: c}
+			t.Cleanup(func() {
+				if out, ok := c.run("destroy", "-auto-approve", "-refresh=false"); !ok {
+					t.Errorf("cleanup destroy failed:\n%s", out)
+				}
+			})
+			clusterOutside(t, name, neverSettles, "creating")
+			c.write(config(name, "", neverSettles))
+			if out, ok := c.run("import", clusterAddr, scopedImport(name)); !ok {
+				t.Fatalf("the import failed:\n%s", out)
+			}
+
+			c.write(config(id, project, "acceptance"))
+			warned := "Warning: If `-replace` replaces it anyway: Destroying " + name + " will cancel the operation it is running"
+			out, code := r.runCode("plan")
+			if code != 0 {
+				t.Fatalf("the plan exited %d:\n%s", code, out)
+			}
+			mustSay(t, "the plan", out, warned,
+				"The apply refuses this replacement and destroys nothing, unless the plan was made with `-replace` for this cluster. Then Terraform destroys it and creates another",
+				"Warning: Changing `"+tc.attr+"` would replace this cluster, so the apply will refuse it")
+
+			old := clusterAPIPath(name)
+			cancels, deletes := r.served(http.MethodPost, old+"/cancel"), r.served(http.MethodDelete, old)
+			out, code = r.runCode("apply", "-auto-approve", "-replace="+clusterAddr)
+			if code != 0 {
+				t.Fatalf("apply -replace exited %d:\n%s", code, out)
+			}
+			mustSay(t, "apply -replace", out, warned)
+			if r.served(http.MethodPost, old+"/cancel") == cancels || r.served(http.MethodDelete, old) == deletes {
+				t.Error("apply -replace didn't cancel and delete the busy cluster")
+			}
+			state, _ := c.run("state", "show", clusterAddr)
+			mustSay(t, "the state", state, fmt.Sprintf("id = %q", id))
+			if project != "" {
+				mustSay(t, "the state", state, fmt.Sprintf("project = %q", project))
+			}
+		})
 	}
-	c := newCLIRun(t)
-	r := &refusalRun{cliRun: c}
-	t.Cleanup(func() {
-		if out, ok := c.run("destroy", "-auto-approve", "-refresh=false"); !ok {
-			t.Errorf("cleanup destroy failed:\n%s", out)
+}
+
+// A key written as text that's known only after apply, as the output of a
+// terraform_data made in the same apply. The plan warns that the apply
+// refuses only if the key differs from the one the nodes were made with. The
+// same key applies with nothing replaced, and another is refused cleanly,
+// with nothing deleted.
+func TestAccATextKeyKnownOnlyAtApplyIsCheckedThen(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS == "windows" {
+		skipTest(t, "the CLI sequence runs on unix")
+	}
+	eachKeyKind(t, func(t *testing.T, k keyKind) {
+		for _, differs := range []bool{false, true} {
+			t.Run(fmt.Sprintf("differs %v", differs), func(t *testing.T) {
+				name := fmt.Sprintf("%s-late-text-%v", k.prefix, differs)
+				key := k.ownKey(name)
+				config := func(input, trigger, keyExpr string) string {
+					return fmt.Sprintf(`
+resource "terraform_data" "key" {
+  input            = %q
+  triggers_replace = [%q]
+}
+
+resource %q "test" {
+  id           = %q
+  cluster_type = %q%s
+  ssh_access   = [{ username = "ops", ssh_public_keys = [%s] }]
+}
+`, input, trigger, k.typ, name, clusterTypeRef, k.pool, keyExpr)
+				}
+				c := newCLIRun(t)
+				r := &refusalRun{cliRun: c}
+				t.Cleanup(func() {
+					if out, ok := c.run("destroy", "-auto-approve", "-refresh=false"); !ok {
+						t.Errorf("cleanup destroy failed:\n%s", out)
+					}
+				})
+				c.write(config(key, "a", fmt.Sprintf("%q", key)))
+				if out, ok := c.run("apply", "-auto-approve"); !ok {
+					t.Fatalf("the create failed:\n%s", out)
+				}
+				after := key
+				if differs {
+					after = k.rotated
+				}
+				c.write(config(after, "b", "terraform_data.key.output"))
+				object := k.pathOf(map[string]string{"region": "us-texas-1", "project": "demo", "id": name})
+				deletes := r.served(http.MethodDelete, object)
+				out, code := r.runCode("apply", "-auto-approve")
+				mustSay(t, "the apply", out, "Warning: Changing `ssh_access` would replace this "+k.noun+
+					", so the apply will refuse it if the new value differs")
+				if strings.Contains(out, "inconsistent final plan") {
+					t.Errorf("the apply failed on an inconsistent final plan:\n%s", out)
+				}
+				if n := r.served(http.MethodDelete, object) - deletes; n != 0 {
+					t.Errorf("the apply sent %d deletes", n)
+				}
+				if !differs {
+					if code != 0 {
+						t.Fatalf("the apply exited %d, want 0:\n%s", code, out)
+					}
+					if plan, planCode := r.runCode("plan", "-detailed-exitcode"); planCode != 0 {
+						t.Errorf("the plan after exited %d, want 0:\n%s", planCode, plan)
+					}
+					return
+				}
+				if code != 1 {
+					t.Errorf("the apply exited %d, want 1:\n%s", code, out)
+				}
+				mustSay(t, "the apply", out, "Error: Changing `ssh_access` would replace this "+k.noun+", so the apply refused it")
+			})
 		}
 	})
-	clusterOutside(t, name, neverSettles, "creating")
-	c.write(config("", neverSettles))
-	if out, ok := c.run("import", clusterAddr, scopedImport(name)); !ok {
-		t.Fatalf("the import failed:\n%s", out)
-	}
-
-	c.write(config(other, "acceptance"))
-	warned := "Warning: If `-replace` replaces it anyway: Destroying " + name + " will cancel the operation it is running"
-	out, code := r.runCode("plan")
-	if code != 0 {
-		t.Fatalf("the plan exited %d:\n%s", code, out)
-	}
-	mustSay(t, "the plan", out, warned,
-		"The apply refuses this replacement and destroys nothing, unless the plan was made with `-replace` for this cluster. Then Terraform destroys it and creates another",
-		"Warning: Changing `project` would replace this cluster, so the apply will refuse it")
-
-	old := clusterAPIPath(name)
-	cancels, deletes := r.served(http.MethodPost, old+"/cancel"), r.served(http.MethodDelete, old)
-	out, code = r.runCode("apply", "-auto-approve", "-replace="+clusterAddr)
-	if code != 0 {
-		t.Fatalf("apply -replace exited %d:\n%s", code, out)
-	}
-	mustSay(t, "apply -replace", out, warned)
-	if r.served(http.MethodPost, old+"/cancel") == cancels || r.served(http.MethodDelete, old) == deletes {
-		t.Error("apply -replace didn't cancel and delete the busy cluster")
-	}
-	state, _ := c.run("state", "show", clusterAddr)
-	mustSay(t, "the state", state, fmt.Sprintf("project = %q", other))
 }

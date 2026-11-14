@@ -381,8 +381,62 @@ func TestAChangedWriteOnlyKeyIsRefusedAsAReplacement(t *testing.T) {
 				if refused && !strings.Contains(warns[0].Detail(), "A configured SSH key, or a key reference, differs") {
 					t.Errorf("the warning doesn't say a key differs:\n%s", warns[0].Detail())
 				}
+				// The key is known, so the refusal is certain, though the plan
+				// leaves the key references unknown.
+				if refused && strings.Contains(warns[0].Summary(), "if the new value differs") {
+					t.Errorf("the warning says the refusal depends on a value the configuration knows: %q", warns[0].Summary())
+				}
 			})
 		}
+	}
+}
+
+// A key written as text that's known only after apply may differ from the
+// one the nodes were made with, as a write-only one may. The plan marks the
+// user's key references unknown for it too, so the apply's final plan, which
+// knows the key, has the same shape and the apply refuses cleanly instead of
+// failing on an inconsistent final plan.
+func TestAnUnknownTextKeyIsPlannedAsAPossibleReplacement(t *testing.T) {
+	for _, rc := range []struct {
+		name string
+		r    guardable
+		what tenantState
+		base map[string]tftypes.Value
+	}{
+		{"cluster", &clusterResource{meta: testClusterMeta(t, "https://unused.invalid", time.Minute)}, clusterTenantState, existingCluster(nil)},
+		{"instance group", &instanceGroupResource{meta: testClusterMeta(t, "https://unused.invalid", time.Minute)}, instanceGroupTenantState, opsGroup("active")},
+	} {
+		t.Run(rc.name, func(t *testing.T) {
+			r := guardedModifier(t, rc.r, rc.what)
+			held := tftypes.NewValue(tftypes.Set{ElementType: sshUserTF}, []tftypes.Value{sshUserWith("ops", []tftypes.Value{str(keyA)})})
+			late := tftypes.NewValue(tftypes.Set{ElementType: sshUserTF}, []tftypes.Value{
+				sshUserWith("ops", []tftypes.Value{tftypes.NewValue(tftypes.String, tftypes.UnknownValue)})})
+			stateRaw, s := testValue(t, r, with(rc.base, map[string]tftypes.Value{"ssh_access": held}))
+			configRaw, _ := testValue(t, r, with(rc.base, map[string]tftypes.Value{"ssh_access": late}))
+			plan := tfsdk.Plan{Raw: configRaw, Schema: s.Schema}
+			req := resource.ModifyPlanRequest{Config: tfsdk.Config{Raw: configRaw, Schema: s.Schema}, Plan: plan,
+				State: tfsdk.State{Raw: stateRaw, Schema: s.Schema}}
+			freshPrivate(t, &req.Private, nil)
+			if d := saveFingerprints(context.Background(), privateIn(t, req.Private), map[string][]string{"ops": {keyAFP}}); d.HasError() {
+				t.Fatal(d)
+			}
+			resp := resource.ModifyPlanResponse{Plan: plan, Private: req.Private}
+			runServedReplacementModifiers(t, req, &resp)
+			r.ModifyPlan(context.Background(), req, &resp)
+			if resp.Diagnostics.HasError() {
+				t.Fatalf("the plan failed: %v", resp.Diagnostics)
+			}
+			var access types.Set
+			var users []sshUserModel
+			resp.Diagnostics.Append(resp.Plan.GetAttribute(context.Background(), path.Root("ssh_access"), &access)...)
+			resp.Diagnostics.Append(access.ElementsAs(context.Background(), &users, false)...)
+			if len(users) != 1 || !users[0].Credentials.IsUnknown() {
+				t.Errorf("ssh_access = %v, want ops's key references planned unknown", access)
+			}
+			if got := replacementWarnings(resp.Diagnostics); len(got) != 1 || !strings.HasSuffix(got[0], "if the new value differs") {
+				t.Errorf("warnings = %q, want one saying the refusal depends on the key", got)
+			}
+		})
 	}
 }
 

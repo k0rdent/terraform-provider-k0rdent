@@ -374,7 +374,7 @@ func guardReplacement(ctx context.Context, what tenantState, req resource.Modify
 	refused := make([]refusedReplacement, 0, len(replacing))
 	for _, r := range replacing {
 		change := describeChange(r, what)
-		warnReplacement(&resp.Diagnostics, r.path, change, pending, valueFullyKnown(ctx, r.to), what)
+		warnReplacement(&resp.Diagnostics, r.path, change, pending, configuredKnown(ctx, req.Config, r.path), what)
 		refused = append(refused, refusedReplacement{Path: pathSteps(r.path), Change: change})
 	}
 	// Fails closed: with nowhere to record the refusal, the Update couldn't
@@ -392,6 +392,26 @@ func guardReplacement(ctx context.Context, what tenantState, req resource.Modify
 		}
 	}
 	keepComputed(ctx, req, resp, replacing)
+}
+
+// configuredKnown reports whether the configuration sets the attribute at p
+// to a value known at plan, write-only SSH keys included for `ssh_access`.
+// The planned value can be unknown for a known configuration, as when a key
+// is checked against the platform at apply, so it can't tell whether the
+// change is certain.
+func configuredKnown(ctx context.Context, config tfsdk.Config, p path.Path) bool {
+	var v attr.Value
+	if d := config.GetAttribute(ctx, p, &v); d.HasError() || !valueFullyKnown(ctx, v) {
+		return false
+	}
+	if !p.Equal(path.Root("ssh_access")) {
+		return true
+	}
+	var keys attr.Value
+	if d := config.GetAttribute(ctx, path.Root("ssh_public_keys_wo"), &keys); d.HasError() {
+		return true // no write-only keys on this resource
+	}
+	return valueFullyKnown(ctx, keys)
 }
 
 // valueFullyKnown reports whether a planned value holds nothing known only after
@@ -556,10 +576,11 @@ func describeChange(r plannedReplacement, what tenantState) string {
 func warnReplacement(diags *diag.Diagnostics, p path.Path, change string, pending, known bool, what tenantState) {
 	name := p.String()
 	summary := fmt.Sprintf("Changing `%s` would replace this %s, so the apply will refuse it", name, what.noun)
+	late := ""
 	if !known {
 		summary += " if the new value differs"
-		change += fmt.Sprintf(" If it turns out to be the current value, the %s isn't replaced, and the "+
-			"apply makes the rest of its changes in place.", what.noun)
+		late = fmt.Sprintf("The new value is known only after apply. If it turns out to be the current "+
+			"value, the %s isn't replaced, and the apply makes the rest of its changes in place.\n\n", what.noun)
 	}
 	optIn := fmt.Sprintf("To replace the %s on purpose, add `%s = true` to this resource and plan again.",
 		what.noun, allowReplaceAttribute)
@@ -572,13 +593,13 @@ func warnReplacement(diags *diag.Diagnostics, p path.Path, change string, pendin
 	diags.AddAttributeWarning(p, summary,
 		fmt.Sprintf("%[1]s That can't be done in place: Terraform would destroy this %[2]s and create "+
 			"another. %[3]s\n\n"+
-			"So this plan shows the %[2]s updated in place, and the apply refuses that update before it "+
+			"%[6]sSo this plan shows the %[2]s updated in place, and the apply refuses that update before it "+
 			"sends any request, unless Terraform replaces the %[2]s anyway, as `-replace` asks. None of "+
 			"this %[2]s's changes in the plan are made. The rest of the plan still applies: a resource "+
 			"this plan replaces because it depends on this change is destroyed before the apply refuses, "+
 			"and isn't created again. `terraform destroy` isn't affected.\n\n"+
 			"%[4]s To keep the %[2]s, set `%[5]s` back to its current value.",
-			change, what.noun, what.loses, optIn, name))
+			change, what.noun, what.loses, optIn, name, late))
 }
 
 func describeValue(v attr.Value) string {

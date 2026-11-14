@@ -563,10 +563,11 @@ func TestOnlyATimeoutSaysTheOperationKeepsRunning(t *testing.T) {
 	}
 }
 
-// planDestroyOf plans the destroy of a cluster that read prior at refresh, or
-// its replacement when replace is set, which the configuration permits when
-// permitted is set.
-func planDestroyOf(t *testing.T, prior string, replace, permitted bool) resource.ModifyPlanResponse {
+// planDestroyOf plans the destroy of a cluster that read prior at refresh, or,
+// when change names "project" or "id", the replacement that changing it makes,
+// which the configuration permits when permitted is set. A project move is
+// decided in ModifyPlan, and an id change by the attribute's modifier.
+func planDestroyOf(t *testing.T, prior, change string, permitted bool) resource.ModifyPlanResponse {
 	t.Helper()
 	r := guardedModifier(t, &clusterResource{meta: testClusterMeta(t, "https://unused.invalid", time.Minute)},
 		clusterTenantState)
@@ -574,9 +575,9 @@ func planDestroyOf(t *testing.T, prior string, replace, permitted bool) resource
 	st := tfsdk.State{Raw: stateRaw, Schema: s.Schema}
 	planRaw := tftypes.NewValue(stateRaw.Type(), nil)
 	config := tfsdk.Config{Raw: planRaw, Schema: s.Schema}
-	if replace {
+	if change != "" {
 		values := clusterValues(verRef(1), verRef(1), 2, prior)
-		values["project"] = str("elsewhere")
+		values[change] = str("elsewhere")
 		if permitted {
 			values["allow_replace"] = tftypes.NewValue(tftypes.Bool, true)
 		}
@@ -586,7 +587,7 @@ func planDestroyOf(t *testing.T, prior string, replace, permitted bool) resource
 	plan := tfsdk.Plan{Raw: planRaw, Schema: s.Schema}
 	resp := resource.ModifyPlanResponse{Plan: plan}
 	freshPrivate(t, &resp.Private, nil)
-	if replace {
+	if change == "project" {
 		resp.RequiresReplace = path.Paths{path.Root("project")}
 	}
 	r.ModifyPlan(context.Background(), resource.ModifyPlanRequest{Config: config, Plan: plan, State: st}, &resp)
@@ -599,31 +600,34 @@ func planDestroyOf(t *testing.T, prior string, replace, permitted bool) resource
 // operation in flight.
 func TestPlanningTheDestroyOfABusyClusterSaysItCancels(t *testing.T) {
 	for _, tc := range []struct {
-		prior              string
-		replace, permitted bool
-		warns              bool
+		prior, change string
+		permitted     bool
+		warns         bool
 	}{
-		{"updating", false, false, true},
-		{"creating", false, false, true},
-		{"updating", true, true, true},
-		{"active", false, false, false},
-		{"failed", false, false, false},
-		{"active", true, true, false},
+		{"updating", "", false, true},
+		{"creating", "", false, true},
+		{"updating", "project", true, true},
+		{"updating", "id", true, true},
+		{"active", "", false, false},
+		{"failed", "", false, false},
+		{"active", "project", true, false},
 		// A replacement the configuration doesn't permit is refused at apply,
-		// and destroys nothing unless `-replace` asks. The warning says so.
-		{"updating", true, false, true},
+		// and destroys nothing unless `-replace` asks. The warning says so,
+		// for a change the attribute's modifier makes a replacement too.
+		{"updating", "project", false, true},
+		{"updating", "id", false, true},
 	} {
-		resp := planDestroyOf(t, tc.prior, tc.replace, tc.permitted)
+		resp := planDestroyOf(t, tc.prior, tc.change, tc.permitted)
 		if resp.Diagnostics.HasError() {
 			t.Fatalf("%s: plan: %v", tc.prior, resp.Diagnostics.Errors())
 		}
 		if got := hasWarning(resp.Diagnostics, "cancel"); got != tc.warns {
-			t.Errorf("%s, replace=%v, permitted=%v: warned = %v, want %v: %v", tc.prior, tc.replace, tc.permitted, got, tc.warns, resp.Diagnostics)
+			t.Errorf("%s, change=%q, permitted=%v: warned = %v, want %v: %v", tc.prior, tc.change, tc.permitted, got, tc.warns, resp.Diagnostics)
 		}
 		conditional := hasWarning(resp.Diagnostics, "If `-replace` replaces it anyway: Destroying")
-		if want := tc.warns && tc.replace && !tc.permitted; conditional != want {
-			t.Errorf("%s, replace=%v, permitted=%v: the warning is conditional on -replace = %v, want %v: %v",
-				tc.prior, tc.replace, tc.permitted, conditional, want, resp.Diagnostics)
+		if want := tc.warns && tc.change != "" && !tc.permitted; conditional != want {
+			t.Errorf("%s, change=%q, permitted=%v: the warning is conditional on -replace = %v, want %v: %v",
+				tc.prior, tc.change, tc.permitted, conditional, want, resp.Diagnostics)
 		}
 	}
 }

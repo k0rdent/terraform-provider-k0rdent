@@ -490,7 +490,7 @@ func (r *clusterResource) ModifyPlan(ctx context.Context, req resource.ModifyPla
 	case req.State.Raw.IsNull():
 	case req.Plan.Raw.IsNull():
 		warnOnBusyDestroy(ctx, req.State, false, &resp.Diagnostics)
-	case len(resp.RequiresReplace) > 0:
+	case replacesCluster(ctx, req, resp):
 		// A replacement the configuration doesn't permit is refused at
 		// apply and destroys nothing, unless `-replace` asks for it.
 		warnOnBusyDestroy(ctx, req.State, !replacementPermitted(ctx), &resp.Diagnostics)
@@ -1490,4 +1490,16 @@ func derefOrNil[S ~[]E, E any](p *S) S {
 		return nil
 	}
 	return *p
+}
+
+// replacesCluster reports whether this plan would replace the cluster: a
+// replacement this ModifyPlan decided, such as a moved project, or one an
+// attribute's modifier asked for, such as a renamed `id`. The guard takes the
+// latter out of what the framework collects, so it's asked again here.
+func replacesCluster(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) bool {
+	if len(resp.RequiresReplace) > 0 {
+		return true
+	}
+	replacing, ok := modifierReplacements(ctx, req, resp)
+	return ok && len(replacing) > 0
 }
