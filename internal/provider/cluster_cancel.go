@@ -30,9 +30,10 @@ var (
 		"` action cancels it and keeps the cluster, which the platform then settles `failed`."
 )
 
-// addClusterWaitError reports a failed cluster wait, with advice when it timed out.
+// addClusterWaitError reports a failed cluster wait, with advice when it timed
+// out on a change still running. One that stopped on `failed` gets none.
 func addClusterWaitError(diags *diag.Diagnostics, summary, advice string, err error) {
-	if errors.Is(err, errWaitTimeout) {
+	if errors.Is(err, errWaitTimeout) && !failedWhenStopped(err) {
 		addAdvisedError(diags, summary, advice, err)
 		return
 	}

@@ -1041,3 +1041,38 @@ func TestDestroyDeletesTheClusterItHolds(t *testing.T) {
 		})
 	}
 }
+
+// A change's wait that times out while the cluster reads `failed` reports the
+// failure, never that the change is still running. One that times out while
+// the cluster is still `updating` does say so.
+func TestAChangeWaitThatStopsOnAFailedClusterDoesNotSayItIsStillRunning(t *testing.T) {
+	t.Parallel()
+	const stillRunning = "The change is still running on the platform"
+	for _, c := range []struct {
+		state       k0rdent.ClusterState
+		wantRunning bool
+	}{
+		{k0rdent.ClusterStateFailed, false},
+		{k0rdent.ClusterStateUpdating, true},
+	} {
+		reason, message := k0rdent.StateReasonRESERVATIONFAILED, "no hosts could be reserved"
+		body := k0rdent.Cluster{State: &c.state, StateReason: &reason, StateMessage: &message}
+		cfg := waitConfig{Timeout: 50 * time.Millisecond, Interval: time.Millisecond, ProvisionalFailureWindow: time.Hour}
+		err := clusterStates.awaitSettled(context.Background(), cfg, "the cluster to finish scaling",
+			func(context.Context) (*k0rdent.Cluster, *http.Response, []byte, error) {
+				return &body, &http.Response{StatusCode: http.StatusOK, Header: http.Header{}}, nil, nil
+			})
+		var diags diag.Diagnostics
+		addClusterWaitError(&diags, "The cluster did not settle after scaling", changeKeepsRunning, err)
+		if len(diags) != 1 {
+			t.Fatalf("%s: %d diagnostics, want 1", c.state, len(diags))
+		}
+		detail := diags[0].Detail()
+		if got := strings.Contains(detail, stillRunning); got != c.wantRunning {
+			t.Errorf("%s: says the change is still running: %v, want %v:\n%s", c.state, got, c.wantRunning, detail)
+		}
+		if c.state == k0rdent.ClusterStateFailed && !strings.Contains(detail, "At the last read, the platform reports the cluster as failed") {
+			t.Errorf("failed: doesn't report the failure:\n%s", detail)
+		}
+	}
+}

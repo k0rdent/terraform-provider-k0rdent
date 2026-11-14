@@ -141,9 +141,9 @@ func withFailure(err, failing error) error {
 }
 
 // failedWhenStopped reports whether err is a wait that stopped while the
-// object read as failed. It's still errWaitTimeout, but nothing is being
-// built any more, so a caller reports it as the failure, not as still
-// running.
+// object read as failed. It's still errWaitTimeout, but the platform reported
+// it failed at the last read, so a caller reports it as the failure, not as
+// still running.
 func failedWhenStopped(err error) bool {
 	var stopped stoppedWaiting
 	return errors.As(err, &stopped) && stopped.failing != nil
