@@ -308,8 +308,10 @@ func (r *fileStoreResource) Schema(ctx context.Context, _ resource.SchemaRequest
 					"`GROUP_MEMBERSHIP_DRIFTED` and the next plan proposes sending the entry again. " +
 					"If the platform refuses that, the rest of the change is applied and plans stop " +
 					"proposing the re-send until its report changes. A group reported as " +
-					"`GROUP_NO_LONGER_GRANTABLE` is gone or now names a different group, and fails " +
-					"the plan until its entry is removed.\n\n" +
+					"`GROUP_NO_LONGER_GRANTABLE` is gone or now names a different group. Until its " +
+					"entry is removed, the plan warns, and an apply that changes the store in place fails " +
+					"without changing it. A replacement forced with `-replace` or `replace_triggered_by` " +
+					"deletes the store and creates the new one with the entry, so remove the entry first.\n\n" +
 					"A key taken from another resource's attribute that is not known until apply " +
 					"hides the whole map from the plan. Set the instance group's `id` in " +
 					"configuration so a reviewer can see who is granted access.",
@@ -701,8 +703,12 @@ func (r *fileStoreResource) ModifyPlan(ctx context.Context, req resource.ModifyP
 
 	verdicts := judgeGrants(grantReportOf(ctx, state.ConsumerStatus, &resp.Diagnostics),
 		configuredRefs(plan.Consumers), readRefused(ctx, req.Private, &resp.Diagnostics))
-	resp.Diagnostics.Append(verdicts.planDiagnostics()...)
+	resp.Diagnostics.Append(verdicts.planDiagnostics(replacing)...)
 	if len(verdicts.ungrantable) > 0 {
+		// An update, so that the apply refuses it. An unknown
+		// `consumer_status` makes it one when nothing else changes.
+		resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, path.Root("consumer_status"),
+			types.MapUnknown(fileStoreConsumerStatusType()))...)
 		return
 	}
 	drifted := verdicts.resend

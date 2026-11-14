@@ -575,8 +575,11 @@ func TestAccFileStoreUnresolvableDriftDoesNotBlockTheStore(t *testing.T) {
 
 // A group that is gone, or whose id now names a different group, is the one
 // comparison verdict the contract calls pager-worthy. Sending the entry again
-// would grant whatever the id names now, so the plan fails instead.
-func TestAccFileStoreUngrantableGroupFailsThePlan(t *testing.T) {
+// would grant whatever the id names now, so the apply fails before it sends
+// anything instead. The plan only warns, since the platform's report causes
+// it, not the configuration. A replacement the configuration causes is still
+// refused at plan, since its delete would come first.
+func TestAccFileStoreUngrantableGroupFailsTheApply(t *testing.T) {
 	t.Parallel()
 	const group = "acc-trainers-fake-ungrantable"
 
@@ -585,14 +588,42 @@ func TestAccFileStoreUngrantableGroupFailsThePlan(t *testing.T) {
 		CheckDestroy:             checkGone(fileStoreType, fileStorePath),
 		Steps: []resource.TestStep{
 			{
+				// The plan after this apply is the first to read the verdict,
+				// and it plans the update the next apply refuses.
 				Config:             groupStoreConfig("acc-ungrantable", group, 2),
 				ExpectNonEmptyPlan: true,
-				ExpectError:        regexp.MustCompile(`can no longer be granted`),
+			},
+			{
+				Config:      groupStoreConfig("acc-ungrantable", group, 2),
+				ExpectError: regexp.MustCompile(`(?s)can no longer be granted.*nothing is sent`),
+			},
+			{
+				// A replacement the configuration causes is refused at plan.
+				Config: strings.Replace(groupStoreConfig("acc-ungrantable", group, 2), `share_type   = "general"`,
+					"share_type    = \"high-speed\"\n  allow_replace = true", 1),
+				PlanOnly:    true,
+				ExpectError: regexp.MustCompile(`can no longer be granted`),
 			},
 			{
 				// Removing the entry is the fix, so it must plan.
 				Config: instanceGroupConfig(group, 2) + fileStoreConfig("acc-ungrantable", "acceptance", 512, "{}"),
 			},
+		},
+	})
+}
+
+// An ungrantable group doesn't stop `terraform destroy`, which runs a normal
+// plan first.
+func TestAccFileStoreUngrantableGroupDoesNotStopADestroy(t *testing.T) {
+	t.Parallel()
+	config := groupStoreConfig("acc-ungrantable-destroy", "acc-destroy-fake-ungrantable", 2)
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: protoV6,
+		CheckDestroy:             checkGone(fileStoreType, fileStorePath),
+		Steps: []resource.TestStep{
+			{Config: config, ExpectNonEmptyPlan: true},
+			{Config: config, Destroy: true},
 		},
 	})
 }

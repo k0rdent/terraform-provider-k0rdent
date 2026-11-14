@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
@@ -262,19 +263,25 @@ func TestARotationOutsideTerraformPlansARotationBack(t *testing.T) {
 	}
 }
 
-// A secret version that's unknown passes validation, where every variable is
-// unknown, and is refused at plan time, where only a value the apply works out
-// still is.
-func TestAnUnknownSecretVersionIsRefusedAtPlanNotAtValidate(t *testing.T) {
+// Validation sees every variable as unknown, so it passes an unknown secret
+// version. At plan, a version only the apply works out plans with no warning
+// on a create and on an update, even with an overlap open, since the plan
+// can't tell whether it rotates. With no `secret_wo` beside it, the plan
+// refuses it.
+func TestAnUnknownSecretVersionPlans(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	r := &webhookSubscriptionResource{}
-	raw, s := testValue(t, r, map[string]tftypes.Value{
-		"url":               str("https://hooks.example.test/x"),
-		"secret_wo":         str(strings.Repeat("s", 40)),
-		"secret_wo_version": tftypes.NewValue(tftypes.Number, tftypes.UnknownValue),
-		"rotation_overlap":  tftypes.NewValue(tftypes.Bool, true),
-	})
+	configured := func(secret tftypes.Value) (tftypes.Value, resource.SchemaResponse) {
+		return testValue(t, r, map[string]tftypes.Value{
+			"url":               str("https://hooks.example.test/x"),
+			"secret_wo":         secret,
+			"secret_wo_version": tftypes.NewValue(tftypes.Number, tftypes.UnknownValue),
+			"rotation_overlap":  tftypes.NewValue(tftypes.Bool, true),
+		})
+	}
+	raw, s := configured(str(strings.Repeat("s", 40)))
+	noSecret, _ := configured(tftypes.NewValue(tftypes.String, nil))
 	config := tfsdk.Config{Raw: raw, Schema: s.Schema}
 
 	var validated resource.ValidateConfigResponse
@@ -289,12 +296,28 @@ func TestAnUnknownSecretVersionIsRefusedAtPlanNotAtValidate(t *testing.T) {
 	}
 
 	none := tftypes.NewValue(s.Schema.Type().TerraformType(ctx), nil)
-	planned := resource.ModifyPlanResponse{Plan: tfsdk.Plan{Raw: raw, Schema: s.Schema}}
-	r.ModifyPlan(ctx, resource.ModifyPlanRequest{
-		Config: config, Plan: tfsdk.Plan{Raw: raw, Schema: s.Schema}, State: tfsdk.State{Raw: none, Schema: s.Schema},
-	}, &planned)
-	if errs := planned.Diagnostics.Errors(); len(errs) != 1 || !strings.Contains(errs[0].Summary(), "known at plan time") {
-		t.Errorf("the plan didn't refuse a version only the apply knows: %v", planned.Diagnostics)
+	prior, _ := testValue(t, r, map[string]tftypes.Value{
+		"id": str(testSubscriptionID), "url": str("https://hooks.example.test/x"),
+		"secret_wo_version": num(1), "rotation_overlap": tftypes.NewValue(tftypes.Bool, true),
+		"is_active":                  tftypes.NewValue(tftypes.Bool, true),
+		"previous_secret_expires_at": str(time.Now().Add(time.Hour).UTC().Format(time.RFC3339)),
+	})
+	plan := func(raw, state tftypes.Value) diag.Diagnostics {
+		planned := resource.ModifyPlanResponse{Plan: tfsdk.Plan{Raw: raw, Schema: s.Schema}}
+		r.ModifyPlan(ctx, resource.ModifyPlanRequest{
+			Config: tfsdk.Config{Raw: raw, Schema: s.Schema}, Plan: tfsdk.Plan{Raw: raw, Schema: s.Schema},
+			State: tfsdk.State{Raw: state, Schema: s.Schema},
+		}, &planned)
+		return planned.Diagnostics
+	}
+	for name, state := range map[string]tftypes.Value{"create": none, "update": prior} {
+		if diags := plan(raw, state); len(diags) > 0 {
+			t.Errorf("%s: the plan of a version only the apply knows said %v", name, diags)
+		}
+		diags := plan(noSecret, state)
+		if errs := diags.Errors(); len(errs) != 1 || errs[0].Summary() != "secret_wo_version needs secret_wo" {
+			t.Errorf("%s: with no secret_wo, the plan said %v, want the refusal", name, diags)
+		}
 	}
 }
 
