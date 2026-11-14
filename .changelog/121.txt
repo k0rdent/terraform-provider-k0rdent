@@ -1,0 +1,7 @@
+```release-note:bug
+resource/k0rdent_webhook_subscription: A `secret_wo_version` that's unknown until apply no longer fails the plan. The secret rotates only if the value differs from the one in state
+```
+
+```release-note:bug
+resource/k0rdent_file_store: A consumer group the platform reports as `GROUP_NO_LONGER_GRANTABLE` no longer fails every plan, `terraform destroy` included. The plan warns, and an apply that changes the store in place fails without changing it. A replacement forced with `-replace` or `replace_triggered_by` deletes the store and creates the new one with the entry, so remove the entry first
+```

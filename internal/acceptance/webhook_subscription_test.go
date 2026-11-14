@@ -13,6 +13,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/plancheck"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
+	"github.com/hashicorp/terraform-plugin-testing/tfjsonpath"
 
 	"github.com/k0rdent/terraform-provider-k0rdent/internal/provider"
 )
@@ -526,22 +527,69 @@ func TestAccWebhookSubscriptionVersionFromVariable(t *testing.T) {
 	})
 }
 
-// A version only the apply works out is still refused at plan time, naming the
-// attribute, because the plan couldn't say whether the secret rotates.
+// A version only the apply works out plans, on a create and on an update,
+// and the apply rotates only if the version it works out differs from the one
+// in state. Changing `rotation_overlap` beside it makes the apply an update
+// even when the version works out the same.
 func TestAccWebhookSubscriptionVersionUnknownAtPlan(t *testing.T) {
 	t.Parallel()
-	cfg := strings.Replace(webhookConfig(webhookURL("version-unknown"), nil, 1, ""),
-		"secret_wo_version = 1", "secret_wo_version = length(terraform_data.version.id) > 0 ? 1 : 2", 1) +
-		"\nresource \"terraform_data\" \"version\" {}\n"
+	url := webhookURL("version-unknown")
+	first, second := webhookSecret("unknown-first"), webhookSecret("unknown-second")
+	// The version is unknown at plan while terraform_data.<name> is still to
+	// be made, and works out as version at apply.
+	unknown := func(name string, version int, extra string) string {
+		return strings.Replace(webhookConfig(url, nil, 1, extra), "secret_wo_version = 1",
+			fmt.Sprintf("secret_wo_version = length(terraform_data.%s.id) > 0 ? %d : 0", name, version), 1) +
+			fmt.Sprintf("\nresource \"terraform_data\" %q {}\n", name)
+	}
+	var id string
 
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: protoV6,
-		Steps: []resource.TestStep{{
-			Config:          cfg,
-			ConfigVariables: webhookVars(webhookSecret("unknown")),
-			PlanOnly:        true,
-			ExpectError:     regexp.MustCompile(`secret_wo_version has to be known at plan time`),
-		}},
+		CheckDestroy:             checkWebhookGone,
+		Steps: []resource.TestStep{
+			{
+				Config:          unknown("create", 1, ""),
+				ConfigVariables: webhookVars(first),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr(webhookAddr, "secret_wo_version", "1"),
+					checkSigning(first, ""),
+					func(s *terraform.State) error {
+						id = s.RootModule().Resources[webhookAddr].Primary.ID
+						return nil
+					},
+				),
+			},
+			{
+				// Worked out as the version in state: no rotation.
+				Config:          unknown("same", 1, "  rotation_overlap = false\n"),
+				ConfigVariables: webhookVars(second),
+				ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{
+					plancheck.ExpectResourceAction(webhookAddr, plancheck.ResourceActionUpdate),
+					plancheck.ExpectUnknownValue(webhookAddr, tfjsonpath.New("secret_wo_version")),
+				}},
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrWith(webhookAddr, "id", sameAs(&id)),
+					resource.TestCheckResourceAttr(webhookAddr, "secret_version", "1"),
+					checkSigning(first, ""),
+				),
+			},
+			{
+				// Worked out as a new version: one rotation.
+				Config:          unknown("new", 2, "  rotation_overlap = false\n"),
+				ConfigVariables: webhookVars(second),
+				ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{
+					plancheck.ExpectResourceAction(webhookAddr, plancheck.ResourceActionUpdate),
+					plancheck.ExpectUnknownValue(webhookAddr, tfjsonpath.New("secret_wo_version")),
+				}},
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrWith(webhookAddr, "id", sameAs(&id)),
+					resource.TestCheckResourceAttr(webhookAddr, "secret_wo_version", "2"),
+					resource.TestCheckResourceAttr(webhookAddr, "secret_version", "2"),
+					checkSigning(second, ""),
+				),
+			},
+		},
 	})
 }
 

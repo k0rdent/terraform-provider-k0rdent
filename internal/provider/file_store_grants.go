@@ -135,9 +135,17 @@ func judgeGrants(report grantReport, configured []string, refused refusedResends
 }
 
 // planDiagnostics is what a plan says about the verdicts: a warning for each
-// held re-send, then an error for each ungrantable group, or a warning for
-// each re-send the plan proposes when nothing stops it.
-func (v grantVerdicts) planDiagnostics() diag.Diagnostics {
+// held re-send, then one for each ungrantable group, or a warning for each
+// re-send the plan proposes when nothing stops it.
+//
+// An ungrantable group comes from the platform's report, not the
+// configuration, and `terraform destroy` runs a normal plan first. So the plan
+// only warns of it, and Update refuses it before it sends anything. A
+// replacement the configuration causes is refused here, since its delete would
+// come before that refusal. One that Terraform forces, with `-replace` or
+// `replace_triggered_by`, reaches the provider as an update, so it only warns:
+// the store is deleted and the new one is created with the entry.
+func (v grantVerdicts) planDiagnostics(replacing bool) diag.Diagnostics {
 	var diags diag.Diagnostics
 	for _, ref := range v.held {
 		diags.AddAttributeWarning(path.Root("consumers").AtMapKey(ref),
@@ -146,7 +154,18 @@ func (v grantVerdicts) planDiagnostics() diag.Diagnostics {
 				"resolve it again. Its grant still covers the machines it was written against. "+
 				"This plan does not propose the re-send again until the platform's report changes.", ref))
 	}
-	diags.Append(v.ungrantableErrors()...)
+	if replacing {
+		diags.Append(v.ungrantableErrors()...)
+		return diags
+	}
+	for _, ref := range v.ungrantable {
+		// Local: the provider's reading of a verdict the API already reported.
+		diags.AddAttributeWarning(path.Root("consumers").AtMapKey(ref), ungrantableSummary,
+			ungrantableReason(ref)+" It can't be granted again. Remove the entry, or point it at the group "+
+				"that should hold the access. Until then, an apply that changes this file store in place "+
+				"fails without changing it. A replacement forced with `-replace` or `replace_triggered_by` "+
+				"deletes the store and creates the new one with the entry, so remove the entry first.")
+	}
 	if len(v.ungrantable) > 0 {
 		return diags
 	}
@@ -161,9 +180,10 @@ func (v grantVerdicts) planDiagnostics() diag.Diagnostics {
 	return diags
 }
 
-// ungrantableErrors refuses each ungrantable group. The plan raises it, and
-// so does an update the plan could not check because the keys were unknown.
-// Neither sends anything, so the two say the same thing.
+// ungrantableErrors refuses each ungrantable group. An update raises it
+// before it sends anything, whether the plan warned of it or couldn't check it
+// because the keys were unknown, and so does a plan whose configuration
+// replaces the store.
 //
 // The update refuses whenever this does, even when the keys it resolved to
 // equal state. A drifted group in the same map still asks for a re-send, and
@@ -172,14 +192,19 @@ func (v grantVerdicts) ungrantableErrors() diag.Diagnostics {
 	var diags diag.Diagnostics
 	for _, ref := range v.ungrantable {
 		// Local: the provider's reading of a verdict the API already reported.
-		diags.AddAttributeError(path.Root("consumers").AtMapKey(ref),
-			"A consumer group can no longer be granted",
-			fmt.Sprintf("The platform reports that the instance group %q is being deleted, or that its "+
-				"id now names a different group than the one the grant came from. Sending the entry "+
-				"again would grant whatever machines the id names now, so nothing is sent. Remove "+
-				"the entry, or point it at the group that should hold the access.", ref))
+		diags.AddAttributeError(path.Root("consumers").AtMapKey(ref), ungrantableSummary,
+			ungrantableReason(ref)+" Sending the entry again would grant whatever machines the id names "+
+				"now, so nothing is sent. Remove the entry, or point it at the group that should hold the access.")
 	}
 	return diags
+}
+
+const ungrantableSummary = "A consumer group can no longer be granted"
+
+// ungrantableReason is what the platform reports about the group.
+func ungrantableReason(ref string) string {
+	return fmt.Sprintf("The platform reports that the instance group %q is being deleted, or that its "+
+		"id now names a different group than the one the grant came from.", ref)
 }
 
 // refusedResendWarning reports a re-send the platform refused while the rest
