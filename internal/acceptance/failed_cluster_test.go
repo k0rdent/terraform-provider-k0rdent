@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/k0rdent/terraform-provider-k0rdent/internal/provider"
@@ -170,3 +171,104 @@ func failedOutside(t *testing.T, name, markers string) {
 // watchdogFails is the fake's marker for a cluster whose create the watchdog
 // fails, and which comes back `active` on its own a few reads later.
 const watchdogFails = "fake-watchdog-fails"
+
+// A cluster read `failed` when the apply's wait for it times out is reported
+// as failed, with the platform's reason, not as still being created. The wait
+// is shorter than the provisional window, so it stops while the cluster is
+// `failed`. Three ways in, through the real CLI:
+//
+//   - the create: the platform fails it while the create waits
+//   - failed before the wait: imported `failed`, so the apply waits for it
+//   - failed during the wait: imported `creating`, and the platform fails it
+//     while the apply waits for the create to finish
+//
+// Each apply fails and deletes nothing, and `terraform destroy` removes the
+// cluster. After the create, `-replace` plans the replacement its error names.
+func TestAccAClusterFailedWhenItsWaitTimesOutIsReportedFailed(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS == "windows" {
+		skipTest(t, "the CLI sequence runs on unix")
+	}
+	const short = "  timeouts {\n    create = \"1s\"\n  }\n"
+	for _, tc := range []struct {
+		name, markers string
+		want          []string
+		// imported makes the cluster outside Terraform and imports it. reads
+		// then advances the fake's create by that many reads before the
+		// import, so the platform fails it during the apply's wait. Zero
+		// imports it once it's `failed`. The fake fails a slow create on its
+		// 30th read. 24, and the one creatingOutside checks with, leave 5: the
+		// import and the refresh take 2, and the wait's third read fails it.
+		imported bool
+		reads    int
+	}{
+		{name: "acc-failed-create-wait", markers: createFails,
+			want: []string{"The cluster did not become active", "terraform destroy"}},
+		{name: "acc-failed-before-wait", markers: createFails, imported: true,
+			want: []string{"The cluster is still failed", "terraform destroy"}},
+		{name: "acc-failed-during-wait", markers: createsSlowly + " " + createFails, imported: true, reads: 24,
+			want: []string{"The cluster's create failed"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			c := newCLIRun(t)
+			addr := clusterType + ".test"
+			t.Cleanup(func() { removeFromFake(t, tc.name) })
+			switch {
+			case !tc.imported:
+			case tc.reads == 0:
+				failedOutside(t, tc.name, tc.markers)
+			default:
+				creatingOutside(t, tc.name, tc.markers, tc.reads)
+			}
+			c.write(importedFailed(tc.name, tc.markers, short))
+			if tc.imported {
+				if out, ok := c.run("import", addr, tc.name); !ok {
+					t.Fatalf("the import failed:\n%s", out)
+				}
+			}
+
+			out, ok := c.run("apply", "-auto-approve")
+			if ok {
+				t.Fatalf("the apply passed on a cluster that's failed:\n%s", out)
+			}
+			mustSay(t, "the apply", out, append(tc.want, "At the last read", "reason RESERVATION_FAILED",
+				"Nothing was deleted", "terraform apply -replace=<address>")...)
+			if strings.Contains(out, "is still being created") {
+				t.Errorf("the apply calls a failed cluster still being created:\n%s", out)
+			}
+			checkFakeStateNow(t, tc.name, "failed")
+
+			if !tc.imported {
+				out, ok = c.run("plan", "-replace="+addr)
+				if !ok {
+					t.Fatalf("the plan with -replace was refused:\n%s", out)
+				}
+				mustSay(t, "the plan with -replace", out, "1 to add, 0 to change, 1 to destroy")
+			}
+			out, ok = c.run("destroy", "-auto-approve")
+			if !ok {
+				t.Fatalf("the destroy of the failed cluster failed:\n%s", out)
+			}
+			mustSay(t, "the destroy", out, "1 destroyed")
+		})
+	}
+}
+
+// creatingOutside creates a cluster past the provider and reads it reads
+// times, which moves a create marked createsSlowly that much closer to
+// settling. It fails the test if the cluster isn't still `creating`.
+func creatingOutside(t *testing.T, name, markers string, reads int) {
+	t.Helper()
+	if err := postFake("/v1/regions/us-texas-1/projects/demo/compute/clusters", fmt.Sprintf(
+		`{"id":%q,"clusterType":%q,"displayName":%q,"nodePools":[{"id":"gpu-workers","nodeCount":2}]}`,
+		name, clusterTypeRef, markers)); err != nil {
+		t.Fatal(err)
+	}
+	for range reads {
+		if _, _, err := readFake(clusterAPIPath(name)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	checkFakeStateNow(t, name, "creating")
+}

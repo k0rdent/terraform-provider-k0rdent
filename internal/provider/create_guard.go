@@ -120,9 +120,12 @@ func (e existing) refuse(diags *diag.Diagnostics) {
 // keep the object instead. It's in front of the approval, as the cancel it
 // names would be.
 func (e existing) warnReplacing(diags *diag.Diagnostics) {
-	notHeld := "If this state doesn't hold it, such as when another configuration or workspace manages it, " +
-		"applying replaces nothing: the create fails with \"already exists\" and nothing is deleted. Choose " +
-		"another `id` for this one."
+	notHeld := fmt.Sprintf("If this state doesn't hold it, applying replaces nothing: the create fails with "+
+		"\"already exists\" and nothing is deleted. If another configuration or workspace manages it, choose "+
+		"another `id` for this one. If none does, import it, replacing <address> with this resource's "+
+		"address, such as %s.example:\n\n"+
+		"    terraform import <address> %s",
+		e.resourceName, scopedImportID(e.target)(e.id))
 	destroyToo := "\n\n`terraform destroy` shows this warning too, from the plan it runs first to refresh state. " +
 		"It replaces nothing."
 	origin := aKind(e.kind) + " has no tags to carry a create token, so it passes on its state alone."
@@ -154,6 +157,12 @@ func (e existing) warnReplacing(diags *diag.Diagnostics) {
 	diags.AddAttributeWarning(path.Root("id"), summary, redactDiagnosticText(fmt.Sprintf(
 		"The platform reports %s %q as `%s`. %s If this state holds it tainted, as a create that stopped "+
 			"waiting leaves it, %s\n\n%s\n\n%s", e.kind, e.id, e.state, origin, does, keep, notHeld)+destroyToo))
+}
+
+// aKindMidSentence is aKind for the middle of a sentence: "an instance group".
+func aKindMidSentence(kind string) string {
+	s := aKind(kind)
+	return strings.ToLower(s[:1]) + s[1:]
 }
 
 // aKind is kind with its indefinite article, capitalized to start a sentence:

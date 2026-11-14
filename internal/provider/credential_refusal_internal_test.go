@@ -155,12 +155,19 @@ func mintThrottled(t *testing.T, retryAfter string) (*k0rdent.ClientWithResponse
 
 // A 429 on the token request has to say how long the platform asked to wait,
 // as the same 429 on any other request does, and what to change: the limit
-// is per credential, so concurrent runs that share one share its budget.
+// is per credential, and each provider block asks for a token of its own, so
+// runs that share one and start together share its budget.
 func TestA429OnTheTokenRequestNamesTheWaitAndTheNextStep(t *testing.T) {
 	const (
-		perCredential = "10 by default, and every run using the credential at the same time shares them"
-		ownCredential = "Give each pipeline that runs at the same time its own credential."
+		perCredential = "10 access tokens a minute by default"
+		perBlock      = "Each provider block that calls the platform, aliases included, asks for its own token"
+		ownCredential = "give pipelines that run at the same time credentials of their own"
+		honourWait    = "Wait as long as the platform asked, then run again."
+		again         = "Run again in a minute."
 		perAddress    = "it's the gateway's limit on requests from one client address"
+		// The advice this replaced counted tokens per command, which a
+		// configuration with more than one provider block exceeds.
+		perCommand = "up to two"
 	)
 	cases := []struct {
 		name, retryAfter string
@@ -170,18 +177,18 @@ func TestA429OnTheTokenRequestNamesTheWaitAndTheNextStep(t *testing.T) {
 	}{
 		{name: "a wait longer than the provider takes", retryAfter: "600", wantMints: 1,
 			want: []string{"The platform asked for a wait of 10m0s, longer than the 5m0s this provider waits at most.",
-				perCredential, ownCredential},
-			wantNot: []string{perAddress}},
+				perCredential, perBlock, honourWait, ownCredential},
+			wantNot: []string{perAddress, perCommand, again}},
 		{name: "a wait longer than the deadline", retryAfter: "45", deadline: 10 * time.Second, wantMints: 1,
 			want: []string{"The platform asked for a wait of 45s, longer than the 10s left before this operation's deadline.",
-				perCredential},
-			wantNot: []string{perAddress}},
+				perCredential, honourWait},
+			wantNot: []string{perAddress, perCommand, again}},
 		{name: "every retry spent on waits the provider takes", retryAfter: "30", wantMints: 7,
-			want:    []string{perCredential, ownCredential},
-			wantNot: []string{"asked for a wait", perAddress}},
+			want:    []string{perCredential, perBlock, again, ownCredential},
+			wantNot: []string{"asked for a wait", perAddress, perCommand, honourWait}},
 		{name: "the gateway's limit, which names no wait", wantMints: 7,
 			want:    []string{perAddress},
-			wantNot: []string{"asked for a wait", ownCredential}},
+			wantNot: []string{"asked for a wait", ownCredential, perCommand}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
