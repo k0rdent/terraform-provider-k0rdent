@@ -1,5 +1,5 @@
 ```release-note:bug
-provider: Correct the advice for a 429 on the token request, which counted tokens per command. It now says each provider block, aliases included, asks for its own token, and to wait as long as the platform asked when it named a wait
+provider: Correct the advice for a 429 on the token request, which counted tokens per command. It now says each provider block that calls the platform, aliases included, asks for its own token, and to wait as long as the platform asked when it named a wait
 ```
 
 ```release-note:bug

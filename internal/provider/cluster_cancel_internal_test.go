@@ -1071,8 +1071,13 @@ func TestAChangeWaitThatStopsOnAFailedClusterDoesNotSayItIsStillRunning(t *testi
 		if got := strings.Contains(detail, stillRunning); got != c.wantRunning {
 			t.Errorf("%s: says the change is still running: %v, want %v:\n%s", c.state, got, c.wantRunning, detail)
 		}
-		if c.state == k0rdent.ClusterStateFailed && !strings.Contains(detail, "At the last read, the platform reports the cluster as failed") {
-			t.Errorf("failed: doesn't report the failure:\n%s", detail)
+		if c.state == k0rdent.ClusterStateFailed {
+			for _, want := range []string{"At the last read, the platform reports the cluster as failed",
+				"Nothing was deleted", "`terraform plan` warns with the platform's reason"} {
+				if !strings.Contains(detail, want) {
+					t.Errorf("failed: doesn't say %q:\n%s", want, detail)
+				}
+			}
 		}
 	}
 }
