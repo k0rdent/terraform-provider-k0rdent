@@ -3,7 +3,7 @@ provider: Correct the advice for a 429 on the token request, which counted token
 ```
 
 ```release-note:bug
-resource/k0rdent_kubernetes_cluster: Report a create, or a resumed create, whose wait times out while the cluster is `failed` as failed, with the platform's reason, instead of as still being created
+resource/k0rdent_kubernetes_cluster: Report a create, a resumed create or a change whose wait times out while the cluster is `failed` as failed, with the platform's reason, instead of as still being created or still running
 ```
 
 ```release-note:enhancement
@@ -15,5 +15,5 @@ resource/k0rdent_instance_group: Add the `terraform import` command to the plan 
 ```
 
 ```release-note:bug
-resource/k0rdent_instance_group: Fix "a instance group" in the error for an existing group the apply can't show it created
+resource/k0rdent_instance_group: Fix "a instance group" in the 409 error for an existing instance group
 ```
