@@ -75,7 +75,7 @@ func clusterWrites(t *testing.T, path string) func(step string) {
 }
 
 // A version change the cluster can't take plans as an update with a
-// warning, and the apply fails before it sends any request, the other
+// warning, and the apply fails before it changes the cluster, its other
 // changes in the same apply included. Through the real CLI, for each change
 // that would otherwise go out first:
 //
@@ -122,7 +122,7 @@ func TestAccARefusedVersionChangeWarnsAtPlanAndFailsAtApply(t *testing.T) {
 				t.Errorf("the plan exited %d, want 2, a plan with changes:\n%s", code, out)
 			}
 			mustSay(t, "the plan", out, "Warning: "+versionRefused, "forward-only",
-				"fails before it sends any request, so none of this plan's other changes are made either", "`terraform destroy` isn't affected",
+				"fails before it changes anything on this cluster", "`terraform destroy` isn't affected",
 				clusterTypeV2, "0 to add, 1 to change, 0 to destroy")
 			sentNothing("the plan")
 

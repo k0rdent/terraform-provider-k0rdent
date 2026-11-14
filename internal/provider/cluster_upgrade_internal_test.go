@@ -690,7 +690,7 @@ func TestPlanWarnsOfAVersionChangeTheApplyRefuses(t *testing.T) {
 			if !strings.Contains(w.Detail(), tc.want) {
 				t.Errorf("warning:\n%s\n%s", w.Summary(), w.Detail())
 			}
-			for _, want := range []string{"fails before it sends any request", "`terraform destroy` isn't affected", tc.bound} {
+			for _, want := range []string{"fails before it changes anything on this cluster", "`terraform destroy` isn't affected", tc.bound} {
 				if !strings.Contains(w.Detail(), want) {
 					t.Errorf("the warning doesn't say %q:\n%s", want, w.Detail())
 				}
@@ -746,6 +746,24 @@ func TestApplyRefusesAVersionChangeBeforeAnyRequest(t *testing.T) {
 				t.Errorf("summary = %q", e.Summary())
 			}
 		})
+	}
+}
+
+// Terraform still applies the resources that don't depend on a cluster whose
+// version change is refused, so no text about the refusal may say otherwise.
+func TestVersionRefusalTextsDoNotSayTheRestOfThePlanIsSkipped(t *testing.T) {
+	var s resource.SchemaResponse
+	(&clusterResource{}).Schema(context.Background(), resource.SchemaRequest{}, &s)
+	for name, text := range map[string]string{
+		"the plan's warning":         refusedAtApply(verRef(2)),
+		"the apply's error":          sentNothing(verRef(2)),
+		"cluster_type's description": s.Schema.Attributes["cluster_type"].GetMarkdownDescription(),
+	} {
+		for _, claim := range []string{"other changes", "none of"} {
+			if strings.Contains(text, claim) {
+				t.Errorf("%s says %q:\n%s", name, claim, text)
+			}
+		}
 	}
 }
 
