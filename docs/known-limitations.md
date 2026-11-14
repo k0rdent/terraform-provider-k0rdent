@@ -73,15 +73,17 @@ request.
   each attempt up to 30 seconds. After the last attempt it reports the
   platform's reason.
 
-The token request has a limit of its own. Each provider process asks for one
-access token and reuses it until shortly before it expires. A `terraform plan`
-takes one token, and so does an `apply` with nothing to change. An `apply`
-that changes something, or a `destroy`, takes two, because Terraform starts
-the provider again to make the change. A run that outlasts its token takes
-another. By default the platform gives a credential 10 tokens a minute, and a
-refused request counts too, so every run that uses one credential at the same
-time shares those 10. Give each pipeline that runs at the same time its own
-credential. A 429 on the token request says which limit it met, the
+The token request has a limit of its own. Terraform starts the provider once
+for each provider block, aliases included, and each one asks for one access
+token and reuses it until shortly before it expires. A `terraform plan` takes
+one token per provider block, and so does an `apply` with nothing to change.
+An `apply` that changes something, or a `destroy`, takes two per provider
+block, because Terraform starts the provider again to make the change. A run
+that outlasts its token takes another. By default the platform gives a
+credential 10 tokens a minute, and a refused request counts too, so runs that
+use one credential and start in the same minute share those 10. Start them
+further apart, or give pipelines that run at the same time credentials of
+their own. A 429 on the token request says which limit it met, the
 credential's or the gateway's for one client address, and how long the
 platform asked to wait if it named a wait.
 

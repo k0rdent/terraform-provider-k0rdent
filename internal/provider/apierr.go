@@ -187,20 +187,23 @@ const mintsPerMinute = 10
 // on one client address never does.
 func mintThrottledAdvice(err error, apiErr *k0rdent.APIError) string {
 	var waits string
+	next := "Run again in a minute."
 	var refused *refusedWaitError
 	if errors.As(err, &refused) {
 		w := refused.waits()
 		waits = strings.ToUpper(w[:1]) + w[1:] + ".\n\n"
+		next = "Wait as long as the platform asked, then run again."
 	}
 	if apiErr.Header.Get("Retry-After") == "" {
 		return waits + "This 429 came without a Retry-After, so it's the gateway's limit on requests from " +
 			"one client address. Every run from that address shares it. Run fewer at once from one " +
 			"address, or apply again in a minute."
 	}
-	return waits + fmt.Sprintf("The platform gives a credential a limited number of access tokens a minute, "+
-		"%d by default, and every run using the credential at the same time shares them. A plan takes "+
-		"one token, and an apply or a destroy up to two. Give each pipeline that runs at the same time "+
-		"its own credential.", mintsPerMinute)
+	return waits + fmt.Sprintf("The platform gives a credential %[1]d access tokens a minute by default, and "+
+		"refused requests count too. Each provider block, aliases included, asks for its own token, so runs "+
+		"that share this credential and start in the same minute share those %[1]d.\n\n"+
+		"%[2]s To stop it happening again, start those runs further apart, or give pipelines that run at "+
+		"the same time credentials of their own.", mintsPerMinute, next)
 }
 
 func apiErrorDetail(apiErr *k0rdent.APIError) string {
