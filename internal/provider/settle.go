@@ -190,6 +190,9 @@ func refusedByPlatform(err error) bool {
 // answer the resource, a 404 included, ends the wait.
 func (k stateKind[T]) awaitSettled(ctx context.Context, cfg waitConfig, what string, read stateRead[T]) error {
 	var last string
+	// failing is the failure the last read reported, if the platform can
+	// still take it back.
+	var failing error
 	err := waitFor(ctx, cfg, what, func(ctx context.Context) (bool, error) {
 		body, resp, raw, err := read(ctx)
 		if err != nil {
@@ -200,9 +203,15 @@ func (k stateKind[T]) awaitSettled(ctx context.Context, cfg waitConfig, what str
 				k0rdent.CheckResponse(resp, raw))
 		}
 		last, _ = k.state(*body)
-		return probeVerdict(k.decide(k.settle, *body))
+		done, err := probeVerdict(k.decide(k.settle, *body))
+		failing = nil
+		var provisional provisionalFailure
+		if errors.As(err, &provisional) {
+			failing = provisional.err
+		}
+		return done, err
 	})
-	return withLastState(err, last)
+	return withFailure(withLastState(err, last), failing)
 }
 
 // awaitDeleted waits for a delete to finish, which a 404 says it has.

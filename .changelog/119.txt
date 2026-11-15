@@ -1,0 +1,19 @@
+```release-note:bug
+provider: Correct the advice for a 429 on the token request, which counted tokens per command. It now says each provider block that calls the platform, aliases included, asks for its own token, and to wait as long as the platform asked when it named a wait
+```
+
+```release-note:bug
+resource/k0rdent_kubernetes_cluster: Report a create, a resumed create or a change whose wait times out while the cluster is `failed` as failed, with the platform's reason, instead of as still being created or still running
+```
+
+```release-note:enhancement
+resource/k0rdent_kubernetes_cluster: Add the `terraform import` command to the plan warning for an existing cluster that state doesn't hold
+```
+
+```release-note:enhancement
+resource/k0rdent_instance_group: Add the `terraform import` command to the plan warning for an existing instance group that state doesn't hold
+```
+
+```release-note:bug
+resource/k0rdent_instance_group: Fix "a instance group" in the 409 error for an existing instance group
+```

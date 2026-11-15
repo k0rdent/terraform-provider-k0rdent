@@ -77,6 +77,9 @@ type stoppedWaiting struct {
 	last string
 	// raise names the settings that lengthen the wait.
 	raise string
+	// failing is the failure the last read reported, when it was one the
+	// platform can still take back (provisionalFailure). Nil otherwise.
+	failing error
 }
 
 func (e stoppedWaiting) Error() string {
@@ -87,6 +90,10 @@ func (e stoppedWaiting) Error() string {
 	} else {
 		fmt.Fprintf(&b, "%s: waited %s for %s, which is as long as the timeout allows",
 			errWaitTimeout, e.waited.Round(time.Second), e.what)
+	}
+	if e.failing != nil {
+		fmt.Fprintf(&b, ". At the last read, %s", e.failing)
+		return b.String()
 	}
 	if e.last != "" {
 		fmt.Fprintf(&b, ". It was still `%s` at the last read", e.last)
@@ -120,6 +127,26 @@ func withLastState(err error, last string) error {
 	}
 	stopped.last = last
 	return stopped
+}
+
+// withFailure puts on a stoppedWaiting error the failure the wait's last read
+// reported, and returns any other error, or a nil failing, as it is.
+func withFailure(err, failing error) error {
+	var stopped stoppedWaiting
+	if failing == nil || !errors.As(err, &stopped) {
+		return err
+	}
+	stopped.failing = failing
+	return stopped
+}
+
+// failedWhenStopped reports whether err is a wait that stopped while the
+// object read as failed. It's still errWaitTimeout, but the platform reported
+// it failed at the last read, so a caller reports it as the failure, not as
+// still running.
+func failedWhenStopped(err error) bool {
+	var stopped stoppedWaiting
+	return errors.As(err, &stopped) && stopped.failing != nil
 }
 
 // waitFor polls probe until it reports done, the context is cancelled, or the

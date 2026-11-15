@@ -73,15 +73,18 @@ request.
   each attempt up to 30 seconds. After the last attempt it reports the
   platform's reason.
 
-The token request has a limit of its own. Each provider process asks for one
-access token and reuses it until shortly before it expires. A `terraform plan`
-takes one token, and so does an `apply` with nothing to change. An `apply`
-that changes something, or a `destroy`, takes two, because Terraform starts
-the provider again to make the change. A run that outlasts its token takes
-another. By default the platform gives a credential 10 tokens a minute, and a
-refused request counts too, so every run that uses one credential at the same
-time shares those 10. Give each pipeline that runs at the same time its own
-credential. A 429 on the token request says which limit it met, the
+The token request has a limit of its own. Terraform starts the provider once
+for each provider block, aliases included, and each one that calls the
+platform asks for one access token and reuses it until shortly before it
+expires. A `terraform plan` takes up to one token per provider block, and so
+does an `apply` with nothing to change. An `apply` that changes something, or
+a `destroy`, takes up to two per provider block, because Terraform starts the
+provider again to make the change. A run that outlasts its token takes
+another. By default the platform gives a
+credential 10 tokens a minute, and a refused request counts too, so runs that
+use one credential and start in the same minute share those 10. Start them
+further apart, or give pipelines that run at the same time credentials of
+their own. A 429 on the token request says which limit it met, the
 credential's or the gateway's for one client address, and how long the
 platform asked to wait if it named a wait.
 
@@ -115,6 +118,20 @@ Use 1.16.5 or later, or OpenTofu, which doesn't have it.
 
 If it already happened, [import](guides/import.md) each resource the run
 created, then keep it or destroy it.
+
+## A run killed during a create
+
+A run killed after it sends a create and before the create returns, such as
+by `kill -9` or a lost CI runner, saves nothing to state. The object stays on
+the platform.
+
+- With `id` set, the next apply fails with "already exists" and gives the
+  `terraform import` that takes the object back.
+- With `id` left out, the next apply generates another id and creates a
+  second object. The first has a `tf-` id other than the one
+  `terraform state show` gives, and this resource's display name if it sets
+  one. A data source such as `k0rdent_security_groups` lists them.
+  [Import](guides/import.md) it to keep it or destroy it.
 
 ## A refused plan stops `terraform destroy` too
 

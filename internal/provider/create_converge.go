@@ -477,7 +477,7 @@ func (c convergingCreate) proof(id string, l createLookup) string {
 func (c convergingCreate) addNotOurs(diags *diag.Diagnostics, id string, l createLookup, why string, a createAnswer) {
 	cannot := "it carries no create token from this apply"
 	if c.key.token == "" {
-		cannot = fmt.Sprintf("a %s has no tags to carry a create token, and its id was set in configuration", c.kind)
+		cannot = aKindMidSentence(c.kind) + " has no tags to carry a create token, and its id was set in configuration"
 	}
 	// Another apply's token. Terraform saves nothing for a run killed before
 	// its create returned, so the next apply meets the object that run left.
@@ -690,7 +690,9 @@ func (f createFinish[M]) run(ctx context.Context, create convergingCreate, plan 
 	}
 
 	if err := f.wait(ctx, id); err != nil {
-		if stillRunning(err) {
+		// A wait that stopped while the object read `failed` is reported as
+		// the failure, not as a create still running.
+		if stillRunning(err) && !failedWhenStopped(err) {
 			addCreateStillRunning(diags, create.kind, create.resourceName, err, true)
 			return none, false
 		}
@@ -699,7 +701,14 @@ func (f createFinish[M]) run(ctx context.Context, create convergingCreate, plan 
 			summary = fmt.Sprintf("The %s did not become active", create.kind)
 		}
 		report := f.reportWait
-		if report == nil {
+		switch {
+		case report != nil:
+		case failedWhenStopped(err):
+			report = func(diags *diag.Diagnostics, summary string, err error) {
+				addAdvisedError(diags, summary, "Nothing was deleted. "+
+					replaceAdvice(create.kind, create.resourceName), err)
+			}
+		default:
 			report = addWaitError
 		}
 		report(diags, summary, err)

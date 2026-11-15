@@ -30,8 +30,15 @@ var (
 		"` action cancels it and keeps the cluster, which the platform then settles `failed`."
 )
 
-// addClusterWaitError reports a failed cluster wait, with advice when it timed out.
+// addClusterWaitError reports a failed cluster wait, with advice when it timed
+// out on a change still running. One that stopped on `failed` isn't running,
+// and the plan's warning for a `failed` cluster gives the ways out (warnFailed).
 func addClusterWaitError(diags *diag.Diagnostics, summary, advice string, err error) {
+	if failedWhenStopped(err) {
+		addAdvisedError(diags, summary, "Nothing was deleted. While the cluster is still `failed`, "+
+			"`terraform plan` warns with the platform's reason and the ways to recover it.", err)
+		return
+	}
 	if errors.Is(err, errWaitTimeout) {
 		addAdvisedError(diags, summary, advice, err)
 		return
