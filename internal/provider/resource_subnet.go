@@ -257,7 +257,7 @@ func (r *subnetResource) Configure(_ context.Context, req resource.ConfigureRequ
 
 func (r *subnetResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
 	modifyScopePlan(ctx, r.meta, req, resp)
-	refusePlatformOwned(ctx, "cluster_id", "", req, resp)
+	refusePlatformOwned(ctx, "cluster_id", "", nil, req, resp) // its update sends nothing
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -380,10 +380,6 @@ func (r *subnetResource) Read(ctx context.Context, req resource.ReadRequest, res
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
-// Update is unreachable: every settable attribute carries RequiresReplace
-// because the API has no updateSubnet. It reports rather than silently
-// succeeding, because a silent success here writes a state that the platform
-// never agreed to.
 // Update makes no request: the API has none. What reaches here is a new
 // `timeouts` block, or a value adopted after an import, and both only need
 // writing to state.

@@ -562,8 +562,8 @@ func (r *networkResource) Configure(_ context.Context, req resource.ConfigureReq
 
 func (r *networkResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
 	modifyScopePlan(ctx, r.meta, req, resp)
-	planTagsAll(ctx, r.meta, req, resp)
-	refusePlatformOwned(ctx, "cluster_id", "", req, resp)
+	planTagsAllOwned(ctx, r.meta, "network", "cluster_id", "", req, resp)
+	refusePlatformOwned(ctx, "cluster_id", "", []string{"display_name", "description", "tags"}, req, resp)
 	if resp.Diagnostics.HasError() {
 		return
 	}

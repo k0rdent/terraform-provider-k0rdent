@@ -165,10 +165,11 @@ func (p *aiProvider) Schema(_ context.Context, _ provider.SchemaRequest, resp *p
 					"Each of those resources shows the result in its computed `tags_all`: these with the " +
 					"resource's own `tags` on top, a resource tag winning over a default with the same key. " +
 					"Changing one here updates each resource in place, and removing one removes it, except " +
-					"on a VPC peering, whose tags the API sets only at creation. A value that isn't known " +
-					"until apply is allowed. It leaves `tags_all` unknown in the plan, so every cluster, network " +
-					"and security group plans an in-place update, and at apply one whose tags come out the same " +
-					"as before sends nothing. A VPC peering plans nothing. The key `" +
+					"on a VPC peering, whose tags the API sets only at creation, and on a network or security " +
+					"group the platform owns, which keeps its tags, with a warning. A value that isn't known " +
+					"until apply is allowed. It leaves `tags_all` unknown in the plan, so every cluster, and every " +
+					"network and security group the platform doesn't own, plans an in-place update, and at apply " +
+					"one whose tags come out the same as before sends nothing. A VPC peering plans nothing. The key `" +
 					createTokenTag() + "` is the provider's own and is refused.",
 				Validators: []validator.Map{reservedTagKey{}},
 			},

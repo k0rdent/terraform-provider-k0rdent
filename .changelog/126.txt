@@ -1,0 +1,11 @@
+```release-note:bug
+resource/k0rdent_subnet: Fix a subnet the platform owns failing every plan, `terraform destroy` included, after its import. An update that sends nothing, such as the `allocate_gateway` value the first plan after an import shows, now applies
+```
+
+```release-note:bug
+resource/k0rdent_network: Fix a network the platform owns failing the plan on an update that sends nothing, such as a new `timeouts` block, and the provider's `default_tags` planning an update to it that the platform refused at apply. The network now keeps them out of its `tags_all`, with a warning
+```
+
+```release-note:bug
+resource/k0rdent_security_group: Fix a VPC's default security group failing the plan on an update that sends nothing, such as a new `timeouts` block, and the provider's `default_tags` planning an update to it that the platform refused at apply. The group now keeps them out of its `tags_all`, with a warning
+```

@@ -327,10 +327,12 @@ func (r *securityGroupResource) Configure(_ context.Context, req resource.Config
 
 func (r *securityGroupResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
 	modifyScopePlan(ctx, r.meta, req, resp)
-	planTagsAll(ctx, r.meta, req, resp)
 	// "vpc" specifically: the attribute is populated for every group the
 	// platform owns, and `vpc` is the only owner kind the contract declares.
-	refusePlatformOwned(ctx, "owner_kind", string(k0rdent.SecurityGroupOwnerKindVpc), req, resp)
+	owned := string(k0rdent.SecurityGroupOwnerKindVpc)
+	planTagsAllOwned(ctx, r.meta, "security group", "owner_kind", owned, req, resp)
+	refusePlatformOwned(ctx, "owner_kind", owned,
+		[]string{"display_name", "description", "tags", "ingress", "egress"}, req, resp)
 	if resp.Diagnostics.HasError() {
 		return
 	}

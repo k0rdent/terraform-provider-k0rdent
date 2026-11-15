@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"maps"
 	"net/netip"
 	"regexp"
 	"strconv"
@@ -15,6 +16,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/hashicorp/terraform-plugin-go/tftypes"
 )
 
 // The two format-constrained strings on the networking surface that
@@ -126,7 +128,9 @@ func parsePort(s string) (int, error) {
 }
 
 // refusePlatformOwned stops a plan that would write to an object the platform
-// owns rather than the tenant.
+// owns rather than the tenant: one that replaces it, or changes one of sent,
+// the attributes its update sends. An update that sends nothing, such as a new
+// `timeouts` block or a value an import couldn't recover, passes.
 //
 // Three resources expose a Computed attribute that says so: `cluster_id` on a
 // network or subnet the cluster lifecycle created, and `owner_kind` on a
@@ -137,17 +141,35 @@ func parsePort(s string) (int, error) {
 //
 // The check is on prior state, so it only ever fires on something imported or
 // previously read. A create cannot reach it.
-func refusePlatformOwned(ctx context.Context, attribute, owned string, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
+func refusePlatformOwned(ctx context.Context, attribute, owned string, sent []string, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
 	if req.State.Raw.IsNull() || req.Plan.Raw.IsNull() {
 		return
 	}
-	if req.Plan.Raw.Equal(req.State.Raw) {
-		return // a refresh with no change: reading one is allowed, writing is not
-	}
-
 	value, ok := platformOwner(ctx, attribute, owned, req.State)
 	if !ok {
 		return
+	}
+	replacing, known := plannedReplacements(ctx, req, resp)
+	var changed []string
+	for _, r := range replacing {
+		changed = append(changed, "`"+r.path.String()+"`")
+	}
+	var plan, prior map[string]tftypes.Value
+	readable := known && resp.Plan.Raw.As(&plan) == nil && req.State.Raw.As(&prior) == nil
+	for _, name := range sent {
+		if readable && !plan[name].Equal(prior[name]) {
+			changed = append(changed, "`"+name+"`")
+		}
+	}
+	if readable && len(changed) == 0 {
+		return
+	}
+	what, undo := "it", "undo the change"
+	switch n := len(changed); {
+	case n == 1:
+		what, undo = changed[0], "undo that change"
+	case n > 1:
+		what, undo = strings.Join(changed[:n-1], ", ")+" and "+changed[n-1], "undo those changes"
 	}
 	// Local: read from prior state, no request made. The upstream 409 this
 	// replaces would have carried a code and a request id; the point is that it
@@ -155,10 +177,49 @@ func refusePlatformOwned(ctx context.Context, attribute, owned string, req resou
 	resp.Diagnostics.AddError(
 		"This object is owned by the platform, not by the tenant",
 		fmt.Sprintf("`%s` is %q, which means the platform provisioned this object and the tenant "+
-			"API rejects any write to it. Changing it would fail partway through the apply. "+
-			"Remove it from the configuration and from state with `terraform state rm`.",
-			attribute, value),
+			"API rejects any write to it. This plan would change %s, so the plan is refused and "+
+			"nothing's changed.\n\n"+
+			"To keep managing it here, %s in the configuration. To stop managing it, "+
+			"remove its block from the configuration and run `terraform state rm` with its address.\n\n"+
+			"`terraform destroy` plans first, so while the change is in the configuration it fails "+
+			"here too. If you're destroying the whole configuration, run `terraform destroy "+
+			"-refresh=false` instead. It removes this object from state, leaves it on the platform, "+
+			"and destroys the rest as usual.",
+			attribute, value, what, undo),
 	)
+}
+
+// planTagsAllOwned is planTagsAll for a kind the platform can own. One it
+// owns keeps the tags it has, as a VPC peering does (planTagsAllAtCreation),
+// because the platform refuses the write that applying default_tags would be.
+// The plan warns when they'd change its tags.
+func planTagsAllOwned(ctx context.Context, meta *Meta, noun, attribute, owned string, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
+	value, ok := platformOwner(ctx, attribute, owned, req.State)
+	if !ok || req.Plan.Raw.IsNull() {
+		planTagsAll(ctx, meta, req, resp)
+		return
+	}
+	var tags, prior, held types.Map
+	resp.Diagnostics.Append(resp.Plan.GetAttribute(ctx, path.Root("tags"), &tags)...)
+	resp.Diagnostics.Append(req.State.GetAttribute(ctx, path.Root("tags"), &prior)...)
+	resp.Diagnostics.Append(req.State.GetAttribute(ctx, path.Root(tagsAllAttribute), &held)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, path.Root(tagsAllAttribute), held)...)
+	want, diags := meta.defaultTags().merge(ctx, tags)
+	resp.Diagnostics.Append(diags...)
+	// A change to `tags` itself is refused by refusePlatformOwned instead.
+	if want.IsUnknown() || !tags.Equal(prior) || maps.Equal(stringElements(want), stringElements(held)) {
+		return
+	}
+	// Local: decided from the provider block and prior state.
+	resp.Diagnostics.AddAttributeWarning(path.Root(tagsAllAttribute),
+		fmt.Sprintf("The provider's default_tags aren't applied to a %s the platform owns", noun),
+		fmt.Sprintf("The provider's `%s` would give this %s %s, and it has %s. `%s` is %q, so the platform "+
+			"owns it and refuses any change from this provider. Its tags are left as they are, and "+
+			"nothing is sent for it. Nothing needs to change.",
+			defaultTagsAttribute, noun, describeTags(want), describeTags(held), attribute, value))
 }
 
 // forgetPlatformOwned reports whether Delete should drop the resource from
