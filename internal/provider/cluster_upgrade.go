@@ -34,14 +34,14 @@ const versionRefusal = "Cannot move the cluster to a different version of its Cl
 // refusedAtApply ends the plan's warning. Naming the bound version matters:
 // after a failed step it isn't the one the configuration had before the edit.
 func refusedAtApply(bound string) string {
-	return fmt.Sprintf(" The apply checks this again. If it still holds, the apply fails before it sends any "+
-		"request, so none of this plan's other changes are made either. `terraform destroy` isn't affected. "+
+	return fmt.Sprintf(" The apply checks this again. If it still holds, the apply fails before it changes "+
+		"anything on this cluster. `terraform destroy` isn't affected. "+
 		"To keep the cluster on its current version, set `cluster_type` to %q.", bound)
 }
 
 // sentNothing ends the apply's refusal.
 func sentNothing(bound string) string {
-	return fmt.Sprintf(" This apply sent nothing, so the cluster is unchanged. To apply the rest of the "+
+	return fmt.Sprintf(" This apply sent nothing that changes the cluster. To apply the rest of the "+
 		"configuration, set `cluster_type` back to %q, the version the cluster is on now.", bound)
 }
 

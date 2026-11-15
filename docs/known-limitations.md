@@ -166,7 +166,7 @@ has to change to remove it. In short:
   - Pinning `cluster_type` to a later version upgrades the cluster in place,
     one version per step.
   - An earlier version plans with a warning and fails the apply before it
-    sends anything, since upgrades only go forward. So does any other
+    changes the cluster, since upgrades only go forward. So does any other
     version change the cluster can't take. `terraform destroy` still works.
   - A cluster left `failed` by an upgrade has to be fixed on the platform
     before it can be upgraded again.
