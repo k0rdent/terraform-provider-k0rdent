@@ -37,16 +37,16 @@ How to read a row:
 | `consumer_status.resolved_addresses` | computed | n/a | `TestAccImport`, `TestAccQueryGeneratesConfigThatPlansClean`, `TestReplacementsFollowTheDocumentedRules` | n/a (computed only) |
 | `consumer_status.state` | computed | n/a | `TestAccImport`, `TestAccQueryGeneratesConfigThatPlansClean`, `TestReplacementsFollowTheDocumentedRules` | n/a (computed only) |
 | `consumer_status.state_reason` | computed | n/a | **gap** | n/a (computed only) |
-| `consumers` | optional | in place | `TestAccImport`, `TestAccQueryGeneratesConfigThatPlansClean`, `TestReplacementsFollowTheDocumentedRules` | `TestAccFileStore`, `TestAccFileStoreConsumersDetach`, `TestAccFileStoreUngrantableGroupFailsThePlan` |
+| `consumers` | optional | in place | `TestAccImport`, `TestAccQueryGeneratesConfigThatPlansClean`, `TestReplacementsFollowTheDocumentedRules` | `TestAccFileStore`, `TestAccFileStoreConsumersDetach`, `TestAccFileStoreUngrantableGroupFailsTheApply` |
 | `consumers.access_level` | optional+computed | in place | `TestAccImport`, `TestAccQueryGeneratesConfigThatPlansClean`, `TestReplacementsFollowTheDocumentedRules` | **gap** |
 | `consumers.mount_path` | optional | in place | `TestAccImport`, `TestAccQueryGeneratesConfigThatPlansClean`, `TestReplacementsFollowTheDocumentedRules` | `TestAccFileStore`, `TestAccFileStoreConsumersDetach` |
-| `consumers.network` | optional | in place | **gap** | `TestAccFileStoreUngrantableGroupFailsThePlan` |
+| `consumers.network` | optional | in place | **gap** | `TestAccFileStoreUngrantableGroupFailsTheApply` |
 | `consumers.network.guid` | optional | in place | **gap** | **gap** |
 | `consumers.network.mac_address` | optional | in place | **gap** | **gap** |
-| `consumers.network.type` | required | in place | **gap** | `TestAccFileStoreUngrantableGroupFailsThePlan` |
-| `consumers.type` | optional+computed | in place | `TestAccImport`, `TestAccQueryGeneratesConfigThatPlansClean`, `TestReplacementsFollowTheDocumentedRules` | `TestAccFileStoreUngrantableGroupFailsThePlan` |
+| `consumers.network.type` | required | in place | **gap** | `TestAccFileStoreUngrantableGroupFailsTheApply` |
+| `consumers.type` | optional+computed | in place | `TestAccImport`, `TestAccQueryGeneratesConfigThatPlansClean`, `TestReplacementsFollowTheDocumentedRules` | `TestAccFileStoreUngrantableGroupFailsTheApply` |
 | `description` | optional | in place | **gap** | **gap** |
-| `display_name` | optional | in place | `TestAccFileStoreUpdateWaitsForACreatingStore`, `TestAccImport`, `TestAccQueryGeneratesConfigThatPlansClean`, `TestReplacementsFollowTheDocumentedRules` | `TestAccFileStore`, `TestAccFileStoreRenamePlansOnlyTheNameAndRevision`, `TestAccFileStoreUngrantableGroupFailsThePlan`, `TestReplacementsFollowTheDocumentedRules` |
+| `display_name` | optional | in place | `TestAccFileStoreUpdateWaitsForACreatingStore`, `TestAccImport`, `TestAccQueryGeneratesConfigThatPlansClean`, `TestReplacementsFollowTheDocumentedRules` | `TestAccFileStore`, `TestAccFileStoreRenamePlansOnlyTheNameAndRevision`, `TestAccFileStoreUngrantableGroupFailsTheApply`, `TestReplacementsFollowTheDocumentedRules` |
 | `etag` | computed | n/a | `TestAccImport`, `TestAccQueryGeneratesConfigThatPlansClean`, `TestReplacementsFollowTheDocumentedRules` | n/a (computed only) |
 | `export_locations` | computed | n/a | `TestAccImport`, `TestAccQueryGeneratesConfigThatPlansClean`, `TestReplacementsFollowTheDocumentedRules` | n/a (computed only) |
 | `export_locations.admin_only` | computed | n/a | `TestAccImport`, `TestAccQueryGeneratesConfigThatPlansClean`, `TestReplacementsFollowTheDocumentedRules` | n/a (computed only) |
@@ -287,8 +287,8 @@ How to read a row:
 | `is_active` | computed | n/a | `TestAccImport`, `TestAccQueryGeneratesConfigThatPlansClean` | n/a (computed only) |
 | `previous_secret_expires_at` | computed | n/a | **gap** | n/a (computed only) |
 | `rotated_at` | computed | n/a | **gap** | n/a (computed only) |
-| `rotation_overlap` | optional+computed | in place | `TestAccImport`, `TestAccQueryGeneratesConfigThatPlansClean`, `TestAccWebhookSubscriptionImportThenSecret` | `TestAccWebhookSubscription`, `TestAccWebhookSubscriptionPlansOnlyWhatMoves` |
+| `rotation_overlap` | optional+computed | in place | `TestAccImport`, `TestAccQueryGeneratesConfigThatPlansClean`, `TestAccWebhookSubscriptionImportThenSecret` | `TestAccWebhookSubscription`, `TestAccWebhookSubscriptionPlansOnlyWhatMoves`, `TestAccWebhookSubscriptionVersionUnknownAtPlan` |
 | `secret_version` | computed | n/a | `TestAccImport`, `TestAccQueryGeneratesConfigThatPlansClean` | n/a (computed only) |
-| `secret_wo` | write-only | in place | `TestAccWebhookSubscriptionImportThenSecret` | `TestAccWebhookSubscription`, `TestAccWebhookSubscriptionLetsGoOfItsSecret`, `TestAccWebhookSubscriptionPlansOnlyWhatMoves`, `TestAccWebhookSubscriptionVersionFromVariable` |
-| `secret_wo_version` | optional | in place | **gap** | `TestAccWebhookSubscription`, `TestAccWebhookSubscriptionLetsGoOfItsSecret`, `TestAccWebhookSubscriptionPlansOnlyWhatMoves`, `TestAccWebhookSubscriptionTurnedOffPlanWarns`, `TestAccWebhookSubscriptionVersionFromVariable`, `TestReplacementsFollowTheDocumentedRules` |
+| `secret_wo` | write-only | in place | `TestAccWebhookSubscriptionImportThenSecret` | `TestAccWebhookSubscription`, `TestAccWebhookSubscriptionLetsGoOfItsSecret`, `TestAccWebhookSubscriptionPlansOnlyWhatMoves`, `TestAccWebhookSubscriptionVersionFromVariable`, `TestAccWebhookSubscriptionVersionUnknownAtPlan` |
+| `secret_wo_version` | optional | in place | **gap** | `TestAccWebhookSubscription`, `TestAccWebhookSubscriptionLetsGoOfItsSecret`, `TestAccWebhookSubscriptionPlansOnlyWhatMoves`, `TestAccWebhookSubscriptionTurnedOffPlanWarns`, `TestAccWebhookSubscriptionVersionFromVariable`, `TestAccWebhookSubscriptionVersionUnknownAtPlan`, `TestReplacementsFollowTheDocumentedRules` |
 | `url` | required | replaces | `TestAccImport`, `TestAccQueryGeneratesConfigThatPlansClean`, `TestAccWebhookSubscriptionImportThenSecret` | n/a (always replaces) |

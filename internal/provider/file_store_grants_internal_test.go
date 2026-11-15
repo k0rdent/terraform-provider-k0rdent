@@ -155,9 +155,9 @@ func TestRefusedDriftAccumulatesAcrossGroups(t *testing.T) {
 }
 
 // The plan says what each verdict means for the entry it names, and an
-// ungrantable group stops the plan before a re-send is proposed.
+// ungrantable group is warned of in place of a re-send, which isn't proposed.
 func TestPlanDiagnosticsNameEachEntry(t *testing.T) {
-	diags := grantVerdicts{resend: []string{"trainers"}, held: []string{"inference"}}.planDiagnostics()
+	diags := grantVerdicts{resend: []string{"trainers"}, held: []string{"inference"}}.planDiagnostics(false)
 	if diags.HasError() || diags.WarningsCount() != 2 {
 		t.Fatalf("want two warnings: %v", diags)
 	}
@@ -171,17 +171,20 @@ func TestPlanDiagnosticsNameEachEntry(t *testing.T) {
 		}
 	}
 
-	diags = grantVerdicts{resend: []string{"trainers"}, ungrantable: []string{"retired"}}.planDiagnostics()
-	if diags.ErrorsCount() != 1 || diags.WarningsCount() != 0 {
-		t.Fatalf("want only the refusal: %v", diags)
+	diags = grantVerdicts{resend: []string{"trainers"}, ungrantable: []string{"retired"}}.planDiagnostics(false)
+	if diags.HasError() || diags.WarningsCount() != 1 {
+		t.Fatalf("want only the warning of the ungrantable group: %v", diags)
 	}
-	if !strings.Contains(diags.Errors()[0].Detail(), `"retired"`) {
-		t.Errorf("the refusal does not name the group: %q", diags.Errors()[0].Detail())
+	if w := diags.Warnings()[0]; w.Summary() != "A consumer group can no longer be granted" ||
+		!strings.Contains(w.Detail(), `"retired"`) || !strings.Contains(w.Detail(), "in place fails without changing it") ||
+		!strings.Contains(w.Detail(), "deletes the store and creates the new one with the entry") {
+		t.Errorf("the warning does not name the group, the apply's refusal and a forced replacement: %v", w)
 	}
 }
 
-// The plan and the update refuse an ungrantable group for the same reason, so
-// they say the same thing, about every group, whichever of them catches it.
+// A plan that replaces the store and the update refuse an ungrantable group
+// for the same reason, so they say the same thing, about every group,
+// whichever of them catches it.
 func TestAnUngrantableGroupIsRefusedOneWay(t *testing.T) {
 	const summary = "A consumer group can no longer be granted"
 	detail := func(ref string) string {
@@ -192,7 +195,7 @@ func TestAnUngrantableGroupIsRefusedOneWay(t *testing.T) {
 	}
 	v := grantVerdicts{ungrantable: []string{"evaluators", "retired"}}
 	for name, diags := range map[string]diag.Diagnostics{
-		"plan": v.planDiagnostics(), "apply": v.ungrantableErrors(),
+		"replacement": v.planDiagnostics(true), "apply": v.ungrantableErrors(),
 	} {
 		if diags.ErrorsCount() != 2 || len(diags) != 2 {
 			t.Fatalf("%s: %d diagnostics, want one error per group: %v", name, len(diags), diags)

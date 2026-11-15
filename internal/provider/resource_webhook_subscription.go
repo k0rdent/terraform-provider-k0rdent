@@ -181,8 +181,8 @@ func (r *webhookSubscriptionResource) Schema(_ context.Context, _ resource.Schem
 				Optional: true,
 				MarkdownDescription: "Any number that changes when `secret_wo` does. A change rotates " +
 					"the secret in place: the id, the endpoint and everything queued for it stay. " +
-					"It can be a literal, a variable or a local, but has to be known at plan time, so " +
-					"not a value only the apply works out, such as another resource's id. " +
+					"With a value only the apply works out, such as another resource's id, the secret " +
+					"rotates only if the value differs from the one in state. " +
 					"Removing it, with `secret_wo`, sends nothing and leaves the platform's secret as " +
 					"it is. After an import the provider can't know which secret the platform holds, " +
 					"so the first apply that sets this rotates to `secret_wo`. A rotation made outside " +
@@ -255,22 +255,6 @@ func (r *webhookSubscriptionResource) Configure(_ context.Context, req resource.
 func (r *webhookSubscriptionResource) ConfigValidators(context.Context) []resource.ConfigValidator {
 	return []resource.ConfigValidator{
 		resourcevalidator.RequiredTogether(path.MatchRoot("secret_wo"), path.MatchRoot("secret_wo_version")),
-	}
-}
-
-// refuseUnknownVersion refuses a secret version that's still unknown at plan
-// time. The version is the only thing a plan can see of a secret change, so a
-// plan with it unknown can't say whether the apply rotates. It runs in
-// ModifyPlan and not ValidateConfig, because Terraform validates with every
-// variable unknown, and a version from a variable is fine.
-func refuseUnknownVersion(version types.Int64, diags *diag.Diagnostics) {
-	if version.IsUnknown() {
-		// Local: configuration check, no request made.
-		diags.AddAttributeError(path.Root("secret_wo_version"),
-			"secret_wo_version has to be known at plan time",
-			"It's what tells a plan whether the signing secret rotates, so it can't come from a value "+
-				"only the apply works out, such as another resource's id. Use a literal, a variable, "+
-				"or a local built from them.")
 	}
 }
 
@@ -492,9 +476,11 @@ func rotatedElsewhere(prior, now types.Int64) bool {
 	return !prior.IsNull() && !prior.IsUnknown() && !now.IsNull() && now.ValueInt64() > prior.ValueInt64()
 }
 
-// ModifyPlan refuses a secret version only the apply knows and a new
-// subscription with no secret, and warns before a rotation that would drop a
-// secret receivers may still be on.
+// ModifyPlan refuses a new subscription with no secret, and a version with no
+// secret that RequiredTogether can't see at plan because it's unknown. It
+// warns before a rotation that would drop a secret receivers may still be on.
+// An unknown version isn't refused: Update rotates only if it differs from
+// state's, as `aws_db_instance` treats `password_wo_version`.
 func (r *webhookSubscriptionResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
 	if req.Plan.Raw.IsNull() {
 		return
@@ -506,7 +492,11 @@ func (r *webhookSubscriptionResource) ModifyPlan(ctx context.Context, req resour
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	if refuseUnknownVersion(plan.SecretWOVersion, &resp.Diagnostics); resp.Diagnostics.HasError() {
+	if plan.SecretWOVersion.IsUnknown() && secret.IsNull() {
+		// Local: configuration check, no request made.
+		resp.Diagnostics.AddAttributeError(path.Root("secret_wo_version"),
+			"secret_wo_version needs secret_wo",
+			"This configuration sets `secret_wo_version` and leaves `secret_wo` unset. Set both, or remove both.")
 		return
 	}
 	creating := req.State.Raw.IsNull()
@@ -532,7 +522,7 @@ func (r *webhookSubscriptionResource) ModifyPlan(ctx context.Context, req resour
 				"Terraform 1.11 or later. A subscription made some other way can be imported without one.")
 		return
 	}
-	if creating || !rotates(state.SecretWOVersion, plan.SecretWOVersion) {
+	if creating || plan.SecretWOVersion.IsUnknown() || !rotates(state.SecretWOVersion, plan.SecretWOVersion) {
 		return
 	}
 	if until, ok := parkedSecretDropped(state.PreviousSecretExpiresAt, plan.RotationOverlap, time.Now()); ok {
