@@ -396,8 +396,8 @@ func (k stateKind[T]) reportBusyWait(diags *diag.Diagnostics, err error) {
 		addWaitError(diags, summary, err)
 		return
 	}
-	advice := fmt.Sprintf("The platform deletes a %s only once it is `active` or `failed`, so the destroy "+
-		"waited for the operation running on it to finish, and the wait ended first. Nothing was deleted, "+
+	advice := fmt.Sprintf("The platform doesn't delete the %s while an operation is running on it, so the "+
+		"destroy waited for that operation to finish, and the wait ended first. Nothing was deleted, "+
 		"and the %s stays in state. Next: run `terraform destroy` again, which waits for the same operation "+
 		"and then deletes the %s.", k.name, k.name, k.name)
 	if !waitInterrupted(err) {

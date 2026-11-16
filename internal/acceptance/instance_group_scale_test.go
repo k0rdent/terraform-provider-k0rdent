@@ -2,7 +2,9 @@ package acceptance
 
 import (
 	"fmt"
+	"net/http"
 	"regexp"
+	"runtime"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
@@ -95,4 +97,46 @@ resource %q "test" {
 			{Config: config, ExpectError: regexp.MustCompile(`is still being created`)},
 		},
 	})
+}
+
+// The platform refuses to delete an instance group while it's `updating`,
+// with a CONFLICT_IN_USE 409, and says to retry once the group is `active` or
+// `failed`. A destroy that finds a scale running waits for it to finish and
+// then deletes the group. The scale is sent outside Terraform, as another run
+// would send it, so each destroy skips its refresh, as the plan's refusal of
+// the changed `node_pool` says to. That also leaves the read before the DELETE
+// the first of the two the fake takes to finish a scale.
+func TestAccInstanceGroupDestroyWaitsOutAScale(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS == "windows" {
+		skipTest(t, "the CLI sequence runs on unix")
+	}
+	const name = "acc-destroy-mid-scale"
+	path := "/v1/regions/us-texas-1/projects/demo/compute/instance-groups/" + name
+	c := newCLIRun(t)
+	c.write(instanceGroupConfig(name, 1))
+	if out, ok := c.run("apply", "-auto-approve"); !ok {
+		t.Fatalf("apply failed:\n%s", out)
+	}
+	destroyed := false
+	t.Cleanup(func() {
+		if destroyed {
+			return
+		}
+		if out, ok := c.run("destroy", "-auto-approve", "-refresh=false"); !ok {
+			t.Errorf("cleanup destroy failed:\n%s", out)
+		}
+	})
+
+	if err := postFake(path+"/scale", `{"nodePools":[{"nodePool":"gpu-workers","size":2}]}`); err != nil {
+		t.Fatalf("scale: %v", err)
+	}
+	out, ok := c.run("destroy", "-auto-approve", "-refresh=false")
+	if !ok {
+		t.Fatalf("the destroy of a group mid-scale failed:\n%s", out)
+	}
+	destroyed = true
+	if status, _, err := readFakeStore(path); err != nil || status != http.StatusNotFound {
+		t.Errorf("the group is still on the platform after the destroy: %d %v", status, err)
+	}
 }

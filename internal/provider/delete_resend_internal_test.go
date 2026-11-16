@@ -153,12 +153,13 @@ func TestADeleteResentAfterA504IsWaitedOut(t *testing.T) {
 	}
 }
 
-// A 409 on a resource that isn't `deleting` is a real refusal, and is
-// reported with the platform's own reason rather than waited on.
+// A 409 on a resource that is neither `deleting` nor mid-operation is a real
+// refusal, and is reported with the platform's own reason rather than waited
+// on. An `active` group answers one while its credentials can't be revoked yet.
 func TestADeleteRefusedForAnotherReasonIsStillReported(t *testing.T) {
 	api := &resentDeleteAPI{body: func(s string) map[string]any {
 		return map[string]any{"id": "x1", "clusterType": "/v1/regions/test/compute/cluster-types/t", "state": s}
-	}, refusal: http.StatusConflict, state: "updating"}
+	}, refusal: http.StatusConflict, state: "active"}
 	api.deletes = 1 // the first DELETE is the refused one
 	r := &instanceGroupResource{meta: resendingMeta(t, api.serve(t).URL)}
 	raw, s := testValue(t, r, map[string]tftypes.Value{"id": str("x1")})

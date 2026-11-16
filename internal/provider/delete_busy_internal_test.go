@@ -117,6 +117,7 @@ func busyKinds() []busyKind {
 	group := func(m *Meta) resource.Resource { return &securityGroupResource{meta: m} }
 	peering := func(m *Meta) resource.Resource { return &vpcPeeringResource{meta: m} }
 	net := func(m *Meta) resource.Resource { return &networkResource{meta: m} }
+	instances := func(m *Meta) resource.Resource { return &instanceGroupResource{meta: m} }
 	return []busyKind{
 		{"subnet", "creating", stateBody("state"), map[string]tftypes.Value{"network": str("n1")}, subnet},
 		{"security group", "creating", stateBody("state"), nil, group},
@@ -124,6 +125,7 @@ func busyKinds() []busyKind {
 		{"VPC peering", "creating", stateBody("state"), map[string]tftypes.Value{"vpc": str("v1")}, peering},
 		{"network", "creating", network, nil, net},
 		{"network", "updating", network, nil, net},
+		{"instance group", "updating", stateBody("state"), nil, instances},
 	}
 }
 
@@ -211,6 +213,9 @@ func TestADestroyThatOutwaitsItsTimeoutSaysToRunItAgain(t *testing.T) {
 			for _, want := range []string{
 				"The " + k.name + "'s operation did not finish before the destroy stopped waiting",
 				"It was still `" + k.busy + "` at the last read",
+				// Not "only once it is `active` or `failed`": an instance group
+				// is deleted while `creating` too.
+				"The platform doesn't delete the " + k.name + " while an operation is running on it",
 				"Nothing was deleted",
 				"run `terraform destroy` again",
 				"raise `delete` in the resource's `timeouts` block",
