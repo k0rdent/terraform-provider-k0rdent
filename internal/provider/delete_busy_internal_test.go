@@ -35,6 +35,9 @@ type busyDeleteAPI struct {
 	// that already finished.
 	settlesTo string
 	gone      bool
+	// hangs is the method the API never answers, so the destroy's timeout
+	// runs out in that request.
+	hangs string
 
 	mu      sync.Mutex
 	state   string
@@ -50,6 +53,10 @@ func (a *busyDeleteAPI) serve(t *testing.T) *httptest.Server {
 		reason = conflictInUse
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == a.hangs {
+			<-r.Context().Done()
+			return
+		}
 		a.mu.Lock()
 		defer a.mu.Unlock()
 		switch r.Method {
@@ -224,6 +231,45 @@ func TestADestroyThatOutwaitsItsTimeoutSaysToRunItAgain(t *testing.T) {
 				t.Errorf("%d DELETEs sent into a running operation", api.deletes)
 			}
 		})
+	}
+}
+
+// A timeout that runs out in the destroy's read or in its DELETE, before
+// there's a wait to stop, says what to do next too, as a wait's timeout does.
+// Every kind whose destroy goes through startDelete is held to it.
+func TestADestroyTimedOutBeforeItsWaitSaysToRunItAgain(t *testing.T) {
+	t.Parallel()
+	kinds := append(busyKinds(),
+		busyKind{name: "instance group", body: func(s string) map[string]any {
+			return map[string]any{"id": "x1", "clusterType": "/v1/regions/test/compute/cluster-types/t", "state": s}
+		}, build: func(m *Meta) resource.Resource { return &instanceGroupResource{meta: m} }},
+		busyKind{name: "project", body: stateBody("status"),
+			set:   map[string]tftypes.Value{"organization_id": str("org-1")},
+			build: func(m *Meta) resource.Resource { return &projectResource{meta: m} }},
+	)
+	for _, hangs := range []string{http.MethodGet, http.MethodDelete} {
+		for _, k := range kinds {
+			t.Run(strings.TrimSpace(hangs+"/"+k.name+" "+k.busy), func(t *testing.T) {
+				t.Parallel()
+				api := &busyDeleteAPI{hangs: hangs}
+				api.state = "active"
+				diags := destroyBusy(t, k, api, 500*time.Millisecond)
+				if !diags.HasError() {
+					t.Fatal("a destroy that timed out reported success")
+				}
+				text := strings.Join(strings.Fields(diagText(diags)), " ")
+				for _, want := range []string{
+					"The " + k.name + " did not finish deleting",
+					"for the " + k.name + " to be deleted, which is as long as the timeout allows",
+					"run `terraform destroy` again",
+					"raise `delete` in the resource's `timeouts` block",
+				} {
+					if !strings.Contains(text, want) {
+						t.Errorf("the diagnostic doesn't say %q:\n%s", want, text)
+					}
+				}
+			})
+		}
 	}
 }
 
