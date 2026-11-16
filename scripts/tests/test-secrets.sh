@@ -30,8 +30,11 @@ cp "$here/.gitleaks.toml" "$work/"
 cp "$here/.github/public-text/denylist.txt" "$here/.github/public-text/allowlist.txt" \
   "$here/.github/public-text/hashed.txt" "$work/.github/public-text/"
 
-hex="$(od -An -tx1 -N32 /dev/urandom | tr -d ' \n')"
-token="$(od -An -tx1 -N18 /dev/urandom | tr -d ' \n')"
+# Fixed values, not random ones: gitleaks skips a value that holds one of its
+# stopwords, such as "dead", and random hex held one in 3 of 800 runs.
+# gitleaks 8.30.1 flags both. They're split so this file holds neither whole.
+hex="$(printf '%s' b6cc8e3a c7f89b1a 0ba8a772 e333b53d c857f8b1 5d1df6c0 ab41b22a 4da72d39)"
+token="$(printf '%s' 494ec599 b65d74d5 06e06de1 93b34ac5 ee6b)"
 
 printf 'package x\n' > "$work/clean.go"
 git -C "$work" add -A
