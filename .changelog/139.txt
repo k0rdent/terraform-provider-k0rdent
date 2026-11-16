@@ -1,0 +1,23 @@
+```release-note:bug
+resource/k0rdent_network: Fix a destroy whose `delete` timeout ran out in its first read or in the DELETE failing with only `context deadline exceeded`. It now says the network stays in state and to run `terraform destroy` again
+```
+
+```release-note:bug
+resource/k0rdent_subnet: Fix a destroy whose `delete` timeout ran out in its first read or in the DELETE failing with only `context deadline exceeded`. It now says the subnet stays in state and to run `terraform destroy` again
+```
+
+```release-note:bug
+resource/k0rdent_security_group: Fix a destroy whose `delete` timeout ran out in its first read or in the DELETE failing with only `context deadline exceeded`. It now says the security group stays in state and to run `terraform destroy` again
+```
+
+```release-note:bug
+resource/k0rdent_vpc_peering: Fix a destroy whose `delete` timeout ran out in its first read or in the DELETE failing with only `context deadline exceeded`. It now says the VPC peering stays in state and to run `terraform destroy` again
+```
+
+```release-note:bug
+resource/k0rdent_instance_group: Fix a destroy whose `delete` timeout ran out in its first read or in the DELETE failing with only `context deadline exceeded`. It now says the instance group stays in state and to run `terraform destroy` again
+```
+
+```release-note:bug
+resource/k0rdent_project: Fix a destroy whose `delete` timeout ran out in its first read or in the DELETE failing with only `context deadline exceeded`. It now says the project stays in state and to run `terraform destroy` again
+```
