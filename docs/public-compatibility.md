@@ -66,7 +66,8 @@ interface.
 
 ## Terraform and cluster types
 
-- Terraform 1.10 or later. See the [support matrix](support-matrix.md).
+- The [support matrix](support-matrix.md) lists the Terraform and OpenTofu
+  versions CI tests.
 - An unversioned `cluster_type` stays as written, and the version the
   platform picked is in `cluster_type_resolved`.
 - Naming a different cluster type replaces the cluster.

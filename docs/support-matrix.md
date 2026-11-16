@@ -6,17 +6,28 @@ What this provider runs with, and what's not decided yet.
 
 | Provider | Terraform | OpenTofu |
 | --- | --- | --- |
-| 0.x | 1.10 and later | Tested in CI |
+| 0.x | 1.16 and 1.17, not 1.16.0 to 1.16.4 | 1.12 and 1.13 |
 
-- 1.10 is the minimum because the cluster kubeconfig is an ephemeral
-  resource, which older versions don't support.
-- Write-only attributes need 1.11: a cluster's or an instance group's
-  `ssh_public_keys_wo`, and a webhook subscription's `secret_wo`. An older
-  version fails the plan when a configuration sets one.
-- CI tests the two newest releases of each, the newest patch of the newest
-  minor and of the minor before it, not 1.10 itself. HashiCorp fixes only
-  those two Terraform minors.
+- CI runs the acceptance suite on the newest patch of each of these minor
+  versions, the ones in the matrices in `.github/workflows/ci.yml`. Older
+  versions aren't tested.
+- Terraform 1.16.0 to 1.16.4 can empty the state file when an apply is
+  interrupted. See [known limitations](known-limitations.md#terraform-1160-to-1164).
 - The nightly run tests Terraform and OpenTofu on the same configuration.
+
+Some features need a minimum Terraform version, from its changelog:
+
+| Feature | Used by | Terraform |
+| --- | --- | --- |
+| Ephemeral resources | the cluster kubeconfig | [1.10](https://github.com/hashicorp/terraform/blob/v1.10/CHANGELOG.md) |
+| Write-only attributes | `ssh_public_keys_wo`, `secret_wo` | [1.11](https://github.com/hashicorp/terraform/blob/v1.11/CHANGELOG.md) |
+| `import` blocks with `identity` | importing any resource by its parts | [1.12](https://github.com/hashicorp/terraform/blob/v1.12/CHANGELOG.md) |
+| Actions | `k0rdent_cluster_cancel_operation`, `k0rdent_instance_power` | [1.14](https://github.com/hashicorp/terraform/blob/v1.14/CHANGELOG.md) |
+| List resources and `terraform query` | finding resources to import | [1.14](https://github.com/hashicorp/terraform/blob/v1.14/CHANGELOG.md) |
+
+- OpenTofu has ephemeral resources and write-only attributes from
+  [1.11](https://github.com/opentofu/opentofu/blob/v1.11/CHANGELOG.md).
+- OpenTofu has no actions and no list resources.
 
 ## The k0rdent platform
 
@@ -27,6 +38,8 @@ What this provider runs with, and what's not decided yet.
 - The provider is built against API contract **v1.3.0-rc.2**. The client is
   generated from it into `internal/k0rdent` and committed, so every build uses
   the same client.
+- CI checks that the fake the tests run against was last compared with the
+  real API at the version in `ci/real-api/api-version`.
 - The contract version and the provider version change separately.
 
 Still to be decided:

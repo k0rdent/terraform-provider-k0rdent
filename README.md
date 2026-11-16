@@ -9,7 +9,9 @@ stores, projects and webhooks.
   [Terraform Registry](https://registry.terraform.io/providers/k0rdent/k0rdent/latest)
   and the
   [OpenTofu Registry](https://search.opentofu.org/provider/k0rdent/k0rdent/latest)
-- Needs Terraform 1.10 or later, but not 1.16.0 to 1.16.4 ([why](docs/known-limitations.md#terraform-1160-to-1164)), or OpenTofu
+- Tested with the two newest minor versions of Terraform and of OpenTofu,
+  listed in the [support matrix](docs/support-matrix.md)
+- Not Terraform 1.16.0 to 1.16.4 ([why](docs/known-limitations.md#terraform-1160-to-1164))
 - Reference docs: [`docs/`](docs/index.md), the same pages both registries show
 
 ## Install
@@ -31,7 +33,6 @@ terraform init
 
 - `tofu init` works the same way.
 - Air-gapped sites: [docs/install.md](docs/install.md).
-- Until the first release is out, [build from source](#build-from-source).
 
 ## Authenticate
 

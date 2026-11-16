@@ -11,7 +11,9 @@ One configuration, from nothing to a cluster you can reach.
 
 You need:
 
-- Terraform 1.10 or later, for ephemeral resources.
+- Terraform 1.16 or 1.17, or OpenTofu 1.12 or 1.13, the versions CI tests.
+  Not Terraform 1.16.0 to 1.16.4, which can empty the state file when an
+  apply is interrupted.
 - A service account's client id and secret. The authentication guide says how
   to get them.
 
