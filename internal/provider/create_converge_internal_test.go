@@ -361,6 +361,33 @@ func TestA409ForAKindWithoutTagsNamesTheKindWithItsArticle(t *testing.T) {
 	}
 }
 
+// A 409 the platform gives a next step of its own, such as a subnet create on
+// a network the platform owns, is refused with the import alone. The
+// platform's "replace the resource" would undo the import's way back.
+func TestA409ForOneThatExistsGivesOnlyTheImport(t *testing.T) {
+	c := convergingCreate{kind: "subnet", resourceName: ResourceName("test"), importID: func(id string) string { return id }}
+	a := createAnswer{
+		resp: &http.Response{StatusCode: http.StatusConflict, Status: "409 Conflict"},
+		body: []byte(`{"error":{"code":409,"message":"immutable field: network \"n\" is cluster-provisioned",` +
+			`"details":[{"reason":"CONFLICT_IMMUTABLE"}]}}`),
+	}
+	var diags diag.Diagnostics
+	c.addNotOurs(&diags, "x", createLookup{found: true}, "answered 409", a)
+	errs := diags.Errors()
+	if len(errs) != 1 {
+		t.Fatalf("want one error, got %v", errs)
+	}
+	detail := errs[0].Detail()
+	for _, want := range []string{"terraform import <address> x", "CONFLICT_IMMUTABLE"} {
+		if !strings.Contains(detail, want) {
+			t.Errorf("the refusal doesn't say %q:\n%s", want, detail)
+		}
+	}
+	if strings.Contains(detail, "-replace") {
+		t.Errorf("the refusal gives the platform's next step too:\n%s", detail)
+	}
+}
+
 // A 504 whose workflow start timed out names the cluster it persisted. That
 // cluster is recorded and waited out like a 201.
 func TestACluster504NamingTheClusterIsWaitedOut(t *testing.T) {

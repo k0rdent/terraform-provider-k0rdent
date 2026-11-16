@@ -492,11 +492,12 @@ func (c convergingCreate) addNotOurs(diags *diag.Diagnostics, id string, l creat
 		"If it is the one this configuration describes, import it, replacing <address> with this "+
 		"resource's address, such as %s.example:\n\n"+
 		"    terraform import <address> %s\n\n"+
-		"Otherwise choose another `id`.",
+		"If another configuration or workspace manages it, choose another `id` for this one.",
 		c.kind, id, why, cannot, likely, c.resourceName, c.importID(id))
+	// The platform's own next step is left out: the import above is the one to take.
 	var apiErr *k0rdent.APIError
 	if a.resp != nil && errors.As(k0rdent.CheckResponse(a.resp, a.body), &apiErr) {
-		detail += "\n\n" + apiErrorDetail(apiErr)
+		detail += "\n\n" + apiErrorDetailGuided(apiErr, false)
 	}
 	diags.AddError(fmt.Sprintf("%s named %q already exists", aKind(c.kind), id), redactDiagnosticText(detail))
 }
