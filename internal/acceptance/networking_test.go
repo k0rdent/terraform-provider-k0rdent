@@ -1,6 +1,7 @@
 package acceptance
 
 import (
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"strings"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/plancheck"
+	"github.com/hashicorp/terraform-plugin-testing/terraform"
 
 	"github.com/k0rdent/terraform-provider-k0rdent/internal/provider"
 )
@@ -468,6 +470,109 @@ resource %q "test" {
 				Config: permitReplace(config(`pkey = "0x20"`), networkType),
 				ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{
 					plancheck.ExpectResourceAction(networkAddr, plancheck.ResourceActionReplace),
+				}},
+			},
+		},
+	})
+}
+
+func ibUnsetFlagsConfig(name, extra string) string {
+	return fmt.Sprintf(`
+resource %q "test" {
+  id = %q
+  %s
+  infiniband = {
+    partition = "training"
+  }
+}
+`, networkType, name, extra)
+}
+
+// `index0` and `ip_over_ib` have no provider default, so a configuration that
+// sets neither sends neither, and the fabric applies its own.
+func TestAccNetworkInfiniBandSendsNoUnsetFlag(t *testing.T) {
+	t.Parallel()
+	const name = "acc-ib-unset"
+	config := ibUnsetFlagsConfig(name, "")
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: protoV6,
+		CheckDestroy:             checkGone(networkType, networkPath),
+		Steps: []resource.TestStep{
+			{
+				Config: config,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					func(*terraform.State) error {
+						var n struct {
+							Infiniband map[string]any `json:"infiniband"`
+						}
+						readStored(t, networkPath(map[string]string{"region": "us-texas-1", "project": "demo", "id": name}), &n)
+						for _, flag := range []string{"index0", "ipOverIb"} {
+							if v, ok := n.Infiniband[flag]; ok {
+								return fmt.Errorf("the platform holds %s = %v, which the configuration never set", flag, v)
+							}
+						}
+						return nil
+					},
+					resource.TestCheckResourceAttr(networkAddr, "infiniband.index0", "false"),
+					resource.TestCheckNoResourceAttr(networkAddr, "infiniband.ip_over_ib"),
+				),
+			},
+			{Config: config, PlanOnly: true},
+		},
+	})
+}
+
+// A network made outside Terraform without `ipOverIb` reports none, and with
+// `ip_over_ib` unset the import used to plan a refused replacement, to `false`.
+func TestAccNetworkInfiniBandImportWithoutIPOverIB(t *testing.T) {
+	t.Parallel()
+	const name = "acc-ib-console"
+	config := func(extra string) string { return ibUnsetFlagsConfig(name, extra) }
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: protoV6,
+		CheckDestroy:             checkGone(networkType, networkPath),
+		Steps: []resource.TestStep{
+			{
+				PreConfig: func() {
+					if err := postFake("/v1/regions/us-texas-1/projects/demo/networking/networks",
+						`{"id":"`+name+`","type":"infiniband","infiniband":{"partition":"training"}}`); err != nil {
+						t.Fatal(err)
+					}
+					// The fake settles a network by being read, and one made
+					// in the console has long settled by the time of an import.
+					path := networkPath(map[string]string{"region": "us-texas-1", "project": "demo", "id": name})
+					var n struct {
+						State string `json:"state"`
+					}
+					for range 20 {
+						if _, body, err := readFake(path); err != nil || json.Unmarshal(body, &n) != nil {
+							t.Fatalf("reading %s: %v %s", path, err, body)
+						}
+						if n.State == "active" {
+							return
+						}
+					}
+					t.Fatalf("%s is still %q after 20 reads", name, n.State)
+				},
+				// An update, not a replacement: the import records the
+				// reported PKey and nothing else changes.
+				Config: config("") + fmt.Sprintf(`
+import {
+  to = %s
+  id = "us-texas-1/demo/%s"
+}
+`, networkAddr, name),
+				ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{
+					plancheck.ExpectResourceAction(networkAddr, plancheck.ResourceActionUpdate),
+				}},
+				Check: resource.TestCheckNoResourceAttr(networkAddr, "infiniband.ip_over_ib"),
+			},
+			{Config: config(""), PlanOnly: true},
+			// Any other change leaves the network in place.
+			{
+				Config: config(`tags = { team = "ml" }`),
+				ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{
+					plancheck.ExpectResourceAction(networkAddr, plancheck.ResourceActionUpdate),
 				}},
 			},
 		},
