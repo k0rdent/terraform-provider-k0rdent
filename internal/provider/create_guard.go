@@ -126,8 +126,6 @@ func (e existing) warnReplacing(diags *diag.Diagnostics) {
 		"address, such as %s.example:\n\n"+
 		"    terraform import <address> %s",
 		e.resourceName, scopedImportID(e.target)(e.id))
-	destroyToo := "\n\n`terraform destroy` shows this warning too, from the plan it runs first to refresh state. " +
-		"It replaces nothing."
 	origin := aKind(e.kind) + " has no tags to carry a create token, so it passes on its state alone."
 	if e.tagged {
 		origin = "It carries this provider's create token, so a Terraform apply made it."
@@ -138,7 +136,7 @@ func (e existing) warnReplacing(diags *diag.Diagnostics) {
 			redactDiagnosticText(fmt.Sprintf("The platform reports %s %q as `failed`. %s If this state holds it, "+
 				"a failed create leaves it tainted, so applying this plan deletes it and creates it again. Its "+
 				"delete can fail the way its create did. To only remove it, run `terraform destroy` instead.\n\n%s",
-				e.kind, e.id, origin, notHeld)+destroyToo))
+				e.kind, e.id, origin, notHeld)))
 		return
 	}
 	keep := fmt.Sprintf("To keep it and wait for it instead, replacing <address> with this resource's address, "+
@@ -156,7 +154,7 @@ func (e existing) warnReplacing(diags *diag.Diagnostics) {
 	}
 	diags.AddAttributeWarning(path.Root("id"), summary, redactDiagnosticText(fmt.Sprintf(
 		"The platform reports %s %q as `%s`. %s If this state holds it tainted, as a create that stopped "+
-			"waiting leaves it, %s\n\n%s\n\n%s", e.kind, e.id, e.state, origin, does, keep, notHeld)+destroyToo))
+			"waiting leaves it, %s\n\n%s\n\n%s", e.kind, e.id, e.state, origin, does, keep, notHeld)))
 }
 
 // aKindMidSentence is aKind for the middle of a sentence: "an instance group".

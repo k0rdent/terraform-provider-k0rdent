@@ -169,8 +169,7 @@ func (r *clusterResource) Schema(ctx context.Context, _ resource.SchemaRequest, 
 			"Run `terraform untaint` on it and then `terraform apply`, which waits for the same cluster. " +
 			"A plan that would replace it instead warns before the approval, in whatever state the " +
 			"platform reports, that applying it cancels what's still being built, or deletes the " +
-			"cluster, and creates it again. `terraform destroy` runs that plan first to refresh state, so " +
-			"it shows the warning too, and then only deletes. A failed cluster's delete can fail too. " +
+			"cluster, and creates it again. A failed cluster's delete can fail too. " +
 			"A create of an `id` the platform holds for a cluster without this provider's create token, " +
 			"such as one made outside Terraform, is refused unless `allow_replace = true`. One with the " +
 			"token passes, since only an apply can tell whether this state holds it: if another state " +
@@ -765,7 +764,7 @@ func (r *clusterResource) Update(ctx context.Context, req resource.UpdateRequest
 	}
 	// The plan only warns about a version change the apply refuses, so it's
 	// refused here, before any write, or the rest would land without it.
-	if r.refuseVersionChange(ctx, target, id, plan, state, &resp.Diagnostics) {
+	if r.refuseVersionChange(ctx, target, id, plan, state, req.Private, &resp.Diagnostics) {
 		return
 	}
 

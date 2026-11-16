@@ -345,7 +345,7 @@ func TestUpgradePath(t *testing.T) {
 		{"one step", 1, 2, []int{2}, ""},
 		{"over a draft", 1, 4, []int{2, 4}, ""},
 		{"already there", 2, 2, nil, ""},
-		{"backwards", 4, 2, nil, "forward-only"},
+		{"backwards", 4, 2, nil, "names version 2, and state has the cluster on version 4. Upgrades are forward-only"},
 		{"to a draft", 2, 3, nil, "draft"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -361,6 +361,10 @@ func TestUpgradePath(t *testing.T) {
 	}
 	if _, refusal := upgradePath(versions, ver(1), "99999999-0000-4000-8000-000000000000"); !strings.Contains(refusal, "not a version") {
 		t.Errorf("an unknown version: %q", refusal)
+	}
+	// State's version, which -refresh=false doesn't update, isn't called the platform's.
+	if _, refusal := upgradePath(versions, "99999999-0000-4000-8000-000000000000", ver(1)); !strings.Contains(refusal, "State has the cluster bound to version id") {
+		t.Errorf("an unknown bound version: %q", refusal)
 	}
 }
 
@@ -690,11 +694,13 @@ func TestPlanWarnsOfAVersionChangeTheApplyRefuses(t *testing.T) {
 			if !strings.Contains(w.Detail(), tc.want) {
 				t.Errorf("warning:\n%s\n%s", w.Summary(), w.Detail())
 			}
-			for _, want := range []string{"fails before it changes anything on this cluster", "`terraform destroy` isn't affected", tc.bound} {
+			for _, want := range []string{"fails before it changes anything on this cluster", "`terraform destroy` isn't affected",
+				fmt.Sprintf("%q, the version in state", tc.bound)} {
 				if !strings.Contains(w.Detail(), want) {
 					t.Errorf("the warning doesn't say %q:\n%s", want, w.Detail())
 				}
 			}
+			saysKeep(t, "the warning", w.Detail(), tc.state == "failed")
 			if strings.Contains(w.Detail(), "-refresh=false") {
 				t.Errorf("the warning still offers -refresh=false:\n%s", w.Detail())
 			}
@@ -737,16 +743,63 @@ func TestApplyRefusesAVersionChangeBeforeAnyRequest(t *testing.T) {
 				t.Fatal("the apply wasn't refused")
 			}
 			e := resp.Diagnostics.Errors()[0]
-			for _, want := range []string{tc.want, "This apply sent nothing that changes the cluster", tc.bound} {
+			for _, want := range []string{tc.want, "This apply sent nothing that changes the cluster",
+				fmt.Sprintf("%q, the version in state", tc.bound)} {
 				if !strings.Contains(e.Detail(), want) {
 					t.Errorf("the error doesn't say %q:\n%s\n%s", want, e.Summary(), e.Detail())
 				}
 			}
+			saysKeep(t, "the error", e.Detail(), tc.state == "failed")
 			if e.Summary() != versionRefusal {
 				t.Errorf("summary = %q", e.Summary())
 			}
 		})
 	}
+}
+
+// saysKeep checks that a refusal for a `failed` cluster an apply would wait
+// for says to set on_failed too: with `cluster_type` set back alone, that
+// apply waits and fails while the cluster stays `failed`.
+func saysKeep(t *testing.T, what, detail string, want bool) {
+	t.Helper()
+	if got := strings.Contains(detail, "Set `on_failed = \"keep\"` too"); got != want {
+		t.Errorf("%s says to set on_failed: %t, want %t:\n%s", what, got, want, detail)
+	}
+}
+
+// A failed cluster already kept with `on_failed = "keep"` isn't waited for,
+// so neither the plan's warning nor the apply's error asks for it again.
+func TestAKeptFailedClusterIsNotAskedToKeepIt(t *testing.T) {
+	api := &upgradeAPI{bound: 2, state: "failed", workers: 2}
+	server := api.serve(t)
+	meta := testClusterMeta(t, server.URL, time.Minute)
+	prior := clusterValues(verRef(2), verRef(2), 2, "failed")
+	planned := clusterValues(verRef(4), verRef(2), 2, "failed")
+	planned["on_failed"] = str("keep")
+	resp := planWith(t, meta, prior, planned)
+	var refusal string
+	for _, w := range resp.Diagnostics.Warnings() {
+		if w.Summary() == versionRefusal {
+			refusal = w.Detail()
+		}
+	}
+	if refusal == "" {
+		t.Fatalf("no refusal in %v", resp.Diagnostics)
+	}
+	saysKeep(t, "the warning", refusal, false)
+
+	r := &clusterResource{meta: meta}
+	stateRaw, s := testValue(t, r, prior)
+	planRaw, _ := testValue(t, r, planned)
+	update := resource.UpdateResponse{State: tfsdk.State{Raw: stateRaw, Schema: s.Schema}}
+	r.Update(context.Background(), resource.UpdateRequest{
+		State: tfsdk.State{Raw: stateRaw, Schema: s.Schema},
+		Plan:  tfsdk.Plan{Raw: planRaw, Schema: s.Schema},
+	}, &update)
+	if !update.Diagnostics.HasError() || update.Diagnostics.Errors()[0].Summary() != versionRefusal {
+		t.Fatalf("the apply wasn't refused: %v", update.Diagnostics)
+	}
+	saysKeep(t, "the error", update.Diagnostics.Errors()[0].Detail(), false)
 }
 
 // Terraform still applies the resources that don't depend on a cluster whose
@@ -755,8 +808,8 @@ func TestVersionRefusalTextsDoNotSayTheRestOfThePlanIsSkipped(t *testing.T) {
 	var s resource.SchemaResponse
 	(&clusterResource{}).Schema(context.Background(), resource.SchemaRequest{}, &s)
 	for name, text := range map[string]string{
-		"the plan's warning":         refusedAtApply(verRef(2)),
-		"the apply's error":          sentNothing(verRef(2)),
+		"the plan's warning":         refusedAtApply(verRef(2), true),
+		"the apply's error":          sentNothing(verRef(2), true),
 		"cluster_type's description": s.Schema.Attributes["cluster_type"].GetMarkdownDescription(),
 	} {
 		for _, claim := range []string{"other changes", "none of"} {

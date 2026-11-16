@@ -412,7 +412,7 @@ func TestTheUpgradeLoopStopsOnWhatAPassReads(t *testing.T) {
 	t.Run("the bound version under another origin", func(t *testing.T) {
 		api := &upgradeAPI{bound: 1, state: "active", workers: 2, origin: "https://api.k0rdent.test"}
 		resp := upgradeTo(t, api, "https://elsewhere.test"+verRef(1))
-		if got := detailOf(resp.Diagnostics); !strings.Contains(got, "different origin than the platform's") {
+		if got := detailOf(resp.Diagnostics); !strings.Contains(got, "different origin than state's") {
 			t.Errorf("diagnostics:\n%s", got)
 		}
 		if len(api.calls) != 0 || api.lists != 1 {

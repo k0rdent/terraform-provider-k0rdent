@@ -111,7 +111,7 @@ func TestAccADestroyRunsPastATaintedCreateInEveryState(t *testing.T) {
 				t.Errorf("the plan of the tainted %s %s was refused:\n%s", tc.state, tc.typeName, out)
 			}
 			mustSay(t, "the plan", out, append([]string{taintedReplaced(t),
-				"1 to add, 0 to change, 1 to destroy", "`terraform destroy` shows this warning too"}, tc.warns...)...)
+				"1 to add, 0 to change, 1 to destroy"}, tc.warns...)...)
 
 			out, ok = c.run("destroy", "-auto-approve")
 			if !ok {
@@ -119,6 +119,8 @@ func TestAccADestroyRunsPastATaintedCreateInEveryState(t *testing.T) {
 			}
 			destroyed = true
 			mustSay(t, "the destroy", out, "1 destroyed")
+			// Terraform drops the warnings of the plan a destroy refreshes with.
+			mustNotSay(t, "the destroy", out, "if this state holds it")
 			if listed, ok := c.run("state", "list"); !ok || strings.TrimSpace(listed) != "" {
 				t.Errorf("state isn't empty after the destroy:\n%s", listed)
 			}
