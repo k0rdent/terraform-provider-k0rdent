@@ -23,6 +23,8 @@ type busyStore struct {
 	// inUseWhileActive is how many PATCHes an `active` store refuses with
 	// CONFLICT_IN_USE first, as one whose quota accounting is settling does.
 	inUseWhileActive int
+	// activeRefusal, when set, is the body of those refusals instead.
+	activeRefusal string
 }
 
 func newBusyStore(t *testing.T, creating int) *busyStore {
@@ -35,6 +37,9 @@ func newBusyStore(t *testing.T, creating int) *busyStore {
 		case now["state"] != "active":
 			refuse(t, w, `{"error":{"code":409,"message":"the store is creating and does not accept updates",`+
 				`"details":[{"reason":"CONFLICT_IN_USE"}]}}`)
+		case b.inUseWhileActive > 0 && b.activeRefusal != "":
+			b.inUseWhileActive--
+			refuse(t, w, b.activeRefusal)
 		case b.inUseWhileActive > 0:
 			b.inUseWhileActive--
 			refuse(t, w, `{"error":{"code":409,"message":"a capacity change is still settling",`+

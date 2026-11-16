@@ -125,15 +125,16 @@ func upgradeRefusal(state k0rdent.ClusterState) string {
 	return ""
 }
 
-// scaleMayRetry says whether a refused scale is worth sending again. A 409
-// with no reason on an active cluster is the few seconds its quota accounting
-// takes to catch up, and the contract says to retry. The same 409 on a cluster
-// that is busy or failed, or one with a reason such as QUOTA_EXCEEDED, is the
-// answer. state reads the cluster, and is called only for a refusal that could
-// be the window. Its ok is false when the read did not say.
+// scaleMayRetry says whether a refused scale is worth sending again. A 409 on
+// an active cluster with no reason (API v1.3), or with CONFLICT_STATE or
+// CONFLICT_VERSION (v1.4), is the few seconds its quota accounting takes to
+// catch up, or an operation that started first and has finished, and the
+// contract says to retry. The same 409 on a cluster that is busy or failed, or
+// one with another reason such as QUOTA_EXCEEDED, is the answer. state reads
+// the cluster, and is called only for a refusal that could be the window. Its
+// ok is false when the read did not say.
 func scaleMayRetry(refusal *k0rdent.APIError, state func() (k0rdent.ClusterState, bool)) bool {
-	bare := refusal.StatusCode == http.StatusConflict && refusal.Reason == "" && len(refusal.DetailReasons()) == 0
-	if !bare {
+	if refusal.StatusCode != http.StatusConflict || !onlyReasons(refusal, conflictState, conflictVersion) {
 		return false
 	}
 	now, ok := state()

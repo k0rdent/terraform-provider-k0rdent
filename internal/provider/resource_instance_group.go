@@ -629,10 +629,10 @@ func (r *instanceGroupResource) scaleUp(ctx context.Context, target clusterTarge
 // scaleOnce sends one scale and waits until the platform admits it.
 //
 // Two answers are a wait rather than a refusal, and the platform writes nothing
-// on either, so resending is safe. A reason-less 409 on an active group is its
-// quota accounting settling, which the contract says clears within seconds, and
-// on a creating or updating group it is another operation in flight, which
-// clears when that finishes. A 503 is a pool size the platform could not
+// on either, so resending is safe. A lifecycle 409 (isLifecycleConflict) on
+// an active group is its quota accounting settling, which the contract says
+// clears within seconds, and on a creating or updating group it is another
+// operation in flight, which clears when that finishes. A 503 is a pool size the platform could not
 // confirm, which it says clears on its own, but the service also answers 503
 // for causes that never clear, so a 503 is tolerated only for the provisional
 // window. Everything else is the answer.
@@ -715,18 +715,12 @@ type scaleOutcome struct {
 	interrupted bool   // the timeout ran out with a scale request on its way
 }
 
-// isLifecycleConflict reports the 409 the contract calls reason-less. The
-// service writes it with details[].reason CONFLICT_IN_USE, so that counts too.
+// isLifecycleConflict reports the 409 of another operation in flight or of
+// quota accounting still settling. API v1.3's contract calls it reason-less,
+// and the service writes details[].reason CONFLICT_IN_USE. v1.4 writes
+// CONFLICT_IN_USE and CONFLICT_STATE, at the top level too.
 func isLifecycleConflict(e *k0rdent.APIError) bool {
-	if e.StatusCode != http.StatusConflict || e.Reason != "" {
-		return false
-	}
-	for _, reason := range e.DetailReasons() {
-		if reason != "CONFLICT_IN_USE" {
-			return false
-		}
-	}
-	return true
+	return e.StatusCode == http.StatusConflict && onlyReasons(e, conflictInUse, conflictState)
 }
 
 // advice says what to do about a scale the platform refused, or about one

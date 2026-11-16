@@ -69,6 +69,14 @@ type upgradeAPI struct {
 	// leaving the cluster `updating` for the next read to settle.
 	ceiling    int
 	busyRaises int
+	// busyRaiseBody is the body of each of those refusals, the reason-less
+	// one when empty.
+	busyRaiseBody string
+
+	// settlingScales is how many scales of an `active` cluster are refused
+	// with settlingScaleBody first, as while its quota accounting settles.
+	settlingScales    int
+	settlingScaleBody string
 
 	// busyUpgrades is how many upgrades find that another run started an
 	// operation on the cluster just before them: each is refused with the
@@ -212,6 +220,12 @@ func (a *upgradeAPI) serve(t *testing.T) *httptest.Server {
 			if a.busyRaises > 0 {
 				a.busyRaises--
 				a.state = "updating"
+				if a.busyRaiseBody != "" {
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusConflict)
+					_, _ = w.Write([]byte(a.busyRaiseBody))
+					return
+				}
 			}
 			refuseWith(w, http.StatusConflict)
 		default:
@@ -268,6 +282,11 @@ func (a *upgradeAPI) serve(t *testing.T) *httptest.Server {
 		switch {
 		case a.state != "active":
 			refuseWith(w, http.StatusConflict)
+		case a.settlingScales > 0:
+			a.settlingScales--
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusConflict)
+			_, _ = w.Write([]byte(a.settlingScaleBody))
 		case !a.fits(a.bound, n):
 			refuseWith(w, http.StatusUnprocessableEntity)
 		default:

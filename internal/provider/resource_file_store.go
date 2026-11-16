@@ -1059,9 +1059,10 @@ func (r *fileStoreResource) patch(ctx context.Context, target clusterTarget, id 
 }
 
 // sendUpdate sends the PATCH, and sends it again for as long as the platform
-// refuses it with CONFLICT_IN_USE because the store isn't yet updatable. It
-// returns the last answer, or false when it gave up waiting, with the refusal
-// and the wait in diags.
+// refuses it with CONFLICT_IN_USE, or from API v1.4 CONFLICT_STATE for the
+// quota causes, because the store isn't yet updatable. It returns the last
+// answer, or false when it gave up waiting, with the refusal and the wait in
+// diags.
 //
 // The contract names the causes: the store is `creating`, `deleting` or
 // `failed`, a previous capacity change is still settling its quota

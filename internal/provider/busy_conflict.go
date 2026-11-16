@@ -85,13 +85,13 @@ var busyConflictDecisions = map[string]busyConflictDecision{
 	},
 	"scaleCluster": {
 		says: "Scale is admitted only from the settled `active` state",
-		elsewhere: "the cluster resource sends its scale inside a wait that resends the reason-less " +
-			"409 while the cluster reads `active` (scaleMayRetry)",
+		elsewhere: "the cluster resource sends its scale inside a wait that resends a 409 with no " +
+			"reason, CONFLICT_STATE or CONFLICT_VERSION while the cluster reads `active` (scaleMayRetry)",
 	},
 	"scaleInstanceGroup": {
 		says: "scale is admitted only from the settled `active` state",
-		elsewhere: "the instance group resource resends the reason-less 409 while the group reads " +
-			"`active`, `creating` or `updating` (scaleOnce)",
+		elsewhere: "the instance group resource resends a 409 with no reason, CONFLICT_IN_USE or " +
+			"CONFLICT_STATE while the group reads `active`, `creating` or `updating` (scaleOnce)",
 	},
 	"upgradeCluster": {
 		says: "Upgrade is admitted only from the settled `active` state",
@@ -104,8 +104,8 @@ var busyConflictDecisions = map[string]busyConflictDecision{
 	"createSecurityGroup": {
 		says: "A group that is still tearing down (`state: deleting`) has not released its `id` and " +
 			"produces the same conflict; retry once it is gone.",
-		reason: "CONFLICT_DUPLICATE",
-		waits:  true,
+		reasons: []string{"CONFLICT_DUPLICATE"},
+		waits:   true,
 	},
 	"createCluster": {
 		says: "Retrying without freeing capacity, asking for `admissible` or less, or raising the binding " +
@@ -129,15 +129,17 @@ var busyConflictDecisions = map[string]busyConflictDecision{
 		says: "the store is not in a state that accepts updates, because it is `creating`, `deleting` or " +
 			"`failed`, a previous capacity change is still settling its quota accounting, or the reconcile " +
 			"sweep is charging the store's quota; retry shortly.",
-		waits: true,
+		// From API v1.4 the quota causes answer CONFLICT_STATE.
+		reasons: []string{conflictInUse, conflictState},
+		waits:   true,
 	},
 	"updateCluster": {
 		says: "A `storage` raise on a cluster that is not `ACTIVE` answers this `409` without a reason; one " +
 			"whose quota accounting is still settling or whose ceiling changed concurrently answers the same " +
 			"and can be retried shortly.",
 		elsewhere: "the cluster resource sends a storage raise as a PATCH of its own after the security groups " +
-			"settle, and resends it after the cluster settles when it meets the reason-less 409, at most " +
-			"maxStorageRaises times (raiseStorage)",
+			"settle, and resends it after the cluster settles when it meets a 409 with no reason, " +
+			"CONFLICT_STATE or CONFLICT_VERSION, at most maxStorageRaises times (raiseStorage)",
 	},
 	"createFileStore": {
 		says: "`details[].reason` is `CONFLICT_DUPLICATE` when a store with the supplied `id` already exists " +
@@ -172,9 +174,9 @@ type busyConflictDecision struct {
 	says string
 	// waits says the 409 is waited out here, through a busyRetry.
 	waits bool
-	// reason is the details[].reason a waited-out refusal carries,
-	// CONFLICT_IN_USE when empty.
-	reason string
+	// reasons are the reasons a waited-out refusal can carry, CONFLICT_IN_USE
+	// when empty.
+	reasons []string
 	// elsewhere names the code that already waits it out, and how.
 	elsewhere string
 	// refused says why a 409 the contract calls unsettled isn't waited out.
@@ -212,10 +214,10 @@ func dependsOn[T any](name string, read stateRead[T], state func(T) (string, boo
 // It counts the refusals it has waited out, so it lives as long as one write.
 type busyRetry struct {
 	operation string
-	// reason is the details[].reason of a refusal worth reading further.
-	reason string
-	cfg    waitConfig
-	deps   []dependency
+	// reasons are the reasons of a refusal worth reading further.
+	reasons []string
+	cfg     waitConfig
+	deps    []dependency
 
 	// backoffCap bounds the pause added before a repeated refusal's wait. The
 	// pause starts at the poll interval and doubles.
@@ -238,13 +240,13 @@ func newBusyRetry(operation string, cfg waitConfig, deps ...dependency) *busyRet
 	if !ok || !d.waits {
 		panic(fmt.Sprintf("%s is not decided as waiting out an unsettled 409", operation))
 	}
-	reason := d.reason
-	if reason == "" {
-		reason = conflictInUse
+	reasons := d.reasons
+	if len(reasons) == 0 {
+		reasons = []string{conflictInUse}
 	}
 	return &busyRetry{
 		operation:  operation,
-		reason:     reason,
+		reasons:    reasons,
 		cfg:        cfg,
 		deps:       deps,
 		backoffCap: time.Minute,
@@ -262,7 +264,7 @@ func (b *busyRetry) afterConflict(ctx context.Context, resp *http.Response, body
 		return false, nil
 	}
 	var refusal *k0rdent.APIError
-	if !errors.As(k0rdent.CheckResponse(resp, body), &refusal) || !refusal.HasReason(b.reason) {
+	if !errors.As(k0rdent.CheckResponse(resp, body), &refusal) || !slices.ContainsFunc(b.reasons, refusal.HasReason) {
 		return false, nil
 	}
 
@@ -304,7 +306,7 @@ func (b *busyRetry) afterConflict(ctx context.Context, resp *http.Response, body
 // wait clears, like a peering direction already taken, so a second refusal
 // on a settled dependency is the answer and is reported.
 func (b *busyRetry) resendOnceSettled(ctx context.Context, dep *dependency, resp *http.Response, body []byte) (bool, error) {
-	if dep == nil || b.reason != conflictInUse || b.resentSettled {
+	if dep == nil || !slices.Contains(b.reasons, conflictInUse) || b.resentSettled {
 		return false, nil
 	}
 	b.resentSettled = true
@@ -326,6 +328,26 @@ const settledState = "active"
 // conflictInUse is the refusal a dependency mid-change answers with on every
 // operation but one.
 const conflictInUse = "CONFLICT_IN_USE"
+
+// API v1.4 names the cause of every compute 409, where v1.3 answered some with
+// no reason or with CONFLICT_IN_USE. Each of these clears by itself or on a
+// fresh read: a state still settling, and a write that lost a race.
+const (
+	conflictState   = "CONFLICT_STATE"
+	conflictVersion = "CONFLICT_VERSION"
+)
+
+// onlyReasons reports whether every reason e names, at the top level or on
+// details[], is one of allowed. One that names none passes, as v1.3 answers
+// the same refusals.
+func onlyReasons(e *k0rdent.APIError, allowed ...string) bool {
+	for _, r := range append([]string{e.Reason}, e.DetailReasons()...) {
+		if r != "" && !slices.Contains(allowed, r) {
+			return false
+		}
+	}
+	return true
+}
 
 // busyDependency is the first dependency that reads an unsettled state. When
 // none does, settled is the first that reads `active`, or nil.

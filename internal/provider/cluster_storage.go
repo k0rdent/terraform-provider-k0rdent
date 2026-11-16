@@ -114,10 +114,10 @@ func storageRaised(plan, state clusterModel) bool {
 //
 // It's on its own because the platform answers a raise on a cluster that
 // isn't `active`, and one whose quota accounting is still settling, with a
-// 409 that carries no reason, and the contract says it "can be retried
-// shortly". Alone in the request, that 409 can only be about the raise, so it
-// waits for the cluster to settle and is sent again, at most
-// maxStorageRaises times. Every other refusal, a quota one included, is the
+// 409 that carries no reason, CONFLICT_STATE from API v1.4, and the contract
+// says it "can be retried shortly". Alone in the request, that 409 can only
+// be about the raise, so it waits for the cluster to settle and is sent
+// again, at most maxStorageRaises times. Every other refusal, a quota one included, is the
 // answer. A 503 the quota check couldn't make is resent by the transport.
 func (r *clusterResource) raiseStorage(ctx context.Context, target clusterTarget, id string, ceiling types.Int64) diag.Diagnostics {
 	var diags diag.Diagnostics
@@ -157,24 +157,14 @@ func (r *clusterResource) raiseStorage(ctx context.Context, target clusterTarget
 }
 
 // unsettledRaise is the refusal the contract says a raise "can be retried"
-// after: a 409 with no reason at the top or in its details.
+// after: a 409 with no reason (API v1.3), or with CONFLICT_STATE or
+// CONFLICT_VERSION (v1.4).
 func unsettledRaise(resp *http.Response, body []byte) bool {
 	if resp == nil || resp.StatusCode != http.StatusConflict {
 		return false
 	}
 	var refusal *k0rdent.APIError
-	if !errors.As(k0rdent.CheckResponse(resp, body), &refusal) {
-		return false
-	}
-	if refusal.Reason != "" {
-		return false
-	}
-	for _, d := range refusal.Details {
-		if reason, ok := d["reason"].(string); ok && reason != "" {
-			return false
-		}
-	}
-	return true
+	return errors.As(k0rdent.CheckResponse(resp, body), &refusal) && onlyReasons(refusal, conflictState, conflictVersion)
 }
 
 // storageCeilingFrom is the ceiling a read reports, null when the cluster
