@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -16,10 +17,11 @@ import (
 )
 
 // busyDeleteAPI is one resource running an operation, as an apply stopped
-// mid-create leaves it. It reads busy for busyReads reads, then `active`. A
-// DELETE while it's busy is refused with a 409 carrying reason, as the
-// platform refuses a delete that isn't from `active` or `failed`. A DELETE
-// once it's `active` is taken, and the next read is the 404.
+// mid-create or another run's update leaves it. It reads busy for busyReads
+// reads, then `active`. A DELETE while it's busy is refused with a 409
+// carrying reason, as the platform refuses a delete while an operation it
+// can't cancel is running. A DELETE once it's `active` is taken, and the next
+// read is the 404.
 type busyDeleteAPI struct {
 	body func(state string) map[string]any
 	busy string
@@ -213,9 +215,7 @@ func TestADestroyThatOutwaitsItsTimeoutSaysToRunItAgain(t *testing.T) {
 			for _, want := range []string{
 				"The " + k.name + "'s operation did not finish before the destroy stopped waiting",
 				"It was still `" + k.busy + "` at the last read",
-				// Not "only once it is `active` or `failed`": an instance group
-				// is deleted while `creating` too.
-				"The platform doesn't delete the " + k.name + " while an operation is running on it",
+				"The platform doesn't delete the " + k.name + " while it's ",
 				"Nothing was deleted",
 				"run `terraform destroy` again",
 				"raise `delete` in the resource's `timeouts` block",
@@ -224,6 +224,12 @@ func TestADestroyThatOutwaitsItsTimeoutSaysToRunItAgain(t *testing.T) {
 				if !strings.Contains(strings.Join(strings.Fields(text), " "), want) {
 					t.Errorf("the diagnostic doesn't say %q:\n%s", want, text)
 				}
+			}
+			// The states it names include the one this row is in.
+			flat := strings.Join(strings.Fields(text), " ")
+			named := regexp.MustCompile("while it's ([^,]*), so the destroy waited").FindStringSubmatch(flat)
+			if named == nil || !strings.Contains(named[1], "`"+k.busy+"`") {
+				t.Errorf("the diagnostic doesn't name `%s` as a state the platform won't delete in:\n%s", k.busy, text)
 			}
 			if api.deletes != 0 {
 				t.Errorf("%d DELETEs sent into a running operation", api.deletes)

@@ -265,12 +265,12 @@ const (
 // would only meet a 409 on most kinds. A failed read sends the DELETE anyway,
 // and the 409 handling above still applies.
 //
-// A resource in one of k.busy is waited out the same way. An apply stopped
-// mid-create, by an interrupt or a create timeout, leaves the resource in
-// state, tainted, while the platform carries on creating it, and the platform
-// deletes it only once it is `active` or `failed`. So the destroy waits for
-// the operation to finish, inside the delete timeout, and then sends the
-// DELETE. A CONFLICT_IN_USE 409 on a resource that then reads busy, because
+// A resource in one of k.busy is waited out the same way. The platform
+// refuses to delete it in those states: an apply stopped mid-create, by an
+// interrupt or a create timeout, leaves it in state, tainted, while the
+// platform carries on creating it, and another run may have started an
+// update. So the destroy waits for the operation to finish, inside the delete
+// timeout, and then sends the DELETE. A CONFLICT_IN_USE 409 on a resource that then reads busy, because
 // another run started an operation in between, is waited out and sent again,
 // with a longer pause before each wait after the first. A 409 on a resource
 // that reads settled is the refusal the platform meant, as before.
@@ -396,10 +396,10 @@ func (k stateKind[T]) reportBusyWait(diags *diag.Diagnostics, err error) {
 		addWaitError(diags, summary, err)
 		return
 	}
-	advice := fmt.Sprintf("The platform doesn't delete the %s while an operation is running on it, so the "+
-		"destroy waited for that operation to finish, and the wait ended first. Nothing was deleted, "+
+	advice := fmt.Sprintf("The platform doesn't delete the %s while it's %s, so the destroy waited for "+
+		"the operation running on it to finish, and the wait ended first. Nothing was deleted, "+
 		"and the %s stays in state. Next: run `terraform destroy` again, which waits for the same operation "+
-		"and then deletes the %s.", k.name, k.name, k.name)
+		"and then deletes the %s.", k.name, orList(k.busy), k.name, k.name)
 	if !waitInterrupted(err) {
 		advice += raiseDeleteTimeoutAdvice("the operation", k.name)
 	}
