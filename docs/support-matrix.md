@@ -26,7 +26,9 @@ Some features need a minimum Terraform version, from its changelog:
 | List resources and `terraform query` | finding resources to import | [1.14](https://github.com/hashicorp/terraform/blob/v1.14/CHANGELOG.md) |
 
 - OpenTofu has ephemeral resources and write-only attributes from
-  [1.11](https://github.com/opentofu/opentofu/blob/v1.11/CHANGELOG.md).
+  [1.11](https://github.com/opentofu/opentofu/blob/v1.11/CHANGELOG.md), and
+  `import` blocks with `identity` from
+  [1.12](https://github.com/opentofu/opentofu/blob/v1.12/CHANGELOG.md).
 - OpenTofu has no actions and no list resources.
 
 ## The k0rdent platform
