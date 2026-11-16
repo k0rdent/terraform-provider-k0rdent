@@ -71,7 +71,7 @@ func onFailedSchemaAttribute() schema.StringAttribute {
 			"nothing, for a cluster you keep as it is, such as one whose upgrade failed: the platform " +
 			"doesn't scale or upgrade a `failed` cluster, though its `tags`, `display_name` and " +
 			"`description` can still change. With either value, an apply that pins another version of " +
-			"its ClusterType fails, sending nothing, until `cluster_type` is set back to the version the " +
+			"its ClusterType fails, changing nothing on the cluster, until `cluster_type` is set back to the version the " +
 			"cluster is on, as `cluster_type` says. The plan only warns, so `terraform destroy` still " +
 			"works. A cluster left `failed` by the `" +
 			ResourceName(clusterCancelOperationActionSuffix) + "` action plans nothing either way.\n\n" +

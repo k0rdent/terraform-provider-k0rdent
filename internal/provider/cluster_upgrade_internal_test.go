@@ -711,7 +711,7 @@ func TestPlanWarnsOfAVersionChangeTheApplyRefuses(t *testing.T) {
 	}
 }
 
-// The apply refuses each of them before it sends anything, so the node
+// The apply refuses each of them before it writes anything, so the node
 // count, storage ceiling and name changes in the same plan don't land
 // without the version change. The counts here are known only at apply for
 // the bounds case: the plan above checked two workers, the apply three.
@@ -800,6 +800,22 @@ func TestAKeptFailedClusterIsNotAskedToKeepIt(t *testing.T) {
 		t.Fatalf("the apply wasn't refused: %v", update.Diagnostics)
 	}
 	saysKeep(t, "the error", update.Diagnostics.Errors()[0].Detail(), false)
+}
+
+// The descriptions say what the apply does: a refused version change reads
+// the cluster but changes nothing on it, and a `failed` cluster set back with
+// `cluster_type` alone is waited for.
+func TestVersionRefusalDescriptionsMatchTheApply(t *testing.T) {
+	var s resource.SchemaResponse
+	(&clusterResource{}).Schema(context.Background(), resource.SchemaRequest{}, &s)
+	onFailed := s.Schema.Attributes[onFailedAttribute].GetMarkdownDescription()
+	if !strings.Contains(onFailed, "fails, changing nothing on the cluster, until") || strings.Contains(onFailed, "sending nothing") {
+		t.Errorf("on_failed's description:\n%s", onFailed)
+	}
+	clusterType := s.Schema.Attributes["cluster_type"].GetMarkdownDescription()
+	if !strings.Contains(clusterType, "the one the refusal names. Set `on_failed = \"keep\"` too") {
+		t.Errorf("cluster_type's description doesn't say to set on_failed:\n%s", clusterType)
+	}
 }
 
 // Terraform still applies the resources that don't depend on a cluster whose

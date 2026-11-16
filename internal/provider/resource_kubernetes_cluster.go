@@ -222,7 +222,9 @@ func (r *clusterResource) Schema(ctx context.Context, _ resource.SchemaRequest, 
 					"reports the cluster `failed`, pinning another version of its ClusterType is " +
 					"refused, whatever `on_failed` and `allow_replace` say. That includes the " +
 					"configuration after a failed step, until you set `cluster_type` back to the " +
-					"version in `cluster_type_resolved`, the one the refusal names. Pin the later " +
+					"version in `cluster_type_resolved`, the one the refusal names. Set `on_failed = \"keep\"` " +
+					"too, or the next apply waits for the `failed` cluster, as `on_failed` says, and fails if " +
+					"it stays `failed`. Pin the later " +
 					"version again once the platform reports the cluster `active`.\n\n" +
 					"Node count changes in the same apply are made before or after each step, " +
 					"wherever the versions' node pool bounds admit them, since a scale is checked " +

@@ -547,7 +547,7 @@ func (r *clusterResource) replan(ctx context.Context, target clusterTarget, want
 }
 
 // refuseVersionChange is the plan's version check, made again before an
-// apply sends anything: the plan only warns, so that `terraform destroy`
+// apply writes anything: the plan only warns, so that `terraform destroy`
 // isn't stopped by it. It classifies against the state the apply was planned
 // from, and checks the route and the node pool schedule against the platform
 // as it is now, with the counts the apply knows, which the plan may not have.
