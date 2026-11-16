@@ -277,7 +277,7 @@ const (
 //
 // A timeout or an interrupt that lands in the first read or in the DELETE
 // ends the DELETE too, and is reported as a wait that stopped, not as a
-// failed request.
+// failed request, unless the platform answered it. See carriesAnswer.
 func (k stateKind[T]) startDelete(ctx context.Context, cfg waitConfig, what apiCall, send func(context.Context) (*http.Response, []byte, error), read stateRead[T], diags *diag.Diagnostics) deleteStart {
 	waits := 0
 	started := time.Now()
@@ -303,7 +303,7 @@ func (k stateKind[T]) startDelete(ctx context.Context, cfg waitConfig, what apiC
 	for {
 		resp, raw, err := send(ctx)
 		switch {
-		case err != nil && ctx.Err() != nil:
+		case err != nil && ctx.Err() != nil && !carriesAnswer(err):
 			k.reportStoppedBeforeWait(ctx, cfg, started, diags)
 			return deleteFailed
 		case err != nil:
@@ -433,6 +433,15 @@ func (k stateKind[T]) reportStoppedBeforeWait(ctx context.Context, cfg waitConfi
 		advice += raiseDeleteTimeoutAdvice("a delete", k.name)
 	}
 	addAdvisedError(diags, "The "+k.name+" did not finish deleting", advice, err)
+}
+
+// carriesAnswer reports whether a failed request carries the platform's
+// answer, such as a 429 whose retry wait the deadline ended, or a refused
+// mint. Those keep their own report, which names the answer and its request
+// id.
+func carriesAnswer(err error) bool {
+	var answered *k0rdent.APIError
+	return errors.As(err, &answered)
 }
 
 // raiseDeleteTimeoutAdvice tells how to give a destroy a longer wait. A destroy

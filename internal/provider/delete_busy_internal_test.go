@@ -13,6 +13,8 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-go/tftypes"
+
+	"github.com/k0rdent/terraform-provider-k0rdent/internal/k0rdent"
 )
 
 // busyDeleteAPI is one resource running an operation, as an apply stopped
@@ -138,6 +140,12 @@ func busyKinds() []busyKind {
 // provider's operation timeout.
 func destroyBusy(t *testing.T, k busyKind, api *busyDeleteAPI, timeout time.Duration) diag.Diagnostics {
 	t.Helper()
+	return destroyBusyIn(context.Background(), t, k, api, timeout)
+}
+
+// destroyBusyIn is destroyBusy under ctx, which an interrupt cancels.
+func destroyBusyIn(ctx context.Context, t *testing.T, k busyKind, api *busyDeleteAPI, timeout time.Duration) diag.Diagnostics {
+	t.Helper()
 	api.body = k.body
 	api.busy = k.busy
 	meta := resendingMeta(t, api.serve(t).URL)
@@ -150,7 +158,7 @@ func destroyBusy(t *testing.T, k busyKind, api *busyDeleteAPI, timeout time.Dura
 	raw, s := testValue(t, r, set)
 	st := tfsdk.State{Raw: raw, Schema: s.Schema}
 	resp := resource.DeleteResponse{State: st}
-	r.Delete(context.Background(), resource.DeleteRequest{State: st}, &resp)
+	r.Delete(ctx, resource.DeleteRequest{State: st}, &resp)
 	return resp.Diagnostics
 }
 
@@ -247,9 +255,16 @@ func TestADestroyTimedOutBeforeItsWaitSaysToRunItAgain(t *testing.T) {
 			set:   map[string]tftypes.Value{"organization_id": str("org-1")},
 			build: func(m *Meta) resource.Resource { return &projectResource{meta: m} }},
 	)
+	seen := map[string]bool{}
 	for _, hangs := range []string{http.MethodGet, http.MethodDelete} {
 		for _, k := range kinds {
-			t.Run(strings.TrimSpace(hangs+"/"+k.name+" "+k.busy), func(t *testing.T) {
+			// The resource reads `active` here, so one busy state per kind
+			// is the whole case.
+			if seen[hangs+k.name] {
+				continue
+			}
+			seen[hangs+k.name] = true
+			t.Run(hangs+"/"+k.name, func(t *testing.T) {
 				t.Parallel()
 				api := &busyDeleteAPI{hangs: hangs}
 				api.state = "active"
@@ -270,6 +285,73 @@ func TestADestroyTimedOutBeforeItsWaitSaysToRunItAgain(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// An interrupt that lands in the destroy's read gives the same next step,
+// without the advice to raise the timeout, which didn't run out.
+func TestADestroyInterruptedBeforeItsWaitSaysToRunItAgain(t *testing.T) {
+	t.Parallel()
+	k := busyKinds()[0]
+	api := &busyDeleteAPI{hangs: http.MethodGet}
+	api.state = "active"
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	time.AfterFunc(200*time.Millisecond, cancel)
+	diags := destroyBusyIn(ctx, t, k, api, time.Minute)
+	text := strings.Join(strings.Fields(diagText(diags)), " ")
+	for _, want := range []string{
+		"The subnet did not finish deleting",
+		"the run was interrupted after",
+		"run `terraform destroy` again",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("the diagnostic doesn't say %q:\n%s", want, text)
+		}
+	}
+	if strings.Contains(text, "raise `delete`") {
+		t.Errorf("an interrupted destroy is told to raise its timeout:\n%s", text)
+	}
+}
+
+// A destroy interrupted while it waits to resend a DELETE the platform
+// answered 429 reports that answer and its request id. The platform did
+// answer, so it isn't the stopped wait.
+func TestADestroyInterruptedAfterA429KeepsTheAnswer(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			writeTestJSON(t, w, http.StatusOK, map[string]any{"id": "x1", "state": "active"})
+			return
+		}
+		w.Header().Set("Retry-After", "5")
+		writeTestJSON(t, w, http.StatusTooManyRequests, map[string]any{"error": map[string]any{
+			"code": http.StatusTooManyRequests, "message": "rate limited", "requestId": "req-429",
+		}})
+	}))
+	t.Cleanup(server.Close)
+	client, err := k0rdent.New(server.URL, k0rdent.WithTransport(newRateLimitTransport(testTransport(t))))
+	if err != nil {
+		t.Fatalf("new test client: %v", err)
+	}
+	r := &subnetResource{meta: &Meta{Client: client, Region: "test", Project: "test",
+		Wait: waitConfig{Timeout: time.Minute, Interval: 10 * time.Millisecond}}}
+	raw, s := testValue(t, r, map[string]tftypes.Value{"id": str("x1"), "network": str("n1")})
+	st := tfsdk.State{Raw: raw, Schema: s.Schema}
+	resp := resource.DeleteResponse{State: st}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	time.AfterFunc(300*time.Millisecond, cancel)
+	r.Delete(ctx, resource.DeleteRequest{State: st}, &resp)
+
+	text := strings.Join(strings.Fields(diagText(resp.Diagnostics)), " ")
+	for _, want := range []string{"Could not delete the subnet", "429", "Request id: req-429"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("the diagnostic doesn't say %q:\n%s", want, text)
+		}
+	}
+	if strings.Contains(text, "before the platform answered") {
+		t.Errorf("the diagnostic says the platform never answered:\n%s", text)
 	}
 }
 
