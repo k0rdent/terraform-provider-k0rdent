@@ -522,6 +522,31 @@ func TestAccNetworkInfiniBandSendsNoUnsetFlag(t *testing.T) {
 	})
 }
 
+// A flag set at create comes back from the platform, and an import keeps it.
+func TestAccNetworkInfiniBandImportKeepsASetFlag(t *testing.T) {
+	t.Parallel()
+	const name = "acc-ib-set"
+	config := ibUnsetFlagsConfig(name, "")
+	config = strings.Replace(config, `partition = "training"`, `partition = "training"
+    ip_over_ib = true`, 1)
+	seed := strings.Replace(config, `"test"`, `"seed"`, 1)
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: protoV6,
+		CheckDestroy:             checkGone(networkType, networkPath),
+		Steps: []resource.TestStep{
+			{Config: seed},
+			{
+				Config: adopt(config, networkType, "us-texas-1/demo/"+name),
+				ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{
+					plancheck.ExpectResourceAction(networkAddr, plancheck.ResourceActionUpdate),
+				}},
+				Check: resource.TestCheckResourceAttr(networkAddr, "infiniband.ip_over_ib", "true"),
+			},
+			{Config: config, PlanOnly: true},
+		},
+	})
+}
+
 // A network made outside Terraform without `ipOverIb` reports none, and with
 // `ip_over_ib` unset the import used to plan a refused replacement, to `false`.
 func TestAccNetworkInfiniBandImportWithoutIPOverIB(t *testing.T) {
