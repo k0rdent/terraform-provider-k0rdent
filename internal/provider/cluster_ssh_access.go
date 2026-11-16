@@ -111,8 +111,8 @@ func unrecordedSSHAccessWarning(ctx context.Context, state tfsdk.State, plan tfs
 			"a cluster's SSH users, and this cluster was imported, or created by an earlier version of the "+
 			"provider, so state has no record of the users its nodes were made with. The apply records the "+
 			"configured value and sends nothing, and the nodes keep whatever users they have.\n\nTo put "+
-			"these users on the nodes, replace the cluster: `terraform apply -replace` with its address. "+
-			"That deletes it and creates it again.")
+			"these users on the nodes, replace the cluster: set `allow_replace = true`, run `terraform apply "+
+			"-replace` with its address, then remove `allow_replace`. That deletes it and creates it again.")
 }
 
 // clusterSSHAccessState is prior state's `ssh_access`, kept when the platform

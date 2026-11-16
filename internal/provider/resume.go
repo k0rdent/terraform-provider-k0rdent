@@ -174,6 +174,10 @@ type resumable[M any] struct {
 	// back, and whose configuration doesn't keep it, so an object last read
 	// `failed` is waited on too (cluster_failed.go).
 	waitsOutFailed bool
+	// guardsCreate is a kind whose plan to replace an object without this
+	// provider's create token is refused without `allow_replace`
+	// (create_guard.go), so its advice names it.
+	guardsCreate bool
 }
 
 // resume runs first in an Update. When the last read found the object still
@@ -207,11 +211,14 @@ func (p resumable[M]) resume(ctx context.Context, req resource.UpdateRequest, re
 				fmt.Sprintf("The platform reported this %s `failed`, and it didn't return to `active` while "+
 					"the apply waited. Nothing was deleted. %s", p.kind, replaceAdvice(p.kind, p.resourceName)), err)
 		default:
+			advice := fmt.Sprintf("To create it again, run `terraform apply -replace=<address>`, with this "+
+				"resource's address, such as %s.example.", p.resourceName)
+			if p.guardsCreate {
+				advice = replaceAdvice(p.kind, p.resourceName)
+			}
 			addAdvisedError(&resp.Diagnostics, fmt.Sprintf("The %s's create failed", p.kind),
 				fmt.Sprintf("An earlier apply stopped waiting for this %s's create, and the platform has since "+
-					"reported it failed. Nothing was deleted. To create it again, run "+
-					"`terraform apply -replace=<address>`, with this resource's address, such as %s.example.",
-					p.kind, p.resourceName), err)
+					"reported it failed. Nothing was deleted. %s", p.kind, advice), err)
 		}
 		return true
 	}
