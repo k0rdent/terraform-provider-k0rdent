@@ -1,0 +1,3 @@
+```release-note:bug
+resource/k0rdent_kubernetes_cluster: Add `allow_replace = true`, and removing it again afterwards, to the `terraform apply -replace` advice in the failed-cluster warning and errors, the `ssh_access` plan warning and description, and the failed-teardown warnings. Without it, the plan to replace a cluster that doesn't carry the provider's create token, such as an imported one, is refused
+```
