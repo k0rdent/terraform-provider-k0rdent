@@ -1,11 +1,19 @@
 package provider
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
+	"github.com/hashicorp/terraform-plugin-go/tftypes"
 
 	"github.com/k0rdent/terraform-provider-k0rdent/internal/k0rdent"
 )
@@ -180,5 +188,176 @@ func TestFileStoreUpdateSendsOnceMoreWhileAnActiveStoreSettles(t *testing.T) {
 				t.Errorf("%d PATCHes, want the refused one and the resend", got)
 			}
 		})
+	}
+}
+
+// refuseCreate makes the first n cluster creates answer body and make
+// nothing, as a create that lost a race or met an unsettled dependency does.
+func refuseCreate(api *clusterAPI, n int, body string) {
+	api.answer = func(sent int, id string, w http.ResponseWriter) bool {
+		if sent > n {
+			return false
+		}
+		delete(api.tags, id)
+		w.WriteHeader(http.StatusConflict)
+		if _, err := w.Write([]byte(body)); err != nil {
+			api.t.Errorf("write: %v", err)
+		}
+		return true
+	}
+}
+
+// A cluster create that lost a race made nothing, and the contract says to
+// send it again: v1.3 answers that CONFLICT_VERSION on details[] only, v1.4
+// at the top level too.
+func TestAClusterCreateThatLostARaceIsSentAgain(t *testing.T) {
+	for name, body := range map[string]string{
+		"v1.3": conflictV13("CONFLICT_VERSION"),
+		"v1.4": conflictV14("CONFLICT_VERSION"),
+	} {
+		t.Run(name, func(t *testing.T) {
+			api := newClusterAPI(t)
+			refuseCreate(api, 1, body)
+			resp := createCluster(t, api.serve(), "c1")
+			if resp.Diagnostics.HasError() {
+				t.Fatalf("Create: %v", resp.Diagnostics.Errors())
+			}
+			if len(api.sent) != 2 || stateID(t, resp.State) != "c1" {
+				t.Errorf("creates sent = %v, state id %q, want two sends and c1", api.sent, stateID(t, resp.State))
+			}
+		})
+	}
+}
+
+// One that keeps losing stops after createAttempts sends with the platform's
+// answer, and records nothing.
+func TestAClusterCreateThatKeepsLosingARaceStops(t *testing.T) {
+	api := newClusterAPI(t)
+	refuseCreate(api, 1<<30, conflictV14("CONFLICT_VERSION"))
+	resp := createCluster(t, api.serve(), "c1")
+	if !resp.Diagnostics.HasError() {
+		t.Fatal("a create refused every time reported success")
+	}
+	if len(api.sent) != createAttempts {
+		t.Errorf("creates sent = %d, want %d", len(api.sent), createAttempts)
+	}
+	if !resp.State.Raw.IsNull() {
+		t.Errorf("state was written: %v", resp.State.Raw)
+	}
+}
+
+// A cluster create refused for a state no resend clears, a project being
+// deleted, an address pool that isn't active or a security group being
+// deleted, is reported at once. v1.4 names it CONFLICT_STATE, and the error
+// says what to do about each. v1.3 answers the project case with no reason,
+// and gets the platform's message alone.
+func TestAClusterCreateRefusedForAStateIsReportedWithWhatToDo(t *testing.T) {
+	for name, tc := range map[string]struct {
+		body   string
+		advice bool
+	}{
+		"v1.3 no reason":      {conflictV13(""), false},
+		"v1.4 CONFLICT_STATE": {conflictV14("CONFLICT_STATE"), true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			api := newClusterAPI(t)
+			refuseCreate(api, 1<<30, tc.body)
+			resp := createCluster(t, api.serve(), "c1")
+			errs := resp.Diagnostics.Errors()
+			if len(errs) == 0 {
+				t.Fatal("a refused create reported success")
+			}
+			if len(api.sent) != 1 {
+				t.Errorf("creates sent = %d, want 1", len(api.sent))
+			}
+			detail := errs[0].Detail()
+			for _, want := range []string{"another project", "`" + ResourceName(addressPoolsDataSourceSuffix) + "`",
+				"`security_groups`"} {
+				if strings.Contains(detail, want) != tc.advice {
+					t.Errorf("says %q = %v, want %v:\n%s", want, !tc.advice, tc.advice, detail)
+				}
+			}
+		})
+	}
+}
+
+// groupCreatePlatform answers the first `refuse` creates of instance group
+// "pig" with refusal, which makes nothing, then creates it active.
+type groupCreatePlatform struct {
+	mu      sync.Mutex
+	refuse  int
+	refusal string
+	posts   int
+	created bool
+}
+
+func (p *groupCreatePlatform) serve(t *testing.T) *httptest.Server {
+	group, err := json.Marshal(deletingGroupBody("active"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		status, body := http.StatusOK, string(group)
+		switch {
+		case r.Method == http.MethodPost:
+			p.posts++
+			if p.posts <= p.refuse {
+				status, body = http.StatusConflict, p.refusal
+			} else {
+				status, p.created = http.StatusCreated, true
+			}
+		case strings.HasSuffix(r.URL.Path, "/instance-groups/pig") && !p.created:
+			status, body = http.StatusNotFound, `{"error":{"code":404,"message":"not found","requestId":"req-2"}}`
+		}
+		w.WriteHeader(status)
+		if _, err := w.Write([]byte(body)); err != nil {
+			t.Errorf("write: %v", err)
+		}
+	}))
+	t.Cleanup(server.Close)
+	return server
+}
+
+func createGroup(t *testing.T, p *groupCreatePlatform) (resource.CreateResponse, int) {
+	t.Helper()
+	r := &instanceGroupResource{meta: testClusterMeta(t, p.serve(t).URL, time.Minute)}
+	planRaw, s := testValue(t, r, with(opsGroup("active"), map[string]tftypes.Value{
+		"state": tftypes.NewValue(tftypes.String, tftypes.UnknownValue),
+	}))
+	resp := resource.CreateResponse{State: tfsdk.State{Raw: tftypes.NewValue(planRaw.Type(), nil), Schema: s.Schema}}
+	r.Create(context.Background(), resource.CreateRequest{Plan: tfsdk.Plan{Raw: planRaw, Schema: s.Schema}}, &resp)
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return resp, p.posts
+}
+
+// An instance group create that lost a race to an address pool's change made
+// nothing, and v1.4's contract says to retry it.
+func TestAnInstanceGroupCreateThatLostARaceIsSentAgain(t *testing.T) {
+	resp, posts := createGroup(t, &groupCreatePlatform{refuse: 1, refusal: conflictV14("CONFLICT_VERSION")})
+	if resp.Diagnostics.HasError() {
+		t.Fatalf("Create: %v", resp.Diagnostics.Errors())
+	}
+	if posts != 2 {
+		t.Errorf("creates sent = %d, want 2", posts)
+	}
+}
+
+// An instance group create refused because an address pool isn't active is
+// reported at once, with what to do.
+func TestAnInstanceGroupCreateRefusedForAStateIsReportedWithWhatToDo(t *testing.T) {
+	resp, posts := createGroup(t, &groupCreatePlatform{refuse: 1 << 30, refusal: conflictV14("CONFLICT_STATE")})
+	errs := resp.Diagnostics.Errors()
+	if len(errs) == 0 {
+		t.Fatal("a refused create reported success")
+	}
+	if posts != 1 {
+		t.Errorf("creates sent = %d, want 1", posts)
+	}
+	if want := "`" + ResourceName(addressPoolsDataSourceSuffix) + "`"; !strings.Contains(errs[0].Detail(), want) {
+		t.Errorf("doesn't name %s:\n%s", want, errs[0].Detail())
 	}
 }

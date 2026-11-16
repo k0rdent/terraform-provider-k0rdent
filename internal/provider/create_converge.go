@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -269,6 +270,10 @@ type convergingCreate struct {
 	// busy waits out a 409 the platform answers while something the create
 	// depends on is mid-change. Nil for a kind whose create has no such 409.
 	busy *busyRetry
+	// retryOn are the reasons of a 409 the contract says to answer by sending
+	// the create again: one that lost a race and made nothing. It goes at most
+	// createAttempts times in all.
+	retryOn []string
 }
 
 // run sends the create until it has an answer it can act on.
@@ -295,7 +300,7 @@ type convergingCreate struct {
 // A resource found by reading it back is done with the uid that read named.
 func (c convergingCreate) run(ctx context.Context) (createOutcome, createdAs, diag.Diagnostics) {
 	var diags diag.Diagnostics
-	lost := 0
+	lost, raced := 0, 0
 	for {
 		a := c.send(ctx)
 		if a.err == nil && statusOf(a.resp)/100 == 2 {
@@ -339,6 +344,12 @@ func (c convergingCreate) run(ctx context.Context) (createOutcome, createdAs, di
 			// Something under the id that this call didn't make may be on its
 			// way out, like a security group still tearing down, so busy reads
 			// it before the 409 is reported as a name in use.
+			if !l.found && !l.failed() && c.lostRace(a) && raced+1 < createAttempts {
+				raced++
+				tflog.Info(ctx, "the create lost a race and made nothing, so it's sent again",
+					withRequestID(map[string]any{"id": c.key.id, "attempt": raced + 1}, a.resp, a.body))
+				continue
+			}
 			if !l.failed() {
 				again, waitErr := c.busy.afterConflict(ctx, a.resp, a.body)
 				if again {
@@ -730,4 +741,10 @@ func (f createFinish[M]) run(ctx context.Context, create convergingCreate, plan 
 	}
 	diags.Append(state.Set(ctx, &got)...)
 	return got, true
+}
+
+// lostRace reports whether a refused create carries a reason in retryOn.
+func (c convergingCreate) lostRace(a createAnswer) bool {
+	var refusal *k0rdent.APIError
+	return errors.As(k0rdent.CheckResponse(a.resp, a.body), &refusal) && slices.ContainsFunc(c.retryOn, refusal.HasReason)
 }

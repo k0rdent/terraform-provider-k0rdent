@@ -43,6 +43,22 @@ var reasonGuidance = map[string]string{
 		"operator has to assign it. Applying again won't help until then.",
 }
 
+// conflictStateGuidance is the next step for a create the platform refused
+// with CONFLICT_STATE (API v1.4): something the create needs isn't in a state
+// that allows it, which sending the create again doesn't change.
+var conflictStateGuidance = map[string]string{
+	"createCluster": "Nothing was created. The message above names what the platform found: a project " +
+		"being deleted, an address pool the cluster type's network uses that isn't `active`, or a security " +
+		"group in `security_groups` that started deleting. A project being deleted won't come back, so " +
+		"create the cluster in another project. An address pool is for whoever runs the platform: `" +
+		ResourceName(addressPoolsDataSourceSuffix) + "` shows its state, so apply again once it's `active`. " +
+		"A security group being deleted has to come out of `security_groups` before applying again.",
+	"createInstanceGroup": "Nothing was created. An address pool the cluster type's network uses isn't " +
+		"`active`, and the platform creates an instance group only while it is. An address pool is for " +
+		"whoever runs the platform: `" + ResourceName(addressPoolsDataSourceSuffix) + "` shows its state, " +
+		"so apply again once it's `active`.",
+}
+
 // forbiddenGuidance is the next step for a 403 on each read, and each project
 // create, update or delete, that only a role bound to an organization, or to
 // the whole platform, can make. The platform checks these routes against the
@@ -112,6 +128,11 @@ func guidanceFor(apiErr *k0rdent.APIError) string {
 	reasons := append([]string{apiErr.Reason}, apiErr.DetailReasons()...)
 	for _, r := range reasons {
 		if g, ok := reasonGuidance[r]; ok {
+			return g
+		}
+	}
+	if apiErr.StatusCode == http.StatusConflict && apiErr.HasReason(conflictState) {
+		if g, ok := conflictStateGuidance[apiErr.Operation]; ok {
 			return g
 		}
 	}

@@ -111,13 +111,18 @@ var busyConflictDecisions = map[string]busyConflictDecision{
 		says: "Retrying without freeing capacity, asking for `admissible` or less, or raising the binding " +
 			"limit returns the same result.",
 		refused: "neither cause clears by waiting: a quota refusal needs capacity freed or a limit raised, " +
-			"and the contract says a project being deleted leaves `deleting` only for a terminal state",
+			"and the contract says a project being deleted leaves `deleting` only for a terminal state. " +
+			"API v1.4 adds CONFLICT_STATE for an address pool that isn't `active` or a security group " +
+			"being deleted, which conflictStateGuidance explains, and CONFLICT_VERSION for a lost race, " +
+			"which the converging create sends again (retryOn)",
 	},
 	"createInstanceGroup": {
 		says: "Retrying without freeing capacity, asking for `admissible` or less, or raising the binding " +
 			"limit returns the same result.",
 		refused: "neither cause clears by waiting: a duplicate id is a name in use, which the converging " +
-			"create reads back, and a quota refusal needs capacity freed or a limit raised",
+			"create reads back, and a quota refusal needs capacity freed or a limit raised. API v1.4 adds " +
+			"CONFLICT_STATE for an address pool that isn't `active`, which conflictStateGuidance explains, " +
+			"and CONFLICT_VERSION for a lost race, which the converging create sends again (retryOn)",
 	},
 	"cancelCluster": {
 		says: "Re-read the cluster and retry against its current operation.",

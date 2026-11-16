@@ -419,6 +419,9 @@ func (r *instanceGroupResource) Create(ctx context.Context, req resource.CreateR
 				func() (string, string) { return "", uidOf(got.JSON200.Uid) })
 		},
 		timeoutID: timeoutMetadataID("instanceGroupId"),
+		// An address pool changed while the create ran. The contract says to
+		// retry the create.
+		retryOn: []string{conflictVersion},
 	}
 	// The last body the wait read, so a failure's advice reads the reason the
 	// platform reported rather than the provider's wording of it.
