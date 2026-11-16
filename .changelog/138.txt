@@ -1,0 +1,3 @@
+```release-note:bug
+resource/k0rdent_subnet: Fix the "already exists" error after `terraform apply -replace` on a platform-owned subnet also saying to replace it with `terraform apply -replace`. It gives the `terraform import` command instead
+```
