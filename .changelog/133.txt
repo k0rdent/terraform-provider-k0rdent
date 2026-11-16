@@ -1,0 +1,3 @@
+```release-note:bug
+resource/k0rdent_network: Fix an import planning a refused replacement of an InfiniBand network the platform reports without `ip_over_ib`. `index0` and `ip_over_ib` no longer default to `false`. Left unset, the provider sends neither and the fabric applies its own default, which is on for `ip_over_ib`. State that holds `false` from the old default plans no change
+```
