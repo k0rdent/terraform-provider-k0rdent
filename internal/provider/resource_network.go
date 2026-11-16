@@ -293,14 +293,15 @@ func (r *networkResource) Schema(ctx context.Context, _ resource.SchemaRequest, 
 							"When the platform reports no value, state holds `false`, the fabric's default.",
 						PlanModifiers: []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()},
 					},
-					// See index0. The fabric's default is on, so an absent
-					// value reads as null rather than false.
+					// See index0. The fabric operator documents the UFM default
+					// for an omitted ipOverIb as true, so an absent value reads
+					// as null rather than false.
 					"ip_over_ib": schema.BoolAttribute{
 						Optional: true,
 						Computed: true,
 						MarkdownDescription: "Whether the partition takes part in IP-over-InfiniBand multicast. " +
-							"Unset, the provider sends no value and the fabric applies its own default. " +
-							"When the platform reports no value, state holds null.",
+							"Unset, the provider sends no value and the fabric applies its own default, " +
+							"which is on for a UFM fabric. When the platform reports no value, state holds null.",
 						PlanModifiers: []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()},
 					},
 				},

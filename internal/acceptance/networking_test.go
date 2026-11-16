@@ -593,11 +593,13 @@ import {
 				Check: resource.TestCheckNoResourceAttr(networkAddr, "infiniband.ip_over_ib"),
 			},
 			{Config: config(""), PlanOnly: true},
-			// Any other change leaves the network in place.
+			// Any other change leaves the network in place, and the null
+			// `ip_over_ib` stays null rather than known after apply.
 			{
 				Config: config(`tags = { team = "ml" }`),
 				ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{
 					plancheck.ExpectResourceAction(networkAddr, plancheck.ResourceActionUpdate),
+					expectOnly(networkAddr, "tags", "tags_all"),
 				}},
 			},
 		},
