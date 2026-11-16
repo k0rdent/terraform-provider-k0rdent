@@ -221,9 +221,7 @@ func (a *upgradeAPI) serve(t *testing.T) *httptest.Server {
 				a.busyRaises--
 				a.state = "updating"
 				if a.busyRaiseBody != "" {
-					w.Header().Set("Content-Type", "application/json")
-					w.WriteHeader(http.StatusConflict)
-					_, _ = w.Write([]byte(a.busyRaiseBody))
+					refuse(t, w, a.busyRaiseBody)
 					return
 				}
 			}
@@ -284,9 +282,7 @@ func (a *upgradeAPI) serve(t *testing.T) *httptest.Server {
 			refuseWith(w, http.StatusConflict)
 		case a.settlingScales > 0:
 			a.settlingScales--
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusConflict)
-			_, _ = w.Write([]byte(a.settlingScaleBody))
+			refuse(t, w, a.settlingScaleBody)
 		case !a.fits(a.bound, n):
 			refuseWith(w, http.StatusUnprocessableEntity)
 		default:
