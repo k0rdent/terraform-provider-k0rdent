@@ -149,7 +149,7 @@ jobs:
         with:
           # Hardware mode refuses 1.16.0 to 1.16.4, which can empty the state
           # file on an interrupt (hashicorp/terraform#39287).
-          terraform_version: "1.17.1"
+          terraform_version: "1.17.2"
           terraform_wrapper: false
       - name: hardware mode records, cleans up after a kill, and lists what it left
         run: make real-api-check-hardware-test
@@ -238,7 +238,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        terraform: ["1.16.7", "1.17.1"]
+        terraform: ["1.16.7", "1.17.2"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -338,7 +338,7 @@ jobs:
           cache: true
       - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e  # v4.0.1
         with:
-          terraform_version: "1.17.1"
+          terraform_version: "1.17.2"
       - name: verify generated provider documentation
         run: make docs-check
 
@@ -356,7 +356,7 @@ jobs:
           cache: true
       - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e  # v4.0.1
         with:
-          terraform_version: "1.17.1"
+          terraform_version: "1.17.2"
           terraform_wrapper: false
       - name: plan the examples against the fake, over both tiers
         run: make plan-fake
@@ -383,7 +383,7 @@ jobs:
           cache: true
       - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e  # v4.0.1
         with:
-          terraform_version: "1.17.1"
+          terraform_version: "1.17.2"
           terraform_wrapper: false
       - name: refresh-only plans find nothing, and plans stay within the unknown budget
         run: make plan-quality
@@ -408,7 +408,7 @@ jobs:
           cache: true
       - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e  # v4.0.1
         with:
-          terraform_version: "1.17.1"
+          terraform_version: "1.17.2"
           terraform_wrapper: false
       - uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4  # v2.0.2
         with:
