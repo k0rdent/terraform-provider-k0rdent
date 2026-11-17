@@ -30,8 +30,9 @@ resource %q "test" {
 func TestAccInstanceGroupScaleWaitsOutTransientRefusals(t *testing.T) {
 	t.Parallel()
 	for name, marker := range map[string]string{
-		"acc-settling":    "fake-scale-settling",
-		"acc-unconfirmed": "fake-scale-unconfirmed",
+		"acc-settling":     "fake-scale-settling",
+		"acc-settling-v14": "fake-scale-settling fake-api-v1.4",
+		"acc-unconfirmed":  "fake-scale-unconfirmed",
 	} {
 		t.Run(marker, func(t *testing.T) {
 			resource.Test(t, resource.TestCase{

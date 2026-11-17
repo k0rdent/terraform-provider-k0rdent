@@ -617,6 +617,10 @@ func (r *clusterResource) Create(ctx context.Context, req resource.CreateRequest
 			})
 		},
 		timeoutID: timeoutMetadataID("clusterId"),
+		// Placing the hosted control plane, or an address pool, changed while
+		// the create ran. The contract says to retry the create.
+		retryOn:   []string{conflictVersion},
+		retryWait: r.meta.Wait,
 	}
 	created, found := createFinish[clusterModel]{
 		operation: "createCluster", target: target,

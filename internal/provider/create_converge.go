@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
+	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -269,6 +271,16 @@ type convergingCreate struct {
 	// busy waits out a 409 the platform answers while something the create
 	// depends on is mid-change. Nil for a kind whose create has no such 409.
 	busy *busyRetry
+	// retryOn are the reasons of a 409 the contract says to answer by sending
+	// the create again: one that lost a race and made nothing. It goes at most
+	// createAttempts times in all.
+	retryOn []string
+	// retryWait paces those resends as busyRetry paces its own: a jittered
+	// pause of up to one poll interval, doubling with each resend. A refused
+	// create can still hold quota for a moment, which the pause lets go.
+	retryWait waitConfig
+	// sleep is sleepOrCancel, or a test's stand-in.
+	sleep func(context.Context, time.Duration) error
 }
 
 // run sends the create until it has an answer it can act on.
@@ -295,7 +307,7 @@ type convergingCreate struct {
 // A resource found by reading it back is done with the uid that read named.
 func (c convergingCreate) run(ctx context.Context) (createOutcome, createdAs, diag.Diagnostics) {
 	var diags diag.Diagnostics
-	lost := 0
+	lost, raced := 0, 0
 	for {
 		a := c.send(ctx)
 		if a.err == nil && statusOf(a.resp)/100 == 2 {
@@ -335,6 +347,17 @@ func (c convergingCreate) run(ctx context.Context) (createOutcome, createdAs, di
 			l := c.lookup(ctx, c.key.id)
 			if l.found && c.proof(c.key.id, l) != "" {
 				return c.claim(&diags, c.key.id, l, "answered 409", a)
+			}
+			if !l.found && !l.failed() && c.lostRace(a) && raced+1 < createAttempts {
+				raced++
+				if err := c.pause(ctx, raced-1); err != nil {
+					// Nothing was made, so the refusal is the answer.
+					addAPIError(&diags, c.what, a.resp, a.body, nil)
+					return createFailed, createdAs{}, diags
+				}
+				tflog.Info(ctx, "the create lost a race and made nothing, so it's sent again",
+					withRequestID(map[string]any{"id": c.key.id, "attempt": raced + 1}, a.resp, a.body))
+				continue
 			}
 			// Something under the id that this call didn't make may be on its
 			// way out, like a security group still tearing down, so busy reads
@@ -730,4 +753,19 @@ func (f createFinish[M]) run(ctx context.Context, create convergingCreate, plan 
 	}
 	diags.Append(state.Set(ctx, &got)...)
 	return got, true
+}
+
+// pause waits before the nth resend of a create that lost a race.
+func (c convergingCreate) pause(ctx context.Context, n int) error {
+	sleep := c.sleep
+	if sleep == nil {
+		sleep = sleepOrCancel
+	}
+	return sleep(ctx, fullJitter(backoffCeiling(c.retryWait, n, time.Minute)))
+}
+
+// lostRace reports whether a refused create carries a reason in retryOn.
+func (c convergingCreate) lostRace(a createAnswer) bool {
+	var refusal *k0rdent.APIError
+	return errors.As(k0rdent.CheckResponse(a.resp, a.body), &refusal) && slices.ContainsFunc(c.retryOn, refusal.HasReason)
 }

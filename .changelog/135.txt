@@ -1,0 +1,19 @@
+```release-note:bug
+resource/k0rdent_kubernetes_cluster: Fix a scale or a `storage_ceiling_gib` raise failing on platform API v1.4 when the platform refuses it for a moment while the cluster settles. API v1.4 gives that refusal the reason `CONFLICT_STATE` or `CONFLICT_VERSION`, and the provider now waits it out as it does API v1.3's refusal with no reason
+```
+
+```release-note:bug
+resource/k0rdent_instance_group: Fix a scale failing on platform API v1.4 when the platform refuses it while another operation runs or the group's quota accounting settles. The provider now waits out that refusal with API v1.4's reasons, `CONFLICT_IN_USE` and `CONFLICT_STATE`, as it does with API v1.3's
+```
+
+```release-note:bug
+resource/k0rdent_file_store: Fix an update failing on platform API v1.4 when the platform refuses it with `CONFLICT_STATE` while the store's capacity or quota accounting settles. The provider now sends it once more, as it does for API v1.3's `CONFLICT_IN_USE`. An update refused with `CONFLICT_VERSION` because the store's quota accounting moved while it ran still fails at once, since the same reason also means someone else changed the store: apply again
+```
+
+```release-note:bug
+resource/k0rdent_kubernetes_cluster: Fix a create that lost a race, refused with `CONFLICT_VERSION`, failing at once. The platform made nothing and its contract says to retry, so the provider now sends the create again after a short pause, up to three times in all. A create refused with API v1.4's `CONFLICT_STATE` now says what to do about each cause: a project being deleted, an address pool that isn't `active` or a security group being deleted
+```
+
+```release-note:bug
+resource/k0rdent_instance_group: Fix a create refused on platform API v1.4 with `CONFLICT_VERSION`, an address pool that changed while it ran, failing at once. The provider now sends it again after a short pause, up to three times in all. A create refused with `CONFLICT_STATE`, an address pool that isn't `active`, now says what to do
+```

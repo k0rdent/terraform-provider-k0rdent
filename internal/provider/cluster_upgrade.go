@@ -690,7 +690,8 @@ type upgradeBusy struct {
 // write refused against a busy dependency, here the cluster itself.
 //
 // The platform admits an upgrade only from `active`, and refuses one from
-// `creating`, `updating` or `deleting` with a 409 that carries no reason.
+// `creating`, `updating` or `deleting` with a 409 that carries no reason, or
+// CONFLICT_STATE from API v1.4, so the cluster's state decides, not the reason.
 // The cluster resource waits for the cluster to settle before the first step
 // and after each, so a refusal here means another run started an operation in
 // the moment between. The cluster is read: while it's `creating` or

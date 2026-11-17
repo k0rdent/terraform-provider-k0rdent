@@ -2291,6 +2291,18 @@ func inUse(w http.ResponseWriter, message string) {
 		[]any{map[string]any{"reason": "CONFLICT_IN_USE", "message": message}})
 }
 
+// scaleConflict is a group's scale refused for its lifecycle: v1.3's
+// CONFLICT_IN_USE on details[], or with apiV14 on its display name, reason at
+// the top level and on details[], as v1.4 writes every compute 409.
+func scaleConflict(w http.ResponseWriter, displayName *string, reason, message string) {
+	if !nameCarries(displayName, apiV14) {
+		inUse(w, message)
+		return
+	}
+	errorEnvelope(w, http.StatusConflict, reason, message,
+		[]any{map[string]any{"reason": reason, "message": message}})
+}
+
 // Markers that steer an instance group's scale into the refusals the contract
 // documents. Each depends on platform state a client cannot create, so a test
 // asks for it by display name, like settlesFailed.
@@ -2298,6 +2310,11 @@ const (
 	// The first scaleRefusalsBeforeAdmit scales answer the reason-less 409 of
 	// quota accounting still settling, and then the same request is admitted.
 	scaleSettling = "fake-scale-settling"
+	// The group's scale refusals take API v1.4's shape: every 409 names its
+	// reason at the top level as well as on details[], and quota accounting
+	// still settling is CONFLICT_STATE. Without it they take v1.3's, which the
+	// drift check compares the fake with.
+	apiV14 = "fake-api-v1.4"
 	// The same, with the 503 of a pool size that cannot be confirmed.
 	scaleUnconfirmed = "fake-scale-unconfirmed"
 	// Every scale is refused QUOTA_EXCEEDED, with one host of project headroom.
@@ -2401,8 +2418,9 @@ func (s *state) scaleInstanceGroup(w http.ResponseWriter, r *http.Request) {
 	// "Another lifecycle operation ... already in flight rejects the scale with
 	// no `reason`."
 	if g.state != "active" {
-		inUse(w, fmt.Sprintf("conflict: instance group %q is in state %s; scale requires the settled active state",
-			id, g.state))
+		scaleConflict(w, g.displayName, "CONFLICT_IN_USE",
+			fmt.Sprintf("conflict: instance group %q is in state %s; scale requires the settled active state",
+				id, g.state))
 		return
 	}
 	if nameCarries(g.displayName, scaleUnconfirmed) && g.refusals < scaleRefusalsBeforeAdmit {
@@ -2496,7 +2514,8 @@ func (s *state) scaleInstanceGroup(w http.ResponseWriter, r *http.Request) {
 	}
 	if nameCarries(g.displayName, scaleSettling) && g.refusals < scaleRefusalsBeforeAdmit {
 		g.refusals++
-		inUse(w, "conflict: a previous size change on this resource is still settling; retry shortly")
+		scaleConflict(w, g.displayName, "CONFLICT_STATE",
+			"conflict: a previous size change on this resource is still settling; retry shortly")
 		return
 	}
 
