@@ -20,6 +20,9 @@ import (
 //     the plan and names the attribute
 //  4. with a rename configured, `terraform destroy` fails too, while
 //     `terraform destroy -refresh=false` removes it from state with no write
+//  5. `terraform apply -replace` on a network or security group removes it
+//     from state, since the platform won't delete it, and the create that
+//     follows fails with the import that takes it back
 func TestAccAPlatformOwnedObject(t *testing.T) {
 	t.Parallel()
 	if runtime.GOOS == "windows" {
@@ -120,6 +123,31 @@ egress {
 			}
 			if out, code := c.runCode("plan", "-detailed-exitcode"); code != 0 {
 				t.Errorf("the plan after it exited %d, want 0:\n%s", code, out)
+			}
+
+			// The fake's cluster subnets use a pool its create doesn't know, and
+			// it checks the pool first, so a subnet's create here fails with 422
+			// before the network's owner is checked.
+			if tc.kind != "subnet" {
+				addr, importID := tc.resourceType+".adopted", tc.importUnder+id
+				out, code := c.runCode("apply", "-auto-approve", "-replace="+addr)
+				if code != 1 {
+					t.Errorf("terraform apply -replace exited %d, want 1:\n%s", code, out)
+				}
+				mustSay(t, "terraform apply -replace", out,
+					"Stopped tracking a platform-owned object rather than deleting it",
+					fmt.Sprintf("Error: A %s named %q already exists", tc.kind, id),
+					"terraform import <address> "+importID, "If another configuration or workspace manages it, choose another `id` for this one.")
+				if out, ok := c.run("import", addr, importID); !ok {
+					t.Fatalf("the import the error gives failed:\n%s", out)
+				}
+				// It records the `timeouts` the import leaves out, sending nothing.
+				if out, ok := c.run("apply", "-auto-approve"); !ok {
+					t.Errorf("the apply after the import failed:\n%s", out)
+				}
+				if out, code := c.runCode("plan", "-detailed-exitcode"); code != 0 {
+					t.Errorf("the plan after the import exited %d, want 0:\n%s", code, out)
+				}
 			}
 
 			if tc.kind != "subnet" {
