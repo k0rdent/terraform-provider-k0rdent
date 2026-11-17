@@ -359,10 +359,10 @@ func (r *instanceGroupResource) planAddedPools(ctx context.Context, req resource
 	if len(added) == 0 {
 		return
 	}
-	var state instanceGroupModel
+	var state, plan instanceGroupModel
 	var scratch diag.Diagnostics
-	if req.State.Get(ctx, &state).HasError() {
-		return
+	if req.State.Get(ctx, &state).HasError() || resp.Plan.Get(ctx, &plan).HasError() || replacedOtherwise(plan, state) {
+		return // a new group is created with these pools, whatever this one has
 	}
 	target, ok := resolveScope(r.meta, state.Region, state.Project, &scratch)
 	if !ok {
@@ -371,7 +371,7 @@ func (r *instanceGroupResource) planAddedPools(ctx context.Context, req resource
 	held, err := r.platformPools(ctx, target, state.ID.ValueString())
 	if err != nil {
 		tflog.Debug(ctx, "could not read the instance group's pools to plan an added pool",
-			map[string]any{"instance_group": state.ID.ValueString(), "error": err.Error()})
+			map[string]any{"instance_group": state.ID.ValueString(), "error": redactDiagnosticText(err.Error())})
 		return
 	}
 	for _, id := range added {
@@ -397,6 +397,15 @@ func quoteEach(ids []string) string {
 		q[i] = fmt.Sprintf("%q", id)
 	}
 	return strings.Join(q, ", ")
+}
+
+// replacedOtherwise reports whether something other than `node_pool` changes
+// in a way that can replace the group. Attribute-level replacements are not
+// visible in resp.RequiresReplace in ModifyPlan, so this compares directly.
+func replacedOtherwise(plan, state instanceGroupModel) bool {
+	return !plan.ClusterType.Equal(state.ClusterType) || !plan.ID.Equal(state.ID) ||
+		!plan.Region.Equal(state.Region) || !plan.Project.Equal(state.Project) ||
+		!plan.SSHAccess.Equal(state.SSHAccess)
 }
 
 // platformPools reads the desired size of every pool the platform reports on
@@ -962,11 +971,7 @@ func (r *instanceGroupResource) warnDivergedPools(ctx context.Context, req resou
 	if req.State.Get(ctx, &state).HasError() || req.Plan.Get(ctx, &plan).HasError() {
 		return
 	}
-	// Attribute-level replacements are not visible in resp.RequiresReplace
-	// here, so compare what would replace the group directly.
-	if !plan.ClusterType.Equal(state.ClusterType) || !plan.ID.Equal(state.ID) ||
-		!plan.Region.Equal(state.Region) || !plan.Project.Equal(state.Project) ||
-		!plan.SSHAccess.Equal(state.SSHAccess) {
+	if replacedOtherwise(plan, state) {
 		return
 	}
 	target, ok := resolveScope(r.meta, state.Region, state.Project, &scratch)
