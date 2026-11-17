@@ -48,8 +48,10 @@ func TestInstanceGroupPoolsReplace(t *testing.T) {
 		{"a shrink replaces", map[string]attr.Value{"gpu": n(0)}, true},
 		{"a size known only at apply waits", map[string]attr.Value{"gpu": u}, false},
 		{"a pool known only at apply waits", map[string]attr.Value{"gpu": nil}, false},
-		{"a new pool replaces, whatever its size", map[string]attr.Value{"gpu": n(1), "cpu": u}, true},
-		{"a renamed pool replaces", map[string]attr.Value{"cpu": u}, true},
+		// A pool state doesn't hold is already on the group, and ModifyPlan
+		// sizes it against the platform.
+		{"a new pool is left to the platform's count", map[string]attr.Value{"gpu": n(1), "cpu": u}, false},
+		{"a renamed pool is left to the platform's count", map[string]attr.Value{"cpu": u}, false},
 	}
 	raw := tftypes.NewValue(tftypes.String, "set")
 	for _, tt := range tests {

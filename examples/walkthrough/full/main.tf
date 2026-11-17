@@ -573,8 +573,9 @@ resource "k0rdent_webhook_subscription" "this" {
 # Hosts and storage. Off by default.
 # ---------------------------------------------------------------------------
 
-# Bare hosts from the cluster type's first worker pool, at least one, with
-# the same users. This takes real hardware.
+# Bare hosts with the same users: at least one in the cluster type's first
+# worker pool, and the platform adds each other pool at its default size.
+# This takes real hardware.
 resource "k0rdent_instance_group" "this" {
   count = var.build.instance_group ? 1 : 0
 

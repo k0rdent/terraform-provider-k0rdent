@@ -24,10 +24,6 @@ data "k0rdent_cluster_type" "chosen" {
   id = var.cluster_type
 }
 
-locals {
-  workers = [for p in data.k0rdent_cluster_type.chosen.node_pools : p if p.role == "worker"][0]
-}
-
 resource "k0rdent_kubernetes_cluster" "c" {
   id                 = "real-api-check-c"
   cluster_type       = data.k0rdent_cluster_type.chosen.self_link
@@ -37,9 +33,11 @@ resource "k0rdent_kubernetes_cluster" "c" {
 }
 
 resource "k0rdent_instance_group" "g" {
-  id                 = "real-api-check-g"
-  cluster_type       = data.k0rdent_cluster_type.chosen.self_link
-  node_pool          = { (local.workers.id) = { size = coalesce(local.workers.node_count_min, 0) } }
+  id           = "real-api-check-g"
+  cluster_type = data.k0rdent_cluster_type.chosen.self_link
+  # Every pool, as on the cluster: the platform creates them all and an import
+  # reads them all, so naming fewer plans an update after the import.
+  node_pool          = { for p in data.k0rdent_cluster_type.chosen.node_pools : p.id => { size = coalesce(p.node_count_min, 0) } }
   ssh_access         = [{ username = "ops" }]
   ssh_public_keys_wo = { ops = [var.ssh_public_key] }
 }

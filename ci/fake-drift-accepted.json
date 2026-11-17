@@ -519,5 +519,23 @@
     "field": "response $.shareTypes[]*",
     "side": "fake",
     "reason": "Landscape data: the stack runs no storage service (the no-file-store gap the run names), so every real page was `shareTypes: []`. Read at datasource_share_types.go:160-312 (ShareType, types.gen.go:11476). The fake's catalog is what the acceptance tests read."
+  },
+  {
+    "operation": "GET /v1/regions/{region}/projects/{project}/compute/instance-groups/{id} 200",
+    "field": "response $.nodePools[].notReadyCount",
+    "side": "fake",
+    "reason": "Hardware only: API v1.3.0 answers the counts only for a pool with an infrastructure reservation (services/compute/internal/service/instance_group.go:1025-1059, skipped when ReservationID is empty), and kind has no hosts to reserve. The fake's group holds a host in each pool it creates. Read nil-safe at datasource_instance_group.go:237-238 through int64OrNull and at resource_instance_group.go:991."
+  },
+  {
+    "operation": "GET /v1/regions/{region}/projects/{project}/compute/instance-groups/{id} 200",
+    "field": "response $.nodePools[].readyCount",
+    "side": "fake",
+    "reason": "Hardware only: API v1.3.0 answers the counts only for a pool with an infrastructure reservation (services/compute/internal/service/instance_group.go:1025-1059, skipped when ReservationID is empty), and kind has no hosts to reserve. The fake's group holds a host in each pool it creates. Read nil-safe at datasource_instance_group.go:237-238 through int64OrNull and at resource_instance_group.go:991."
+  },
+  {
+    "operation": "GET /v1/regions/{region}/projects/{project}/compute/instance-groups/{id} 200",
+    "field": "response $.progressUpdatedAt",
+    "side": "fake",
+    "reason": "Hardware only: API v1.3.0 stamps it as a pool's reservation reports progress (services/compute/db/queries/instance_group_reconciler.sql:121) and omits it while unset, and kind has no hosts to reserve. The fake answers it in flight for a group with hosts. Read nil-safe at datasource_instance_group.go:229 through timeOrNull."
   }
 ]
