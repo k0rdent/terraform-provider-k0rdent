@@ -256,6 +256,37 @@ func TestInstanceGroupStateFromReadsTheDesiredCount(t *testing.T) {
 	}
 }
 
+// The platform creates every pool on the ClusterType, named or not. A pool the
+// configuration doesn't name must not appear after a create, or Terraform
+// fails the apply as an inconsistent result. An import knows no pools, so it
+// takes them all.
+func TestInstanceGroupStateFromKeepsToTheKnownPools(t *testing.T) {
+	t.Parallel()
+
+	pools := []k0rdent.NodePool{{NodePool: "control-plane", DesiredCount: 1}, {NodePool: "workers", DesiredCount: 1}}
+	group := k0rdent.InstanceGroup{Id: "hosts", ClusterType: testPinnedRef, NodePools: &pools}
+	configured, _ := types.MapValueFrom(context.Background(), instanceGroupPoolObjectType(),
+		map[string]instanceGroupPoolModel{"workers": {Size: types.Int64Value(1)}})
+
+	got, diags := instanceGroupStateFrom(context.Background(), group,
+		instanceGroupModel{ClusterType: types.StringValue(testHeadRef), NodePool: configured})
+	if diags.HasError() {
+		t.Fatal(diags.Errors())
+	}
+	if !got.NodePool.Equal(configured) {
+		t.Errorf("node_pool = %v, want only the configured %v", got.NodePool, configured)
+	}
+
+	imported, diags := instanceGroupStateFrom(context.Background(), group,
+		instanceGroupModel{NodePool: types.MapNull(instanceGroupPoolObjectType())})
+	if diags.HasError() {
+		t.Fatal(diags.Errors())
+	}
+	if n := len(imported.NodePool.Elements()); n != 2 {
+		t.Errorf("an import read %d pools, want both", n)
+	}
+}
+
 func TestInstanceGroupStateFromSurvivesAnAllNilGroup(t *testing.T) {
 	t.Parallel()
 

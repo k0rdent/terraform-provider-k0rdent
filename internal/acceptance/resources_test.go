@@ -46,6 +46,22 @@ resource %q "test" {
 `, instanceGroupType, name, clusterTypeRef, size)
 }
 
+// everyPoolInstanceGroupConfig names both of the ClusterType's pools, so an
+// import, which reads every pool, plans nothing.
+func everyPoolInstanceGroupConfig(name string, size int) string {
+	return fmt.Sprintf(`
+resource %q "test" {
+  id           = %q
+  cluster_type = %q
+  display_name = "acceptance"
+  node_pool = {
+    "control-plane" = { size = 1 }
+    "gpu-workers"   = { size = %d }
+  }
+}
+`, instanceGroupType, name, clusterTypeRef, size)
+}
+
 func TestAccCluster(t *testing.T) {
 	t.Parallel()
 	const name = "acc-cluster"
@@ -109,11 +125,14 @@ func TestAccInstanceGroup(t *testing.T) {
 		CheckDestroy:             checkGone(instanceGroupType, instanceGroupPath),
 		Steps: []resource.TestStep{
 			{
+				// The platform creates the control-plane pool too, which the
+				// configuration doesn't name, so it stays out of state.
 				Config: instanceGroupConfig(name, 1),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr(instanceGroupAddr, "id", name),
 					resource.TestCheckResourceAttr(instanceGroupAddr, "region", "us-texas-1"),
 					resource.TestCheckResourceAttr(instanceGroupAddr, "project", "demo"),
+					resource.TestCheckResourceAttr(instanceGroupAddr, "node_pool.%", "1"),
 				),
 			},
 			{
@@ -121,9 +140,19 @@ func TestAccInstanceGroup(t *testing.T) {
 				PlanOnly: true,
 			},
 			{
-				Config: instanceGroupConfig(name, 2),
-				Check: resource.TestCheckResourceAttr(
-					instanceGroupAddr, "node_pool.gpu-workers.size", "2"),
+				// The scale grows the named pool and leaves the other alone.
+				Config: instanceGroupConfig(name, 2) + fmt.Sprintf(`
+data %q "read" {
+  id         = %q
+  depends_on = [%s.test]
+}
+`, instanceGroupType, name, instanceGroupType),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr(instanceGroupAddr, "node_pool.gpu-workers.size", "2"),
+					resource.TestCheckResourceAttr(instanceGroupAddr, "node_pool.%", "1"),
+					resource.TestCheckResourceAttr(instanceGroupDataAddr, "node_pools.gpu-workers.desired_count", "2"),
+					resource.TestCheckResourceAttr(instanceGroupDataAddr, "node_pools.control-plane.desired_count", "1"),
+				),
 			},
 			{
 				Config:                  instanceGroupConfig(name, 2),

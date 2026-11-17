@@ -169,11 +169,16 @@ func (r *instanceGroupResource) Schema(ctx context.Context, _ resource.SchemaReq
 				Optional: true,
 				Computed: true,
 				MarkdownDescription: "Host counts per pool, keyed by the ClusterType node pool's id.\n\n" +
-					"Unlike a cluster's `node_pool` this is not sparse: the platform provisions " +
-					"exactly the pools named here. Growing a pool scales in place. **Shrinking a " +
-					"pool, or adding or removing one, replaces the whole group**, because the API " +
-					"implements scale up only and rejects everything else on this field with " +
-					"`409 CONFLICT_IMMUTABLE`.\n\n" +
+					"As on a cluster, this is a **sparse override set**, not the full pool list. The " +
+					"platform creates every pool on the bound ClusterType version, using each pool's " +
+					"default size where this map does not name it. Only the pools named here are in " +
+					"state and drift-checked. The `" + ResourceName(instanceGroupDataSourceSuffix) +
+					"` data source's `node_pools` lists them all.\n\n" +
+					"Growing a pool scales in place. **Shrinking a pool, or adding one to this map, " +
+					"replaces the whole group**, because the API implements scale up only and rejects " +
+					"everything else on this field with `409 CONFLICT_IMMUTABLE`. Removing a pool from " +
+					"this map stops managing it and leaves it on the group. An import reads every pool, " +
+					"so a configuration that names fewer plans an update that drops the rest from state.\n\n" +
 					"A scale waits, within the `update` timeout, while another operation on the group " +
 					"finishes or its quota accounting settles. A pool whose desired size disagrees with " +
 					"the hosts it holds cannot be scaled until that is corrected, and a plan that grows " +
@@ -201,8 +206,8 @@ func (r *instanceGroupResource) Schema(ctx context.Context, _ resource.SchemaReq
 					mapplanmodifier.UseStateForUnknown(),
 					mapplanmodifier.RequiresReplaceIf(
 						instanceGroupPoolsRequireReplace,
-						"replaced when a pool shrinks, or when pools are added or removed, and scaled in place when a pool grows",
-						"replaced when a pool shrinks, or when pools are added or removed, and scaled in place when a pool grows",
+						"replaced when a pool shrinks or one is added, and scaled in place when a pool grows",
+						"replaced when a pool shrinks or one is added, and scaled in place when a pool grows",
 					),
 				},
 			},
@@ -251,9 +256,11 @@ func (r *instanceGroupResource) Schema(ctx context.Context, _ resource.SchemaReq
 // instanceGroupPoolsRequireReplace decides between a scale and a replacement.
 //
 // Scale up is the only in-place change the API offers on this field, so a
-// smaller size, a new pool or a removed pool has to be a replacement. Saying so
-// in the plan is what stops an apply failing halfway with a 409 or a 422 after
-// the user has approved it.
+// smaller size or a new pool has to be a replacement. Saying so in the plan is
+// what stops an apply failing halfway with a 409 or a 422 after the user has
+// approved it. A pool left out stays on the group either way, since the
+// platform creates every pool on the ClusterType, so dropping one only stops
+// managing it.
 func instanceGroupPoolsRequireReplace(ctx context.Context, req planmodifier.MapRequest, resp *mapplanmodifier.RequiresReplaceIfFuncResponse) {
 	if req.State.Raw.IsNull() || req.Plan.Raw.IsNull() {
 		return
@@ -270,10 +277,6 @@ func instanceGroupPoolsRequireReplace(ctx context.Context, req planmodifier.MapR
 
 	// Pool ids are map keys, so they are known even when a size is not.
 	want := req.ConfigValue.Elements()
-	if len(want) != len(have) {
-		resp.RequiresReplace = true
-		return
-	}
 	for id, pool := range want {
 		current, known := have[id]
 		if !known {
@@ -353,8 +356,8 @@ func (r *instanceGroupResource) Create(ctx context.Context, req resource.CreateR
 		// Local: configuration validation, no request made.
 		resp.Diagnostics.AddError(
 			"An instance group needs at least one node pool",
-			"`node_pool` is empty. Unlike a cluster, an instance group provisions exactly the "+
-				"pools it is given, so there is no ClusterType default to fall back on. "+
+			"`node_pool` is empty. The platform creates every pool on the ClusterType, but "+
+				"refuses a create that names none. Name at least one, with its size. "+
 				"Pool ids come from the bound ClusterType version.",
 		)
 		return
@@ -818,7 +821,7 @@ func (r *instanceGroupResource) warnDivergedPools(ctx context.Context, req resou
 	}
 	want, d1 := instanceGroupPoolsFrom(ctx, planned)
 	have, d2 := instanceGroupPoolsFrom(ctx, prior)
-	if d1.HasError() || d2.HasError() || len(want) != len(have) {
+	if d1.HasError() || d2.HasError() {
 		return
 	}
 	grown := map[string]bool{}
@@ -1015,10 +1018,18 @@ func instanceGroupStateFrom(ctx context.Context, g k0rdent.InstanceGroup, prior 
 		)
 		return out, diags
 	}
+	// The platform creates every pool on the ClusterType, named or not. Keep
+	// to the pools state already holds, as the cluster does, so one nobody
+	// configured neither appears after a create nor plans a change. An import
+	// knows none, so it takes them all.
+	known := prior.NodePool.Elements()
+	narrow := !prior.NodePool.IsNull() && !prior.NodePool.IsUnknown()
 	pools := map[string]instanceGroupPoolModel{}
 	if g.NodePools != nil {
 		for _, p := range *g.NodePools {
-			pools[p.NodePool] = instanceGroupPoolModel{Size: types.Int64Value(int64(p.DesiredCount))}
+			if _, ok := known[p.NodePool]; ok || !narrow {
+				pools[p.NodePool] = instanceGroupPoolModel{Size: types.Int64Value(int64(p.DesiredCount))}
+			}
 		}
 	}
 

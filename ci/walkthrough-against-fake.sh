@@ -446,8 +446,10 @@ run_full_as_shipped() {
     'v["webhook"].startswith("made ") and v["instance group"].startswith("off.")'
 }
 
+# The instance group names one worker host, and the platform adds the
+# ClusterType's control-plane pool at its default of one.
 run_full_everything() {
-  run_full full-everything 'not any(s.startswith("off.") for s in v.values()) and v["instance group"].endswith("1 of 1 hosts ready") and v["file store"].endswith(", settled") and v["vpc peering"].endswith("the cluster'"'"'s side active")'
+  run_full full-everything 'not any(s.startswith("off.") for s in v.values()) and v["instance group"].endswith("2 of 2 hosts ready") and v["file store"].endswith(", settled") and v["vpc peering"].endswith("the cluster'"'"'s side active")'
 }
 
 main() {

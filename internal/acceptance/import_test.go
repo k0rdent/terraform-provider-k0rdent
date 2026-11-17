@@ -260,6 +260,8 @@ resource %q "test" {
 		instanceGroupType: func() importCase {
 			const name = "acc-import-hosts"
 			return importCase{
+				// Every pool named, as on the cluster. A configuration
+				// naming a subset is TestAccImportInstanceGroupSparsePools.
 				// The SSH users and their write-only keys, as on the
 				// cluster: the platform answers references to the keys,
 				// which an import reads the same as the create did.
@@ -269,7 +271,8 @@ resource %q "test" {
   cluster_type = %q
   display_name = "acceptance"
   node_pool = {
-    "gpu-workers" = { size = 1 }
+    "control-plane" = { size = 1 }
+    "gpu-workers"   = { size = 1 }
   }
   ssh_access = [%s
   ]
@@ -444,6 +447,35 @@ func TestAccImportClusterSparsePools(t *testing.T) {
 	})
 }
 
+// The instance group's twin of TestAccImportClusterSparsePools. The platform
+// creates every pool on the ClusterType, and an import adopts them all, so a
+// configuration naming fewer plans an update that drops the rest from state,
+// never a replacement, and then nothing.
+func TestAccImportInstanceGroupSparsePools(t *testing.T) {
+	t.Parallel()
+	const name = "acc-import-sparse-hosts"
+	config := instanceGroupConfig(name, 2)
+	seed := strings.Replace(config, `"test"`, `"seed"`, 1)
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: protoV6,
+		CheckDestroy:             checkGone(instanceGroupType, instanceGroupPath),
+		Steps: []resource.TestStep{
+			{Config: seed},
+			{
+				Config: adopt(config, instanceGroupType, "us-texas-1/demo/"+name),
+				ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{
+					plancheck.ExpectResourceAction(instanceGroupAddr, plancheck.ResourceActionUpdate),
+				}},
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr(instanceGroupAddr, "node_pool.%", "1"),
+					resource.TestCheckResourceAttr(instanceGroupAddr, "node_pool.gpu-workers.size", "2"),
+				),
+			},
+			{Config: config, PlanOnly: true},
+		},
+	})
+}
+
 // A cluster pinned to a version that isn't the ClusterType's current one keeps
 // its pin on import, because there the unversioned spelling would mean a
 // different version. The pinned configuration plans clean.
@@ -598,8 +630,16 @@ resource %q "test" {
   }
 }
 `, clusterType, pinned),
-		instanceGroupType: strings.Replace(instanceGroupConfig("acc-import-pin-current-hosts", 1),
-			fmt.Sprintf("%q", clusterTypeRef), fmt.Sprintf("%q", pinned), 1),
+		instanceGroupType: fmt.Sprintf(`
+resource %q "test" {
+  id           = "acc-import-pin-current-hosts"
+  cluster_type = %q
+  node_pool = {
+    "control-plane" = { size = 1 }
+    "gpu-workers"   = { size = 1 }
+  }
+}
+`, instanceGroupType, pinned),
 	}
 	paths := map[string]func(map[string]string) string{
 		clusterType: clusterPath, instanceGroupType: instanceGroupPath,

@@ -505,7 +505,8 @@ func TestAccFileStoreRepairedGroupPlansNothing(t *testing.T) {
 			{Config: groupStoreConfig("acc-repaired", group, 3)},
 			{
 				Config: groupStoreConfig("acc-repaired", group, 3),
-				Check:  resource.TestCheckResourceAttr(fileStoreAddr, status+"resolved_addresses.#", "3"),
+				// Three workers and the control-plane host the platform adds.
+				Check: resource.TestCheckResourceAttr(fileStoreAddr, status+"resolved_addresses.#", "4"),
 			},
 		},
 	})
@@ -540,7 +541,8 @@ func TestAccFileStoreDriftedGroupIsResolvedAgain(t *testing.T) {
 				Config: grown,
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr(fileStoreAddr, status+"state", "active"),
-					resource.TestCheckResourceAttr(fileStoreAddr, status+"resolved_addresses.#", "3"),
+					// Three workers and the control-plane host the platform adds.
+					resource.TestCheckResourceAttr(fileStoreAddr, status+"resolved_addresses.#", "4"),
 				),
 			},
 			{Config: grown, PlanOnly: true},

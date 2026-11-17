@@ -69,3 +69,24 @@ func TestInstanceGroupPoolsReplace(t *testing.T) {
 		})
 	}
 }
+
+// The platform creates every pool on the ClusterType, and an import reads them
+// all. A configuration that names fewer only stops managing the rest, which
+// stay on the group, so it is not a replacement.
+func TestInstanceGroupPoolLeftOutIsNotAReplacement(t *testing.T) {
+	n := types.Int64Value
+	raw := tftypes.NewValue(tftypes.String, "set")
+	config := poolMap(t, map[string]attr.Value{"gpu-workers": n(1)})
+	var resp mapplanmodifier.RequiresReplaceIfFuncResponse
+	instanceGroupPoolsRequireReplace(context.Background(), planmodifier.MapRequest{
+		State: tfsdk.State{Raw: raw}, Plan: tfsdk.Plan{Raw: raw},
+		StateValue:  poolMap(t, map[string]attr.Value{"control-plane": n(1), "gpu-workers": n(1)}),
+		ConfigValue: config, PlanValue: config,
+	}, &resp)
+	if resp.Diagnostics.HasError() {
+		t.Fatal(resp.Diagnostics)
+	}
+	if resp.RequiresReplace {
+		t.Error("RequiresReplace = true for a pool left out of the configuration, want false")
+	}
+}

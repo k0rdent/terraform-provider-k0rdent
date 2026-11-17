@@ -148,7 +148,8 @@ resource %q "test" {
 				instanceType,
 				fileStoreType, store, instanceGroupType),
 			Check: resource.ComposeAggregateTestCheckFunc(
-				resource.TestCheckResourceAttr(list, "instances.#", "2"),
+				// Two workers, and the control-plane host the platform adds.
+				resource.TestCheckResourceAttr(list, "instances.#", "3"),
 				resource.TestCheckResourceAttr(list, "instances.0.instance_group", group),
 				resource.TestCheckResourceAttr(list, "instances.0.state", "running"),
 				resource.TestCheckResourceAttr(list, "instances.0.network_interfaces.#", "2"),
