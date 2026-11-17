@@ -111,6 +111,8 @@ Every other job runs the newer one.
   matrix to the two releases the check names, every other job to the newer
   one. For example, Terraform 1.18.0 moves the matrix from 1.16 and 1.17 to
   1.17's newest patch and 1.18.0.
+- A new minor also changes the versions in `docs/support-matrix.md` and
+  `templates/guides/getting-started.md.tmpl`.
 - `scripts/check-workflow-actions.sh` refuses anything else: a third version,
   two that aren't adjacent minors, a matrix check name that doesn't show its
   version, or a job outside the matrix on the older release.
