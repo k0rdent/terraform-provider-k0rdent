@@ -284,22 +284,25 @@ func (r *networkResource) Schema(ctx context.Context, _ resource.SchemaRequest, 
 						MarkdownDescription: "The PKey the platform reports, whether it was asked for or allocated.",
 						PlanModifiers:       []planmodifier.String{keepUnlessChanged().onceSettled(networkStates.settle)},
 					},
-					// Optional+Computed with a default: immutable either way.
+					// Optional+Computed with no default: unset, the request
+					// leaves it out and the fabric applies its own.
 					"index0": schema.BoolAttribute{
 						Optional: true,
 						Computed: true,
-						Default:  booldefault.StaticBool(false),
-						MarkdownDescription: "Store the PKey at index 0. When the platform reports no value, as " +
-							"for a network created without one, state holds `false`, the fabric's default.",
+						MarkdownDescription: "Store the PKey at index 0. Unset, the provider sends no value. " +
+							"When the platform reports no value, state holds `false`, the fabric's default.",
 						PlanModifiers: []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()},
 					},
-					// See index0.
+					// See index0. The fabric operator documents the UFM default
+					// for an omitted ipOverIb as true, so an absent value reads
+					// as null rather than false.
 					"ip_over_ib": schema.BoolAttribute{
-						Optional:            true,
-						Computed:            true,
-						Default:             booldefault.StaticBool(false),
-						MarkdownDescription: "Whether the partition takes part in IP-over-InfiniBand multicast.",
-						PlanModifiers:       []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()},
+						Optional: true,
+						Computed: true,
+						MarkdownDescription: "Whether the partition takes part in IP-over-InfiniBand multicast. " +
+							"Unset, the provider sends no value and the fabric applies its own default, " +
+							"which is on for a UFM fabric. When the platform reports no value, state holds null.",
+						PlanModifiers: []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()},
 					},
 				},
 			},

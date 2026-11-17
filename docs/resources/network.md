@@ -113,8 +113,8 @@ Read-Only:
 
 Optional:
 
-- `index0` (Boolean) Store the PKey at index 0. When the platform reports no value, as for a network created without one, state holds `false`, the fabric's default. Defaults to `false`.
-- `ip_over_ib` (Boolean) Whether the partition takes part in IP-over-InfiniBand multicast. Defaults to `false`.
+- `index0` (Boolean) Store the PKey at index 0. Unset, the provider sends no value. When the platform reports no value, state holds `false`, the fabric's default.
+- `ip_over_ib` (Boolean) Whether the partition takes part in IP-over-InfiniBand multicast. Unset, the provider sends no value and the fabric applies its own default, which is on for a UFM fabric. When the platform reports no value, state holds null.
 - `partition` (String) Name of an operator-defined InfiniBand Partition in the region. Required on the `nico` backend. The contract does not gate by backend, so the server decides and this attribute cannot. **Known gap.** No operation in the contract lists partitions, so the name comes from the operator. The [hardcoded values](../guides/hardcoded-values.md) guide names the side that has to change. **Constraints:** String length must be at least 1.
 - `pkey` (String) Partition key in hex, e.g. `0x1234`. Omitted, the platform may allocate one. The `nico` backend ignores it and uses the partition name. See `pkey_allocated`. An import cannot recover the requested value, so the first apply after one records the configured value without replacing the network. **Constraints:** Must be 0x and hex digits, such as 0x1234.
 

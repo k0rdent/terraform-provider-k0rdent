@@ -10,11 +10,11 @@ import (
 	"github.com/k0rdent/terraform-provider-k0rdent/internal/k0rdent"
 )
 
-// The platform leaves out a flag nobody set. `dhcp_enabled` and `index0`
-// default to false in the schema and the fabric treats them as off when unset,
-// so the read has to say false, or the first plan after an import proposes
-// replacing the network. An unset `ip_over_ib` is on at the fabric, so it stays
-// null.
+// The platform leaves out a flag nobody set. The fabric treats an unset
+// `dhcp_enabled` or `index0` as off, so the read says false. `dhcp_enabled`
+// defaults to false in the schema, so a null there would make the first plan
+// after an import propose replacing the network. An unset `ip_over_ib` is on
+// at the fabric, so it stays null.
 //
 // The first and fourth bodies are what API v1.3.0 answered on kind, trimmed to
 // the fields that matter: a network a cluster made and an InfiniBand network
