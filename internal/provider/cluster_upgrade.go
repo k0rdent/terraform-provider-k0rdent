@@ -33,16 +33,28 @@ const versionRefusal = "Cannot move the cluster to a different version of its Cl
 
 // refusedAtApply ends the plan's warning. Naming the bound version matters:
 // after a failed step it isn't the one the configuration had before the edit.
-func refusedAtApply(bound string) string {
+// It's the version in state, which -refresh=false doesn't update.
+func refusedAtApply(bound string, waits bool) string {
 	return fmt.Sprintf(" The apply checks this again. If it still holds, the apply fails before it changes "+
 		"anything on this cluster. `terraform destroy` isn't affected. "+
-		"To keep the cluster on its current version, set `cluster_type` to %q.", bound)
+		"To leave the version as it is, set `cluster_type` to %q, the version in state.", bound) + keepFailed(waits)
 }
 
 // sentNothing ends the apply's refusal.
-func sentNothing(bound string) string {
+func sentNothing(bound string, waits bool) string {
 	return fmt.Sprintf(" This apply sent nothing that changes the cluster. To apply the rest of the "+
-		"configuration, set `cluster_type` back to %q, the version the cluster is on now.", bound)
+		"configuration, set `cluster_type` back to %q, the version in state.", bound) + keepFailed(waits)
+}
+
+// keepFailed ends the way back for a `failed` cluster an apply waits for
+// (waitsOnFailed). With `cluster_type` set back alone, that apply waits and
+// fails while the cluster stays `failed`.
+func keepFailed(waits bool) string {
+	if !waits {
+		return ""
+	}
+	return " Set `on_failed = \"keep\"` too, or the next apply waits for the `failed` cluster and fails if it " +
+		"stays `failed`."
 }
 
 // upgradePath returns the versions an upgrade from boundID to targetID passes
@@ -58,7 +70,7 @@ func upgradePath(versions []k0rdent.ClusterTypeVersion, boundID, targetID string
 	}
 	bound, ok := byID[boundID]
 	if !ok {
-		return nil, fmt.Sprintf("The platform reports the cluster bound to version id %q, which its "+
+		return nil, fmt.Sprintf("State has the cluster bound to version id %q, which its "+
 			"ClusterType does not list, so there is no telling whether %q is later.", boundID, targetID)
 	}
 	target, ok := byID[targetID]
@@ -72,10 +84,10 @@ func upgradePath(versions []k0rdent.ClusterTypeVersion, boundID, targetID string
 	case to == from:
 		return nil, ""
 	case to < from:
-		return nil, fmt.Sprintf("`cluster_type` names version %d and the platform reports version %d. "+
+		return nil, fmt.Sprintf("`cluster_type` names version %d, and state has the cluster on version %d. "+
 			"Upgrades are forward-only, so the cluster cannot be moved back, and replacing it would "+
 			"destroy it to change a version. If the cluster was upgraded outside Terraform, set "+
-			"`cluster_type` to the reported version. To rebuild it at an earlier version on purpose, "+
+			"`cluster_type` to the version a refresh records. To rebuild it at an earlier version on purpose, "+
 			"destroy it first, then apply.", to, from)
 	case target.Status != k0rdent.ClusterTypeVersionStatusAvailable:
 		return nil, fmt.Sprintf("Version %d is `%s`. Only an `available` version can be upgraded to.",
@@ -283,7 +295,10 @@ func (r *clusterResource) planVersionChange(ctx context.Context, req resource.Mo
 
 	attr := path.Root("cluster_type")
 	if change == refRefused {
-		resp.Diagnostics.AddAttributeWarning(attr, versionRefusal, redactDiagnosticText(refusal+refusedAtApply(bound)))
+		var onFailed types.String
+		resp.Diagnostics.Append(resp.Plan.GetAttribute(ctx, path.Root(onFailedAttribute), &onFailed)...)
+		waits := waitsOnFailed(onFailed, lastFailed(ctx, req.Private))
+		resp.Diagnostics.AddAttributeWarning(attr, versionRefusal, redactDiagnosticText(refusal+refusedAtApply(bound, waits)))
 		return
 	}
 	if r.meta == nil || r.meta.Client == nil {
@@ -306,7 +321,7 @@ func (r *clusterResource) planVersionChange(ctx context.Context, req resource.Mo
 		}
 	}
 	if refusal != "" {
-		resp.Diagnostics.AddAttributeWarning(attr, versionRefusal, redactDiagnosticText(refusal+refusedAtApply(bound)))
+		resp.Diagnostics.AddAttributeWarning(attr, versionRefusal, redactDiagnosticText(refusal+refusedAtApply(bound, false)))
 		return
 	}
 	if len(rt.steps) == 0 {
@@ -507,8 +522,8 @@ func (r *clusterResource) checkRoute(ctx context.Context, target clusterTarget, 
 	}
 	var at map[string]int
 	if refusal == "" && len(rt.steps) == 0 {
-		refusal = fmt.Sprintf("`cluster_type` names %s, the version the cluster is on, under a "+
-			"different origin than the platform's %s.", want, bound)
+		refusal = fmt.Sprintf("`cluster_type` names %s, the version in state, under a "+
+			"different origin than state's %s.", want, bound)
 	}
 	if refusal == "" {
 		at, refusal = schedulePools(have, wantPools, rt.bounds)
@@ -532,12 +547,12 @@ func (r *clusterResource) replan(ctx context.Context, target clusterTarget, want
 }
 
 // refuseVersionChange is the plan's version check, made again before an
-// apply sends anything: the plan only warns, so that `terraform destroy`
+// apply writes anything: the plan only warns, so that `terraform destroy`
 // isn't stopped by it. It classifies against the state the apply was planned
 // from, and checks the route and the node pool schedule against the platform
 // as it is now, with the counts the apply knows, which the plan may not have.
 // It reports whether the apply stops here, having said why.
-func (r *clusterResource) refuseVersionChange(ctx context.Context, target clusterTarget, id string, plan, state clusterModel, diags *diag.Diagnostics) bool {
+func (r *clusterResource) refuseVersionChange(ctx context.Context, target clusterTarget, id string, plan, state clusterModel, private privateState, diags *diag.Diagnostics) bool {
 	want, bound := plan.ClusterType.ValueString(), boundRef(state)
 	change, refusal := classifyRefChange(want, bound, k0rdent.ClusterState(state.State.ValueString()))
 	if change == refUpgrade {
@@ -558,7 +573,8 @@ func (r *clusterResource) refuseVersionChange(ctx context.Context, target cluste
 		return false
 	}
 	// Local: the plan's warning, refused now that the change would be sent.
-	diags.AddAttributeError(path.Root("cluster_type"), versionRefusal, redactDiagnosticText(refusal+sentNothing(bound)))
+	waits := change == refRefused && waitsOnFailed(plan.OnFailed, lastFailed(ctx, private))
+	diags.AddAttributeError(path.Root("cluster_type"), versionRefusal, redactDiagnosticText(refusal+sentNothing(bound, waits)))
 	return true
 }
 

@@ -1,0 +1,15 @@
+```release-note:bug
+resource/k0rdent_kubernetes_cluster: Fix the version refusal on a `failed` cluster leaving out `on_failed = "keep"`. Setting `cluster_type` back as the refusal said made the next apply wait for the cluster and fail
+```
+
+```release-note:bug
+resource/k0rdent_kubernetes_cluster: Fix the version refusal calling the version in state the one the cluster is on, which differs after `-refresh=false`
+```
+
+```release-note:bug
+resource/k0rdent_kubernetes_cluster: Fix the warning for a plan that replaces a tainted cluster saying `terraform destroy` shows it too. Terraform drops the warnings of the plan a destroy runs first
+```
+
+```release-note:bug
+resource/k0rdent_instance_group: Fix the warning for a plan that replaces a tainted instance group saying `terraform destroy` shows it too. Terraform drops the warnings of the plan a destroy runs first
+```

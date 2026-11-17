@@ -500,7 +500,7 @@ func TestACreateThatStopsWaitingResumesAfterAnUntaint(t *testing.T) {
 				}
 				containsAll(t, "the replacing plan's warning", strings.Join(replace.warnings, "\n"),
 					"is still being created: applying this plan cancels it if this state holds it",
-					"terraform untaint <address>\n    terraform apply", "`terraform destroy` shows this warning too")
+					"terraform untaint <address>\n    terraform apply")
 
 				// After the untaint. Private state isn't relied on: nil here.
 				refreshed, _ := run.read(first.state, nil)
@@ -666,7 +666,7 @@ func TestAPlanPassesATaintedCreateInEveryState(t *testing.T) {
 					t.Fatalf("the plan was refused, so a destroy would be too: %v", errs)
 				}
 				warned := strings.Join(planned.warnings, "\n")
-				containsAll(t, "the plan's warning", warned, state.says, "`terraform destroy` shows this warning too")
+				containsAll(t, "the plan's warning", warned, state.says)
 				if state.state != "failed" {
 					containsAll(t, "the plan's warning", warned, "terraform untaint <address>\n    terraform apply")
 				}
@@ -704,8 +704,32 @@ func TestAPlanPassesAFailedCreate(t *testing.T) {
 			t.Errorf("a failed %s with tags %v was refused: %v", tc.kind, tc.tags, errs)
 		default:
 			containsAll(t, tc.kind+"'s plan warning", strings.Join(planned.warnings, "\n"),
-				"applying this plan replaces it", "Its delete can fail", "run `terraform destroy` instead",
-				"`terraform destroy` shows this warning too")
+				"applying this plan replaces it", "Its delete can fail", "run `terraform destroy` instead")
+		}
+	}
+}
+
+// Terraform drops the warnings of the plan `terraform destroy` refreshes
+// with (context_plan.go, destroyPlan), so no text says a destroy shows the
+// replacing plan's warning.
+func TestNoTextSaysADestroyShowsTheReplacingWarning(t *testing.T) {
+	var s resource.SchemaResponse
+	(&clusterResource{}).Schema(context.Background(), resource.SchemaRequest{}, &s)
+	texts := map[string]string{"the cluster's description": s.Schema.MarkdownDescription}
+	for _, state := range []string{"creating", "updating", "active", "failed"} {
+		var diags diag.Diagnostics
+		existing{kind: "cluster", resourceName: ResourceName(clusterResourceSuffix), id: "c1", state: state,
+			tagged: true}.warnReplacing(&diags)
+		if len(diags) != 1 {
+			t.Fatalf("the %s cluster's plan has %d diagnostics, want its warning", state, len(diags))
+		}
+		texts["the "+state+" cluster's warning"] = diags[0].Detail()
+	}
+	for name, text := range texts {
+		for _, claim := range []string{"destroy` shows", "shows the warning too"} {
+			if strings.Contains(text, claim) {
+				t.Errorf("%s says %q:\n%s", name, claim, text)
+			}
 		}
 	}
 }
