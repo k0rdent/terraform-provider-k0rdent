@@ -134,7 +134,9 @@ var busyConflictDecisions = map[string]busyConflictDecision{
 		says: "the store is not in a state that accepts updates, because it is `creating`, `deleting` or " +
 			"`failed`, a previous capacity change is still settling its quota accounting, or the reconcile " +
 			"sweep is charging the store's quota; retry shortly.",
-		// From API v1.4 the quota causes answer CONFLICT_STATE.
+		// From API v1.4 the quota causes answer CONFLICT_STATE, except quota
+		// accounting that moved during the update, which answers
+		// CONFLICT_VERSION like a concurrent edit and so isn't sent again.
 		reasons: []string{conflictInUse, conflictState},
 		waits:   true,
 	},

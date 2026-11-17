@@ -361,3 +361,96 @@ func TestAnInstanceGroupCreateRefusedForAStateIsReportedWithWhatToDo(t *testing.
 		t.Errorf("doesn't name %s:\n%s", want, errs[0].Detail())
 	}
 }
+
+// A create refused CONFLICT_VERSION whose id then reads as taken by something
+// this create can't prove is its own isn't sent again: it's reported as the
+// name in use it is.
+func TestACreateThatLostARaceIsNotSentAgainWhenTheIDReadsTaken(t *testing.T) {
+	api := newClusterAPI(t)
+	api.answer = func(sent int, id string, w http.ResponseWriter) bool {
+		api.tags[id] = nil // there, without this create's token
+		w.WriteHeader(http.StatusConflict)
+		if _, err := w.Write([]byte(conflictV14("CONFLICT_VERSION"))); err != nil {
+			t.Errorf("write: %v", err)
+		}
+		return true
+	}
+	resp := createCluster(t, api.serve(), "c1")
+	assertRefusedWithImport(t, resp.Diagnostics, "terraform import <address> test/test/c1")
+	if len(api.sent) != 1 {
+		t.Errorf("creates sent = %d, want 1", len(api.sent))
+	}
+}
+
+// One whose id can't be read back isn't sent again either: nothing says the
+// refused create made nothing.
+func TestACreateThatLostARaceIsNotSentAgainWhenTheReadFails(t *testing.T) {
+	api := newClusterAPI(t)
+	api.readsFail = true
+	refuseCreate(api, 1<<30, conflictV14("CONFLICT_VERSION"))
+	resp := createCluster(t, api.serve(), "c1")
+	if !resp.Diagnostics.HasError() {
+		t.Fatal("a refused create reported success")
+	}
+	if len(api.sent) != 1 {
+		t.Errorf("creates sent = %d, want 1", len(api.sent))
+	}
+}
+
+// raceCreate is a converging create whose first `refuse` sends lose a race,
+// with the pauses between sends recorded rather than slept.
+func raceCreate(t *testing.T, refuse int, sleepErr error) (convergingCreate, *int, *[]time.Duration) {
+	sends, pauses := 0, []time.Duration{}
+	c := convergingCreate{
+		key: createKey{id: "c1"}, kind: "cluster", what: "create the cluster",
+		resourceName: ResourceName(clusterResourceSuffix), importID: func(id string) string { return id },
+		send: func(context.Context) createAnswer {
+			sends++
+			if sends <= refuse {
+				body := conflictV14("CONFLICT_VERSION")
+				return createAnswer{resp: answer(http.StatusConflict, "", body), body: []byte(body)}
+			}
+			return createAnswer{resp: answer(http.StatusCreated, "", "{}")}
+		},
+		lookup:    func(context.Context, string) createLookup { return createLookup{} },
+		retryOn:   []string{conflictVersion},
+		retryWait: waitConfig{Interval: time.Second},
+		sleep: func(_ context.Context, d time.Duration) error {
+			pauses = append(pauses, d)
+			return sleepErr
+		},
+	}
+	return c, &sends, &pauses
+}
+
+// Each resend waits first, as busyRetry does: up to one poll interval before
+// the first, doubling after.
+func TestACreateThatLostARacePausesBeforeEachResend(t *testing.T) {
+	c, sends, pauses := raceCreate(t, 2, nil)
+	outcome, _, diags := c.run(context.Background())
+	if outcome != createDone || diags.HasError() {
+		t.Fatalf("outcome %v, %v", outcome, diags)
+	}
+	if *sends != 3 || len(*pauses) != 2 {
+		t.Fatalf("sends = %d, pauses = %v, want 3 sends and a pause before each resend", *sends, *pauses)
+	}
+	if (*pauses)[0] > time.Second || (*pauses)[1] > 2*time.Second {
+		t.Errorf("pauses = %v, want at most 1s, then at most 2s", *pauses)
+	}
+}
+
+// A pause the timeout or an interrupt ends sends nothing more, and reports
+// the refusal.
+func TestACreateWhosePauseEndsReportsTheRefusal(t *testing.T) {
+	c, sends, _ := raceCreate(t, 1, context.Canceled)
+	outcome, _, diags := c.run(context.Background())
+	if outcome != createFailed || !diags.HasError() {
+		t.Fatalf("outcome %v, %v, want a failure", outcome, diags)
+	}
+	if *sends != 1 {
+		t.Errorf("sends = %d, want 1", *sends)
+	}
+	if detail := diags.Errors()[0].Detail(); !strings.Contains(detail, "CONFLICT_VERSION") {
+		t.Errorf("the refusal isn't reported:\n%s", detail)
+	}
+}

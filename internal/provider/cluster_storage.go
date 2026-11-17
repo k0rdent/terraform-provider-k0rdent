@@ -113,11 +113,12 @@ func storageRaised(plan, state clusterModel) bool {
 // raiseStorage sends the new ceiling as a PATCH of its own.
 //
 // It's on its own because the platform answers a raise on a cluster that
-// isn't `active`, and one whose quota accounting is still settling, with a
-// 409 that carries no reason, CONFLICT_STATE from API v1.4, and the contract
-// says it "can be retried shortly". Alone in the request, that 409 can only
-// be about the raise, so it waits for the cluster to settle and is sent
-// again, at most maxStorageRaises times. Every other refusal, a quota one included, is the
+// isn't `active`, one whose quota accounting is still settling, and one that
+// lost a race to another writer, with a 409 that carries no reason, or from
+// API v1.4 CONFLICT_STATE or CONFLICT_VERSION, and the contract says it "can
+// be retried shortly". Alone in the request, that 409 can only be about the
+// raise, so it waits for the cluster to settle and is sent again, at most
+// maxStorageRaises times. Every other refusal, a quota one included, is the
 // answer. A 503 the quota check couldn't make is resent by the transport.
 func (r *clusterResource) raiseStorage(ctx context.Context, target clusterTarget, id string, ceiling types.Int64) diag.Diagnostics {
 	var diags diag.Diagnostics
