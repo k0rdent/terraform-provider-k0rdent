@@ -802,6 +802,53 @@ func TestAKeptFailedClusterIsNotAskedToKeepIt(t *testing.T) {
 	saysKeep(t, "the error", update.Diagnostics.Errors()[0].Detail(), false)
 }
 
+// A cluster a cancel left `failed` isn't waited for, which the plan and the
+// apply read from the private state the refresh wrote, so neither asks for
+// `on_failed = "keep"`.
+func TestACancelledFailedClusterIsNotAskedToKeepIt(t *testing.T) {
+	api := &upgradeAPI{bound: 2, state: "failed", workers: 2}
+	server := api.serve(t)
+	meta := testClusterMeta(t, server.URL, time.Minute)
+	r := guardedModifier(t, &clusterResource{meta: meta}, clusterTenantState)
+	stateRaw, s := testValue(t, r, clusterValues(verRef(2), verRef(2), 2, "failed"))
+	planRaw, _ := testValue(t, r, clusterValues(verRef(4), verRef(2), 2, "failed"))
+	req := resource.ModifyPlanRequest{
+		Config: tfsdk.Config{Raw: planRaw, Schema: s.Schema},
+		Plan:   tfsdk.Plan{Raw: planRaw, Schema: s.Schema},
+		State:  tfsdk.State{Raw: stateRaw, Schema: s.Schema},
+	}
+	freshPrivate(t, &req.Private, nil)
+	if d := req.Private.SetKey(context.Background(), failedReadKey, []byte(`{"reason":"CANCELLED"}`)); d.HasError() {
+		t.Fatal(d)
+	}
+	resp := resource.ModifyPlanResponse{Plan: tfsdk.Plan{Raw: planRaw, Schema: s.Schema}, Private: req.Private}
+	r.ModifyPlan(context.Background(), req, &resp)
+	var refusal string
+	for _, w := range resp.Diagnostics.Warnings() {
+		if w.Summary() == versionRefusal {
+			refusal = w.Detail()
+		}
+	}
+	if refusal == "" {
+		t.Fatalf("no refusal in %v", resp.Diagnostics)
+	}
+	saysKeep(t, "the warning", refusal, false)
+
+	cr := &clusterResource{meta: meta}
+	stateRaw, s = testValue(t, cr, clusterValues(verRef(2), verRef(2), 2, "failed"))
+	planRaw, _ = testValue(t, cr, clusterValues(verRef(4), verRef(2), 2, "failed"))
+	update := resource.UpdateResponse{State: tfsdk.State{Raw: stateRaw, Schema: s.Schema}}
+	cr.Update(context.Background(), resource.UpdateRequest{
+		State:   tfsdk.State{Raw: stateRaw, Schema: s.Schema},
+		Plan:    tfsdk.Plan{Raw: planRaw, Schema: s.Schema},
+		Private: req.Private,
+	}, &update)
+	if !update.Diagnostics.HasError() || update.Diagnostics.Errors()[0].Summary() != versionRefusal {
+		t.Fatalf("the apply wasn't refused: %v", update.Diagnostics)
+	}
+	saysKeep(t, "the error", update.Diagnostics.Errors()[0].Detail(), false)
+}
+
 // The descriptions say what the apply does: a refused version change reads
 // the cluster but changes nothing on it, and a `failed` cluster set back with
 // `cluster_type` alone is waited for.
@@ -809,7 +856,8 @@ func TestVersionRefusalDescriptionsMatchTheApply(t *testing.T) {
 	var s resource.SchemaResponse
 	(&clusterResource{}).Schema(context.Background(), resource.SchemaRequest{}, &s)
 	onFailed := s.Schema.Attributes[onFailedAttribute].GetMarkdownDescription()
-	if !strings.Contains(onFailed, "fails, changing nothing on the cluster, until") || strings.Contains(onFailed, "sending nothing") {
+	if !strings.Contains(onFailed, "fails, changing nothing on the cluster, until `cluster_type` is set back to the "+
+		"version in `cluster_type_resolved`") || strings.Contains(onFailed, "sending nothing") {
 		t.Errorf("on_failed's description:\n%s", onFailed)
 	}
 	clusterType := s.Schema.Attributes["cluster_type"].GetMarkdownDescription()
