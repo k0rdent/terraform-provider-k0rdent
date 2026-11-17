@@ -1,0 +1,3 @@
+```release-note:bug
+resource/k0rdent_instance_group: Fix a create failing with "Provider produced inconsistent result after apply" when the cluster type has more than one pool and `node_pool` doesn't name every one. v0.1.0 fails to create an instance group from such a cluster type, because the platform creates every pool on it. `node_pool` now holds only the configured pools, and leaving a pool out no longer plans a replacement
+```
