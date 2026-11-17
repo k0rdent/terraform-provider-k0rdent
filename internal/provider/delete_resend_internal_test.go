@@ -52,9 +52,15 @@ func (a *resentDeleteAPI) serve(t *testing.T) *httptest.Server {
 			case a.refusal == http.StatusNoContent:
 				w.WriteHeader(http.StatusNoContent)
 			default:
+				message := "conflict: it is deleting and cannot be deleted yet"
+				if a.state != "deleting" {
+					// An `active` group whose credentials can't be revoked yet.
+					message = "credentials distributed to this resource are being changed, " +
+						"so retry the delete after the Retry-After interval"
+				}
 				writeTestJSON(t, w, http.StatusConflict, map[string]any{"error": map[string]any{
 					"code": http.StatusConflict, "requestId": "req-409",
-					"message": "conflict: it is deleting and cannot be deleted yet",
+					"message": message,
 					"details": []map[string]any{{"reason": "CONFLICT_IN_USE"}},
 				}})
 			}
@@ -153,12 +159,14 @@ func TestADeleteResentAfterA504IsWaitedOut(t *testing.T) {
 	}
 }
 
-// A 409 on a resource that isn't `deleting` is a real refusal, and is
-// reported with the platform's own reason rather than waited on.
+// A 409 on a resource that is neither `deleting` nor mid-operation is a real
+// refusal, and is reported with the platform's own reason rather than waited
+// on. An `active` group answers one, with CONFLICT_IN_USE, while its
+// credentials can't be revoked yet.
 func TestADeleteRefusedForAnotherReasonIsStillReported(t *testing.T) {
 	api := &resentDeleteAPI{body: func(s string) map[string]any {
 		return map[string]any{"id": "x1", "clusterType": "/v1/regions/test/compute/cluster-types/t", "state": s}
-	}, refusal: http.StatusConflict, state: "updating"}
+	}, refusal: http.StatusConflict, state: "active"}
 	api.deletes = 1 // the first DELETE is the refused one
 	r := &instanceGroupResource{meta: resendingMeta(t, api.serve(t).URL)}
 	raw, s := testValue(t, r, map[string]tftypes.Value{"id": str("x1")})

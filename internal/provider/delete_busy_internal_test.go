@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -16,10 +17,11 @@ import (
 )
 
 // busyDeleteAPI is one resource running an operation, as an apply stopped
-// mid-create leaves it. It reads busy for busyReads reads, then `active`. A
-// DELETE while it's busy is refused with a 409 carrying reason, as the
-// platform refuses a delete that isn't from `active` or `failed`. A DELETE
-// once it's `active` is taken, and the next read is the 404.
+// mid-create or another run's update leaves it. It reads busy for busyReads
+// reads, then `active`. A DELETE while it's busy is refused with a 409
+// carrying reason, as the platform refuses a delete while an operation it
+// can't cancel is running. A DELETE once it's `active` is taken, and the next
+// read is the 404.
 type busyDeleteAPI struct {
 	body func(state string) map[string]any
 	busy string
@@ -117,6 +119,7 @@ func busyKinds() []busyKind {
 	group := func(m *Meta) resource.Resource { return &securityGroupResource{meta: m} }
 	peering := func(m *Meta) resource.Resource { return &vpcPeeringResource{meta: m} }
 	net := func(m *Meta) resource.Resource { return &networkResource{meta: m} }
+	instances := func(m *Meta) resource.Resource { return &instanceGroupResource{meta: m} }
 	return []busyKind{
 		{"subnet", "creating", stateBody("state"), map[string]tftypes.Value{"network": str("n1")}, subnet},
 		{"security group", "creating", stateBody("state"), nil, group},
@@ -124,6 +127,7 @@ func busyKinds() []busyKind {
 		{"VPC peering", "creating", stateBody("state"), map[string]tftypes.Value{"vpc": str("v1")}, peering},
 		{"network", "creating", network, nil, net},
 		{"network", "updating", network, nil, net},
+		{"instance group", "updating", stateBody("state"), nil, instances},
 	}
 }
 
@@ -211,6 +215,7 @@ func TestADestroyThatOutwaitsItsTimeoutSaysToRunItAgain(t *testing.T) {
 			for _, want := range []string{
 				"The " + k.name + "'s operation did not finish before the destroy stopped waiting",
 				"It was still `" + k.busy + "` at the last read",
+				"The platform doesn't delete the " + k.name + " while it's ",
 				"Nothing was deleted",
 				"run `terraform destroy` again",
 				"raise `delete` in the resource's `timeouts` block",
@@ -219,6 +224,12 @@ func TestADestroyThatOutwaitsItsTimeoutSaysToRunItAgain(t *testing.T) {
 				if !strings.Contains(strings.Join(strings.Fields(text), " "), want) {
 					t.Errorf("the diagnostic doesn't say %q:\n%s", want, text)
 				}
+			}
+			// The states it names include the one this row is in.
+			flat := strings.Join(strings.Fields(text), " ")
+			named := regexp.MustCompile("while it's ([^,]*), so the destroy waited").FindStringSubmatch(flat)
+			if named == nil || !strings.Contains(named[1], "`"+k.busy+"`") {
+				t.Errorf("the diagnostic doesn't name `%s` as a state the platform won't delete in:\n%s", k.busy, text)
 			}
 			if api.deletes != 0 {
 				t.Errorf("%d DELETEs sent into a running operation", api.deletes)

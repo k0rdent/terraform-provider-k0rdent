@@ -1,0 +1,3 @@
+```release-note:bug
+resource/k0rdent_instance_group: Fix `terraform destroy` failing with 409 `CONFLICT_IN_USE` while the instance group is `updating`
+```

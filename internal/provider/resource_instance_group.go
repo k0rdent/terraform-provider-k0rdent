@@ -1054,6 +1054,10 @@ var instanceGroupStates = stateKind[k0rdent.InstanceGroup]{
 	long:     true,
 	// "the group is in `updating` or `deleting` and cannot be deleted yet."
 	deleting: string(k0rdent.InstanceGroupStateDeleting),
+	// "Clients SHOULD retry after the group reaches `active` or `failed`." A
+	// delete of a `creating` group cancels the create instead, so only one
+	// being updated is waited out.
+	busy: []string{string(k0rdent.InstanceGroupStateUpdating)},
 	// StartInstanceGroupDelete soft-deletes the SSH users as it moves the
 	// group to `deleting`, and a failed teardown settles `failed` with them
 	// still gone. See teardown_read.go.
