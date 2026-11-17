@@ -962,6 +962,9 @@ func runUpgradeWithin(t *testing.T, api *upgradeAPI, target, workers int, timeou
 	t.Helper()
 	server := api.serve(t)
 	r := &clusterResource{meta: testClusterMeta(t, server.URL, timeout)}
+	// A wait that never settles polls until its timeout, and at 1µs it
+	// would spin a CPU for all of it.
+	r.meta.Wait.Interval = 10 * time.Millisecond
 	stateRaw, s := testValue(t, r, clusterValues(verRef(api.bound), verRef(api.bound), api.workers, api.state))
 	planRaw, _ := testValue(t, r, clusterValues(verRef(target), "", workers, ""))
 	resp := resource.UpdateResponse{State: tfsdk.State{Raw: planRaw, Schema: s.Schema}}
@@ -1019,7 +1022,7 @@ func TestAnUpgradeAnotherRunMadeIsNotMadeTwice(t *testing.T) {
 // nothing.
 func TestAnUpgradeReportsAnOperationThatOutlastsIt(t *testing.T) {
 	api := &upgradeAPI{bound: 1, state: "active", workers: 2, busyUpgrades: 1, busyForever: true}
-	resp := runUpgradeWithin(t, api, 2, 2, 50*time.Millisecond)
+	resp := runUpgradeWithin(t, api, 2, 2, 2*time.Second)
 	if !resp.Diagnostics.HasError() {
 		t.Fatal("an upgrade that never got through reported success")
 	}

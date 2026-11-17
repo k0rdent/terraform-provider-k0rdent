@@ -154,6 +154,9 @@ func destroyBusyIn(ctx context.Context, t *testing.T, k busyKind, api *busyDelet
 	api.busy = k.busy
 	meta := resendingMeta(t, api.serve(t).URL)
 	meta.Wait.Timeout = timeout
+	// A wait that never settles polls until its timeout, and at 1µs it
+	// would spin a CPU for all of it.
+	meta.Wait.Interval = 10 * time.Millisecond
 	r := k.build(meta)
 	set := map[string]tftypes.Value{"id": str("x1")}
 	for name, v := range k.set {
@@ -222,7 +225,7 @@ func TestADestroyThatOutwaitsItsTimeoutSaysToRunItAgain(t *testing.T) {
 			t.Parallel()
 			api := &busyDeleteAPI{busyReads: -1}
 			api.state = k.busy
-			diags := destroyBusy(t, k, api, 50*time.Millisecond)
+			diags := destroyBusy(t, k, api, 2*time.Second)
 			if !diags.HasError() {
 				t.Fatal("a destroy that never got to delete reported success")
 			}

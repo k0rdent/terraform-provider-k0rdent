@@ -46,6 +46,10 @@ func TestAccADestroyAfterAnInterruptWaitsOutEachCreate(t *testing.T) {
 		peeringType + ".slow":       project + "/networking/vpcs/vpc-" + owner + "/peerings/" + peering,
 	}
 	c := newCLIRun(t)
+	// Every slow create waits for the cluster and the parent network, so all
+	// four start together. One started before them spends its slow reads on
+	// the apply's polls while they're created, and can settle before the
+	// interrupt on a loaded machine.
 	c.write(clusterConfig(owner, 1) + evpnConfig(parent, "acceptance") + fmt.Sprintf(`
 resource %[1]q "slow" {
   id           = %[2]q
@@ -54,6 +58,7 @@ resource %[1]q "slow" {
     service_type = "l3vpn"
     vlan_id      = "auto"
   }
+  depends_on = [%[13]s.test, %[6]s.test]
 }
 
 resource %[4]q "slow" {
@@ -62,11 +67,13 @@ resource %[4]q "slow" {
   address_pool  = "/v1/regions/us-texas-1/networking/address-pools/tenant"
   prefix_length = 24
   display_name  = %[3]q
+  depends_on    = [%[13]s.test]
 }
 
 resource %[7]q "slow" {
   id           = %[8]q
   display_name = %[3]q
+  depends_on   = [%[13]s.test, %[6]s.test]
 }
 
 resource %[9]q "slow" {
@@ -74,7 +81,7 @@ resource %[9]q "slow" {
   vpc          = "vpc-%[11]s"
   remote_vpc   = %[12]q
   display_name = %[3]q
-  depends_on   = [%[13]s.test]
+  depends_on   = [%[13]s.test, %[6]s.test]
 }
 `, networkType, network, createsSlowly, subnetType, subnet, networkType, securityGroupType, group,
 		peeringType, peering, owner, remote, clusterType))
