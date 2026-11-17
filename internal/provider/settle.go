@@ -274,8 +274,13 @@ const (
 // another run started an operation in between, is waited out and sent again,
 // with a longer pause before each wait after the first. A 409 on a resource
 // that reads settled is the refusal the platform meant, as before.
+//
+// A timeout or an interrupt that lands in the first read or in the DELETE
+// ends the DELETE too, and is reported as a wait that stopped, not as a
+// failed request, unless the platform answered it. See carriesAnswer.
 func (k stateKind[T]) startDelete(ctx context.Context, cfg waitConfig, what apiCall, send func(context.Context) (*http.Response, []byte, error), read stateRead[T], diags *diag.Diagnostics) deleteStart {
 	waits := 0
+	started := time.Now()
 	if k.deleting != "" {
 		if body, readResp, readRaw, readErr := read(ctx); readErr == nil {
 			if isNotFound(readResp, readRaw) {
@@ -298,6 +303,9 @@ func (k stateKind[T]) startDelete(ctx context.Context, cfg waitConfig, what apiC
 	for {
 		resp, raw, err := send(ctx)
 		switch {
+		case err != nil && ctx.Err() != nil && !carriesAnswer(err):
+			k.reportStoppedBeforeWait(ctx, cfg, started, diags)
+			return deleteFailed
 		case err != nil:
 			addAPIError(diags, what, nil, nil, err)
 			return deleteFailed
@@ -404,6 +412,36 @@ func (k stateKind[T]) reportBusyWait(diags *diag.Diagnostics, err error) {
 		advice += raiseDeleteTimeoutAdvice("the operation", k.name)
 	}
 	addAdvisedError(diags, summary, advice, err)
+}
+
+// reportStoppedBeforeWait reports a destroy whose timeout or interrupt
+// landed in its first read or its DELETE. The DELETE may have reached the
+// platform, so the next destroy reads before it sends.
+func (k stateKind[T]) reportStoppedBeforeWait(ctx context.Context, cfg waitConfig, started time.Time, diags *diag.Diagnostics) {
+	raise := cfg.Raise
+	if raise == "" {
+		raise = "the resource's `timeouts` block, or `operation_timeout` in the provider block"
+	}
+	err := stoppedWaiting{
+		what: "the " + k.name + " to be deleted", waited: time.Since(started), raise: raise,
+		interrupted: !errors.Is(ctx.Err(), context.DeadlineExceeded),
+	}
+	advice := fmt.Sprintf("The destroy stopped before the platform answered it, so the %s may or may not "+
+		"be deleting, and it stays in state. Next: run `terraform destroy` again. It reads the %s first, "+
+		"waits for a delete already under way, and sends one only if none is.", k.name, k.name)
+	if !err.interrupted {
+		advice += raiseDeleteTimeoutAdvice("a delete", k.name)
+	}
+	addAdvisedError(diags, "The "+k.name+" did not finish deleting", advice, err)
+}
+
+// carriesAnswer reports whether a failed request carries the platform's
+// answer, such as a 429 whose retry wait the deadline ended, or a refused
+// mint. Those keep their own report, which names the answer and its request
+// id.
+func carriesAnswer(err error) bool {
+	var answered *k0rdent.APIError
+	return errors.As(err, &answered)
 }
 
 // raiseDeleteTimeoutAdvice tells how to give a destroy a longer wait. A destroy
