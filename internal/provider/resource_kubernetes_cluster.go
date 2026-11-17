@@ -368,8 +368,9 @@ func (r *clusterResource) Schema(ctx context.Context, _ resource.SchemaRequest, 
 					"`ssh_public_keys`, so an import with the same configuration plans clean too. " +
 					"Where the platform doesn't report the users, a cluster that was imported, or created by an " +
 					"earlier version of the provider, has no record of them: a change is recorded without " +
-					"replacing anything, the nodes keep the users they have, and the plan warns. Use `terraform " +
-					"apply -replace` to put new users on such a cluster's nodes.",
+					"replacing anything, the nodes keep the users they have, and the plan warns. To put new users " +
+					"on such a cluster's nodes, set `allow_replace = true`, run `terraform apply -replace`, then " +
+					"remove `allow_replace`.",
 				Validators: []validator.Set{setvalidator.SizeAtMost(k0rdent.ClusterCreateRequestSshAccessMaxItems)},
 				PlanModifiers: []planmodifier.Set{setplanmodifier.UseStateForUnknown(), refsByUsername{}, setplanmodifier.RequiresReplaceIf(clusterSSHAccessRequiresReplace,
 					"replaced when it changes, unless state has no record of the nodes' users",
@@ -700,7 +701,8 @@ func (r *clusterResource) Read(ctx context.Context, req resource.ReadRequest, re
 					"destroy can run again. If the cluster is meant to stay, only the platform's record "+
 					"of those users is gone: SSH access is set when a node is provisioned and isn't "+
 					"removed from a running one, so its nodes may still take their keys. To revoke them, "+
-					"destroy the cluster or replace it with `terraform apply -replace`.", state.ID.ValueString()),
+					"destroy the cluster, or set `allow_replace = true`, replace it with "+
+					"`terraform apply -replace`, then remove `allow_replace`.", state.ID.ValueString()),
 			)
 		}
 		resp.Diagnostics.Append(recordReleased(ctx, resp.Private, held)...)
@@ -752,6 +754,7 @@ func (r *clusterResource) Update(ctx context.Context, req resource.UpdateRequest
 			return r.read(ctx, target, id, plan)
 		},
 		waitsOutFailed: plan.OnFailed.ValueString() != failedKept,
+		guardsCreate:   true,
 	}).resume(ctx, req, resp) {
 		return
 	}
@@ -1276,7 +1279,8 @@ func clusterStateFrom(ctx context.Context, c k0rdent.Cluster, prior clusterModel
 			fmt.Sprintf("%q is `failed` and the platform answers no node pools for it, which is what a "+
 				"delete whose teardown failed leaves. State keeps the configured `node_pool` so a "+
 				"destroy can run again. If the cluster is meant to stay, it no longer has those "+
-				"pools: destroy it, or replace it with `terraform apply -replace`.", c.Id),
+				"pools: destroy it, or set `allow_replace = true`, replace it with "+
+				"`terraform apply -replace`, then remove `allow_replace`.", c.Id),
 		)
 	}
 

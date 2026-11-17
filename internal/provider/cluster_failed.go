@@ -190,8 +190,13 @@ func warnFailed(diags *diag.Diagnostics, id string, f failedRead, kept bool, win
 }
 
 // replaceAdvice is the way out of a failed object: create it again, or
-// delete it.
+// delete it. `allow_replace` is there because the plan to replace a cluster
+// without this provider's create token, such as an imported one, is refused
+// without it (create_guard.go). Only a cluster reaches it: it's the only kind
+// with `waitsOutFailed` and a provisional create failure without a
+// `reportWait`.
 func replaceAdvice(kind, resourceName string) string {
-	return fmt.Sprintf("To create the %s again, run `terraform apply -replace=<address>`, with this "+
-		"resource's address, such as %s.example. To delete it, run `terraform destroy`.", kind, resourceName)
+	return fmt.Sprintf("To create the %s again, set `allow_replace = true` on this resource, run "+
+		"`terraform apply -replace=<address>` with this resource's address, such as %s.example, then "+
+		"remove `allow_replace`. To delete it, run `terraform destroy`.", kind, resourceName)
 }

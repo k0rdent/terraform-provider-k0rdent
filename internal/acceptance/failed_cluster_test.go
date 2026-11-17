@@ -54,7 +54,7 @@ func TestAccAFailedClusterPlansAnUpdateThatWaitsForIt(t *testing.T) {
 			}
 			mustSay(t, "the plan", out, fmt.Sprintf("Cluster %q is failed", tc.name), "reason "+tc.reason,
 				"can still bring it back to `active`", "`terraform apply` waits up to "+provider.ProvisionalFailureWindow.String(),
-				"terraform apply -replace=<address>", "1 to change")
+				replaceAdvice, "1 to change")
 
 			out, ok = c.run("apply", "-auto-approve")
 			if tc.comesBack {
@@ -74,7 +74,7 @@ func TestAccAFailedClusterPlansAnUpdateThatWaitsForIt(t *testing.T) {
 				t.Fatalf("the apply passed on a cluster that's still failed:\n%s", out)
 			}
 			mustSay(t, "the apply", out, "The cluster is still failed", "didn't return to `active`",
-				"Nothing was deleted", "terraform apply -replace=<address>", tc.reason)
+				"Nothing was deleted", replaceAdvice, tc.reason)
 			shown, _ := c.run("state", "show", addr)
 			mustSay(t, "state", shown, `state = "failed"`)
 		})
@@ -168,6 +168,12 @@ func failedOutside(t *testing.T, name, markers string) {
 	t.Fatalf("%s never read failed", name)
 }
 
+// replaceAdvice is how a failed cluster's warning and errors say to create
+// it again. A cluster without the provider's create token, such as an
+// imported one, plans the replacement only with `allow_replace`.
+var replaceAdvice = "set `allow_replace = true` on this resource, run `terraform apply -replace=<address>` " +
+	"with this resource's address, such as " + clusterType + ".example, then remove `allow_replace`"
+
 // watchdogFails is the fake's marker for a cluster whose create the watchdog
 // fails, and which comes back `active` on its own a few reads later.
 const watchdogFails = "fake-watchdog-fails"
@@ -182,8 +188,9 @@ const watchdogFails = "fake-watchdog-fails"
 //   - failed during the wait: imported `creating`, and the platform fails it
 //     while the apply waits for the create to finish
 //
-// Each apply fails and deletes nothing, and `terraform destroy` removes the
-// cluster. After the create, `-replace` plans the replacement its error names.
+// Each apply fails and deletes nothing. Its advice, followed for each one, an
+// imported cluster too, replaces the cluster and plans empty once
+// `allow_replace` is taken out again, and `terraform destroy` removes it.
 func TestAccAClusterFailedWhenItsWaitTimesOutIsReportedFailed(t *testing.T) {
 	t.Parallel()
 	if runtime.GOOS == "windows" {
@@ -233,18 +240,32 @@ func TestAccAClusterFailedWhenItsWaitTimesOutIsReportedFailed(t *testing.T) {
 				t.Fatalf("the apply passed on a cluster that's failed:\n%s", out)
 			}
 			mustSay(t, "the apply", out, append(tc.want, "At the last read", "reason RESERVATION_FAILED",
-				"Nothing was deleted", "terraform apply -replace=<address>")...)
+				"Nothing was deleted", replaceAdvice)...)
 			if strings.Contains(out, "is still being created") {
 				t.Errorf("the apply calls a failed cluster still being created:\n%s", out)
 			}
 			checkFakeStateNow(t, tc.name, "failed")
 
-			if !tc.imported {
-				out, ok = c.run("plan", "-replace="+addr)
-				if !ok {
-					t.Fatalf("the plan with -replace was refused:\n%s", out)
-				}
-				mustSay(t, "the plan with -replace", out, "1 to add, 0 to change, 1 to destroy")
+			c.write(importedFailed(tc.name, tc.markers, short+"  allow_replace = true\n"))
+			out, ok = c.run("plan", "-replace="+addr)
+			if !ok {
+				t.Fatalf("the plan with -replace was refused:\n%s", out)
+			}
+			mustSay(t, "the plan with -replace", out, "1 to add, 0 to change, 1 to destroy")
+
+			// The rest of the advice, with a name that doesn't fail the new
+			// cluster: the replacement, then `allow_replace` taken out again.
+			c.write(importedFailed(tc.name, "replaced", "  allow_replace = true\n"))
+			if out, ok = c.run("apply", "-auto-approve", "-replace="+addr); !ok {
+				t.Fatalf("the replacement failed:\n%s", out)
+			}
+			c.write(importedFailed(tc.name, "replaced", ""))
+			if out, ok = c.run("apply", "-auto-approve"); !ok {
+				t.Fatalf("the apply that removes allow_replace failed:\n%s", out)
+			}
+			var code int
+			if out, code = c.runCode("plan", "-detailed-exitcode"); code != 0 {
+				t.Errorf("the plan after the replacement exited %d, want 0:\n%s", code, out)
 			}
 			out, ok = c.run("destroy", "-auto-approve")
 			if !ok {

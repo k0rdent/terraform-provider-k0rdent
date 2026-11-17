@@ -114,10 +114,22 @@ func TestAnUnrecordedSSHAccessChangeWarns(t *testing.T) {
 			if got := diags.WarningsCount() == 1; got != tt.warn {
 				t.Fatalf("warned = %v, want %v: %v", got, tt.warn, diags)
 			}
-			if tt.warn && !strings.Contains(diags.Warnings()[0].Detail(), "terraform apply -replace") {
+			if tt.warn && !strings.Contains(diags.Warnings()[0].Detail(), "set `allow_replace = true`, run "+
+				"`terraform apply -replace` with its address, then remove `allow_replace`") {
 				t.Errorf("the warning doesn't say how to put the users on the nodes:\n%s", diags.Warnings()[0].Detail())
 			}
 		})
+	}
+}
+
+// The description's way to put new users on an unrecorded cluster's nodes is
+// a replacement, which an imported cluster plans only with `allow_replace`.
+func TestTheSSHAccessDescriptionGivesTheReplacement(t *testing.T) {
+	var s resource.SchemaResponse
+	(&clusterResource{}).Schema(context.Background(), resource.SchemaRequest{}, &s)
+	const want = "set `allow_replace = true`, run `terraform apply -replace`, then remove `allow_replace`"
+	if got := s.Schema.Attributes["ssh_access"].GetMarkdownDescription(); !strings.Contains(got, want) {
+		t.Errorf("the ssh_access description doesn't say %q:\n%s", want, got)
 	}
 }
 

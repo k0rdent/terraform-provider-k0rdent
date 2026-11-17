@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -162,4 +163,61 @@ resource %q "test" {
 			},
 		},
 	})
+}
+
+// A cluster whose teardown failed warns at plan that the platform reports no
+// node pools and no SSH users on it, through the real CLI. Each warning's
+// replacement names `allow_replace`, and taking it out again afterwards.
+func TestAccAFailedTeardownsWarningsGiveTheReplacement(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS == "windows" {
+		skipTest(t, "the CLI sequence runs on unix")
+	}
+	const name = "acc-cluster-teardown-advice"
+	c := newCLIRun(t)
+	c.write(fmt.Sprintf(`
+resource %q "test" {
+  id           = %q
+  cluster_type = %q
+  display_name = "acceptance fake-teardown-fails"
+  ssh_access = [`+sshAdam+`
+  ]
+}
+`, clusterType, name, clusterTypeRef))
+	if out, ok := c.run("apply", "-auto-approve"); !ok {
+		t.Fatalf("the create failed:\n%s", out)
+	}
+	t.Cleanup(func() {
+		if out, ok := c.run("destroy", "-auto-approve"); !ok {
+			t.Errorf("the destroy failed:\n%s", out)
+		}
+	})
+	path := clusterPath(map[string]string{"region": "us-texas-1", "project": "demo", "id": name})
+	if status, _, err := callFake(http.MethodDelete, path); err != nil || status != http.StatusNoContent {
+		t.Fatalf("starting the delete out of band: %d %v", status, err)
+	}
+	for i := 0; ; i++ {
+		status, body, err := callFake(http.MethodGet, path)
+		if err != nil || status != http.StatusOK {
+			t.Fatalf("reading the cluster: %d %v", status, err)
+		}
+		if strings.Contains(string(body), `"state":"failed"`) {
+			break
+		}
+		if i == 10 {
+			t.Fatal("the teardown never failed")
+		}
+	}
+
+	out, ok := c.run("plan")
+	if !ok {
+		t.Fatalf("the plan failed:\n%s", out)
+	}
+	mustSay(t, "the plan", out, "The platform reports no node pools on this failed cluster",
+		"The platform reports no SSH users on this failed cluster")
+	const advice = "set `allow_replace = true`, replace it with `terraform apply -replace`, then remove `allow_replace`"
+	flat := strings.Join(strings.Fields(strings.ReplaceAll(out, "│", " ")), " ")
+	if n := strings.Count(flat, advice); n != 2 {
+		t.Errorf("the plan says %q %d times, want once in each warning:\n%s", advice, n, out)
+	}
 }
