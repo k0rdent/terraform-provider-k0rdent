@@ -9,3 +9,7 @@ resource/k0rdent_kubernetes_cluster: Wait for a cluster still being created when
 ```release-note:bug
 resource/k0rdent_kubernetes_cluster: Plan another version of the same ClusterType under a different origin as an in-place upgrade, not a replacement
 ```
+
+```release-note:bug
+resource/k0rdent_kubernetes_cluster: Wait for a failed cluster when an update changes only provider settings, as the plan promised
+```
