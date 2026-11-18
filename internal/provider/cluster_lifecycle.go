@@ -38,6 +38,11 @@ var clusterStates = stateKind[k0rdent.Cluster]{
 	detail: func(c k0rdent.Cluster) string {
 		return stateDetail(c.StateMessage, reasonString(c.StateReason))
 	},
+	// A cancel's `failed` is a stop the tenant asked for, which the plan
+	// already treats as final (cluster_failed.go).
+	final: func(c k0rdent.Cluster) bool {
+		return !failedRead{Reason: reasonString(c.StateReason)}.waits()
+	},
 	settle: stateTable{
 		// Required by the contract, absent in practice: there is nothing to
 		// wait on, so treat the read as settled rather than spin.
@@ -52,7 +57,8 @@ var clusterStates = stateKind[k0rdent.Cluster]{
 			// with no user action". Waiting through it for good would mean a
 			// `terraform apply` that hangs for half an hour on a cluster the
 			// platform has already given up on, so it is held for the
-			// provisional window and then reported. Nobody has watched the real
+			// provisional window and then reported, or at once after a cancel
+			// (final, above). Nobody has watched the real
 			// sequence. The transition trace is the first thing to record when
 			// a landscape exists.
 			string(k0rdent.ClusterStateFailed):  {verdict: failsProvisionally, detail: true},
