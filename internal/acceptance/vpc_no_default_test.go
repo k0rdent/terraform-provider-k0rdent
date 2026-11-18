@@ -181,3 +181,75 @@ resource %q "test" {
 		})
 	}
 }
+
+// A VPC with no default group refuses `[]`, so a binding that sends it fails
+// at plan, whether it's created that way or changed to it, and the plan
+// writes nothing. A VPC with a default group takes `[]` as before.
+func TestAccAnEmptyBindingOnAVPCWithNoDefaultGroupFailsAtPlan(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS == "windows" {
+		skipTest(t, "the CLI sequence runs on unix")
+	}
+	const refusal = "This VPC can't take an empty list"
+	binding := func(cluster, groups string) string {
+		return fmt.Sprintf(`
+resource %q "test" {
+  vpc             = "vpc-%s"
+  security_groups = [%s]
+}
+`, vpcBindingType, cluster, groups)
+	}
+	for _, tc := range []struct {
+		cluster string
+		first   string
+		refuses bool
+	}{
+		{"acc-nodef-empty-no-subnets", "", true},
+		{"acc-nodef-emptied-no-subnets", securityGroupType + ".test.id", true},
+		{"acc-nodef-empty-subnets", "", false},
+	} {
+		t.Run(tc.cluster, func(t *testing.T) {
+			group := tc.cluster + "-filter"
+			project := ownProject(t, "acc-own-"+strings.TrimPrefix(tc.cluster, "acc-"))
+			c := newCLIRun(t)
+			base := clusterConfig(tc.cluster, 1) + securityGroupConfig(group, false)
+			c.write(inProject(project, base))
+			// The refusal stops the plan a destroy runs first, so the
+			// destroy skips it, as the refusal says to.
+			t.Cleanup(func() { c.run("destroy", "-auto-approve", "-refresh=false") })
+			if out, ok := c.run("apply", "-auto-approve"); !ok {
+				t.Fatalf("the apply failed:\n%s", out)
+			}
+			if tc.first != "" {
+				c.write(inProject(project, base+binding(tc.cluster, tc.first)))
+				if out, ok := c.run("apply", "-auto-approve"); !ok {
+					t.Fatalf("the apply of the first binding failed:\n%s", out)
+				}
+			}
+			vpcPath := vpcAPIPath(project, "vpc-"+tc.cluster)
+			written, err := fakeServed(http.MethodPost, vpcPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			c.write(inProject(project, base+binding(tc.cluster, "")))
+			out, ok := c.run("plan", "-out", "empty.tfplan")
+			if refused := !ok && strings.Contains(strings.Join(strings.Fields(out), " "), refusal); refused != tc.refuses {
+				t.Fatalf("the plan refused %v, want %v:\n%s", refused, tc.refuses, out)
+			}
+			if tc.refuses {
+				mustSay(t, "the plan", out, `"vpc-`+tc.cluster+`" has no default security group`)
+				if after, err := fakeServed(http.MethodPost, vpcPath); err != nil || after != written {
+					t.Errorf("the plan wrote the VPC's binding %d times, want none: %v", after-written, err)
+				}
+				mustSay(t, "the plan", out, "terraform destroy -refresh=false")
+				if out, ok := c.run("destroy", "-auto-approve", "-refresh=false"); !ok {
+					t.Errorf("the destroy the refusal names failed:\n%s", out)
+				}
+				return
+			}
+			if out, ok := c.run("apply", "empty.tfplan"); !ok {
+				t.Fatalf("the apply of the empty binding failed:\n%s", out)
+			}
+		})
+	}
+}
