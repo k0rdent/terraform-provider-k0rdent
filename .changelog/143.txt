@@ -21,3 +21,11 @@ resource/k0rdent_subnet: Fix `terraform apply -replace` of a subnet the platform
 ```release-note:bug
 resource/k0rdent_security_group: Fix `terraform apply -replace` of a security group the platform owns removing it from state and then failing. The plan now refuses it, and refuses a create of such a group's `id`, with the import to run
 ```
+
+```release-note:bug
+resource/k0rdent_subnet: Fix a subnet imported while still `creating` staying `creating` in state after its first apply when that apply also recorded `allocate_gateway`
+```
+
+```release-note:bug
+resource/k0rdent_vpc_peering: Fix a VPC peering imported while still `creating` staying `creating` in state after its first apply when that apply also recorded an equivalent `remote_vpc` spelling
+```
