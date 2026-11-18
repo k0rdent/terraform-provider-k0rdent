@@ -144,6 +144,8 @@ so a refusal at apply would come after the delete.
   network or project, without `allow_replace = true`
 - A smaller `capacity_gib` on a file store
 - A `region` that isn't the project's
+- An empty `security_groups` on a `k0rdent_vpc_security_groups` whose VPC has
+  no default security group
 
 Set the configuration back to what's applied, or run
 `terraform destroy -refresh=false`, which destroys from state as it is.
