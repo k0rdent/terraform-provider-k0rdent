@@ -20,9 +20,7 @@ import (
 //     the plan and names the attribute
 //  4. with a rename configured, `terraform destroy` fails too, while
 //     `terraform destroy -refresh=false` removes it from state with no write
-//  5. `terraform apply -replace` on a network or security group removes it
-//     from state, since the platform won't delete it, and the create that
-//     follows fails with the import that takes it back
+//  5. `terraform apply -replace` fails the plan, and state keeps the object
 func TestAccAPlatformOwnedObject(t *testing.T) {
 	t.Parallel()
 	if runtime.GOOS == "windows" {
@@ -125,29 +123,19 @@ egress {
 				t.Errorf("the plan after it exited %d, want 0:\n%s", code, out)
 			}
 
-			// The fake's cluster subnets use a pool its create doesn't know, and
-			// it checks the pool first, so a subnet's create here fails with 422
-			// before the network's owner is checked.
-			if tc.kind != "subnet" {
-				addr, importID := tc.resourceType+".adopted", tc.importUnder+id
-				out, code := c.runCode("apply", "-auto-approve", "-replace="+addr)
-				if code != 1 {
-					t.Errorf("terraform apply -replace exited %d, want 1:\n%s", code, out)
-				}
-				mustSay(t, "terraform apply -replace", out,
-					"Stopped tracking a platform-owned object rather than deleting it",
-					fmt.Sprintf("Error: A %s named %q already exists", tc.kind, id),
-					"terraform import <address> "+importID, "If another configuration or workspace manages it, choose another `id` for this one.")
-				if out, ok := c.run("import", addr, importID); !ok {
-					t.Fatalf("the import the error gives failed:\n%s", out)
-				}
-				// It records the `timeouts` the import leaves out, sending nothing.
-				if out, ok := c.run("apply", "-auto-approve"); !ok {
-					t.Errorf("the apply after the import failed:\n%s", out)
-				}
-				if out, code := c.runCode("plan", "-detailed-exitcode"); code != 0 {
-					t.Errorf("the plan after the import exited %d, want 0:\n%s", code, out)
-				}
+			addr := tc.resourceType + ".adopted"
+			replaced, replaceCode := c.runCode("apply", "-auto-approve", "-replace="+addr)
+			if replaceCode != 1 || strings.Contains(replaced, "Stopped tracking") {
+				t.Errorf("terraform apply -replace exited %d, want 1 with nothing applied:\n%s", replaceCode, replaced)
+			}
+			mustSay(t, "terraform apply -replace", replaced,
+				fmt.Sprintf("Error: The %s %q is owned by the platform", tc.kind, id),
+				"terraform import <address> "+tc.importUnder+id)
+			if listed, ok := c.run("state", "list", addr); !ok || strings.TrimSpace(listed) != addr {
+				t.Errorf("state doesn't hold %s after the refused -replace:\n%s", addr, listed)
+			}
+			if out, code := c.runCode("plan", "-detailed-exitcode"); code != 0 {
+				t.Errorf("the plan after the refused -replace exited %d, want 0:\n%s", code, out)
 			}
 
 			if tc.kind != "subnet" {
@@ -243,4 +231,45 @@ func storedDescription(t *testing.T, id string) string {
 	}
 	readStored(t, "/v1/regions/us-texas-1/projects/demo/networking/security-groups/"+id, &g)
 	return g.Description
+}
+
+// A configuration that names a network the platform made for a cluster,
+// without importing it, fails at plan with the import to run. `terraform
+// destroy` runs that plan first and fails too, and `-refresh=false` skips it.
+func TestAccAPlatformOwnedNetworkNotInStateFailsAtPlan(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS == "windows" {
+		skipTest(t, "the CLI sequence runs on unix")
+	}
+	const cluster = "acc-owned-unheld"
+	id := "vpc-" + cluster + "-net"
+	c := newCLIRun(t)
+	c.write(clusterConfig(cluster, 1))
+	if out, ok := c.run("apply", "-auto-approve"); !ok {
+		t.Fatalf("the cluster's create failed:\n%s", out)
+	}
+	t.Cleanup(func() { c.run("destroy", "-auto-approve", "-refresh=false") })
+	c.write(clusterConfig(cluster, 1) + fmt.Sprintf(`
+resource %q "adopted" {
+  id   = %q
+  evpn = { service_type = "l2vpn", vlan_id = "4002" }
+}
+`, networkType, id))
+	refusal := []string{fmt.Sprintf("Error: The network %q is owned by the platform", id),
+		"terraform import <address> us-texas-1/demo/" + id}
+	out, code := c.runCode("plan")
+	if code != 1 {
+		t.Errorf("the plan exited %d, want 1:\n%s", code, out)
+	}
+	mustSay(t, "the plan", out, refusal...)
+	out, code = c.runCode("destroy", "-auto-approve")
+	if code != 1 {
+		t.Errorf("terraform destroy exited %d, want 1:\n%s", code, out)
+	}
+	mustSay(t, "terraform destroy", out, refusal...)
+	out, code = c.runCode("destroy", "-auto-approve", "-refresh=false")
+	if code != 0 {
+		t.Fatalf("terraform destroy -refresh=false exited %d, want 0:\n%s", code, out)
+	}
+	mustSay(t, "terraform destroy -refresh=false", out, "Destroy complete! Resources: 1 destroyed.")
 }

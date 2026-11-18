@@ -587,6 +587,18 @@ func (r *networkResource) ModifyPlan(ctx context.Context, req resource.ModifyPla
 	modifyScopePlan(ctx, r.meta, req, resp)
 	planTagsAllOwned(ctx, r.meta, "network", "cluster_id", "", req, resp)
 	refusePlatformOwned(ctx, "cluster_id", "", []string{"display_name", "description", "tags"}, req, resp)
+	refuseOwnedCreate(ctx, r.meta, "network", ResourceName(networkResourceSuffix), "cluster_id",
+		func(ctx context.Context, target clusterTarget, id string) (string, string, bool) {
+			got, err := r.meta.Client.GetNetworkWithResponse(ctx, target.region, target.project, id)
+			if err != nil || got.JSON200 == nil {
+				return "", "", false
+			}
+			view, err := networkViewOf(*got.JSON200)
+			if err != nil || view.clusterID == nil || *view.clusterID == "" {
+				return "", "", false
+			}
+			return *view.clusterID, scopedImportID(target)(id), true
+		}, req, resp)
 	if resp.Diagnostics.HasError() {
 		return
 	}

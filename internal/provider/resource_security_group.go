@@ -333,6 +333,14 @@ func (r *securityGroupResource) ModifyPlan(ctx context.Context, req resource.Mod
 	planTagsAllOwned(ctx, r.meta, "security group", "owner_kind", owned, req, resp)
 	refusePlatformOwned(ctx, "owner_kind", owned,
 		[]string{"display_name", "description", "tags", "ingress", "egress"}, req, resp)
+	refuseOwnedCreate(ctx, r.meta, "security group", ResourceName(securityGroupResourceSuffix), "owner_kind",
+		func(ctx context.Context, target clusterTarget, id string) (string, string, bool) {
+			got, err := r.meta.Client.GetSecurityGroupWithResponse(ctx, target.region, target.project, id)
+			if err != nil || got.JSON200 == nil || got.JSON200.OwnerKind == nil || string(*got.JSON200.OwnerKind) != owned {
+				return "", "", false
+			}
+			return owned, scopedImportID(target)(id), true
+		}, req, resp)
 	if resp.Diagnostics.HasError() {
 		return
 	}
