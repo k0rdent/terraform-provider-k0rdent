@@ -798,10 +798,10 @@ func (r *clusterResource) Update(ctx context.Context, req resource.UpdateRequest
 	// waiting for. `allow_replace` alone never reaches here
 	// (replace_guard_resource.go).
 	if !metadataChanged && onlyProviderSettingsChanged(plan, state) {
-		// A create still running is the exception, as below: the plan
-		// promised to wait for it, such as the first after an import.
-		if state.State.ValueString() == creatingState && plan.OnDestroyBusy.Equal(state.OnDestroyBusy) &&
-			resumed.finish(outer, req, resp) {
+		// A create still running, or a `failed` the plan waits on, is the
+		// exception, as below: the plan promised that wait, such as the first
+		// after an import.
+		if plan.OnDestroyBusy.Equal(state.OnDestroyBusy) && resumed.finish(outer, req, resp) {
 			return
 		}
 		next := planOverPrior(plan, state)
