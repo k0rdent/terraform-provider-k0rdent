@@ -417,6 +417,20 @@ func TestAccFileStoreConsumersDetach(t *testing.T) {
 	})
 }
 
+// The platform refuses the detach before a delete, like any update, while a
+// capacity change is still settling its quota accounting, and says to retry
+// shortly. The destroy sends it again rather than failing.
+func TestAccFileStoreDestroyRetriesASettlingDetach(t *testing.T) {
+	t.Parallel()
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: protoV6,
+		CheckDestroy:             checkGone(fileStoreType, fileStorePath),
+		Steps: []resource.TestStep{
+			{Config: fileStoreConfig("acc-detach-settling", "acceptance fake-update-settling", 512, oneConsumer)},
+		},
+	})
+}
+
 // The three tests below drive the waiter's `failed` and unrecognised arms. An
 // arm nothing exercises is a three-state waiter with extra lines.
 

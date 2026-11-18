@@ -214,3 +214,52 @@ func TestFileStoreUpdateWaitsThenSettlesARefusedResendAsBefore(t *testing.T) {
 		t.Errorf("the 422 isn't reported as the re-send's: %v", resp.Diagnostics)
 	}
 }
+
+// The detach before a delete is the same PATCH, refused for the same causes.
+// A store whose quota accounting is still settling refuses it with
+// CONFLICT_IN_USE, which clears shortly, so the destroy sends it once more
+// rather than failing.
+func TestFileStoreDestroySendsTheDetachOnceMoreWhenTheStoreIsInUse(t *testing.T) {
+	for _, tc := range []struct {
+		refusals, patches int
+		fails             bool
+	}{
+		{refusals: 1, patches: 2},
+		{refusals: 2, patches: 2, fails: true},
+	} {
+		patched, refusals := false, tc.refusals
+		api := &storeAPI{
+			get: func(int) map[string]any {
+				if patched {
+					return fileStoreBody("active")
+				}
+				return withConsumers("active", "10.0.0.31")
+			},
+			remove: accepted,
+		}
+		api.patch = func(w http.ResponseWriter) {
+			if refusals > 0 {
+				refusals--
+				refuse(t, w, `{"error":{"code":409,"message":"a capacity change is still settling",`+
+					`"details":[{"reason":"CONFLICT_IN_USE"}]}}`)
+				return
+			}
+			patched = true
+			if err := json.NewEncoder(w).Encode(fileStoreBody("active")); err != nil {
+				t.Errorf("write: %v", err)
+			}
+		}
+		resp := deleteFileStore(t, api.serve(t).URL, map[string]tftypes.Value{
+			"state": str("active"), "consumers": consumersValue(t, &fileStoreResource{}, "10.0.0.31"),
+		})
+		if resp.Diagnostics.HasError() != tc.fails {
+			t.Errorf("%d refusals: errors %v, want failure %v", tc.refusals, resp.Diagnostics.Errors(), tc.fails)
+		}
+		if got := len(api.patches); got != tc.patches {
+			t.Errorf("%d refusals: %d PATCHes, want %d", tc.refusals, got, tc.patches)
+		}
+		if deleted := len(api.query) > 0; deleted == tc.fails {
+			t.Errorf("%d refusals: DELETE sent %v", tc.refusals, deleted)
+		}
+	}
+}
