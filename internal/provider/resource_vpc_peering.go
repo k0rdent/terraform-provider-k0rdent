@@ -456,6 +456,13 @@ func (r *vpcPeeringResource) Update(ctx context.Context, req resource.UpdateRequ
 	}).resume(ctx, req, resp) {
 		return
 	}
+	if state.State.ValueString() == creatingState {
+		// Imported mid-create with a value to record: wait as a resume would.
+		if err := r.waitForSettled(ctx, target, vpc, id); err != nil {
+			addWaitError(&resp.Diagnostics, "The VPC peering did not finish provisioning", err)
+			return
+		}
+	}
 	next, found, diags, err := settledRead(ctx, plan.State, vpcPeeringStates.settle,
 		func(ctx context.Context) (vpcPeeringModel, bool, diag.Diagnostics) {
 			return r.read(ctx, target, vpc, id, plan)
