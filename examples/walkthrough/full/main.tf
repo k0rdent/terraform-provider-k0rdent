@@ -647,7 +647,8 @@ data "k0rdent_share_type" "chosen" {
 resource "k0rdent_file_store" "this" {
   count = var.build.file_store ? 1 : 0
 
-  id           = local.name
+  # No id, so the provider generates one. A create interrupted with its
+  # request in flight is then kept in state, tainted, rather than left out.
   project      = local.project
   display_name = local.display_name
   description  = local.description
