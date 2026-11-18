@@ -626,10 +626,16 @@ data "k0rdent_share_type" "chosen" {
   count = var.build.file_store ? 1 : 0
 
   # file_store.share_type if set, else the first active one. try() gives ""
-  # when there's none, and the read then fails with a clear error.
+  # when there's none, and the precondition below stops the plan.
   id = var.file_store.share_type != "" ? var.file_store.share_type : try(data.k0rdent_share_types.active[0].ids[0], "")
 
   lifecycle {
+    # Fail the plan if there's no share type to use.
+    precondition {
+      condition     = var.file_store.share_type != "" || length(data.k0rdent_share_types.active[0].ids) > 0
+      error_message = "Region ${var.region} has no active share type, so no file store can be made. Set file_store.share_type to one, set build.file_store = false, or ask whoever runs the landscape for one."
+    }
+
     postcondition {
       condition     = self.state == "active"
       error_message = "Share type ${self.id} is ${coalesce(self.state, "in no state")}, and only an active one gives out storage."
