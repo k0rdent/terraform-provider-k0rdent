@@ -284,8 +284,8 @@ resource %q "test" {
 	if strings.Count(out, "Warning:") > strings.Count(out, "Warning: Provider development overrides") {
 		t.Errorf("the import warned:\n%s", out)
 	}
-	if out, ok := c.run("plan", "-detailed-exitcode"); !ok {
-		t.Errorf("the plan after the import isn't empty:\n%s", out)
+	if replan, ok := c.run("plan", "-detailed-exitcode"); !ok {
+		t.Errorf("the plan after the import isn't empty:\n%s", replan)
 	}
 	c.write(config(""))
 	out, _ = c.run("plan")
