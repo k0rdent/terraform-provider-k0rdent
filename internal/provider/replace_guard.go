@@ -167,6 +167,14 @@ func replacementParagraph(s schema.Schema, what tenantState) string {
 		out += fmt.Sprintf(" Some changes to %s replace %s, and the others are made in place. %s",
 			orList(sometimes), object, strings.Join(conditions, " "))
 	}
+	// modifyScopePlan refuses a region the project isn't in, opt-in or not.
+	if _, inProject := s.Attributes["project"]; inProject && slices.Contains(always, "region") {
+		out += " A project is locked to one region, so a plan that changes `region` fails unless `project` " +
+			"changes with it, to a project in that region."
+		if what.loses != "" {
+			out += fmt.Sprintf(" `%s = true` doesn't change that.", allowReplaceAttribute)
+		}
+	}
 	if what.loses == "" {
 		return out + " Everything else changes in place."
 	}

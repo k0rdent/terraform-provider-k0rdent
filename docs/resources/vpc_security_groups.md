@@ -12,7 +12,7 @@ description: |-
   These groups are applied after the owning cluster or instance group's own groups, so an interface inside this VPC filters on the owner's groups first. A group attached to both is applied once, at the owner's position. Writing here re-renders the owner's network bundles, which is why the owner goes transitional for a moment.
   Only a VPC on the nico fabric backend can carry security groups. Read backend from the k0rdent_vpc data source first.
   Requires region and project on the provider.
-  What replaces it. Changing project, region or vpc cannot be done in place and replaces the binding. Everything else changes in place.
+  What replaces it. Changing project, region or vpc cannot be done in place and replaces the binding. A project is locked to one region, so a plan that changes region fails unless project changes with it, to a project in that region. Everything else changes in place.
 ---
 
 # k0rdent_vpc_security_groups (Resource)
@@ -35,7 +35,7 @@ Only a VPC on the `nico` fabric backend can carry security groups. Read `backend
 
 Requires `region` and `project` on the provider.
 
-**What replaces it.** Changing `project`, `region` or `vpc` cannot be done in place and replaces the binding. Everything else changes in place.
+**What replaces it.** Changing `project`, `region` or `vpc` cannot be done in place and replaces the binding. A project is locked to one region, so a plan that changes `region` fails unless `project` changes with it, to a project in that region. Everything else changes in place.
 
 ## Example Usage
 
@@ -83,7 +83,7 @@ An empty list is accepted and means *reinstate the default group*, not *attach n
 ### Optional
 
 - `project` (String) Project this resource belongs to. Defaults to the provider's `project`. It's part of the resource's API path, so a resource can't move between projects. **Forces replacement**. **Constraints:** Must be lower-case letters, digits and hyphens, starting with a letter and not ending with a hyphen (`[a-z]([-a-z0-9]*[a-z0-9])?`), because it becomes a segment of a request URL.
-- `region` (String) Region this resource lives in. Defaults to the provider's `region`. It's part of the resource's API path, so a resource can't move between regions. **Forces replacement**. **Constraints:** Must be lower-case letters, digits and hyphens, starting with a letter and not ending with a hyphen (`[a-z]([-a-z0-9]*[a-z0-9])?`), because it becomes a segment of a request URL.
+- `region` (String) Region this resource lives in. Defaults to the provider's `region`. It's part of the resource's API path, so a resource can't move between regions. **Can force replacement**: when `project` changes with it, to a project in the new region. A change to `region` alone is refused. **Constraints:** Must be lower-case letters, digits and hyphens, starting with a letter and not ending with a hyphen (`[a-z]([-a-z0-9]*[a-z0-9])?`), because it becomes a segment of a request URL.
 - `timeouts` (Block, Optional) How long each operation may take before it fails. Each operation left out defaults to the provider's `operation_timeout`, which is `2h` unless the provider block or `K0RDENT_OPERATION_TIMEOUT` sets it. (see [below for nested schema](#nestedblock--timeouts))
 
 ### Read-Only

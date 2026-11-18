@@ -13,10 +13,8 @@ const invKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICalTR9icsm8WarWXVQxwy8TRDjP
 
 var (
 	// A region its project isn't in, refused even with allow_replace, since a
-	// project is locked to one region (known-limitations: "A refused plan
-	// stops `terraform destroy` too", and the region attribute: a resource
-	// can't move between regions). allow_replace permits a region change only
-	// with a project in that region.
+	// project is locked to one region (the "What replaces it" paragraph, and
+	// known-limitations: "A refused plan stops `terraform destroy` too").
 	regionNotProjects = regexp.MustCompile(`This resource's region isn't its project's`)
 	shrink            = regexp.MustCompile(`A file store cannot be shrunk`)
 	cantHoldProject   = regexp.MustCompile(`This region can't hold a project`)
@@ -32,7 +30,7 @@ func scopeRows(idLine string) []invChange {
 		{label: "id", attr: "id", rule: replaces, edit: set("id", idLine)},
 		{label: "project", attr: "project", rule: replaces, edit: set("project", `project = "example"`)},
 		{label: "region", attr: "region", rule: refused, refusal: regionNotProjects, onCreate: true,
-			edit: set("region", `region = "us-elsewhere-1"`), silent: "refused whatever allow_replace says"},
+			edit: set("region", `region = "us-elsewhere-1"`)},
 	}
 }
 
@@ -352,7 +350,7 @@ resource %q "test" {
 				{label: "vpc", attr: "vpc", rule: replaces, edit: set("vpc", q("vpc", "vpc-elsewhere"))},
 				{label: "project", attr: "project", rule: replaces, edit: set("project", `project = "example"`)},
 				{label: "region", attr: "region", rule: refused, refusal: regionNotProjects, onCreate: true,
-					edit: set("region", `region = "us-elsewhere-1"`), silent: "refused"},
+					edit: set("region", `region = "us-elsewhere-1"`)},
 			},
 			starts: []invStart{madeByApply},
 		},
