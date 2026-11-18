@@ -7,6 +7,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
+	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
@@ -242,4 +243,43 @@ func (r *instanceGroupResource) refuseExisting(ctx context.Context, plan tfsdk.P
 		kind: "instance group", resourceName: ResourceName(instanceGroupResourceSuffix), target: target, id: id,
 		state: state,
 	}.warnReplacing(diags)
+}
+
+// ownedBy is what a plan-time read found the platform holds under an id:
+// the value of the attribute that says the platform owns it, and the id to
+// import it by. ok is false for an object the tenant owns, none, or a read
+// that failed, which leaves it to the create as before.
+type ownedBy func(ctx context.Context, target clusterTarget, id string) (owner, importID string, ok bool)
+
+// refuseOwnedCreate fails a plan to create an object the platform holds under
+// the configured id and owns. `terraform apply -replace` plans one for an
+// object this state holds, and applying it would drop the object from state
+// (forgetPlatformOwned), then fail the create on the taken id. A
+// configuration that names one this state doesn't hold fails the same create.
+func refuseOwnedCreate(ctx context.Context, meta *Meta, kind, resourceName, attribute string, read ownedBy,
+	req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
+	if !req.State.Raw.IsNull() || resp.Plan.Raw.IsNull() || meta == nil || meta.Client == nil {
+		return
+	}
+	target, id, ok := plannedTarget(ctx, meta, resp.Plan)
+	if !ok {
+		return
+	}
+	owner, importID, owned := read(ctx, target, id)
+	if !owned {
+		return
+	}
+	resp.Diagnostics.AddAttributeError(path.Root("id"),
+		fmt.Sprintf("The %s %q is owned by the platform", kind, id),
+		redactDiagnosticText(fmt.Sprintf("The platform reports %s %q with `%s` %q, so the platform provisioned "+
+			"it, and the tenant API rejects any write to it or delete of it. This plan would create it, which "+
+			"fails on the taken id, and under `terraform apply -replace` it would first remove the %s from "+
+			"state. So the plan is refused and nothing was sent.\n\n"+
+			"If this state holds it, as it does for `terraform apply -replace`, apply without `-replace`. If it "+
+			"doesn't, import it, replacing <address> with this resource's address, such as %s.example:\n\n"+
+			"    terraform import <address> %s\n\n"+
+			"Otherwise choose another `id`. `terraform destroy` runs this plan first, so it's refused too while "+
+			"this state doesn't hold the %s. `terraform destroy -refresh=false` skips that plan and destroys the "+
+			"rest of the configuration.",
+			aKindMidSentence(kind), id, attribute, owner, kind, resourceName, importID, kind)))
 }

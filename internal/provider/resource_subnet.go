@@ -11,6 +11,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework-timeouts/resource/timeouts"
 	"github.com/hashicorp/terraform-plugin-framework-validators/int64validator"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
@@ -258,6 +259,18 @@ func (r *subnetResource) Configure(_ context.Context, req resource.ConfigureRequ
 func (r *subnetResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
 	modifyScopePlan(ctx, r.meta, req, resp)
 	refusePlatformOwned(ctx, "cluster_id", "", nil, req, resp) // its update sends nothing
+	refuseOwnedCreate(ctx, r.meta, "subnet", ResourceName(subnetResourceSuffix), "cluster_id",
+		func(ctx context.Context, target clusterTarget, id string) (string, string, bool) {
+			var network types.String
+			if resp.Plan.GetAttribute(ctx, path.Root("network"), &network).HasError() || network.IsUnknown() {
+				return "", "", false
+			}
+			got, err := r.meta.Client.GetSubnetWithResponse(ctx, target.region, target.project, network.ValueString(), id)
+			if err != nil || got.JSON200 == nil || got.JSON200.ClusterId == nil || *got.JSON200.ClusterId == "" {
+				return "", "", false
+			}
+			return *got.JSON200.ClusterId, nestedScopedImportID(target, network.ValueString())(id), true
+		}, req, resp)
 	if resp.Diagnostics.HasError() {
 		return
 	}
