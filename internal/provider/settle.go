@@ -92,6 +92,9 @@ type stateKind[T any] struct {
 	detail func(T) string
 	// ready is the check settledOnceReady defers to.
 	ready func(T) (bool, error)
+	// final says a failsProvisionally body is one the platform won't take
+	// back, so the wait reports it on sight.
+	final func(T) bool
 
 	// settle is the policy while a create or update settles.
 	settle stateTable
@@ -156,6 +159,10 @@ func (k stateKind[T]) decide(table stateTable, body T) (verdict, error) {
 			return keepWaiting, nil
 		}
 	case failsProvisionally, failsTerminally:
+		v := rule.verdict
+		if v == failsProvisionally && k.final != nil && k.final(body) {
+			v = failsTerminally
+		}
 		subject := k.subject
 		if subject == "" {
 			subject = "the " + k.name
@@ -168,7 +175,7 @@ func (k stateKind[T]) decide(table stateTable, body T) (verdict, error) {
 		if rule.detail && k.detail != nil {
 			msg += k.detail(body)
 		}
-		return rule.verdict, platformRefusal{msg}
+		return v, platformRefusal{msg}
 	default:
 		return unrecognised, unknownStateError(k.name, state)
 	}
