@@ -688,8 +688,8 @@ func (r *clusterResource) Read(ctx context.Context, req resource.ReadRequest, re
 	if found {
 		read, reported, diags := r.readSSHAccess(ctx, target, state.ID.ValueString(), prior.SSHAccess)
 		resp.Diagnostics.Append(diags...)
-		// A delete releases the users with the node pools, and a failed
-		// teardown leaves them gone: see teardown_read.go.
+		// A delete releases the users, and a failed teardown leaves them
+		// gone: see teardown_read.go.
 		released := slices.Contains(clusterStates.released, state.State.ValueString())
 		var held bool
 		state.SSHAccess, held = heldThroughTeardown(released, noSSHUsers(read), read, clusterSSHAccessState(prior.SSHAccess))
@@ -1285,7 +1285,8 @@ func clusterStateFrom(ctx context.Context, c k0rdent.Cluster, prior clusterModel
 	}
 	m, d := types.MapValueFrom(ctx, clusterNodePoolObjectType(), pools)
 	diags.Append(d...)
-	// A delete took the pools, not the configuration: see teardown_read.go.
+	// A read that answers no pools mid-teardown, as dev.4 did, keeps them:
+	// see teardown_read.go.
 	var held bool
 	out.NodePool, held = heldThroughTeardown(released, true, m, prior.NodePool)
 	if held && c.State != nil && *c.State == k0rdent.ClusterStateFailed {

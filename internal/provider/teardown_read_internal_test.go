@@ -224,9 +224,9 @@ func TestTheGuardStillRefusesAReplacementWhileDeleting(t *testing.T) {
 	}
 }
 
-// A cluster's DELETE soft-deletes its node pools in the same transaction that
-// moves it to `deleting` (the k0rdent API's DeleteCluster), and dev.4 answered
-// `"nodePools":[]` and `"nodeCount":0` for a cluster straight after its DELETE.
+// API v1.3.0 keeps a cluster's node pools until the delete settles `deleted`,
+// but v1.3.0-dev.4 answered `"nodePools":[]` and `"nodeCount":0` for a
+// cluster straight after its DELETE.
 // The configured pools are kept without a warning that they aren't on the
 // cluster: they were, until the delete took them. A cluster left `failed`
 // that way warns that the platform reports no pools on it.
