@@ -117,7 +117,9 @@ func (r *webhookSubscriptionResource) Schema(_ context.Context, _ resource.Schem
 			"there's no filter by project or cluster, so a receiver that serves one project " +
 			"should check each event's `project` and drop those for other projects. An event with " +
 			"no `project` may still concern yours: it concerns no single project, or was recorded " +
-			"before events carried one.\n\n" +
+			"before events carried one. On API v1.3.0, any member of the organization can create, " +
+			"rotate and delete its subscriptions, with no admin role, and so can a service account " +
+			"with roles on one of its projects.\n\n" +
 			"**The signing secret never reaches state.** The platform shows a secret once and never " +
 			"again, and this provider keeps no secret in state or in a plan, so the secret is the " +
 			"configuration's to hold: set `secret_wo`, ideally from an ephemeral source such as a " +
