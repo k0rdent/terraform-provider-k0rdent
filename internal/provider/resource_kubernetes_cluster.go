@@ -740,7 +740,7 @@ func (r *clusterResource) Update(ctx context.Context, req resource.UpdateRequest
 		return
 	}
 	id := state.ID.ValueString()
-	if (resumable[clusterModel]{
+	resumed := resumable[clusterModel]{
 		kind: "cluster", resourceName: ResourceName(clusterResourceSuffix),
 		timeout: plan.Timeouts.Create, fallback: clusterStates.timeout(r.meta.Wait),
 		wait: func(ctx context.Context) error {
@@ -755,9 +755,11 @@ func (r *clusterResource) Update(ctx context.Context, req resource.UpdateRequest
 		},
 		waitsOutFailed: plan.OnFailed.ValueString() != failedKept,
 		guardsCreate:   true,
-	}).resume(ctx, req, resp) {
+	}
+	if resumed.resume(ctx, req, resp) {
 		return
 	}
+	outer := ctx
 	ctx, cancel := withTimeout(ctx, plan.Timeouts.Update, r.meta.Wait.Timeout, &resp.Diagnostics)
 	defer cancel()
 	if resp.Diagnostics.HasError() {
@@ -796,6 +798,12 @@ func (r *clusterResource) Update(ctx context.Context, req resource.UpdateRequest
 	// waiting for. `allow_replace` alone never reaches here
 	// (replace_guard_resource.go).
 	if !metadataChanged && onlyProviderSettingsChanged(plan, state) {
+		// A create still running is the exception, as below: the plan
+		// promised to wait for it, such as the first after an import.
+		if state.State.ValueString() == creatingState && plan.OnDestroyBusy.Equal(state.OnDestroyBusy) &&
+			resumed.finish(outer, req, resp) {
+			return
+		}
 		next := planOverPrior(plan, state)
 		resp.Diagnostics.Append(resp.State.Set(ctx, &next)...)
 		return
@@ -896,8 +904,15 @@ func (r *clusterResource) Update(ctx context.Context, req resource.UpdateRequest
 
 	// Nothing went to the platform, such as a node_pool that stops naming a
 	// pool, which an import makes common. Waiting would sit out whatever the
-	// cluster is doing, a create included, for a change that was never sent.
+	// cluster is doing for a change that was never sent. A create, or a
+	// `failed` the plan waits on, is the exception: the plan promised that
+	// wait, as it does when nothing else changed. A changed `on_destroy_busy`
+	// still never waits, as above.
 	if !queued && !metadataChanged {
+		// Under the create's timeout, as a resume is, not the update's.
+		if plan.OnDestroyBusy.Equal(state.OnDestroyBusy) && resumed.finish(outer, req, resp) {
+			return
+		}
 		next := planOverPrior(plan, state)
 		resp.Diagnostics.Append(resp.State.Set(ctx, &next)...)
 		return

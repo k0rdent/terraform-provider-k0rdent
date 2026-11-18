@@ -293,3 +293,39 @@ func creatingOutside(t *testing.T, name, markers string, reads int) {
 	}
 	checkFakeStateNow(t, name, "creating")
 }
+
+// A cluster imported `failed`, under a configuration that names only some of
+// its pools, is waited on by the apply, as the plan's warning says, though
+// the apply sends nothing for the pools it leaves out. It's still `failed`
+// after the window, so the apply fails and deletes nothing.
+func TestAccANarrowedPoolOnAFailedClusterWaitsAsThePlanSays(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS == "windows" {
+		skipTest(t, "the CLI sequence runs on unix")
+	}
+	const name = "acc-failed-narrowed-pools"
+	c := newCLIRun(t)
+	addr := clusterType + ".test"
+	t.Cleanup(func() { removeFromFake(t, name) })
+	failedOutside(t, name, createFails)
+	c.write(fmt.Sprintf(`
+resource %q "test" {
+  id           = %q
+  cluster_type = %q
+  display_name = %q
+  node_pool = {
+    "gpu-workers" = { node_count = 2 }
+  }
+}
+`, clusterType, name, clusterTypeRef, createFails))
+	if out, ok := c.run("import", addr, name); !ok {
+		t.Fatalf("the import failed:\n%s", out)
+	}
+	out, ok := c.run("apply", "-auto-approve")
+	if ok {
+		t.Fatalf("the apply passed on a cluster that stays failed:\n%s", out)
+	}
+	mustSay(t, "the apply", out, "`terraform apply` waits up to", "The cluster is still failed",
+		"Nothing was deleted")
+	checkFakeStateNow(t, name, "failed")
+}

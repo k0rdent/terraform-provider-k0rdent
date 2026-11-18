@@ -208,6 +208,78 @@ func TestAccACreateThatTimesOutIsWaitedForAfterAnUntaint(t *testing.T) { //nolin
 	}
 }
 
+// A cluster imported while it's still `creating` is waited for by the first
+// apply when the plan sends the platform nothing for it: `node_pool` left
+// out, or naming only some of the pools the import adopted, or the other
+// changes the import guide says send nothing, a `cluster_type` pinned to the
+// version the import recorded unversioned and a tag in both `tags` and
+// `default_tags`. The wait runs
+// under the create's timeout, not the 1s update timeout. An apply that
+// changes `on_destroy_busy` doesn't wait, since it's how a destroy is told to
+// stop waiting, and the next apply does.
+func TestAccAClusterImportedWhileCreatingIsWaitedFor(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS == "windows" {
+		skipTest(t, "the CLI sequence runs on unix")
+	}
+	const some = `node_pool = { "gpu-workers" = { node_count = 2 } }`
+	for _, tc := range []struct {
+		name, lines string
+		// ref follows the ClusterType reference, to pin a version.
+		ref string
+		// defaults is the provider's default_tags, and tags the tags the
+		// cluster is made with.
+		defaults, tags string
+		// states is the cluster's state in Terraform after each apply.
+		states []string
+	}{
+		{name: "acc-import-creating-all", states: []string{"active"}},
+		{name: "acc-import-creating-some", lines: some, states: []string{"active"}},
+		{name: "acc-import-creating-busy", lines: some + "\n  on_destroy_busy = \"cancel\"",
+			states: []string{"creating", "active"}},
+		{name: "acc-import-creating-pin", ref: "/versions/33333333-3333-3333-3333-333333333333",
+			states: []string{"active"}},
+		{name: "acc-import-creating-pin-busy", ref: "/versions/33333333-3333-3333-3333-333333333333",
+			lines: `on_destroy_busy = "cancel"`, states: []string{"creating", "active"}},
+		{name: "acc-import-creating-tags", lines: `tags = { team = "ml" }`, defaults: `{ team = "ml" }`,
+			tags: `,"tags":{"team":"ml"}`, states: []string{"active"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			c := newCLIRun(t)
+			addr := clusterType + ".test"
+			t.Cleanup(func() { removeFromFake(t, tc.name) })
+			if err := postFake("/v1/regions/us-texas-1/projects/demo/compute/clusters", fmt.Sprintf(
+				`{"id":%q,"clusterType":%q,"displayName":%q,"nodePools":[{"id":"gpu-workers","nodeCount":2}]%s}`,
+				tc.name, clusterTypeRef, createsSlowly, tc.tags)); err != nil {
+				t.Fatal(err)
+			}
+			checkFakeStateNow(t, tc.name, "creating")
+			config := fmt.Sprintf("resource %q \"test\" {\n  id           = %q\n  cluster_type = %q\n"+
+				"  display_name = %q\n  %s\n  timeouts {\n    create = \"2m\"\n    update = \"1s\"\n  }\n}\n",
+				clusterType, tc.name, clusterTypeRef+tc.ref, createsSlowly, tc.lines)
+			if tc.defaults != "" {
+				config += withDefaultTags(tc.defaults)
+			}
+			c.write(config)
+			if out, ok := c.run("import", addr, tc.name); !ok {
+				t.Fatalf("the import failed:\n%s", out)
+			}
+			for i, want := range tc.states {
+				if out, ok := c.run("apply", "-auto-approve"); !ok {
+					t.Fatalf("apply %d failed:\n%s", i+1, out)
+				}
+				if shown, ok := c.run("state", "show", addr); !ok ||
+					!regexp.MustCompile(`state\s+=\s+"`+want+`"`).MatchString(shown) {
+					t.Errorf("the cluster isn't %s in state after apply %d:\n%s", want, i+1, shown)
+				}
+			}
+			out, _ := c.run("plan", "-detailed-exitcode")
+			mustSay(t, "the plan after", out, "No changes.")
+		})
+	}
+}
+
 // The sequence a user sees when the platform fails a cluster's or an
 // instance group's create, through the real CLI:
 //
