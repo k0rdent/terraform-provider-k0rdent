@@ -1255,8 +1255,7 @@ func clusterStateFrom(ctx context.Context, c k0rdent.Cluster, prior clusterModel
 	}
 
 	keep := settled
-	released := clusterStates.releasedInputs(c) && len(c.NodePools) == 0
-	if !released && !prior.NodePool.IsNull() && !prior.NodePool.IsUnknown() {
+	if !prior.NodePool.IsNull() && !prior.NodePool.IsUnknown() {
 		known, d := clusterPoolsFromModel(ctx, prior.NodePool)
 		diags.Append(d...)
 		keep = map[string]int64{}
@@ -1285,20 +1284,7 @@ func clusterStateFrom(ctx context.Context, c k0rdent.Cluster, prior clusterModel
 	}
 	m, d := types.MapValueFrom(ctx, clusterNodePoolObjectType(), pools)
 	diags.Append(d...)
-	// A read that answers no pools mid-teardown, as dev.4 did, keeps them:
-	// see teardown_read.go.
-	var held bool
-	out.NodePool, held = heldThroughTeardown(released, true, m, prior.NodePool)
-	if held && c.State != nil && *c.State == k0rdent.ClusterStateFailed {
-		diags.AddWarning(
-			"The platform reports no node pools on this failed cluster",
-			fmt.Sprintf("%q is `failed` and the platform answers no node pools for it, which is what a "+
-				"delete whose teardown failed leaves. State keeps the configured `node_pool` so a "+
-				"destroy can run again. If the cluster is meant to stay, it no longer has those "+
-				"pools: destroy it, or set `allow_replace = true`, replace it with "+
-				"`terraform apply -replace`, then remove `allow_replace`.", c.Id),
-		)
-	}
+	out.NodePool = m
 
 	// Security groups, always as the platform reports them and in its order.
 	// The field is required and `[]` when none, and an omission is read the

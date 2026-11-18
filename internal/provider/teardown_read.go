@@ -17,7 +17,7 @@ import (
 // group's SSH users and a cluster's. A teardown that fails settles the
 // resource `failed` with them still gone, since nothing puts them back. A
 // cluster's node pools stay until the delete settles `deleted` (API v1.3.0),
-// so its read holds them only when a read answers none, as v1.3.0-dev.4 did.
+// so they aren't held here.
 //
 // Written into state, that empty answer is a difference from the
 // configuration. On an immutable attribute it's a replacement the guard
