@@ -21,11 +21,11 @@ How to read a row:
 | [`k0rdent_network`](#k0rdent_network) | 31 | 49 | 30 | 19 |
 | [`k0rdent_project`](#k0rdent_project) | 9 | 13 | 10 | 3 |
 | [`k0rdent_security_group`](#k0rdent_security_group) | 28 | 48 | 28 | 20 |
-| [`k0rdent_subnet`](#k0rdent_subnet) | 19 | 24 | 17 | 7 |
+| [`k0rdent_subnet`](#k0rdent_subnet) | 19 | 24 | 18 | 6 |
 | [`k0rdent_vpc_peering`](#k0rdent_vpc_peering) | 14 | 18 | 13 | 5 |
 | [`k0rdent_vpc_security_groups`](#k0rdent_vpc_security_groups) | 9 | 13 | 7 | 6 |
 | [`k0rdent_webhook_subscription`](#k0rdent_webhook_subscription) | 11 | 14 | 11 | 3 |
-| All | 216 | 326 | 224 | 102 |
+| All | 216 | 326 | 225 | 101 |
 
 ## k0rdent_file_store
 
@@ -224,22 +224,22 @@ How to read a row:
 
 | Attribute | Kind | Changes | Import | Update |
 | --- | --- | --- | --- | --- |
-| `address_pool` | required | replaces | `TestAccImport`, `TestAccQueryGeneratesConfigThatPlansClean`, `TestAccSubnetChangeAfterQuietImportReplaces`, `TestAccSubnetImportDoesNotReplace`, `TestReplacementsFollowTheDocumentedRules` | n/a (always replaces) |
+| `address_pool` | required | replaces | `TestAccImport`, `TestAccQueryGeneratesConfigThatPlansClean`, `TestAccSubnetChangeAfterQuietImportReplaces`, `TestAccSubnetImportDoesNotReplace`, `TestAccSubnetImportedWhileCreatingPlansCleanAfterApply`, `TestReplacementsFollowTheDocumentedRules` | n/a (always replaces) |
 | `allocate_gateway` | optional+computed | sometimes replaces | `TestAccImport`, `TestAccQueryGeneratesConfigThatPlansClean`, `TestAccSubnetChangeAfterQuietImportReplaces`, `TestReplacementsFollowTheDocumentedRules` | `TestAccSubnetChangeAfterQuietImportReplaces` (replace), `TestReplacementsFollowTheDocumentedRules` (replace) |
 | `allow_replace` | optional | in place | **gap** | `TestAccSubnetReplacementNeedsThePermission`, `TestReplacementsFollowTheDocumentedRules` |
 | `cidr` | computed | n/a | `TestAccImport`, `TestAccQueryGeneratesConfigThatPlansClean`, `TestAccSubnetChangeAfterQuietImportReplaces`, `TestAccSubnetImportDoesNotReplace`, `TestReplacementsFollowTheDocumentedRules` | n/a (computed only) |
 | `cluster_id` | computed | n/a | **gap** | n/a (computed only) |
 | `description` | optional | replaces | **gap** | n/a (always replaces) |
-| `display_name` | optional | replaces | **gap** | n/a (always replaces) |
-| `exclude_ranges` | optional+computed | sometimes replaces | `TestAccImport`, `TestAccSubnetChangeAfterQuietImportReplaces`, `TestAccSubnetImportDoesNotReplace`, `TestReplacementsFollowTheDocumentedRules` | `TestAccSubnetExcludeRangesCompareAsAddresses` (update and replace), `TestReplacementsFollowTheDocumentedRules` (update and replace) |
+| `display_name` | optional | replaces | `TestAccSubnetImportedWhileCreatingPlansCleanAfterApply` | n/a (always replaces) |
+| `exclude_ranges` | optional+computed | sometimes replaces | `TestAccImport`, `TestAccSubnetChangeAfterQuietImportReplaces`, `TestAccSubnetImportDoesNotReplace`, `TestAccSubnetImportedWhileCreatingPlansCleanAfterApply`, `TestReplacementsFollowTheDocumentedRules` | `TestAccSubnetExcludeRangesCompareAsAddresses` (update and replace), `TestReplacementsFollowTheDocumentedRules` (update and replace) |
 | `gateway` | computed | n/a | `TestAccImport`, `TestAccSubnetChangeAfterQuietImportReplaces`, `TestReplacementsFollowTheDocumentedRules` | n/a (computed only) |
-| `id` | optional+computed | replaces | `TestAccImport`, `TestAccQueryGeneratesConfigThatPlansClean`, `TestAccSubnetChangeAfterQuietImportReplaces`, `TestAccSubnetImportDoesNotReplace`, `TestReplacementsFollowTheDocumentedRules` | n/a (always replaces) |
+| `id` | optional+computed | replaces | `TestAccImport`, `TestAccQueryGeneratesConfigThatPlansClean`, `TestAccSubnetChangeAfterQuietImportReplaces`, `TestAccSubnetImportDoesNotReplace`, `TestAccSubnetImportedWhileCreatingPlansCleanAfterApply`, `TestReplacementsFollowTheDocumentedRules` | n/a (always replaces) |
 | `ip_version` | computed | n/a | `TestAccImport`, `TestAccQueryGeneratesConfigThatPlansClean`, `TestAccSubnetChangeAfterQuietImportReplaces`, `TestAccSubnetImportDoesNotReplace`, `TestReplacementsFollowTheDocumentedRules` | n/a (computed only) |
-| `network` | required | replaces | `TestAccImport`, `TestAccQueryGeneratesConfigThatPlansClean`, `TestAccSubnetChangeAfterQuietImportReplaces`, `TestAccSubnetImportDoesNotReplace`, `TestReplacementsFollowTheDocumentedRules` | n/a (always replaces) |
-| `prefix_length` | required | replaces | `TestAccImport`, `TestAccQueryGeneratesConfigThatPlansClean`, `TestAccSubnetChangeAfterQuietImportReplaces`, `TestAccSubnetImportDoesNotReplace`, `TestReplacementsFollowTheDocumentedRules` | n/a (always replaces) |
-| `project` | optional+computed | replaces | `TestAccImport`, `TestAccQueryGeneratesConfigThatPlansClean`, `TestAccSubnetChangeAfterQuietImportReplaces`, `TestAccSubnetImportDoesNotReplace`, `TestReplacementsFollowTheDocumentedRules` | n/a (always replaces) |
-| `region` | optional+computed | replaces | `TestAccImport`, `TestAccQueryGeneratesConfigThatPlansClean`, `TestAccSubnetChangeAfterQuietImportReplaces`, `TestAccSubnetImportDoesNotReplace`, `TestReplacementsFollowTheDocumentedRules` | n/a (always replaces) |
-| `self_link` | computed | n/a | `TestAccImport`, `TestAccQueryGeneratesConfigThatPlansClean`, `TestAccSubnetChangeAfterQuietImportReplaces`, `TestAccSubnetImportDoesNotReplace`, `TestReplacementsFollowTheDocumentedRules` | n/a (computed only) |
+| `network` | required | replaces | `TestAccImport`, `TestAccQueryGeneratesConfigThatPlansClean`, `TestAccSubnetChangeAfterQuietImportReplaces`, `TestAccSubnetImportDoesNotReplace`, `TestAccSubnetImportedWhileCreatingPlansCleanAfterApply`, `TestReplacementsFollowTheDocumentedRules` | n/a (always replaces) |
+| `prefix_length` | required | replaces | `TestAccImport`, `TestAccQueryGeneratesConfigThatPlansClean`, `TestAccSubnetChangeAfterQuietImportReplaces`, `TestAccSubnetImportDoesNotReplace`, `TestAccSubnetImportedWhileCreatingPlansCleanAfterApply`, `TestReplacementsFollowTheDocumentedRules` | n/a (always replaces) |
+| `project` | optional+computed | replaces | `TestAccImport`, `TestAccQueryGeneratesConfigThatPlansClean`, `TestAccSubnetChangeAfterQuietImportReplaces`, `TestAccSubnetImportDoesNotReplace`, `TestAccSubnetImportedWhileCreatingPlansCleanAfterApply`, `TestReplacementsFollowTheDocumentedRules` | n/a (always replaces) |
+| `region` | optional+computed | replaces | `TestAccImport`, `TestAccQueryGeneratesConfigThatPlansClean`, `TestAccSubnetChangeAfterQuietImportReplaces`, `TestAccSubnetImportDoesNotReplace`, `TestAccSubnetImportedWhileCreatingPlansCleanAfterApply`, `TestReplacementsFollowTheDocumentedRules` | n/a (always replaces) |
+| `self_link` | computed | n/a | `TestAccImport`, `TestAccQueryGeneratesConfigThatPlansClean`, `TestAccSubnetChangeAfterQuietImportReplaces`, `TestAccSubnetImportDoesNotReplace`, `TestAccSubnetImportedWhileCreatingPlansCleanAfterApply`, `TestReplacementsFollowTheDocumentedRules` | n/a (computed only) |
 | `state` | computed | n/a | `TestAccImport`, `TestAccQueryGeneratesConfigThatPlansClean`, `TestAccSubnetChangeAfterQuietImportReplaces`, `TestAccSubnetImportDoesNotReplace`, `TestReplacementsFollowTheDocumentedRules` | n/a (computed only) |
 | `timeouts.create` | optional | in place | **gap** | `TestAccSubnetTimeoutsChangeInPlace`, `TestAccSubnetTimeoutsPlanOnlyTheTimeouts`, `TestAccSubnetWithoutRangesStillChanges` |
 | `timeouts.delete` | optional | in place | **gap** | **gap** |
@@ -249,19 +249,19 @@ How to read a row:
 | Attribute | Kind | Changes | Import | Update |
 | --- | --- | --- | --- | --- |
 | `description` | optional | replaces | **gap** | n/a (always replaces) |
-| `display_name` | optional | replaces | `TestAccImport`, `TestAccQueryGeneratesConfigThatPlansClean` | n/a (always replaces) |
-| `id` | optional+computed | replaces | `TestAccImport`, `TestAccQueryGeneratesConfigThatPlansClean` | n/a (always replaces) |
-| `local_vpc` | computed | n/a | `TestAccImport`, `TestAccQueryGeneratesConfigThatPlansClean` | n/a (computed only) |
-| `project` | optional+computed | replaces | `TestAccImport`, `TestAccQueryGeneratesConfigThatPlansClean` | n/a (always replaces) |
-| `region` | optional+computed | replaces | `TestAccImport`, `TestAccQueryGeneratesConfigThatPlansClean` | n/a (always replaces) |
+| `display_name` | optional | replaces | `TestAccImport`, `TestAccQueryGeneratesConfigThatPlansClean`, `TestAccVPCPeeringImportedWhileCreatingPlansCleanAfterApply` | n/a (always replaces) |
+| `id` | optional+computed | replaces | `TestAccImport`, `TestAccQueryGeneratesConfigThatPlansClean`, `TestAccVPCPeeringImportedWhileCreatingPlansCleanAfterApply` | n/a (always replaces) |
+| `local_vpc` | computed | n/a | `TestAccImport`, `TestAccQueryGeneratesConfigThatPlansClean`, `TestAccVPCPeeringImportedWhileCreatingPlansCleanAfterApply` | n/a (computed only) |
+| `project` | optional+computed | replaces | `TestAccImport`, `TestAccQueryGeneratesConfigThatPlansClean`, `TestAccVPCPeeringImportedWhileCreatingPlansCleanAfterApply` | n/a (always replaces) |
+| `region` | optional+computed | replaces | `TestAccImport`, `TestAccQueryGeneratesConfigThatPlansClean`, `TestAccVPCPeeringImportedWhileCreatingPlansCleanAfterApply` | n/a (always replaces) |
 | `remote_vpc` | required | sometimes replaces | `TestAccImport`, `TestAccQueryGeneratesConfigThatPlansClean` | `TestAccRenamingAPeeredClusterReplacesNoPeering` (update), `TestReplacementsFollowTheDocumentedRules` (update and replace) |
-| `self_link` | computed | n/a | `TestAccImport`, `TestAccQueryGeneratesConfigThatPlansClean` | n/a (computed only) |
+| `self_link` | computed | n/a | `TestAccImport`, `TestAccQueryGeneratesConfigThatPlansClean`, `TestAccVPCPeeringImportedWhileCreatingPlansCleanAfterApply` | n/a (computed only) |
 | `state` | computed | n/a | `TestAccImport`, `TestAccQueryGeneratesConfigThatPlansClean` | n/a (computed only) |
 | `tags` | optional | sometimes replaces | **gap** | `TestAccDefaultTagsReachEveryTaggedKind` (update), `TestAccDefaultTagsTakeOverAPeeringsTag` (update), `TestReplacementsFollowTheDocumentedRules` (replace) |
-| `tags_all` | computed | n/a | `TestAccImport`, `TestAccQueryGeneratesConfigThatPlansClean` | n/a (computed only) |
+| `tags_all` | computed | n/a | `TestAccImport`, `TestAccQueryGeneratesConfigThatPlansClean`, `TestAccVPCPeeringImportedWhileCreatingPlansCleanAfterApply` | n/a (computed only) |
 | `timeouts.create` | optional | in place | **gap** | `TestAccPeeringTimeoutsPlanOnlyTheTimeouts`, `TestAccVPCPeeringTimeoutsChangeInPlace` |
 | `timeouts.delete` | optional | in place | **gap** | **gap** |
-| `vpc` | required | replaces | `TestAccImport`, `TestAccQueryGeneratesConfigThatPlansClean` | n/a (always replaces) |
+| `vpc` | required | replaces | `TestAccImport`, `TestAccQueryGeneratesConfigThatPlansClean`, `TestAccVPCPeeringImportedWhileCreatingPlansCleanAfterApply` | n/a (always replaces) |
 
 ## k0rdent_vpc_security_groups
 
