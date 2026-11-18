@@ -32,6 +32,12 @@ import {
 - Some resources need more. A subnet adds `network`, a peering adds `vpc`, a
   security group binding takes only `vpc`, and a project takes
   `organization_id` and `id`. Each resource's page lists its identity.
+- Under OpenTofu, write only literal values in `identity`, or `each.key`
+  with `for_each`. OpenTofu 1.12 and 1.13 don't wait for anything else
+  `identity` refers to: a data source's attribute fails the plan with
+  `Invalid import identity argument`, and a variable can be read before
+  it's set. For a value from a data source or a variable, use `id` in place
+  of `identity`.
 
 On Terraform 1.5 and later, an `import` block can take a string id:
 
