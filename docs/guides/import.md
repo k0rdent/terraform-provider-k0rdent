@@ -73,7 +73,7 @@ terraform import k0rdent_kubernetes_cluster.training us-texas-1/cp-production/ml
 
 If you use the long form, or an identity with `region` or `project`, set the
 same `region` and `project` in the resource block. Otherwise the next plan
-replaces the resource. The import warns you when this applies.
+replaces the resource. The plan warns you when this applies.
 
 Each resource's page lists its import forms.
 

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
@@ -238,4 +240,56 @@ func checkFakeDisplayName(addr string, pathOf func(map[string]string) string, wa
 		}
 		return nil
 	}
+}
+
+// An import into a project the provider block isn't set to, of a resource
+// whose block sets that project, plans nothing and warns about nothing. The
+// import can't see the block, so a warning there would fire whether the block
+// sets the project or not. The plan warns when it doesn't.
+func TestAccImportIntoTheBlocksOwnProjectWarnsAboutNothing(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS == "windows" {
+		skipTest(t, "the CLI sequence runs on unix")
+	}
+	const name = "acc-import-own-scope"
+	project := ownProject(t, "acc-import-own-scope")
+	addr := fileStoreType + ".test"
+	c := newCLIRun(t)
+	config := func(scope string) string {
+		return fmt.Sprintf(`
+resource %q "test" {
+  id           = %q
+%s  share_type   = "general"
+  capacity_gib = 512
+}
+`, fileStoreType, name, scope)
+	}
+	c.write(config(fmt.Sprintf("  project      = %q\n", project)))
+	if out, ok := c.run("apply", "-auto-approve"); !ok {
+		t.Fatalf("apply failed:\n%s", out)
+	}
+	t.Cleanup(func() {
+		if out, ok := c.run("destroy", "-auto-approve"); !ok {
+			t.Errorf("the destroy failed:\n%s", out)
+		}
+	})
+	if out, ok := c.run("state", "rm", addr); !ok {
+		t.Fatalf("state rm failed:\n%s", out)
+	}
+	out, ok := c.run("import", addr, "us-texas-1/"+project+"/"+name)
+	if !ok {
+		t.Fatalf("the import failed:\n%s", out)
+	}
+	// Only the warning every run through dev_overrides prints is allowed.
+	if strings.Count(out, "Warning:") > strings.Count(out, "Warning: Provider development overrides") {
+		t.Errorf("the import warned:\n%s", out)
+	}
+	if out, ok := c.run("plan", "-detailed-exitcode"); !ok {
+		t.Errorf("the plan after the import isn't empty:\n%s", out)
+	}
+	c.write(config(""))
+	out, _ = c.run("plan")
+	mustSay(t, "the plan without the project", out, "Repeat the scope in the resource block",
+		fmt.Sprintf(`project = %q`, project))
+	c.write(config(fmt.Sprintf("  project      = %q\n", project)))
 }

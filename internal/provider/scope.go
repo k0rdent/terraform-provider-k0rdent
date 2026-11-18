@@ -3,7 +3,6 @@ package provider
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -116,7 +115,6 @@ func resolveScopeValue(config, state types.String, deflt string, planIsNull, sta
 // a null prior value.
 func setImportedScope(ctx context.Context, meta *Meta, region, project string, state *tfsdk.State, diags *diag.Diagnostics) {
 	if meta != nil {
-		warnScopeNeedsRepeating(diags, region, project, meta)
 		if region == "" {
 			region = meta.Region
 		}
@@ -138,36 +136,6 @@ func setImportedScope(ctx context.Context, meta *Meta, region, project string, s
 func setCreatedScope(ctx context.Context, target clusterTarget, state *tfsdk.State, diags *diag.Diagnostics) {
 	diags.Append(state.SetAttribute(ctx, path.Root("region"), target.region)...)
 	diags.Append(state.SetAttribute(ctx, path.Root("project"), target.project)...)
-}
-
-// warnScopeNeedsRepeating fires when an import names a scope the provider block
-// is not configured for.
-//
-// State alone does not hold the resource there. The next plan resolves the
-// attribute from configuration, finds nothing, falls back to the provider block
-// and proposes a replacement. Repeating the scope in the resource block is what
-// makes the two agree. An import sees no configuration, so it can't tell a
-// block that already sets the scope, as `project = local.project`, from one
-// that doesn't. The warning says so, and warnScopeMoves fires at plan when it
-// turns out the block doesn't.
-func warnScopeNeedsRepeating(diags *diag.Diagnostics, region, project string, meta *Meta) {
-	var repeat []string
-	if region != "" && region != meta.Region {
-		repeat = append(repeat, fmt.Sprintf("region  = %q", region))
-	}
-	if project != "" && project != meta.Project {
-		repeat = append(repeat, fmt.Sprintf("project = %q", project))
-	}
-	if len(repeat) == 0 {
-		return
-	}
-	diags.AddWarning(
-		"Repeat the imported scope in the resource block",
-		fmt.Sprintf("This resource was imported into a scope the provider is not configured for. "+
-			"Unless its configuration already sets it, add:\n\n    %s\n\n"+
-			"Without that, the next plan resolves the scope from the provider block and proposes "+
-			"destroying and recreating the resource.", strings.Join(repeat, "\n    ")),
-	)
 }
 
 // warnScopeMoves fires when a plan moves a resource only because its
