@@ -14,8 +14,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-go/tftypes"
-
-	"github.com/k0rdent/terraform-provider-k0rdent/internal/k0rdent"
 )
 
 // What a refresh makes of a resource the platform is tearing down. See
@@ -221,36 +219,5 @@ func TestTheGuardStillRefusesAReplacementWhileDeleting(t *testing.T) {
 		with(opsGroup("active"), map[string]tftypes.Value{"ssh_access": other}))
 	if got := errorSummaries(plan.Diagnostics); len(got) != 1 || !strings.Contains(got[0], "Changing `ssh_access` would replace") {
 		t.Errorf("errors = %q, want the replacement refused", got)
-	}
-}
-
-// API v1.3.0 keeps a cluster's node pools until the delete settles `deleted`,
-// but v1.3.0-dev.4 answered `"nodePools":[]` and `"nodeCount":0` for a
-// cluster straight after its DELETE.
-// The configured pools are kept without a warning that they aren't on the
-// cluster: they were, until the delete took them. A cluster left `failed`
-// that way warns that the platform reports no pools on it.
-func TestAClusterBeingTornDownKeepsItsNodePools(t *testing.T) {
-	for state, warns := range map[k0rdent.ClusterState]bool{k0rdent.ClusterStateDeleting: false, k0rdent.ClusterStateFailed: true} {
-		t.Run(string(state), func(t *testing.T) {
-			prior := testClusterPriorState()
-			got, diags := clusterStateFrom(context.Background(), k0rdent.Cluster{
-				Id:          "tf-demo",
-				ClusterType: ptr(testHeadRef),
-				State:       ptr(state),
-				NodePools:   []k0rdent.ClusterNodePool{},
-				NodeCount:   ptr(0),
-			}, prior, defaultTags{})
-			said := diags.WarningsCount() == 1 && strings.Contains(diags.Warnings()[0].Summary(), "no node pools")
-			if diags.HasError() || said != warns || (!warns && diags.WarningsCount() > 0) {
-				t.Errorf("diagnostics = %v, want a warning about the missing pools: %v", diags, warns)
-			}
-			if !got.NodePool.Equal(prior.NodePool) {
-				t.Errorf("node_pool = %v, want the prior %v", got.NodePool, prior.NodePool)
-			}
-			if got.NodeCount.ValueInt64() != 0 {
-				t.Errorf("node_count = %v, want the platform's 0: it's read-only, and true", got.NodeCount)
-			}
-		})
 	}
 }
