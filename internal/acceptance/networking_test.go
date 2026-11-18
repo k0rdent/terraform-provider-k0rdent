@@ -422,6 +422,46 @@ func TestAccSubnetImportDoesNotReplace(t *testing.T) {
 	})
 }
 
+// A subnet imported while it's still `creating` plans an update that waits
+// for it. Once that apply has seen it settle, the next plan is empty.
+func TestAccSubnetImportedWhileCreatingPlansCleanAfterApply(t *testing.T) {
+	t.Parallel()
+	const network, name = "acc-import-creating-sub-net", "acc-import-creating-sub"
+	config := strings.Replace(clusterLocalSubnetConfig(network, name),
+		`id               = "`+name+`"`,
+		"id               = \""+name+"\"\n  display_name     = \""+createsSlowly+"\"", 1)
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: protoV6,
+		CheckDestroy: resource.ComposeAggregateTestCheckFunc(
+			checkGone(subnetType, subnetPath),
+			checkGone(networkType, networkPath),
+		),
+		Steps: []resource.TestStep{
+			{Config: evpnConfig(network, "acceptance")},
+			{
+				PreConfig: func() {
+					if err := postFake("/v1/regions/us-texas-1/projects/demo/networking/networks/"+network+"/subnets",
+						fmt.Sprintf(`{"id":%q,"addressPool":"/v1/regions/us-texas-1/networking/address-pools/cluster-local","prefixLength":24,"allocateGateway":true,"excludeRanges":["10.0.0.10-10.0.0.20"],"displayName":%q}`,
+							name, createsSlowly)); err != nil {
+						t.Fatal(err)
+					}
+				},
+				Config: config + fmt.Sprintf(`
+import {
+  to = %s
+  id = "us-texas-1/demo/%s/%s"
+}
+`, subnetAddr, network, name),
+				ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{
+					plancheck.ExpectResourceAction(subnetAddr, plancheck.ResourceActionUpdate),
+				}},
+				Check: resource.TestCheckResourceAttr(subnetAddr, "state", "active"),
+			},
+			{Config: config, PlanOnly: true},
+		},
+	})
+}
+
 // A `timeouts` block is the one thing that changes without a subnet operation.
 func TestAccSubnetTimeoutsChangeInPlace(t *testing.T) {
 	t.Parallel()

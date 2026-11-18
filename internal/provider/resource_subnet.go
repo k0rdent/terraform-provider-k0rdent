@@ -419,6 +419,13 @@ func (r *subnetResource) Update(ctx context.Context, req resource.UpdateRequest,
 	}).resume(ctx, req, resp) {
 		return
 	}
+	if state.State.ValueString() == creatingState {
+		// Imported mid-create with a value to record: wait as a resume would.
+		if err := r.waitForSettled(ctx, target, network, id); err != nil {
+			addWaitError(&resp.Diagnostics, "The subnet did not finish provisioning", err)
+			return
+		}
+	}
 	next, found, diags, err := settledRead(ctx, plan.State, subnetStates.settle,
 		func(ctx context.Context) (subnetModel, bool, diag.Diagnostics) {
 			return r.read(ctx, target, network, id, plan)
