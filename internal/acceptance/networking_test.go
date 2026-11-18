@@ -278,8 +278,9 @@ import {
 }
 
 // An import has no configured value to keep, so the read records what the
-// platform reports. For a value the platform does not echo as written, that
-// must not plan a replacement of the real object.
+// platform reports. `vlan_id = "auto"` comes back as the allocated id, which
+// satisfies it, so the import plans no change at all, not a replacement or an
+// update.
 func TestAccNetworkImportDoesNotReplace(t *testing.T) {
 	t.Parallel()
 	const name = "acc-adopt-evpn"
@@ -293,11 +294,17 @@ func TestAccNetworkImportDoesNotReplace(t *testing.T) {
 			{
 				Config: adopted,
 				ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{
-					plancheck.ExpectResourceAction(networkAddr, plancheck.ResourceActionUpdate),
+					plancheck.ExpectResourceAction(networkAddr, plancheck.ResourceActionNoop),
 				}},
-				Check: resource.TestCheckResourceAttr(networkAddr, "evpn.vlan_id", "auto"),
+				Check: resource.TestCheckResourceAttr(networkAddr, "evpn.vlan_id", "4001"),
 			},
 			{Config: evpnConfig(name, "a"), PlanOnly: true},
+			// A named id other than the allocated one is still a replacement.
+			{
+				Config:      strings.Replace(evpnConfig(name, "a"), `vlan_id      = "auto"`, `vlan_id      = "4002"`, 1),
+				PlanOnly:    true,
+				ExpectError: regexp.MustCompile("Changing `evpn` would replace this network"),
+			},
 		},
 	})
 }

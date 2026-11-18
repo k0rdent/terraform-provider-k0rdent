@@ -229,7 +229,7 @@ func (r *networkResource) Schema(ctx context.Context, _ resource.SchemaRequest, 
 						Computed: true,
 						MarkdownDescription: "VLAN id as a string, e.g. `\"100\"`, or `\"auto\"` to let " +
 							"the platform allocate one. See `vlan_id_resolved` for what it chose.",
-						PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
+						PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown(), autoKeepsAllocated{}},
 						Validators: []validator.String{stringvalidator.RegexMatches(vlanIDPattern,
 							"must be \"auto\" or a VLAN number from 1 to 9999 with no leading zero")},
 					},
@@ -501,6 +501,26 @@ func infinibandRequiresReplace(ctx context.Context, req planmodifier.ObjectReque
 		plan.Pkey = state.Pkey
 	}
 	resp.RequiresReplace = !sameObject(ctx, plan, req, &resp.Diagnostics)
+}
+
+// autoKeepsAllocated plans the id state holds when configuration says
+// `"auto"`, which any allocated id satisfies. An import records the allocated
+// id, so without this its plan updates `vlan_id` to `"auto"` and changes
+// nothing else.
+type autoKeepsAllocated struct{}
+
+func (autoKeepsAllocated) Description(context.Context) string {
+	return "Keeps the allocated VLAN id in state when configuration asks for \"auto\"."
+}
+
+func (m autoKeepsAllocated) MarkdownDescription(ctx context.Context) string {
+	return m.Description(ctx)
+}
+
+func (autoKeepsAllocated) PlanModifyString(_ context.Context, req planmodifier.StringRequest, resp *planmodifier.StringResponse) {
+	if req.ConfigValue.ValueString() == "auto" && !req.StateValue.IsNull() && !req.StateValue.IsUnknown() {
+		resp.PlanValue = req.StateValue
+	}
 }
 
 // recordPkey fills a `pkey` an import left null with the one the platform
