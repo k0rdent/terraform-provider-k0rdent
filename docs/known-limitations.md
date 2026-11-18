@@ -107,6 +107,15 @@ Nothing else is retried. A 401, a 409 during a change, a 500, and any other
 **Plan and refresh time.** See [performance](performance.md). The supported
 limit is 1,000 resources in one configuration.
 
+## A list read while objects are deleted
+
+The platform pages its lists of projects, organizations, roles, service
+accounts, service account credentials, cluster types, networks, subnets, VPCs,
+address pools and security groups by position, and the provider reads each
+500 at a time. An object deleted while a list is being read moves every later
+object back one place, so the read can miss one. That needs more than 500
+objects in the list, and the next read finds it.
+
 ## Terraform 1.16.0 to 1.16.4
 
 A ctrl-C during an apply that's creating two or more resources can crash
