@@ -924,3 +924,52 @@ func TestAccNetworkFabricFromAVariableStillRefusesTwo(t *testing.T) {
 		}},
 	})
 }
+
+// A network imported while it's still `creating` plans an update that waits
+// for it. Once that apply has seen it settle, the next plan is empty.
+func TestAccNetworkImportedWhileCreatingPlansCleanAfterApply(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct{ name, body, fabric string }{
+		{"acc-import-creating-evpn", `"type":"evpn","evpn":{"type":"l3vpn"},"vlan":{"id":"4001"}`,
+			`evpn = { service_type = "l3vpn", vlan_id = "4001" }`},
+		{"acc-import-creating-auto", `"type":"evpn","evpn":{"type":"l3vpn"},"vlan":{"id":"auto"}`,
+			`evpn = { service_type = "l3vpn", vlan_id = "auto" }`},
+		{"acc-import-creating-ib", `"type":"infiniband","infiniband":{"partition":"training"}`,
+			`infiniband = { partition = "training" }`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			config := fmt.Sprintf(`
+resource %q "test" {
+  id = %q
+  %s
+}
+`, networkType, tc.name, tc.fabric)
+			resource.Test(t, resource.TestCase{
+				ProtoV6ProviderFactories: protoV6,
+				CheckDestroy:             checkGone(networkType, networkPath),
+				Steps: []resource.TestStep{
+					{
+						PreConfig: func() {
+							if err := postFake("/v1/regions/us-texas-1/projects/demo/networking/networks",
+								`{"id":"`+tc.name+`",`+tc.body+`}`); err != nil {
+								t.Fatal(err)
+							}
+						},
+						Config: config + fmt.Sprintf(`
+import {
+  to = %s
+  id = "us-texas-1/demo/%s"
+}
+`, networkAddr, tc.name),
+						ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{
+							plancheck.ExpectResourceAction(networkAddr, plancheck.ResourceActionUpdate),
+						}},
+						Check: resource.TestCheckResourceAttr(networkAddr, "state", "active"),
+					},
+					{Config: config, PlanOnly: true},
+				},
+			})
+		})
+	}
+}

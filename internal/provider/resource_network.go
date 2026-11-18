@@ -771,6 +771,13 @@ func (r *networkResource) Update(ctx context.Context, req resource.UpdateRequest
 				return
 			}
 		}
+	} else if state.State.ValueString() == creatingState {
+		// Imported mid-create with a fabric value to record: nothing to send,
+		// but the create is waited for, as a resume would.
+		if err := r.waitForSettled(ctx, target, id, "the network to finish provisioning"); err != nil {
+			addWaitError(&resp.Diagnostics, "The network did not finish provisioning", err)
+			return
+		}
 	}
 
 	next, found, diags, err := settledRead(ctx, plan.State, networkStates.settle,
