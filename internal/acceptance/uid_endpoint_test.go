@@ -96,7 +96,7 @@ resource %q "test" {
     "gpu-workers"   = { node_count = 2 }
   }
 }
-`, clusterType, cluster, clusterTypeRef) + instanceGroupConfig(group, 1) + fmt.Sprintf(`
+`, clusterType, cluster, clusterTypeRef) + everyPoolInstanceGroupConfig(group, 1) + fmt.Sprintf(`
 data %q "read" {
   id = %s.id
 }

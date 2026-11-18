@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework-timeouts/resource/timeouts"
 	"github.com/hashicorp/terraform-plugin-framework-validators/int64validator"
@@ -169,11 +170,19 @@ func (r *instanceGroupResource) Schema(ctx context.Context, _ resource.SchemaReq
 				Optional: true,
 				Computed: true,
 				MarkdownDescription: "Host counts per pool, keyed by the ClusterType node pool's id.\n\n" +
-					"Unlike a cluster's `node_pool` this is not sparse: the platform provisions " +
-					"exactly the pools named here. Growing a pool scales in place. **Shrinking a " +
-					"pool, or adding or removing one, replaces the whole group**, because the API " +
-					"implements scale up only and rejects everything else on this field with " +
-					"`409 CONFLICT_IMMUTABLE`.\n\n" +
+					"As on a cluster, this is a **sparse override set**, not the full pool list. The " +
+					"platform creates every pool on the bound ClusterType version, using each pool's " +
+					"default size where this map does not name it. Only the pools named here are in " +
+					"state and drift-checked. The `" + ResourceName(instanceGroupDataSourceSuffix) +
+					"` data source's `node_pools` lists them all.\n\n" +
+					"Growing a pool scales in place. **Shrinking a pool replaces the whole group**, " +
+					"because the API implements scale up only and rejects everything else on this field " +
+					"with `409 CONFLICT_IMMUTABLE`. Adding a pool to this map compares it with the size " +
+					"the platform reports for it: the same size sends nothing, a larger one scales, and a " +
+					"smaller one replaces the group. A pool the group doesn't have fails the plan. " +
+					"Removing a pool from this map stops managing it and leaves it on the group. An " +
+					"import reads every pool, so a configuration that names fewer plans an update that " +
+					"drops the rest from state.\n\n" +
 					"A scale waits, within the `update` timeout, while another operation on the group " +
 					"finishes or its quota accounting settles. A pool whose desired size disagrees with " +
 					"the hosts it holds cannot be scaled until that is corrected, and a plan that grows " +
@@ -201,8 +210,8 @@ func (r *instanceGroupResource) Schema(ctx context.Context, _ resource.SchemaReq
 					mapplanmodifier.UseStateForUnknown(),
 					mapplanmodifier.RequiresReplaceIf(
 						instanceGroupPoolsRequireReplace,
-						"replaced when a pool shrinks, or when pools are added or removed, and scaled in place when a pool grows",
-						"replaced when a pool shrinks, or when pools are added or removed, and scaled in place when a pool grows",
+						"replaced when a pool shrinks, and scaled in place when a pool grows",
+						"replaced when a pool shrinks, and scaled in place when a pool grows",
 					),
 				},
 			},
@@ -251,9 +260,11 @@ func (r *instanceGroupResource) Schema(ctx context.Context, _ resource.SchemaReq
 // instanceGroupPoolsRequireReplace decides between a scale and a replacement.
 //
 // Scale up is the only in-place change the API offers on this field, so a
-// smaller size, a new pool or a removed pool has to be a replacement. Saying so
-// in the plan is what stops an apply failing halfway with a 409 or a 422 after
-// the user has approved it.
+// smaller size has to be a replacement. Saying so in the plan is what stops an
+// apply failing halfway with a 409 or a 422 after the user has approved it. The
+// platform creates every pool on the ClusterType, so a pool left out stays on
+// the group and dropping one only stops managing it. A pool state doesn't hold
+// is decided against the platform's count, in planAddedPools.
 func instanceGroupPoolsRequireReplace(ctx context.Context, req planmodifier.MapRequest, resp *mapplanmodifier.RequiresReplaceIfFuncResponse) {
 	if req.State.Raw.IsNull() || req.Plan.Raw.IsNull() {
 		return
@@ -270,15 +281,10 @@ func instanceGroupPoolsRequireReplace(ctx context.Context, req planmodifier.MapR
 
 	// Pool ids are map keys, so they are known even when a size is not.
 	want := req.ConfigValue.Elements()
-	if len(want) != len(have) {
-		resp.RequiresReplace = true
-		return
-	}
 	for id, pool := range want {
 		current, known := have[id]
 		if !known {
-			resp.RequiresReplace = true
-			return
+			continue
 		}
 		// A size known only at apply is decided again once it is known.
 		if size, ok := poolSize(pool); ok && size < current {
@@ -324,7 +330,99 @@ func (r *instanceGroupResource) ModifyPlan(ctx context.Context, req resource.Mod
 		return
 	}
 	planSettledState(ctx, instanceGroupStates.settle, req, resp)
+	r.planAddedPools(ctx, req, resp)
 	r.warnDivergedPools(ctx, req, resp)
+}
+
+// planAddedPools decides each pool the configuration names and state doesn't
+// hold, such as one the platform created that was never named, against what
+// the platform reports. At its size nothing is sent, larger is a scale, and
+// smaller is a replacement, since there is no in-place shrink. A pool the
+// group doesn't have is refused here rather than by a 422 at apply. If the
+// group can't be read, the apply reads it again and decides there.
+func (r *instanceGroupResource) planAddedPools(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
+	if r.meta == nil || r.meta.Client == nil {
+		return
+	}
+	var planned, prior types.Map
+	if resp.Plan.GetAttribute(ctx, path.Root("node_pool"), &planned).HasError() ||
+		req.State.GetAttribute(ctx, path.Root("node_pool"), &prior).HasError() ||
+		planned.IsNull() || planned.IsUnknown() {
+		return
+	}
+	var added []string
+	for _, id := range sortedKeys(planned.Elements()) {
+		if _, ok := prior.Elements()[id]; !ok {
+			added = append(added, id)
+		}
+	}
+	if len(added) == 0 {
+		return
+	}
+	var state, plan instanceGroupModel
+	var scratch diag.Diagnostics
+	if req.State.Get(ctx, &state).HasError() || resp.Plan.Get(ctx, &plan).HasError() || replacedOtherwise(plan, state) {
+		return // a new group is created with these pools, whatever this one has
+	}
+	target, ok := resolveScope(r.meta, state.Region, state.Project, &scratch)
+	if !ok {
+		return
+	}
+	held, err := r.platformPools(ctx, target, state.ID.ValueString())
+	if err != nil {
+		tflog.Debug(ctx, "could not read the instance group's pools to plan an added pool",
+			map[string]any{"instance_group": state.ID.ValueString(), "error": redactDiagnosticText(err.Error())})
+		return
+	}
+	for _, id := range added {
+		current, ok := held[id]
+		if !ok {
+			resp.Diagnostics.AddAttributeError(path.Root("node_pool").AtMapKey(id),
+				fmt.Sprintf("Instance group %q has no pool %q", state.ID.ValueString(), id),
+				fmt.Sprintf("The platform reports the pools %s on this group, so it has nothing to scale "+
+					"under this id. Pool ids come from the bound ClusterType version. Fix the id in "+
+					"`node_pool`, or remove it.", quoteEach(sortedKeys(held))))
+			continue
+		}
+		if size, known := poolSize(planned.Elements()[id]); known && size < current {
+			resp.RequiresReplace = append(resp.RequiresReplace, path.Root("node_pool"))
+			return
+		}
+	}
+}
+
+func quoteEach(ids []string) string {
+	q := make([]string, len(ids))
+	for i, id := range ids {
+		q[i] = fmt.Sprintf("%q", id)
+	}
+	return strings.Join(q, ", ")
+}
+
+// replacedOtherwise reports whether something other than `node_pool` changes
+// in a way that can replace the group. Attribute-level replacements are not
+// visible in resp.RequiresReplace in ModifyPlan, so this compares directly.
+func replacedOtherwise(plan, state instanceGroupModel) bool {
+	return !plan.ClusterType.Equal(state.ClusterType) || !plan.ID.Equal(state.ID) ||
+		!plan.Region.Equal(state.Region) || !plan.Project.Equal(state.Project) ||
+		!plan.SSHAccess.Equal(state.SSHAccess)
+}
+
+// platformPools reads the desired size of every pool the platform reports on
+// the group.
+func (r *instanceGroupResource) platformPools(ctx context.Context, target clusterTarget, id string) (map[string]int64, error) {
+	got, err := r.meta.Client.GetInstanceGroupWithResponse(ctx, target.region, target.project, id, nil)
+	if err != nil {
+		return nil, err
+	}
+	if got.JSON200 == nil || got.JSON200.NodePools == nil {
+		return nil, fmt.Errorf("getInstanceGroup answered %s with no node pools", got.Status())
+	}
+	out := map[string]int64{}
+	for _, p := range *got.JSON200.NodePools {
+		out[p.NodePool] = int64(p.DesiredCount)
+	}
+	return out, nil
 }
 
 func (r *instanceGroupResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
@@ -353,8 +451,8 @@ func (r *instanceGroupResource) Create(ctx context.Context, req resource.CreateR
 		// Local: configuration validation, no request made.
 		resp.Diagnostics.AddError(
 			"An instance group needs at least one node pool",
-			"`node_pool` is empty. Unlike a cluster, an instance group provisions exactly the "+
-				"pools it is given, so there is no ClusterType default to fall back on. "+
+			"`node_pool` is empty. The platform creates every pool on the ClusterType, but "+
+				"refuses a create that names none. Name at least one, with its size. "+
 				"Pool ids come from the bound ClusterType version.",
 		)
 		return
@@ -598,8 +696,9 @@ func (r *instanceGroupResource) Update(ctx context.Context, req resource.UpdateR
 }
 
 // scaleUp grows the pools whose size increased. A shrink never reaches here,
-// because the plan modifier turns it into a replacement, so anything that is
-// not an increase is skipped. It reports whether it sent a scale.
+// because the plan turns it into a replacement, so anything that is not an
+// increase is skipped. A pool state doesn't hold is measured against the
+// platform's count. It reports whether it sent a scale.
 func (r *instanceGroupResource) scaleUp(ctx context.Context, target clusterTarget, id string, plan, state instanceGroupModel) (bool, diag.Diagnostics) {
 	var diags diag.Diagnostics
 
@@ -609,6 +708,35 @@ func (r *instanceGroupResource) scaleUp(ctx context.Context, target clusterTarge
 	diags.Append(d...)
 	if diags.HasError() {
 		return false, diags
+	}
+
+	var added []string
+	for _, poolID := range sortedKeys(want) {
+		if _, known := have[poolID]; !known {
+			added = append(added, poolID)
+		}
+	}
+	if len(added) > 0 {
+		held, err := r.platformPools(ctx, target, id)
+		if err != nil {
+			diags.AddError("Could not read the instance group's pools",
+				fmt.Sprintf("`node_pool` names pools that state doesn't hold, and reading %q to size them "+
+					"failed, so nothing was scaled. Run `terraform apply` again. The error: %s", id, err))
+			return false, diags
+		}
+		for _, poolID := range added {
+			current := held[poolID]
+			if want[poolID] < current {
+				diags.AddAttributeError(path.Root("node_pool").AtMapKey(poolID),
+					fmt.Sprintf("Pool %q holds more hosts than configured", poolID),
+					fmt.Sprintf("The platform says pool %q asks for %d hosts, and `node_pool` names %d. "+
+						"There is no in-place shrink, and the plan couldn't read the group to plan a "+
+						"replacement, so nothing was changed. Run `terraform plan` again, which plans the "+
+						"replacement, or set the size to %d.", poolID, current, want[poolID], current))
+				return false, diags
+			}
+			have[poolID] = current
+		}
 	}
 
 	var body k0rdent.InstanceGroupScaleRequest
@@ -818,13 +946,16 @@ func (r *instanceGroupResource) warnDivergedPools(ctx context.Context, req resou
 	}
 	want, d1 := instanceGroupPoolsFrom(ctx, planned)
 	have, d2 := instanceGroupPoolsFrom(ctx, prior)
-	if d1.HasError() || d2.HasError() || len(want) != len(have) {
+	if d1.HasError() || d2.HasError() {
 		return
 	}
 	grown := map[string]bool{}
 	for poolID, size := range want {
 		current, known := have[poolID]
-		if !known || size < current {
+		if !known {
+			continue // sized against the platform by planAddedPools
+		}
+		if size < current {
 			return // a replacement, not a scale
 		}
 		if size > current {
@@ -840,11 +971,7 @@ func (r *instanceGroupResource) warnDivergedPools(ctx context.Context, req resou
 	if req.State.Get(ctx, &state).HasError() || req.Plan.Get(ctx, &plan).HasError() {
 		return
 	}
-	// Attribute-level replacements are not visible in resp.RequiresReplace
-	// here, so compare what would replace the group directly.
-	if !plan.ClusterType.Equal(state.ClusterType) || !plan.ID.Equal(state.ID) ||
-		!plan.Region.Equal(state.Region) || !plan.Project.Equal(state.Project) ||
-		!plan.SSHAccess.Equal(state.SSHAccess) {
+	if replacedOtherwise(plan, state) {
 		return
 	}
 	target, ok := resolveScope(r.meta, state.Region, state.Project, &scratch)
@@ -1015,10 +1142,18 @@ func instanceGroupStateFrom(ctx context.Context, g k0rdent.InstanceGroup, prior 
 		)
 		return out, diags
 	}
+	// The platform creates every pool on the ClusterType, named or not. Keep
+	// to the pools state already holds, as the cluster does, so one nobody
+	// configured neither appears after a create nor plans a change. An import
+	// knows none, so it takes them all.
+	known := prior.NodePool.Elements()
+	narrow := !prior.NodePool.IsNull() && !prior.NodePool.IsUnknown()
 	pools := map[string]instanceGroupPoolModel{}
 	if g.NodePools != nil {
 		for _, p := range *g.NodePools {
-			pools[p.NodePool] = instanceGroupPoolModel{Size: types.Int64Value(int64(p.DesiredCount))}
+			if _, ok := known[p.NodePool]; ok || !narrow {
+				pools[p.NodePool] = instanceGroupPoolModel{Size: types.Int64Value(int64(p.DesiredCount))}
+			}
 		}
 	}
 

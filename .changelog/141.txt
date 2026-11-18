@@ -1,0 +1,7 @@
+```release-note:bug
+resource/k0rdent_instance_group: Fix a create failing with "Provider produced inconsistent result after apply" when the cluster type has more than one pool and `node_pool` doesn't name every one. v0.1.0 fails to create an instance group from such a cluster type, because the platform creates every pool on it. That failed create leaves the group running and tainted in state, so run `terraform untaint` on it before the next apply, or the apply replaces it. `node_pool` now holds only the configured pools
+```
+
+```release-note:bug
+resource/k0rdent_instance_group: Fix a change to `node_pool` replacing the group when it left a pool out or named a pool the group already has. Leaving a pool out now stops managing it, and naming one compares it with the platform's size: the same size changes nothing, and a larger one scales in place
+```

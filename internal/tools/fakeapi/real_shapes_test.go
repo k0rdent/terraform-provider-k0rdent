@@ -91,9 +91,11 @@ func TestAFailedOperationCarriesTheClustersMessage(t *testing.T) {
 	}
 }
 
+// groupSized is a group of the one-pool type, since the platform creates every
+// pool on the type and these tests read one.
 func groupSized(size int) string {
-	return `{"id":"g","clusterType":"` + inferenceRef + `/versions/` + inferenceV2 +
-		`","nodePools":[{"nodePool":"workers","size":` + strconv.Itoa(size) + `}]}`
+	return `{"id":"g","clusterType":"/v1/regions/r/compute/cluster-types/cpu-general",` +
+		`"nodePools":[{"nodePool":"workers","size":` + strconv.Itoa(size) + `}]}`
 }
 
 func onlyPool(t *testing.T, group map[string]any) map[string]any {

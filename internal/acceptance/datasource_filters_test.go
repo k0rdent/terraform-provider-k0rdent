@@ -236,8 +236,8 @@ data %q "empty" {
 }
 
 // Every host in the fake is running, so `stopped` keeps none of a group's
-// hosts and `running` keeps them all. The state goes to the platform as
-// `inStates`.
+// hosts and `running` keeps them all: two workers and the control-plane host
+// the platform adds. The state goes to the platform as `inStates`.
 func TestAccInstancesDataSourceFiltersOnState(t *testing.T) {
 	t.Parallel()
 	const group = "acc-filter-hosts"
@@ -258,7 +258,7 @@ data %q "stopped" {
 }
 `, instancesType, instanceGroupType, instancesType, instanceGroupType),
 			Check: resource.ComposeAggregateTestCheckFunc(
-				resource.TestCheckResourceAttr(running, "instances.#", "2"),
+				resource.TestCheckResourceAttr(running, "instances.#", "3"),
 				resource.TestCheckResourceAttr(stopped, "instances.#", "0"),
 				resource.TestCheckResourceAttr(stopped, "ids.#", "0"),
 			),
@@ -270,6 +270,7 @@ data %q "stopped" {
 // held, which an ordinary read leaves out. `state = "deleted"` finds them,
 // because the platform turns `showDeleted` on for that state. Shrinking the
 // pool is the change that replaces, since the platform has no scale-down.
+// Each group also holds the control-plane host the platform adds.
 // The data sources depend on the group so they're read after the
 // replacement, not at plan.
 func TestAccInstancesDataSourceFindsDeletedRecords(t *testing.T) {
@@ -297,15 +298,15 @@ data %[1]q "running" {
 				Config: instanceGroupConfig(group, 2) + reads,
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr(deleted, "instances.#", "0"),
-					resource.TestCheckResourceAttr(running, "instances.#", "2"),
+					resource.TestCheckResourceAttr(running, "instances.#", "3"),
 				),
 			},
 			{
 				Config: permitReplace(instanceGroupConfig(group, 1), instanceGroupType) + reads,
 				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttr(deleted, "instances.#", "2"),
+					resource.TestCheckResourceAttr(deleted, "instances.#", "3"),
 					resource.TestCheckResourceAttr(deleted, "instances.0.state", "deleted"),
-					resource.TestCheckResourceAttr(running, "instances.#", "1"),
+					resource.TestCheckResourceAttr(running, "instances.#", "2"),
 				),
 			},
 		},

@@ -305,6 +305,13 @@ func planGrowth(t *testing.T, ready, notReady any) diag.Diagnostics {
 // differ from state other than the pool size.
 func planGrowthOf(t *testing.T, state string, ready, notReady any, planned map[string]tftypes.Value) diag.Diagnostics {
 	t.Helper()
+	return planGrowthFrom(t, state, ready, notReady, planned, nil)
+}
+
+// planGrowthFrom is planGrowthOf with more pools in state than the plan names,
+// as an import of a sparse configuration leaves.
+func planGrowthFrom(t *testing.T, state string, ready, notReady any, planned map[string]tftypes.Value, unnamed map[string]int64) diag.Diagnostics {
+	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		pool := map[string]any{"nodePool": "workers", "desiredCount": 6}
 		if ready != nil {
@@ -333,7 +340,15 @@ func planGrowthOf(t *testing.T, state string, ready, notReady any, planned map[s
 		}
 		return out
 	}
-	stateRaw, s := testValue(t, r, with(6))
+	prior := with(6)
+	if len(unnamed) > 0 {
+		pools := map[string]int64{"workers": 6}
+		for id, size := range unnamed {
+			pools[id] = size
+		}
+		prior["node_pool"] = poolValue(t, r, pools)
+	}
+	stateRaw, s := testValue(t, r, prior)
 	plan := with(8)
 	for k, v := range planned {
 		plan[k] = v
@@ -355,6 +370,16 @@ func TestInstanceGroupPlanWarnsWhenAGrownPoolHasDiverged(t *testing.T) {
 	text := diagText(diags)
 	if diags.HasError() || diags.WarningsCount() != 1 ||
 		!strings.Contains(text, "asks for 6") || !strings.Contains(text, "holds 4") {
+		t.Errorf("diags=%s", text)
+	}
+}
+
+// After an import, state holds every pool the platform created, and a
+// configuration that names fewer still scales the ones it grows. So it still
+// warns.
+func TestInstanceGroupPlanWarnsWithAPoolLeftOut(t *testing.T) {
+	diags := planGrowthFrom(t, "active", 3, 1, nil, map[string]int64{"control-plane": 1})
+	if text := diagText(diags); diags.HasError() || diags.WarningsCount() != 1 || !strings.Contains(text, "asks for 6") {
 		t.Errorf("diags=%s", text)
 	}
 }

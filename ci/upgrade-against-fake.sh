@@ -417,6 +417,15 @@ run_dir() {
     echo 'quota_checks = false' >> "$dir/terraform.tfvars"
   fi
 
+  # 0.1.0 writes every pool the platform creates into an instance group's
+  # node_pool, so its create fails on a ClusterType with a pool full/ doesn't
+  # name. The fake's gpu-single has one pool, which full/ names.
+  if [[ "$name" == full-everything && "$PREVIOUS" =~ ^0\.1\.0(-rc\.[0-9]+)?$ ]]; then
+    grep -v '^cluster_type ' "$dir/terraform.tfvars" > "$dir/terraform.tfvars.new"
+    echo 'cluster_type = "gpu-single"' >> "$dir/terraform.tfvars.new"
+    mv "$dir/terraform.tfvars.new" "$dir/terraform.tfvars"
+  fi
+
   init_previous "$dir"
   tf "$dir" "$WORK/registry.tfrc" apply -auto-approve -input=false -no-color || fail "$CLI $name: apply with $PREVIOUS failed"
   # -detailed-exitcode is 0 for drift with no change, so the drift is read

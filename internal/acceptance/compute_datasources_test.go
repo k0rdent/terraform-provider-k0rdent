@@ -231,7 +231,7 @@ resource "terraform_data" "scope" {
 	})
 }
 
-// The suite asks for two rows a page, so the seven cluster types the fake
+// The suite asks for two rows a page, so the eight cluster types the fake
 // lists by default are four pages. The fake answers a request without `offset` with its first two
 // and no token, as the real list answers with its first page, so a provider
 // that read that page would report two.
@@ -244,9 +244,9 @@ func TestAccClusterTypesDataSourceReadsEveryPage(t *testing.T) {
 		Steps: []resource.TestStep{{
 			Config: fmt.Sprintf("data %q \"all\" {}\n", clusterTypesType),
 			Check: resource.ComposeAggregateTestCheckFunc(
-				resource.TestCheckResourceAttr(clusterTypesAddr, "cluster_types.#", "7"),
+				resource.TestCheckResourceAttr(clusterTypesAddr, "cluster_types.#", "8"),
 				resource.TestCheckResourceAttr(clusterTypesAddr, "cluster_types.0.id", "cpu-general"),
-				resource.TestCheckResourceAttr(clusterTypesAddr, "cluster_types.6.id", "gpu-training"),
+				resource.TestCheckResourceAttr(clusterTypesAddr, "cluster_types.7.id", "gpu-training"),
 			),
 		}},
 	})

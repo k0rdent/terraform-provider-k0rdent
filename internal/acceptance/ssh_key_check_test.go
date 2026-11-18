@@ -46,9 +46,10 @@ var keyKinds = []keyKind{
 		keptText:        "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIK0k86Z327dihL0TR/17DwFIJgwvy4Rjt9XA37EztJtk kept-text-C",
 	},
 	{
-		typ:             instanceGroupType,
-		noun:            "instance group",
-		pool:            "\n  node_pool    = { \"gpu-workers\" = { size = 1 } }",
+		typ:  instanceGroupType,
+		noun: "instance group",
+		// Every pool named, so an import plans nothing.
+		pool:            "\n  node_pool    = { \"control-plane\" = { size = 1 }, \"gpu-workers\" = { size = 1 } }",
 		pathOf:          instanceGroupPath,
 		prefix:          "acc-group-key",
 		kept:            "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL39HZl6dANYUmy+iinqWFw2HCPdtRIWZYbdliCrzguw group-kept",

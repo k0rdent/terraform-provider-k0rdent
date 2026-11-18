@@ -741,6 +741,27 @@ var catalog = []fakeClusterType{
 		},
 	},
 	{
+		// One pool, with an interface a security group can go on. The platform
+		// creates every pool on an instance group's ClusterType, and v0.1.0
+		// can't create a group from a type with a pool it doesn't name, so
+		// make upgrade-test builds full-everything from this one.
+		id:          "gpu-single",
+		displayName: "GPU single pool",
+		description: "A single worker pool that takes security groups.",
+		status:      "available",
+		version:     1,
+		pools: []fakePool{
+			{id: "workers", role: "worker", displayName: "Workers", def: i32(1), min: i32(1), max: i32(8)},
+		},
+		versions: []fakeVersion{
+			{
+				versionID: "66666666-6666-6666-6666-666666666666", version: 1,
+				displayName: "GPU single pool v1", description: "The only version.",
+				status: "available", createdAt: "2026-02-11T09:00:00Z", k0sVersion: "v1.34.0+k0s.0",
+			},
+		},
+	},
+	{
 		// The upgrade chain: a draft an upgrade skips, a version that narrows
 		// a pool's bounds, and one an upgrade into fails.
 		id:          "gpu-inference",
@@ -2111,7 +2132,7 @@ func (s *state) createInstanceGroup(w http.ResponseWriter, r *http.Request) {
 		apiError(w, http.StatusUnprocessableEntity, "INVALID_ARGUMENT", msg)
 		return
 	}
-	resolved, ct, _, ok := resolveClusterTypeRef(region, body.ClusterType)
+	resolved, ct, version, ok := resolveClusterTypeRef(region, body.ClusterType)
 	if !ok {
 		apiError(w, http.StatusUnprocessableEntity, "INVALID_ARGUMENT",
 			"clusterType does not resolve to an available cluster type version in this region: "+body.ClusterType)
@@ -2133,24 +2154,36 @@ func (s *state) createInstanceGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Unlike a cluster, an instance group provisions exactly the pools it is
-	// given and no others.
-	pools := map[string]int32{}
+	// As on a cluster, every pool on the bound ClusterType version is created
+	// and the request's sizes are overrides. API v1.3.0's CreateInstanceGroup
+	// uses the cluster's resolveNodePoolRefs: a pool left out gets its
+	// nodeCountDefault, and one with no default is refused.
+	sizes := map[string]*int32{}
 	for _, p := range body.NodePools {
 		known := false
 		for _, cp := range ct.pools {
-			if cp.id == p.NodePool {
-				known = true
-				if p.Size != nil {
-					pools[p.NodePool] = *p.Size
-				} else if cp.def != nil {
-					pools[p.NodePool] = *cp.def
-				}
-			}
+			known = known || (cp.id == p.NodePool && cp.at(version.version))
 		}
 		if !known {
 			apiError(w, http.StatusUnprocessableEntity, "INVALID_ARGUMENT",
 				"no node pool "+p.NodePool+" on the bound cluster type")
+			return
+		}
+		sizes[p.NodePool] = p.Size
+	}
+	pools := map[string]int32{}
+	for _, cp := range ct.pools {
+		if !cp.at(version.version) {
+			continue
+		}
+		switch size := sizes[cp.id]; {
+		case size != nil:
+			pools[cp.id] = *size
+		case cp.def != nil:
+			pools[cp.id] = *cp.def
+		default:
+			apiError(w, http.StatusUnprocessableEntity, "INVALID_ARGUMENT",
+				"nodePools: pool "+cp.id+" has no nodeCountDefault, so nodeCount must be supplied")
 			return
 		}
 	}

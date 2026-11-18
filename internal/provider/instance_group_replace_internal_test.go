@@ -48,8 +48,10 @@ func TestInstanceGroupPoolsReplace(t *testing.T) {
 		{"a shrink replaces", map[string]attr.Value{"gpu": n(0)}, true},
 		{"a size known only at apply waits", map[string]attr.Value{"gpu": u}, false},
 		{"a pool known only at apply waits", map[string]attr.Value{"gpu": nil}, false},
-		{"a new pool replaces, whatever its size", map[string]attr.Value{"gpu": n(1), "cpu": u}, true},
-		{"a renamed pool replaces", map[string]attr.Value{"cpu": u}, true},
+		// A pool state doesn't hold is already on the group, and ModifyPlan
+		// sizes it against the platform.
+		{"a new pool is left to the platform's count", map[string]attr.Value{"gpu": n(1), "cpu": u}, false},
+		{"a renamed pool is left to the platform's count", map[string]attr.Value{"cpu": u}, false},
 	}
 	raw := tftypes.NewValue(tftypes.String, "set")
 	for _, tt := range tests {
@@ -67,5 +69,26 @@ func TestInstanceGroupPoolsReplace(t *testing.T) {
 				t.Errorf("RequiresReplace = %v, want %v", resp.RequiresReplace, tt.want)
 			}
 		})
+	}
+}
+
+// The platform creates every pool on the ClusterType, and an import reads them
+// all. A configuration that names fewer only stops managing the rest, which
+// stay on the group, so it is not a replacement.
+func TestInstanceGroupPoolLeftOutIsNotAReplacement(t *testing.T) {
+	n := types.Int64Value
+	raw := tftypes.NewValue(tftypes.String, "set")
+	config := poolMap(t, map[string]attr.Value{"gpu-workers": n(1)})
+	var resp mapplanmodifier.RequiresReplaceIfFuncResponse
+	instanceGroupPoolsRequireReplace(context.Background(), planmodifier.MapRequest{
+		State: tfsdk.State{Raw: raw}, Plan: tfsdk.Plan{Raw: raw},
+		StateValue:  poolMap(t, map[string]attr.Value{"control-plane": n(1), "gpu-workers": n(1)}),
+		ConfigValue: config, PlanValue: config,
+	}, &resp)
+	if resp.Diagnostics.HasError() {
+		t.Fatal(resp.Diagnostics)
+	}
+	if resp.RequiresReplace {
+		t.Error("RequiresReplace = true for a pool left out of the configuration, want false")
 	}
 }
