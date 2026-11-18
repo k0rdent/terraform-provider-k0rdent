@@ -151,7 +151,7 @@ func TestMisleadingOrBareDescriptionsFail(t *testing.T) {
 			MarkdownDescription: "Human-friendly name. Immutable once set."}, "its prose says it replaces"},
 		"one word": {schema.StringAttribute{MarkdownDescription: "Id."}, "too short"},
 	} {
-		gaps := attributeGaps(ctx, "test_resource.attr", reflect.ValueOf(tc.attr), false)
+		gaps := attributeGaps(ctx, "test_resource.attr", reflect.ValueOf(tc.attr), notScope)
 		if !strings.Contains(strings.Join(gaps, "\n"), tc.want) {
 			t.Errorf("%s: want a gap saying %q, got %q", name, tc.want, gaps)
 		}
@@ -168,7 +168,7 @@ func TestConstraintSentencesReadAsEnglish(t *testing.T) {
 	unreadable := regexp.MustCompile(`\b1 elements\b| \+ |satisfy all validations|-1\.5h`)
 	for _, s := range docSurfaces(ctx) {
 		for _, m := range []reflect.Value{s.attributes, s.blocks} {
-			walkDocumented(m, s.kind+" "+s.name+".", false, func(path string, v reflect.Value, _ bool) {
+			walkDocumented(m, s.kind+" "+s.name+".", false, func(path string, v reflect.Value, _ scopeRole) {
 				for _, d := range validatorDescriptions(ctx, v) {
 					if unreadable.MatchString(d) {
 						t.Errorf("%s: %q", path, d)

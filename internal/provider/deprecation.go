@@ -143,7 +143,7 @@ func deprecationGaps(s docSurface, released int) (int, []string) {
 	prefix := s.kind + " " + s.name
 	visit(prefix, s.deprecation)
 	for _, m := range []reflect.Value{s.attributes, s.blocks} {
-		walkDocumented(m, prefix+".", false, func(path string, v reflect.Value, _ bool) {
+		walkDocumented(m, prefix+".", false, func(path string, v reflect.Value, _ scopeRole) {
 			if f := v.FieldByName("DeprecationMessage"); f.IsValid() && f.Kind() == reflect.String {
 				visit(path, f.String())
 			}

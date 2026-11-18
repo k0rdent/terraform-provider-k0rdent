@@ -217,9 +217,40 @@ const (
 	replacesSometimes
 )
 
-func replacementOf(ctx context.Context, v reflect.Value, scope bool) replacement {
-	if scope {
+// scopeRole is what a resource's top-level region or project is to its
+// replacement, which ModifyPlan decides rather than a plan modifier
+// (scope.go).
+type scopeRole int
+
+const (
+	notScope scopeRole = iota
+	// scopeReplaces is a region or project whose change replaces the
+	// resource.
+	scopeReplaces
+	// regionInProject is the region of a resource that has a project too. A
+	// project is locked to one region, so a change to region alone is refused
+	// (region_mismatch.go), and only a project moving with it replaces.
+	regionInProject
+)
+
+// scopeOf is the role of the attribute called name in the schema map m.
+// scopeTop says m is a resource's top level.
+func scopeOf(m reflect.Value, name string, scopeTop bool) scopeRole {
+	switch {
+	case !scopeTop || (name != "region" && name != "project"):
+		return notScope
+	case name == "region" && m.MapIndex(reflect.ValueOf("project")).IsValid():
+		return regionInProject
+	}
+	return scopeReplaces
+}
+
+func replacementOf(ctx context.Context, v reflect.Value, scope scopeRole) replacement {
+	switch scope {
+	case scopeReplaces:
 		return replacesAlways
+	case regionInProject:
+		return replacesSometimes
 	}
 	descs := replacementDescriptions(ctx, v)
 	if len(descs) == 0 {
@@ -243,11 +274,11 @@ func DocumentationGaps(ctx context.Context) []string {
 		if strings.TrimSpace(s.doc) == "" {
 			gaps = append(gaps, fmt.Sprintf("%s %s: no description", s.kind, s.name))
 		}
-		walkDocumented(s.attributes, s.kind+" "+s.name+".", s.kind == "resource", func(path string, v reflect.Value, scope bool) {
+		walkDocumented(s.attributes, s.kind+" "+s.name+".", s.kind == "resource", func(path string, v reflect.Value, scope scopeRole) {
 			gaps = append(gaps, attributeGaps(ctx, path, v, scope)...)
 		})
-		walkDocumented(s.blocks, s.kind+" "+s.name+".", false, func(path string, v reflect.Value, _ bool) {
-			gaps = append(gaps, attributeGaps(ctx, path, v, false)...)
+		walkDocumented(s.blocks, s.kind+" "+s.name+".", false, func(path string, v reflect.Value, _ scopeRole) {
+			gaps = append(gaps, attributeGaps(ctx, path, v, notScope)...)
 		})
 	}
 	slices.Sort(gaps)
@@ -258,7 +289,7 @@ func DocumentationGaps(ctx context.Context) []string {
 // everything nested inside it. scopeTop says whether this is a resource's top
 // level, where region and project replace the resource from ModifyPlan rather
 // than through a plan modifier (scope.go).
-func walkDocumented(m reflect.Value, prefix string, scopeTop bool, visit func(path string, v reflect.Value, scope bool)) {
+func walkDocumented(m reflect.Value, prefix string, scopeTop bool, visit func(path string, v reflect.Value, scope scopeRole)) {
 	if !m.IsValid() || m.Kind() != reflect.Map {
 		return
 	}
@@ -270,7 +301,7 @@ func walkDocumented(m reflect.Value, prefix string, scopeTop bool, visit func(pa
 			continue
 		}
 		name := k.String()
-		visit(prefix+name, v, scopeTop && (name == "region" || name == "project"))
+		visit(prefix+name, v, scopeOf(m, name, scopeTop))
 		for _, nested := range nestedMaps(v) {
 			walkDocumented(nested, prefix+name+".", false, visit)
 		}
@@ -312,7 +343,7 @@ func nestedMaps(v reflect.Value) []reflect.Value {
 
 // attributeGaps checks one attribute or block's description against its
 // schema.
-func attributeGaps(ctx context.Context, path string, v reflect.Value, scope bool) []string {
+func attributeGaps(ctx context.Context, path string, v reflect.Value, scope scopeRole) []string {
 	doc := description(v)
 	if strings.TrimSpace(doc) == "" {
 		return []string{path + ": no description"}
@@ -546,7 +577,7 @@ func (w factWriter) document(m reflect.Value, scopeTop bool) {
 		v := reflect.New(found.Type()).Elem()
 		v.Set(found)
 		name := k.String()
-		appendFacts(v, w.facts(ctx, v, scopeTop && (name == "region" || name == "project")))
+		appendFacts(v, w.facts(ctx, v, scopeOf(m, name, scopeTop)))
 		for _, nested := range nestedMaps(v) {
 			w.document(nested, false)
 		}
@@ -557,7 +588,7 @@ func (w factWriter) document(m reflect.Value, scopeTop bool) {
 // facts are the sentences one attribute's schema declares, in the order a
 // reader wants them: what replaces it, what it defaults to, what it accepts,
 // and how Terraform treats its value.
-func (w factWriter) facts(ctx context.Context, v reflect.Value, scope bool) []string {
+func (w factWriter) facts(ctx context.Context, v reflect.Value, scope scopeRole) []string {
 	var out []string
 	if s := w.replacementSentence(ctx, v, scope); s != "" {
 		out = append(out, s)
@@ -591,17 +622,25 @@ func (w factWriter) facts(ctx context.Context, v reflect.Value, scope bool) []st
 // replacementSentence says whether changing the attribute replaces the
 // resource, and when, if only sometimes. Region and project replace from
 // ModifyPlan, so scope says so for them.
-func (w factWriter) replacementSentence(ctx context.Context, v reflect.Value, scope bool) string {
+func (w factWriter) replacementSentence(ctx context.Context, v reflect.Value, scope scopeRole) string {
 	descs := replacementDescriptions(ctx, v)
-	if !scope && len(descs) == 0 {
+	if scope == notScope && len(descs) == 0 {
 		return ""
 	}
 	guard := ""
 	if w.guarded {
 		guard = " (needs `" + allowReplaceAttribute + " = true`)"
 	}
+	if scope == regionInProject {
+		alone := "A change to `region` alone is refused"
+		if w.guarded {
+			alone += ", `" + allowReplaceAttribute + " = true` or not"
+		}
+		return canForceReplacementMarker + guard + ": when `project` changes with it, to a project in " +
+			"the new region. " + alone + "."
+	}
 	when, sometimes := replacementCondition(descs)
-	if scope || !sometimes {
+	if scope == scopeReplaces || !sometimes {
 		return "**Forces replacement**" + guard + "."
 	}
 	return "**Can force replacement**" + guard + ": " + when + "."
