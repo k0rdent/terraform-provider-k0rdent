@@ -122,7 +122,15 @@ func clusterTypeVersionGuard() planmodifier.String {
 	return stringplanmodifier.RequiresReplaceIf(func(ctx context.Context, req planmodifier.StringRequest, resp *stringplanmodifier.RequiresReplaceIfFuncResponse) {
 		clusterTypeRefRequiresReplace(ctx, req, resp)
 		if resp.RequiresReplace {
-			change, _ := classifyRefChange(req.ConfigValue.ValueString(), req.StateValue.ValueString(), "")
+			// The binding the platform reported, as planVersionChange and the
+			// apply compare with, so the three agree on another version.
+			bound := req.StateValue.ValueString()
+			var resolved types.String
+			req.State.GetAttribute(ctx, path.Root("cluster_type_resolved"), &resolved)
+			if r := resolved.ValueString(); r != "" {
+				bound = r
+			}
+			change, _ := classifyRefChange(req.ConfigValue.ValueString(), bound, "")
 			resp.RequiresReplace = change == refReplace
 		}
 	}, desc, desc)
