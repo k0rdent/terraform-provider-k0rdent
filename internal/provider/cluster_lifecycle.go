@@ -25,7 +25,7 @@ var clusterStates = stateKind[k0rdent.Cluster]{
 	name:     "cluster",
 	resource: clusterResourceSuffix,
 	long:     true,
-	// DeleteCluster soft-deletes the node pools as it moves the cluster to
+	// DeleteCluster soft-deletes the SSH users as it moves the cluster to
 	// `deleting`, and a failed teardown leaves them gone. See teardown_read.go.
 	released: []string{string(k0rdent.ClusterStateDeleting), string(k0rdent.ClusterStateFailed),
 		string(k0rdent.ClusterStateDeleted)},

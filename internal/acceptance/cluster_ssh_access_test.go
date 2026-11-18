@@ -77,8 +77,8 @@ func TestAccClusterSSHAccess(t *testing.T) {
 	})
 }
 
-// A teardown that fails leaves the cluster `failed` with its node pools and
-// SSH users released, which is what a landscape on dev.4 answered. The
+// A teardown that fails leaves the cluster `failed` with its SSH users
+// released and its node pools kept, as API v1.3.0 does. The
 // configuration that made it plans the update that waits for a `failed`
 // cluster, not a replacement, so the refresh that `terraform destroy` plans
 // first gets past the replacement guard, and the destroy that ends the test
@@ -166,8 +166,10 @@ resource %q "test" {
 }
 
 // A cluster whose teardown failed warns at plan that the platform reports no
-// node pools and no SSH users on it, through the real CLI. Each warning's
-// replacement names `allow_replace`, and taking it out again afterwards.
+// SSH users on it, through the real CLI, and not that it reports no node
+// pools: API v1.3.0 keeps those until the delete settles `deleted`. The
+// warning's replacement names `allow_replace`, and taking it out again
+// afterwards.
 func TestAccAFailedTeardownsWarningsGiveTheReplacement(t *testing.T) {
 	t.Parallel()
 	if runtime.GOOS == "windows" {
@@ -213,11 +215,11 @@ resource %q "test" {
 	if !ok {
 		t.Fatalf("the plan failed:\n%s", out)
 	}
-	mustSay(t, "the plan", out, "The platform reports no node pools on this failed cluster",
-		"The platform reports no SSH users on this failed cluster")
+	mustSay(t, "the plan", out, "The platform reports no SSH users on this failed cluster")
+	mustNotSay(t, "the plan", out, "The platform reports no node pools on this failed cluster")
 	const advice = "set `allow_replace = true`, replace it with `terraform apply -replace`, then remove `allow_replace`"
 	flat := strings.Join(strings.Fields(strings.ReplaceAll(out, "│", " ")), " ")
-	if n := strings.Count(flat, advice); n != 2 {
-		t.Errorf("the plan says %q %d times, want once in each warning:\n%s", advice, n, out)
+	if n := strings.Count(flat, advice); n != 1 {
+		t.Errorf("the plan says %q %d times, want once:\n%s", advice, n, out)
 	}
 }
