@@ -479,7 +479,8 @@ A kind stack can't do everything the walkthroughs ask for, so some resources
 never meet the real API in `make real-api-check`. This runs them on a
 landscape with hardware: `look/`, then `full/` with the switches for what kind
 can't do turned on, against the fake and against the landscape, through the
-same recorder, then `fakedrift compare`. It creates real clusters and hosts.
+same recorder, then `fakedrift compare`. It creates real clusters and hosts,
+or with the cluster off, a real instance group alone.
 
 It refuses to start unless `REAL_API_CONFIRM` names the endpoint's host, and it
 refuses localhost, where `make real-api-check` runs. Before it creates
@@ -489,10 +490,19 @@ file stores on, a share type. A missing piece fails there, in seconds.
 
 | Build switch in `full/` | Here | Why |
 | --- | --- | --- |
+| `cluster` | On | Hardware, for the cluster's create, upgrade and destroy paths |
 | `network`, `security_group`, `vpc_security_groups` | On | Subnets allocated from a real pool, and groups on a real VPC |
 | `instance_group`, `vpc_peering` | On | Kind has no host for a group |
 | `file_store` | On | Kind runs no storage service |
 | `webhook`, `own_project` | Off | Kind covers both. A webhook to an address nobody serves gets turned off partway through a long run, and a project of its own needs `organizations-admin` |
+
+A landscape whose quota fits no cluster and group at once runs the group by
+itself: `REAL_API_BUILD_OFF="cluster vpc_peering"` leaves both out, and a
+peering needs the cluster's VPC, so the run refuses the cluster off without the
+peering. The preflight says which resources the run creates. After the apply and
+the empty re-plan, the run grows the group's worker pool by one and plans again,
+then destroys: on a quota of three servers that is the peak, two for the group
+and one more while it grows.
 
 A cluster with hosts can take two hours to create and as long to destroy. Each
 Terraform command prints a line when it starts, with its log file, and one when
@@ -508,8 +518,10 @@ and the command that removes it. Every name starts with the run's id,
 
 When every step passes, it writes `ci/real-api/hardware-record.json`: the
 landscape's label, the API version and where it came from, the code hash, the
-build switches and the resources covered. `scripts/real-api-check.sh
-verify-release` prints it. When it doesn't cover the release's code, or a
+build switches and the resources covered. A record names each run that wrote it
+and what that run covered, and runs on the same code merge, so a landscape run
+in pieces still covers it all together. `scripts/real-api-check.sh
+verify-release` prints the union. When it doesn't cover the release's code, or a
 resource kind can't run isn't in it, the release check says so plainly, such as
 `kind only, no hardware for: k0rdent_file_store`.
 
@@ -524,7 +536,7 @@ resource kind can't run isn't in it, the release check says so plainly, such as
 | `REAL_API_LANDSCAPE` | A label for the record, never a host name. Default `hardware` |
 | `REAL_API_ORGANIZATION` | The organization the quota checks read. Default: the first `look/` lists |
 | `REAL_API_ADDRESS_POOL` | A pool that isn't routable. Default: the first active one |
-| `REAL_API_BUILD_OFF` | Switches to turn off as well, such as `file_store` when the landscape's storage is down. The record lists what they leave uncovered |
+| `REAL_API_BUILD_OFF` | Switches to turn off as well, such as `file_store` when the landscape's storage is down, or `cluster vpc_peering` for a run of the instance group alone. The record lists what they leave uncovered |
 | `REAL_API_KEEP` | `1` leaves everything in place |
 
 ```sh

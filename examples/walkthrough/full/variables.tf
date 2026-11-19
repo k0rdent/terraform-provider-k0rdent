@@ -4,6 +4,7 @@
 
 variable "build" {
   type = object({
+    cluster             = optional(bool, true)
     network             = optional(bool, true)
     security_group      = optional(bool, true)
     vpc_security_groups = optional(bool, true)
@@ -24,6 +25,11 @@ variable "build" {
   validation {
     condition     = !var.build.vpc_peering || var.build.instance_group
     error_message = "build.vpc_peering peers the cluster's VPC with the instance group's, so it needs build.instance_group = true too."
+  }
+
+  validation {
+    condition     = !var.build.vpc_peering || var.build.cluster
+    error_message = "build.vpc_peering peers the cluster's VPC with the instance group's, so it needs build.cluster = true too."
   }
 }
 
@@ -50,6 +56,12 @@ variable "environment" {
     condition     = can(regex("^[a-z][a-z0-9]{0,15}$", var.environment))
     error_message = "Set environment to a short lower-case word, such as dev, staging or prod."
   }
+}
+
+variable "test_purpose" {
+  type        = string
+  description = "Says a scripted run, not a person, built this, in every display name and description. The real-API hardware check sets it to \"Terraform provider automated test\", so what a killed run leaves reads as safe to delete. Empty for a walkthrough by hand."
+  default     = ""
 }
 
 variable "region" {
@@ -117,7 +129,7 @@ variable "cluster_type_version" {
 
 variable "worker_counts" {
   type        = map(number)
-  description = "Nodes per worker pool, keyed by pool id. A pool left out starts at the smallest count the cluster type allows."
+  description = "Hosts per worker pool, keyed by pool id, on the cluster and on the instance group's hosts. A pool left out starts at the smallest count the cluster type allows."
   default     = {}
 
   validation {

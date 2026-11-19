@@ -229,9 +229,14 @@ if hw is None:
 elif hw.get("code") != code:
     print("hardware record: API %s on %s, run %s, ran other code than this release" % (hw.get("api_version"), hw.get("landscape"), hw.get("ran")))
 else:
-    covered = hw.get("covered") or []
-    print("hardware record: API %s (%s) on %s, run %s, covers this release: %s" % (hw.get("api_version"),
-          hw.get("api_version_source"), hw.get("landscape"), hw.get("ran"), ", ".join(covered)))
+    # covered is the union of every run the record names, so a landscape
+    # whose quota fits the walkthrough only in pieces still covers it all.
+    runs = hw.get("runs") or []
+    covered = hw.get("covered") or sorted({c for r in runs for c in r.get("covered") or []})
+    ids = [r.get("id") for r in runs if r.get("id")]
+    ran = ("runs " + ", ".join(ids)) if ids else ("run " + str(hw.get("ran")))
+    print("hardware record: API %s (%s) on %s, %s, covers this release: %s" % (hw.get("api_version"),
+          hw.get("api_version_source"), hw.get("landscape"), ran, ", ".join(covered)))
     if hw.get("api_version") != want:
         print("hardware record: ran API %s, and ci/real-api/api-version says %s" % (hw.get("api_version"), want))
 missing = [res for res in kind_only if res not in covered]
@@ -454,6 +459,19 @@ walkthroughs() {
     if wt "$d-apply" "$d" apply -auto-approve -input=false; then
       wt "$d-replan" "$d" plan -detailed-exitcode -input=false
     fi
+    # A run with no cluster grows the group's worker pool by one and plans
+    # again, so the scale path meets the landscape too. On a quota of three
+    # servers that is the peak: two for the group, one more while it grows.
+    case "$side" in hw-*)
+      if hw_on cluster || ! hw_on instance_group; then
+        :
+      elif hw_grow "$dir/$d"; then
+        wt "$d-grow-apply" "$d" apply -auto-approve -input=false
+        wt "$d-grow-replan" "$d" plan -detailed-exitcode -input=false
+      else
+        printf '%s-grow 1\n' "$d" >> "$dir/steps"
+        result FAIL "${dir##*/}/$d-grow" "could not read the instance group's worker pool from $dir/$d"
+      fi ;; esac
     [ "$keep" = 1 ] || wt "$d-destroy" "$d" destroy -auto-approve -input=false
   done
   [ "$keep" = 1 ] || wt look-destroy look destroy -auto-approve -input=false
@@ -662,11 +680,13 @@ open(os.environ["RECORD"], "a").write("\n")'
 # what it reads.
 
 HW_RECORD="$REPO/ci/real-api/hardware-record.json"
-# full/'s build switches hardware mode turns on. webhook and own_project stay
-# off: kind covers both, a webhook to an address nobody serves gets turned off
-# partway through a long run, and a project of its own needs
-# organizations-admin.
-HW_BUILD_ON="network security_group vpc_security_groups instance_group file_store vpc_peering"
+# full/'s build switches hardware mode turns on. cluster can be turned off
+# with REAL_API_BUILD_OFF, for a run of the instance group alone: a landscape
+# can hold more pools than its quota gives servers for a cluster and a group
+# at once. webhook and own_project stay off: kind covers both, a webhook to
+# an address nobody serves gets turned off partway through a long run, and a
+# project of its own needs organizations-admin.
+HW_BUILD_ON="cluster network security_group vpc_security_groups instance_group file_store vpc_peering"
 HW_KIND_COVERS="webhook own_project"
 
 # hw_api_version sets HW_API and HW_API_SOURCE from REAL_API_VERSION, or from
@@ -700,8 +720,10 @@ hw_pick() {
 }
 
 # hw_tfvars <terraform.tfvars> <side> turns full/'s build switches in HW_ON on
-# and every other one off, and on hw-real sets REAL_API_ADDRESS_POOL. It fails
-# when a switch it turns on isn't in the file.
+# and every other one off, and on hw-real sets REAL_API_ADDRESS_POOL. Both
+# sides say in their display names and descriptions that a Terraform provider
+# automated test made them, so what a killed run leaves reads as safe to
+# delete. It fails when a switch it turns on isn't in the file.
 hw_tfvars() {
   local pool=""
   [ "$2" = hw-real ] && pool="${REAL_API_ADDRESS_POOL:-}"
@@ -725,8 +747,36 @@ if on - seen:
     sys.exit("full/terraform.tfvars has no build switch %s any more" % ", ".join(sorted(on - seen)))
 if os.environ["POOL"]:
     out.append('address_pool = "%s"' % os.environ["POOL"])
+out = [l for l in out if not re.match(r"^#?\s*test_purpose\s*=", l)]
+out.append('test_purpose = "Terraform provider automated test"')
 open(path, "w").write("\n".join(out) + "\n")
 PY
+}
+
+# hw_grow <dir> adds one to the instance group's worker pool in <dir>'s
+# terraform.tfvars, for a run with no cluster: the next apply grows the group
+# by one host. The pool and its size come from state, so the runner needs no
+# knowledge of the cluster type's pools, and worker_counts is the one knob
+# full/ sizes a pool with on both sides of the run.
+hw_grow() {
+  local picked pool size
+  picked="$( (cd "$1" && "$TF_BIN" show -json 2>/dev/null) | python3 -c '
+import json, sys
+try:
+    m = json.load(sys.stdin)["values"]["root_module"]
+except ValueError:
+    sys.exit(1)
+for r in m.get("resources", []):
+    if r.get("mode") == "managed" and r["type"] == "k0rdent_instance_group":
+        pools = (r.get("values") or {}).get("node_pool") or {}
+        if pools:
+            p = sorted(pools)[0]
+            print(p, pools[p].get("size"))
+            break
+sys.exit(0)' 2>/dev/null)" || return 1
+  read -r pool size <<< "$picked"
+  case "$pool$size" in *[!a-z0-9-]* | '') return 1 ;; esac
+  printf 'worker_counts = { %s = %d }\n' "$pool" "$((size + 1))" >> "$1/terraform.tfvars"
 }
 
 # hw_mint prints a token for the landscape's credential.
@@ -785,6 +835,24 @@ PY
 # hw_on <switch> is true when this run turns <switch> on.
 hw_on() { case " $HW_ON " in *" $1 "*) return 0 ;; esac; return 1; }
 
+# hw_switch_resources prints each resource type the switches this run turns
+# on build, one a line, so the preflight can say what the run covers.
+hw_switch_resources() {
+  local s
+  for s in $HW_BUILD_ON; do
+    hw_on "$s" || continue
+    case "$s" in
+      cluster)             printf 'k0rdent_kubernetes_cluster\n' ;;
+      network)             printf 'k0rdent_network\nk0rdent_subnet\n' ;;
+      security_group)      printf 'k0rdent_security_group\n' ;;
+      vpc_security_groups) printf 'k0rdent_vpc_security_groups\n' ;;
+      instance_group)      printf 'k0rdent_instance_group\n' ;;
+      file_store)          printf 'k0rdent_file_store\n' ;;
+      vpc_peering)         printf 'k0rdent_vpc_peering\n' ;;
+    esac
+  done | LC_ALL=C sort -u
+}
+
 # hw_preflight reads the landscape and creates nothing, so a missing piece
 # fails in seconds, not an hour into a create.
 hw_preflight() {
@@ -806,6 +874,10 @@ hw_preflight() {
   hw_find "$body" versions status=available > /dev/null \
     || die "cluster type $REAL_API_CLUSTER_TYPE has no available version in $HW_REGION"
   good "cluster type $REAL_API_CLUSTER_TYPE has an available version"
+  good "this run creates: $(hw_switch_resources | tr '\n' ' ')"
+  if ! hw_on cluster; then
+    note "no cluster: the instance group runs alone, and grows by one host before the destroy"
+  fi
   if hw_on network; then
     body="$(hw_get "$token" "/v1/regions/$HW_REGION/networking/address-pools")" || die "could not list the address pools"
     if [ -n "${REAL_API_ADDRESS_POOL:-}" ]; then
@@ -1002,6 +1074,9 @@ cmd_hardware() {
   for s in $HW_BUILD_ON; do
     case " ${REAL_API_BUILD_OFF:-} " in *" $s "*) ;; *) HW_ON="$HW_ON $s" ;; esac
   done
+  if ! hw_on cluster && hw_on vpc_peering; then
+    die "REAL_API_BUILD_OFF names cluster but not vpc_peering, and a peering needs the cluster's VPC. Turn vpc_peering off too."
+  fi
   # Terraform 1.16.0 to 1.16.4 can crash on one interrupt while two creates
   # wait, and empty the state file (hashicorp/terraform#39287, fixed in
   # 1.16.5). This run's cleanup interrupts Terraform, and the state is all
@@ -1099,13 +1174,28 @@ cmd_hardware() {
     exit 1
   fi
   RECORD="$HW_RECORD" LABEL="$HW_LABEL" API="$HW_API" SOURCE="$HW_API_SOURCE" TRACKS="$want" FAKE="$fake" CODE="$code" \
-    ON="$HW_ON" KIND_COVERS="$HW_KIND_COVERS" OFF="${REAL_API_BUILD_OFF:-}" COVERED="$(hw_covered)" \
+    ON="$HW_ON" KIND_COVERS="$HW_KIND_COVERS" OFF="${REAL_API_BUILD_OFF:-}" COVERED="$(hw_covered)" RUN_ID="$HW_ID" \
     TOOK="$(took $((SECONDS - HW_START)))" TF="$("$TF_BIN" version | head -1)" python3 -c '
 import json, os, datetime
 e = os.environ
 build = {s: "on" for s in e["ON"].split()}
 build.update({s: "off, kind covers it" for s in e["KIND_COVERS"].split()})
 build.update({s: "off for this run" for s in e["OFF"].split()})
+run = {"id": e["RUN_ID"], "ran": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+       "build": build, "covered": e["COVERED"].split()}
+# An earlier run on the same code keeps what it covered: a landscape whose
+# quota fits only part of the walkthrough runs it in pieces, and the record
+# holds the union so a release still names every resource a run covered.
+try:
+    old = json.load(open(e["RECORD"]))
+except (FileNotFoundError, ValueError):
+    old = None
+if old is not None and old.get("code") == e["CODE"]:
+    covered = sorted(set(old.get("covered") or []) | set(run["covered"]))
+    runs = [r for r in old.get("runs") or [] if r.get("id") != run["id"]] + [run]
+else:
+    covered = run["covered"]
+    runs = [run]
 json.dump({
     "landscape": e["LABEL"],
     "api_version": e["API"],
@@ -1116,8 +1206,9 @@ json.dump({
     "terraform": e["TF"],
     "steps": {"walkthroughs": "PASS", "fake drift": "PASS"},
     "build": build,
-    "covered": e["COVERED"].split(),
-    "ran": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    "covered": covered,
+    "runs": runs,
+    "ran": run["ran"],
     "took": e["TOOK"],
 }, open(e["RECORD"], "w"), indent=2)
 open(e["RECORD"], "a").write("\n")' || die "could not write $HW_RECORD"
