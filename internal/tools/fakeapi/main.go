@@ -460,6 +460,10 @@ type fakeOperation struct {
 	status      string
 	reason      string
 	message     string
+	// note is what the workflow says it is doing, carried as the cluster's
+	// stateMessage and this operation's message from the first read that sees
+	// it in flight. See start.
+	note        string
 	startedAt   string
 	completedAt string
 	stages      []string
@@ -559,7 +563,36 @@ func newState() *state {
 		p.uid = global.newUID("project", p.id)
 		global.projects[at{id: p.id}] = &p
 	}
-	return &state{scopes: map[scope]*objects{{}: global}, organizations: seededOrganizations()}
+	s := &state{scopes: map[scope]*objects{{}: global}, organizations: seededOrganizations()}
+	seedLeftoverCluster(s)
+	return s
+}
+
+// seedLeftoverCluster puts the rows an earlier cluster's workflow made into
+// the seeded project, as a landscape with hardware holds them by the time a
+// run looks: the VPC with its default security group, the network and subnet
+// the workflow materializes, and beside them an InfiniBand network with no
+// attributes, the schema's own entry (run rapi-hw-039727 read all of them
+// through look/, which takes the first three of each list). A kind stack
+// starts empty and runs one run's own walkthroughs only, so its record
+// accepts the fields these rows carry. The owning cluster is gone, as one
+// from an earlier run is: nothing resolves a network's clusterId, and the
+// cluster's own row was never read.
+func seedLeftoverCluster(s *state) {
+	const leftover = "ml-platform-01"
+	sc := scope{region: projectRegion, project: "demo"}
+	o, ok := s.scopes[sc]
+	if !ok {
+		o = newObjects(sc)
+		s.scopes[sc] = o
+	}
+	o.vpcForOwner("cluster", leftover, uidFor(o.scope, "cluster", leftover))
+	o.networks[at{id: "vpc-" + leftover + "-ib"}] = &fakeNetwork{
+		id: "vpc-" + leftover + "-ib", uid: o.newUID("network", leftover+"-ib"),
+		kind:      "infiniband",
+		clusterID: leftover, vpc: ufoCRName("vpc-" + leftover), schemaEntryID: "cluster-ib",
+		state: "active", displayName: ptr("cluster infiniband network"),
+	}
 }
 
 // global is the global tier's objects, where the projects, the webhook
@@ -1641,27 +1674,43 @@ func (s *state) scaleCluster(w http.ResponseWriter, r *http.Request) {
 
 func (c *cluster) start(message string, stages ...string) {
 	c.opSeq++
-	// The message goes to the event log only. The operation's own message
-	// is the cluster's stateMessage, as finish sets it: the real API answers
-	// none on a create or a delete in flight (recorded on a kind stack at
-	// API v1.3.0-rc.5).
+	// The message is what the workflow says it is doing. It goes to the
+	// event log at once, and from the first read that sees the operation in
+	// flight it is the cluster's stateMessage and the operation's own message,
+	// as the prod landscape's workflow reports it (run rapi-hw-039727:
+	// stateMessage on 615 of 1045 reads, always in flight). A kind stack's
+	// workflow writes no message in flight, so its record accepts the
+	// difference. A mutating answer carries neither: both recordings agree
+	// there, so advance sets it rather than this.
 	c.op = &fakeOperation{
 		executionID: fmt.Sprintf("%s-op-%d", c.id, c.opSeq),
 		status:      "running",
 		startedAt:   fixedTime,
 		stages:      stages,
+		note:        message,
 	}
 	c.events = nil
 	c.record("info", "cluster", "", message)
+	// A stale failure message belongs to the operation that ended; a new one
+	// reports its own from its first read.
+	c.stateReason, c.stateMessage = "", ""
+	// The workflow names each stage as it plans it, on the log's own lines.
+	for _, stage := range stages {
+		c.record("info", "cluster", stage, "stage "+stage+" in progress")
+	}
 }
 
 // finish ends the current operation. One that failed or was cancelled carries
 // the cluster's own stateReason and stateMessage, as the contract's Operation does.
+// A succeeded one reports neither, as no recording ever answered one on a
+// settled cluster.
 func (c *cluster) finish(status string) {
 	c.op.status, c.op.completedAt = status, fixedTimeDone
 	if status != "succeeded" {
 		c.op.reason, c.op.message = c.stateReason, c.stateMessage
+		return
 	}
+	c.op.reason, c.op.message = "", ""
 }
 
 func (o *fakeOperation) json() map[string]any {
@@ -1769,6 +1818,13 @@ func (o *objects) advance(c *cluster) bool {
 	if holdsUntilRefused(c.state, c.displayName, c.refusedBusy) {
 		return false
 	}
+	// From the first read that sees the operation in flight, the workflow's
+	// note is the cluster's stateMessage and the operation's own message, as
+	// the prod landscape answers it (see start). A mutating answer has already
+	// been written by then, so it carries neither.
+	if c.op != nil && c.op.status == "running" && c.stateMessage == "" {
+		c.stateMessage, c.op.message = c.op.note, c.op.note
+	}
 	c.reads++
 	lasts := settleAfter
 	if c.state == "creating" && nameCarries(c.displayName, createsSlowly) {
@@ -1817,6 +1873,9 @@ func (c *cluster) complete() {
 	}
 	c.targets = nil
 	c.state = "active"
+	// The workflow that reported what it was doing is done, so its message
+	// goes with it; a failure sets its own before this.
+	c.stateMessage = ""
 	if c.upgradeTo != nil {
 		settleUpgrade(c)
 	}
@@ -1921,10 +1980,15 @@ func (s *state) clusterBody(region string, c *cluster, read bool) map[string]any
 	return body
 }
 
-// clusterHealth is the health block, never observed here: `unknown` with
-// every optional field an explicit null, and while the cluster is created or
-// deleted the reason the verdict is withheld. Both as API v1.3.0-rc.5
-// answers them (recorded on a kind stack).
+// clusterHealth is the health block: `unknown` with every optional field an
+// explicit null while no writer has observed the cluster, and while it is
+// created or deleted the reason the verdict is withheld, both as API
+// v1.3.0-rc.5 answers them (recorded on a kind stack). Once the cluster
+// settles, the health writer has observed it: `healthy` with the
+// observation's timestamp, as the prod landscape answers it (run
+// rapi-hw-039727: a timestamp on 1024 of 1037 reads). A kind stack runs no
+// writer, so its record accepts observedAt as a type difference; the
+// provider reads no health timestamp.
 func clusterHealth(c *cluster) map[string]any {
 	health := map[string]any{"state": "unknown", "reason": nil, "observedAt": nil, "expiresAt": nil}
 	switch c.state {
@@ -1932,6 +1996,8 @@ func clusterHealth(c *cluster) map[string]any {
 		health["reason"] = "health assessment is withheld while the cluster is being created"
 	case "deleting":
 		health["reason"] = "health assessment is withheld while the cluster is being deleted"
+	case "active", "updating":
+		health["state"], health["observedAt"] = "healthy", fixedTime
 	}
 	return health
 }

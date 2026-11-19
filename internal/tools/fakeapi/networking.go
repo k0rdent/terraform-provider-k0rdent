@@ -652,7 +652,14 @@ func networkJSON(o *objects, n *fakeNetwork) map[string]any {
 			out["dnsServers"] = *n.dnsServers
 		}
 	case "infiniband":
-		ib := map[string]any{"pkey": n.pkey}
+		// An unset attribute is left out, as the model's omitempty says
+		// (NetworkInfiniBand, services/compute/internal/model/model.go:1493):
+		// the schema's own infiniband entry answers an empty object, as the
+		// prod landscape's leftover InfiniBand network does.
+		ib := map[string]any{}
+		if n.pkey != "" {
+			ib["pkey"] = n.pkey
+		}
 		if n.partition != "" {
 			ib["partition"] = n.partition
 		}
@@ -777,7 +784,10 @@ func ufoCRName(vpc string) string {
 
 // The address pool catalog, deliberately more than one page. Every pool
 // answers `excludeRanges`, which v1.3.0-dev.4 makes required, as `[]` when it
-// excludes nothing.
+// excludes nothing. The three named pools carry descriptions, as a catalog a
+// landscape's admin has documented does (run rapi-hw-039727 answered one on 2
+// of 11 pools); a kind stack's pools carry none, so its record accepts the
+// difference.
 //
 // ASSUMPTION: nothing in the contract says a catalog is small enough to arrive
 // whole. A fake that returned everything in one page would let a provider that
@@ -787,20 +797,23 @@ func ufoCRName(vpc string) string {
 // are followed by 498 generated ones and the 501st is only on the second page.
 var addressPools = append([]map[string]any{
 	{
-		"id": "tenant", "displayName": "Tenant subnets", "ipVersion": "ipv4",
-		"prefixes": []string{"10.0.0.0/8"}, "minPrefixLength": 16, "maxPrefixLength": 28,
+		"id": "tenant", "displayName": "Tenant subnets", "description": "Subnets a tenant makes itself",
+		"ipVersion": "ipv4",
+		"prefixes":  []string{"10.0.0.0/8"}, "minPrefixLength": 16, "maxPrefixLength": 28,
 		"routable": true, "state": "active", "excludeRanges": []string{},
 		"selfLink": "/v1/regions/us-texas-1/networking/address-pools/tenant",
 	},
 	{
-		"id": "cluster-local", "displayName": "Cluster-local", "ipVersion": "ipv4",
-		"prefixes": []string{"192.168.0.0/16"}, "minPrefixLength": 20, "maxPrefixLength": 30,
+		"id": "cluster-local", "displayName": "Cluster-local", "description": "Traffic that stays inside the cluster",
+		"ipVersion": "ipv4",
+		"prefixes":  []string{"192.168.0.0/16"}, "minPrefixLength": 20, "maxPrefixLength": 30,
 		"routable": false, "state": "active", "excludeRanges": []string{},
 		"selfLink": "/v1/regions/us-texas-1/networking/address-pools/cluster-local",
 	},
 	{
-		"id": "vip", "displayName": "Control-plane VIPs", "ipVersion": "ipv4",
-		"prefixes": []string{"198.51.100.0/24"}, "minPrefixLength": 32, "maxPrefixLength": 32,
+		"id": "vip", "displayName": "Control-plane VIPs", "description": "Addresses the control plane answers on",
+		"ipVersion": "ipv4",
+		"prefixes":  []string{"198.51.100.0/24"}, "minPrefixLength": 32, "maxPrefixLength": 32,
 		"routable": true, "state": "active",
 		"excludeRanges": []string{"198.51.100.1"},
 		"selfLink":      "/v1/regions/us-texas-1/networking/address-pools/vip",
