@@ -543,31 +543,36 @@
   "operation": "GET /v1/regions/{region}/projects/{project}/compute/clusters/{id} 200",
   "field": "response $.runtime*",
   "side": "real",
-  "reason": "Not read: the runtime block is observability-only (ClusterRuntime, services/compute/internal/model/model.go:471) and internal/provider has no use for it; resource_kubernetes_cluster.go names `runtime` among what the resource must not store. The prod landscape runs the runtime controller, which answers it on every read. It is the hardware landscape's line alone: a kind stack cannot answer it, so a kind record fails on this line as stale until the accepted list can say which landscape a line belongs to."
+  "landscape": "hardware",
+  "reason": "Not read: the runtime block is observability-only (ClusterRuntime, services/compute/internal/model/model.go:471) and internal/provider has no use for it; resource_kubernetes_cluster.go names `runtime` among what the resource must not store. The prod landscape runs the runtime controller, which answers it on every read. It is the hardware landscape's line alone: a kind stack runs no runtime controller, so its record doesn't judge it."
 },
 {
   "operation": "GET /v1/regions/{region}/projects/{project}/compute/clusters/{id} 200",
   "field": "response $.nodePools[].progress*",
   "side": "real",
-  "reason": "Not read: a node pool's server progress has no use in internal/provider; the cluster data source reads each pool's count only (datasource_kubernetes_cluster.go:398). The prod landscape's reservation pipeline reports it while a pool is in flight. It is the hardware landscape's line alone: a kind stack cannot answer it, so a kind record fails on this line as stale until the accepted list can say which landscape a line belongs to."
+  "landscape": "hardware",
+  "reason": "Not read: a node pool's server progress has no use in internal/provider; the cluster data source reads each pool's count only (datasource_kubernetes_cluster.go:398). The prod landscape's reservation pipeline reports it while a pool is in flight. It is the hardware landscape's line alone: a kind stack has no hosts to reserve, so its record doesn't judge it."
 },
 {
   "operation": "GET /v1/regions/{region}/projects/{project}/compute/clusters/{id} 200",
   "field": "response $.nodePools[].reservationId",
   "side": "real",
-  "reason": "Not read: a node pool's reservation id has no use in internal/provider. The prod landscape's reservation pipeline issues one for every pool. It is the hardware landscape's line alone: a kind stack cannot answer it, so a kind record fails on this line as stale until the accepted list can say which landscape a line belongs to."
+  "landscape": "hardware",
+  "reason": "Not read: a node pool's reservation id has no use in internal/provider. The prod landscape's reservation pipeline issues one for every pool. It is the hardware landscape's line alone: a kind stack has no hosts to reserve, so its record doesn't judge it."
 },
 {
   "operation": "GET /v1/regions/{region}/projects/{project}/compute/clusters/{id} 200",
   "field": "response $.progressUpdatedAt",
   "side": "real",
-  "reason": "Not read: the cluster's own progress stamp has no use in internal/provider; the data source reads the operation's progress, not the cluster's. The prod landscape's reservation pipeline stamps it. It is the hardware landscape's line alone: a kind stack cannot answer it, so a kind record fails on this line as stale until the accepted list can say which landscape a line belongs to."
+  "landscape": "hardware",
+  "reason": "Not read: the cluster's own progress stamp has no use in internal/provider; the data source reads the operation's progress, not the cluster's. The prod landscape's reservation pipeline stamps it. It is the hardware landscape's line alone: a kind stack runs no reservation pipeline, so its record doesn't judge it."
 },
 {
   "operation": "GET /v1/regions/{region}/compute/cluster-types/{id}/versions/{versionId} 200",
   "field": "response $.k8s.nodeNetwork*",
   "side": "real",
-  "reason": "Not read: a cluster type version's node network has no use in internal/provider. The prod landscape's cluster types carry one, with legacyAddressDetection beside it; kind's types predate the field. It is the hardware landscape's line alone: a kind stack cannot answer it, so a kind record fails on this line as stale until the accepted list can say which landscape a line belongs to."
+  "landscape": "hardware",
+  "reason": "Not read: a cluster type version's node network has no use in internal/provider. The prod landscape's cluster types carry one, with legacyAddressDetection beside it; kind's types predate the field. It is the hardware landscape's line alone: a kind stack's types carry none, so its record doesn't judge it."
 },
 {
   "operation": "GET /v1/regions/{region}/projects/{project}/compute/clusters/{id} 200",
@@ -676,5 +681,19 @@
   "field": "response $.description",
   "side": "fake",
   "reason": "Hardware only: the fake's catalog documents its three named pools, as the prod landscape's does, and look/ reads all three first. A kind stack's pools carry no description. Read at datasource_address_pools.go:50."
+},
+{
+  "operation": "GET /v1/regions/global/organizations/{orgId}/projects/{id} 200",
+  "field": "response $.region",
+  "side": "fake",
+  "landscape": "hardware",
+  "reason": "Hardware only: the landscape's project predates regions and never answers one, while API v1.3.0 does and so does a kind stack, so only their recordings differ from the fake. The fake must keep answering it: the region-mismatch acceptance coverage and the kind record read it. Read at datasource_project.go:195, which answers null for a project made before regions were required."
+},
+{
+  "operation": "GET /v1/regions/global/projects 200",
+  "field": "response $.projects[].region",
+  "side": "fake",
+  "landscape": "hardware",
+  "reason": "Hardware only: the landscape's project predates regions and never answers one, while API v1.3.0 does and so does a kind stack, so only their recordings differ from the fake. The fake must keep answering it: the region-mismatch acceptance coverage and the kind record read it. Read at datasource_projects.go:40, which answers null for a project made before regions were required."
 }
 ]

@@ -669,7 +669,9 @@ cmd_run() {
   lifecycle_passed "$work/real-walkthrough" "the walkthroughs against the real API" || steps_drift=FAIL
 
   step "Fake drift: compare"
-  if "$work/fakedrift" compare -spec "$REPO/internal/k0rdent/spec/openapi.yaml" \
+  # -landscape kind: this run's real recording is the kind stack's, so an
+  # accepted line for the hardware landscape is neither matched nor stale.
+  if "$work/fakedrift" compare -landscape kind -spec "$REPO/internal/k0rdent/spec/openapi.yaml" \
       -fake "$work/fake.ndjson" -real "$work/real.ndjson" -accepted "$ACCEPTED" > "$work/compare.txt"; then
     good "$(grep -m1 ' operations compared, ' "$work/compare.txt")"
     # An operation only one side made isn't compared, so it's listed.
@@ -1198,7 +1200,9 @@ cmd_hardware() {
   step "Fake drift: compare"
   # -partial: this run covers a slice of the operations, so an accepted line it
   # didn't see is listed, not failed. The run on kind keeps the list current.
-  if "$work/fakedrift" compare -partial -spec "$REPO/internal/k0rdent/spec/openapi.yaml" \
+  # -landscape hardware: this run's real recording is the landscape's, so an
+  # accepted line for the kind landscape is neither matched nor stale.
+  if "$work/fakedrift" compare -partial -landscape hardware -spec "$REPO/internal/k0rdent/spec/openapi.yaml" \
       -fake "$work/fake.ndjson" -real "$work/real.ndjson" -accepted "$ACCEPTED" > "$work/compare.txt"; then
     good "$(grep 'operations compared' "$work/compare.txt")"
     result PASS "fake drift" "$(grep 'operations compared' "$work/compare.txt")"

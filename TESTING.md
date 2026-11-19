@@ -432,6 +432,15 @@ Each difference `fakedrift` finds is either fixed in the fake or listed in
 `ci/fake-drift-accepted.json` with a reason. A listed difference that no
 longer turns up fails the check too, so the list can't go stale.
 
+An entry may name a landscape, `kind` or `hardware`: the one whose real
+recording shows the difference. Without one it applies to every landscape.
+`fakedrift compare` takes the landscape it's judging, `-landscape kind` from
+`make real-api-check` and `-landscape hardware` from
+[`make real-api-check-hardware`](#make-real-api-check-hardware), and an entry
+for another landscape is neither matched nor stale: the kind record keeps
+the kind lines current and the hardware run the hardware ones, because a
+difference one landscape's recording shows is judged only where it shows.
+
 When every step passes, the check writes `ci/real-api/record.json`. Commit it
 with the change. The record holds two hashes:
 
