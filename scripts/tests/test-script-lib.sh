@@ -296,4 +296,80 @@ in_wlib "walkthrough_tfvars missing '$ex' ci"
 in_wlib "walkthrough_tfvars look '$ex' ci; echo finished"
 [ "$(cat "$work/stdout")" = finished ] || fail "walkthrough_tfvars printed a terraform.tfvars for a directory without one"
 
+# --- walkthrough.sh: walkthrough_build_off -------------------------------------
+
+# A tfvars as full/ ships one, with the switches full-everything turns on.
+cat > "$work/off.tfvars" <<'EOF'
+prefix = "ci"
+cluster_type = "t2"
+build = {
+  network             = true  # a network and a subnet per purpose
+  security_group      = true
+  instance_group      = false # one bare host
+  file_store          = false # 100 GiB of shared storage
+}
+EOF
+in_wlib "walkthrough_build_off '$work/off.tfvars' instance_group file_store security_group"
+[ "$status" = 0 ] || fail "walkthrough_build_off failed on switches that are already off: $(cat "$work/stderr")"
+# What the file has to hold afterwards: the named switches off, the unnamed
+# one still on, and the lines outside the build block untouched.
+diff "$work/off.tfvars" - <<'EOF' \
+  || fail "walkthrough_build_off didn't turn the named switches off and nothing else: $(cat "$work/off.tfvars")"
+prefix = "ci"
+cluster_type = "t2"
+build = {
+  network             = true  # a network and a subnet per purpose
+  security_group      = false
+  instance_group      = false # one bare host
+  file_store          = false # 100 GiB of shared storage
+}
+EOF
+in_wlib "walkthrough_build_off '$work/off.tfvars' vpc_peering"
+{ [ "$status" != 0 ] && grep -qF "has no build switch vpc_peering" "$work/stderr"; } \
+  || fail "walkthrough_build_off accepted a switch the build block doesn't have"
+printf 'prefix = "ci"\n' > "$work/nobuild.tfvars"
+in_wlib "walkthrough_build_off '$work/nobuild.tfvars' network"
+{ [ "$status" != 0 ] && grep -qF "has no build switch network" "$work/stderr"; } \
+  || fail "walkthrough_build_off accepted a tfvars with no build block"
+in_wlib "walkthrough_build_off '$work/missing.tfvars' network"
+{ [ "$status" != 0 ] && grep -qF 'no terraform.tfvars at' "$work/stderr"; } \
+  || fail "walkthrough_build_off carried on without the file"
+
+# --- walkthrough.sh: walkthrough_drop_subnet_pool_check ------------------------
+
+# The postcondition as full/ ships it, with the pool check it fails on a
+# stack that answers a CIDR without allocating one.
+cat > "$work/subnet.tf" <<'EOF'
+data "k0rdent_subnet" "nodes" {
+  id = k0rdent_network.this.subnets["nodes"]
+
+    postcondition {
+      condition = self.cidr != "" && anytrue([
+        for p in local.pool.prefixes : try(cidrsubnet("${split("/", self.cidr)[0]}/${split("/", p)[1]}", 0, 0) == cidrsubnet(p, 0, 0), false)
+      ])
+      error_message = "Subnet ${self.id} came back with ${coalesce(self.cidr, "no block")}, which isn't inside pool ${local.pool.id}."
+    }
+}
+
+output "cidr" {
+  value = data.k0rdent_subnet.nodes.cidr
+}
+EOF
+in_wlib "walkthrough_drop_subnet_pool_check '$work/subnet.tf'"
+[ "$status" = 0 ] || fail "walkthrough_drop_subnet_pool_check failed: $(cat "$work/stderr")"
+{ grep -q postcondition "$work/subnet.tf" || grep -q error_message "$work/subnet.tf"; } \
+  && fail "walkthrough_drop_subnet_pool_check left part of the postcondition behind: $(cat "$work/subnet.tf")"
+grep -qF 'data "k0rdent_subnet" "nodes"' "$work/subnet.tf" \
+  || fail "walkthrough_drop_subnet_pool_check took more than the postcondition"
+grep -qF 'output "cidr"' "$work/subnet.tf" \
+  || fail "walkthrough_drop_subnet_pool_check took the resource's surroundings with it"
+cat > "$work/nopostcondition.tf" <<'EOF'
+data "k0rdent_subnet" "nodes" {
+  id = k0rdent_network.this.subnets["nodes"]
+}
+EOF
+in_wlib "walkthrough_drop_subnet_pool_check '$work/nopostcondition.tf'"
+{ [ "$status" != 0 ] && grep -qF "has no subnet postcondition on self.cidr" "$work/stderr"; } \
+  || fail "walkthrough_drop_subnet_pool_check carried on without the postcondition"
+
 echo "script lib test: PASS"

@@ -13,6 +13,15 @@
 #                                      for a release: the same, and the record
 #                                      names TREE's code hash too. TREE is the
 #                                      tagged commit's checkout, default this one
+#   scripts/real-api-check.sh stack-check
+#                                      for scripts that run Terraform against
+#                                      the kind stack but don't source this
+#                                      one: refuse a stack whose API images
+#                                      carry another version than the one the
+#                                      provider tracks, and one holding what an
+#                                      earlier run left. Creates nothing, and
+#                                      refuses an endpoint that isn't on
+#                                      localhost
 #   scripts/real-api-check.sh hash fake|code|fake-list|code-list|hashing [TREE]
 #                                      prints a hash, a digest of what one covers,
 #                                      or the hashing version
@@ -549,6 +558,40 @@ recorder() {
   for _ in $(seq 1 50); do [ -s "$2.url" ] && break; sleep 0.1; done
   recorder="$(head -1 "$2.url")"
   [ -n "$recorder" ] || die "fakedrift did not start: $(cat "$2.log")"
+}
+
+# cmd_stack_check: the checks any run against the kind stack owes it first,
+# for scripts that talk to the stack without sourcing this one, such as the
+# upgrade check. It reads the same variables as run, creates nothing, and
+# fails on a stack at another API version or one holding an earlier run's
+# objects, with run's messages.
+cmd_stack_check() {
+  local endpoint want have leftovers v
+  need kubectl
+  need jq
+  read_names
+  endpoint="$(eval printf '%s' "\"\${${ENV_PREFIX}ENDPOINT:-}\"")"
+  [ -n "$endpoint" ] || die "${ENV_PREFIX}ENDPOINT is not set. It is the kind stack's gateway, such as http://localhost:14000"
+  case "$(endpoint_host "$endpoint")" in
+    localhost:*|localhost|127.0.0.1|127.0.0.1:*) ;;
+    *) die "${ENV_PREFIX}ENDPOINT is $endpoint. This check runs against a local kind stack only; make live is for other landscapes." ;;
+  esac
+  for v in REGION PROJECT; do
+    [ -n "$(eval printf '%s' "\"\${${ENV_PREFIX}$v:-}\"")" ] \
+      || die "${ENV_PREFIX}$v is not set. The env file make real-api-stack writes sets it."
+  done
+  for v in REAL_API_ORG_CLIENT_ID REAL_API_ORG_CLIENT_SECRET; do
+    [ -n "$(eval printf '%s' "\"\${$v:-}\"")" ] \
+      || die "$v is not set. The env file make real-api-stack writes sets it."
+  done
+  want="$(want_api_version "$REPO")" || exit 1
+  have="$(stack_api_version)" || exit 1
+  [ "$have" = "$want" ] || die "the stack runs API $have, and ci/real-api/api-version says $want. Run against a stack at $want, or change the file if the provider now tracks $have."
+  good "the stack runs API $have"
+  leftovers="$(stack_leftovers "$endpoint")" || exit 1
+  [ -z "$leftovers" ] \
+    || die "the stack holds what an earlier run left: $(printf '%s' "$leftovers" | paste -sd, - | sed 's/,/, /g'). look/ would read it, and whatever reads the stack next would count it. Rebuild the stack clean with REAL_API_FRESH=1 make real-api-stack, source the env file it writes, and run this again."
+  good "the stack holds nothing from an earlier run"
 }
 
 cmd_run() {
@@ -1222,5 +1265,6 @@ case "${1:-}" in
   verify) check_record "$REPO" fake ;;
   verify-release) check_record "${2:-$REPO}" code ;;
   hash) cmd_hash "${2:-}" "${3:-}" ;;
-  *) die "usage: scripts/real-api-check.sh run|hardware|verify|verify-release [TREE]|hash fake|code|fake-list|code-list|hashing [TREE]" ;;
+  stack-check) cmd_stack_check ;;
+  *) die "usage: scripts/real-api-check.sh run|hardware|verify|verify-release [TREE]|hash fake|code|fake-list|code-list|hashing [TREE]|stack-check" ;;
 esac

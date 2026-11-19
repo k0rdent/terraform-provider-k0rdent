@@ -46,6 +46,7 @@ Fastest first:
 | `make plan-quality` | Refresh-only plans find nothing, and plans stay within the unknown budget |
 | `make walkthrough-test` | The hardware walkthrough's directories work as the page says |
 | `make upgrade-test` | State from the previous release plans empty under this tree, but for accepted changes |
+| `make upgrade-test-real` | The same, against the kind stack or a confirmed landscape with hardware |
 | `make bench` | Plan, refresh and apply stay within the performance budget at 10 to 1,000 resources |
 
 CI also runs `make docs-check`, `make doc-commands`, `make client-check`,
@@ -262,6 +263,64 @@ entries go. A resource type no directory can create goes under
 `PREVIOUS=0.1.0-rc.1` upgrades from another release. The file only holds
 changes from the default, so such a run reports every change from that
 release, accepted or not. Read it, don't gate on it.
+
+### `make upgrade-test-real`
+
+The same run against an endpoint that already exists, instead of the fake.
+The endpoint's host picks the landscape:
+
+- On this machine, the kind stack [`make real-api-stack`](#make-real-api-stack)
+  builds. Source the env file it writes and run:
+
+  ```sh
+  . .live/real-api-kind.env
+  make upgrade-test-real
+  ```
+
+  The run starts with `scripts/real-api-check.sh stack-check`, which vets
+  the stack's API version and refuses one holding what an earlier run left.
+  `REAL_API_FRESH=1 make real-api-stack` rebuilds it clean. The walkthroughs
+  run as the organization's service account, since `cluster-own-project`
+  needs `organizations-admin`. A kind stack answers a subnet's CIDR without
+  allocating it from a pool, so `full/`'s check that each subnet is inside
+  its pool is dropped, and `instance_group`, `file_store` and `vpc_peering`
+  go off, since the stack has no host and no storage service. Polls run at
+  200ms, as against the fake. The three resource types those switches leave
+  out are accepted under `not_covered` with `"landscape": "kind"` in
+  `ci/upgrade-accepted.json`.
+
+- Elsewhere, a landscape with hardware. It refuses to start unless
+  `UPGRADE_REAL_CONFIRM` names the endpoint's host, and unless the endpoint
+  is https:
+
+  ```sh
+  set -a; . ./hardware.env; set +a
+  UPGRADE_REAL_CONFIRM=api.example.com make upgrade-test-real
+  ```
+
+  The env file is the one `make real-api-check-hardware` reads, and
+  [`make real-api-check-hardware`](#make-real-api-check-hardware) documents
+  its variables. The run holds at most three servers, since it runs one
+  directory at a time and destroys each before the next starts: one cluster
+  with its workers and one host. `cluster-own-project` is left out, since
+  its project needs `organizations-admin`, which the landscape's service
+  account doesn't carry, and `full/`'s `webhook` and `own_project` switches
+  go off, for the same reasons the hardware check turns them off.
+  `REAL_API_CLUSTER_TYPE` names the cluster type to build and
+  `REAL_API_ADDRESS_POOL` the pool to take subnets from, since on a shared
+  landscape the first one `look/` lists may be someone else's. The two
+  resource types those switches leave out are accepted under `not_covered`
+  with `"landscape": "hardware"`.
+
+The findings rules, the accepted file and the coverage check are the fake
+run's, per landscape. An entry in `ci/upgrade-accepted.json` may name a
+landscape, and one without one applies to every landscape for `changes` and
+to the fake run for `not_covered`.
+
+A landscape's credential gets ten token mints a minute, so the run waits
+`UPGRADE_PACE` seconds, 7 by default, before each Terraform command that
+signs in. A run takes hours. `UPGRADE_KEEP=1`, `DIRS` and `PREVIOUS` work as
+in `make upgrade-test`.
 
 ### `make bench`
 
