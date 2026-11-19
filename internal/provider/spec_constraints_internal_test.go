@@ -103,9 +103,12 @@ func onDataSource(suffix, attr string, mode probeMode) specBinding {
 func notConfigurable(reason string) specBinding { return specBinding{reason: reason} }
 
 const (
-	paging        = "a paging parameter the provider sets itself while it walks a list"
-	notSent       = "the provider doesn't send this parameter"
-	uriReference  = "`uri-reference` holds any reference, so there is nothing to refuse at plan time. The provider parses the reference itself before any part of it reaches a URL"
+	paging         = "a paging parameter the provider sets itself while it walks a list"
+	notSent        = "the provider doesn't send this parameter"
+	uriReference   = "`uri-reference` holds any reference, so there is nothing to refuse at plan time. The provider parses the reference itself before any part of it reaches a URL"
+	clusterTypeRef = "`uri-reference` holds any reference, so the contract refuses nothing to probe with. " +
+		"The platform's create does refuse a form, answering 422 `clusterType is not a valid ClusterType URI`, " +
+		"so the `cluster_type` attribute's own validator holds that line at plan"
 	discriminator = "the variant's discriminator, which the provider sets from the nested block the configuration fills in"
 	nonEmptyPatch = "the provider sends an update only with a field in it"
 )
@@ -123,7 +126,7 @@ var specBindings = func() map[string]specBinding {
 	// Clusters.
 	cluster := clusterResourceSuffix
 	b["createCluster body.id"] = onResource(cluster, "id", asValue)
-	b["createCluster body.clusterType"] = notConfigurable(uriReference)
+	b["createCluster body.clusterType"] = notConfigurable(clusterTypeRef)
 	b["createCluster body.auditPolicy"] = notConfigurable("the cluster resource has no audit policy attribute, so the provider never sends one")
 	for _, loc := range []string{"body.sshAccess", "body.sshAccess[].username", "body.sshAccess[].sshPublicKeys",
 		"body.sshAccess[].sshPublicKeys[]", "body.sshAccess[].sudo", "body.sshAccess[].displayName",
@@ -144,7 +147,7 @@ var specBindings = func() map[string]specBinding {
 	// Instance groups.
 	group := instanceGroupResourceSuffix
 	b["createInstanceGroup body.id"] = onResource(group, "id", asValue)
-	b["createInstanceGroup body.clusterType"] = notConfigurable(uriReference)
+	b["createInstanceGroup body.clusterType"] = notConfigurable(clusterTypeRef)
 	b["createInstanceGroup body.nodePools"] = onResource(group, "node_pool", asSize)
 	b["scaleInstanceGroup body.nodePools"] = notConfigurable("the provider scales only when a pool changes, so the list it sends always has one")
 	each([]string{"createInstanceGroup", "scaleInstanceGroup"}, "body.nodePools[].nodePool", onResource(group, "node_pool", asKey))

@@ -238,7 +238,7 @@ func (r *clusterResource) Schema(ctx context.Context, _ resource.SchemaRequest, 
 					knownGap("A tenant can't read the hardware or the image behind a ClusterType's machine types, "+
 						"so choosing a ClusterType for its hardware means writing one an operator named."),
 				PlanModifiers: []planmodifier.String{clusterTypeVersionGuard()},
-				Validators:    []validator.String{clusterTypeVersionRef{}},
+				Validators:    []validator.String{clusterTypeRefForm{}, clusterTypeVersionRef{}},
 			},
 			"cluster_type_resolved": schema.StringAttribute{
 				Computed: true,
@@ -473,6 +473,9 @@ func (r *clusterResource) Configure(_ context.Context, req resource.ConfigureReq
 func (r *clusterResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
 	// Runs on every plan, create included: the resolved scope has to reach state.
 	modifyScopePlan(ctx, r.meta, req, resp)
+	// After the scope resolves the region, so a cluster type from another
+	// region is refused here rather than by the create.
+	refuseClusterTypeRegionMove(ctx, resp.Plan, &resp.Diagnostics, "cluster")
 	// Before planTagsAll, which plans `tags_all` unknown for default tags
 	// not known yet: that one is a change.
 	planNoChangeOverUnreadAttributes(req, resp)
@@ -544,7 +547,7 @@ func (r *clusterResource) Create(ctx context.Context, req resource.CreateRequest
 	}
 	body := k0rdent.ClusterCreateRequest{
 		Id:          &key.id,
-		ClusterType: plan.ClusterType.ValueString(),
+		ClusterType: clusterTypeCreateRef(plan.ClusterType.ValueString()),
 	}
 	md, diags := plan.metadata().create(ctx)
 	resp.Diagnostics.Append(diags...)

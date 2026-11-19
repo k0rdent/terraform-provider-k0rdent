@@ -549,7 +549,11 @@ func TestADefaultsChangeAlonePlansTheNewTagsAll(t *testing.T) {
 		{"network", &networkResource{meta: taggedMeta(map[string]string{"owner": "new"})}, nil},
 		{"security group", &securityGroupResource{meta: taggedMeta(map[string]string{"owner": "new"})}, nil},
 		{"cluster", &clusterResource{meta: taggedMeta(map[string]string{"owner": "new"})},
-			clusterValues(verRef(1), verRef(1), 2, "active")},
+			with(clusterValues(verRef(1), verRef(1), 2, "active"),
+				// The prior values below win over these, so the reference has to
+				// name the region they carry: a cluster type from another region
+				// is refused at plan.
+				map[string]tftypes.Value{"cluster_type": str(strings.Replace(verRef(1), "/test/", "/r/", 1))})},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			before := with(tc.extra, prior)
