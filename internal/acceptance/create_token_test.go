@@ -76,7 +76,7 @@ func killAfterAcceptedCreate(t *testing.T, c *cliRun, name string) {
 func requireNoManagedState(t *testing.T, c *cliRun) {
 	t.Helper()
 	listed, ok := c.run("state", "list")
-	if !ok && strings.Contains(listed, "No state file was found!") {
+	if !ok && strings.Contains(listed, "No state file was found") {
 		return
 	}
 	if !ok {
