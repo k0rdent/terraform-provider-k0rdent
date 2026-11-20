@@ -89,6 +89,7 @@ type cliRun struct {
 	terraform string
 	dir       string
 	rc        string
+	env       []string
 }
 
 func newCLIRun(t *testing.T) *cliRun {
@@ -109,6 +110,12 @@ func (c *cliRun) write(config string) {
 		provider.ProviderTypeName, provider.RegistryNamespace+"/"+provider.ProviderTypeName, config))
 }
 
+// addEnv sets one variable for commands in this run alone.
+func (c *cliRun) addEnv(name, value string) {
+	c.t.Helper()
+	c.env = append(c.env, name+"="+value)
+}
+
 // run runs terraform with args and returns what it printed and whether it
 // exited 0. The provider's settings come from this process's environment,
 // which TestMain pointed at the fake.
@@ -125,6 +132,7 @@ func (c *cliRun) command(args ...string) *exec.Cmd {
 	cmd.Env = append(quietEnviron(), "TF_CLI_CONFIG_FILE="+c.rc, "TF_IN_AUTOMATION=1", "TF_INPUT=0",
 		"CHECKPOINT_DISABLE=1")
 	cmd.Env = append(cmd.Env, matrixTestEnv(c.t)...)
+	cmd.Env = append(cmd.Env, c.env...)
 	return cmd
 }
 

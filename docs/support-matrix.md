@@ -20,7 +20,7 @@ Some features need a minimum Terraform version, from its changelog:
 | Feature | Used by | Terraform |
 | --- | --- | --- |
 | Ephemeral resources | the cluster kubeconfig | [1.10](https://github.com/hashicorp/terraform/blob/v1.10/CHANGELOG.md) |
-| Write-only attributes | `ssh_public_keys_wo`, `secret_wo` | [1.11](https://github.com/hashicorp/terraform/blob/v1.11/CHANGELOG.md) |
+| Write-only attributes | `ssh_public_keys_wo`, `secret_wo`, `create_token` | [1.11](https://github.com/hashicorp/terraform/blob/v1.11/CHANGELOG.md) |
 | `import` blocks with `identity` | importing any resource by its parts | [1.12](https://github.com/hashicorp/terraform/blob/v1.12/CHANGELOG.md) |
 | Actions | `k0rdent_cluster_cancel_operation`, `k0rdent_instance_power` | [1.14](https://github.com/hashicorp/terraform/blob/v1.14/CHANGELOG.md) |
 | List resources and `terraform query` | finding resources to import | [1.14](https://github.com/hashicorp/terraform/blob/v1.14/CHANGELOG.md) |

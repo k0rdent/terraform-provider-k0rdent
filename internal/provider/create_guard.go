@@ -111,6 +111,23 @@ func (e existing) refuse(diags *diag.Diagnostics) {
 		e.kind, e.id, e.state, e.kind, e.resourceName, scopedImportID(e.target)(e.id), e.kind, e.kind)))
 }
 
+// refuseTokenMismatch refuses an untagged cluster when configuration supplied
+// a durable token, and names the values an interrupted run has to reuse.
+func (e existing) refuseTokenMismatch(diags *diag.Diagnostics) {
+	summary := fmt.Sprintf("%s named %q already exists with different provenance", aKind(e.kind), e.id)
+	if verb, busy := inFlight[e.state]; busy {
+		summary = fmt.Sprintf("The %s %q is still being %s with different provenance", e.kind, e.id, verb)
+	}
+	diags.AddAttributeError(path.Root("id"), summary, redactDiagnosticText(fmt.Sprintf(
+		"The platform reports %s %q as `%s`, and it carries no create token. This configuration supplied "+
+			"`create_token`, which must match exactly, so the provider won't adopt it. Nothing was recorded "+
+			"or deleted. If an interrupted run of this configuration created it, pass the same `create_token` "+
+			"that run used, with the same `id`, `region`, and `project`. If those values don't belong to "+
+			"that run, choose another `id`, or import the existing cluster deliberately with "+
+			"`terraform import <address> %s`. To replace it on purpose, set `allow_replace = true`.",
+		e.kind, e.id, e.state, scopedImportID(e.target)(e.id))))
+}
+
 // warnReplacing passes a plan to create over an object the provider can
 // take for this configuration's, and says what applying it does. A tainted
 // object plans this way, and so does the plan a destroy refreshes with, which
@@ -182,7 +199,7 @@ var inFlight = map[string]string{creatingState: "created", "updating": "updated"
 // apply made it, and when it's tainted, the plan to replace it is also the
 // plan a destroy refreshes with. One without a token was made some other way,
 // so the plan is refused: it isn't this configuration's to replace.
-func (r *clusterResource) refuseExisting(ctx context.Context, plan tfsdk.Plan, diags *diag.Diagnostics) {
+func (r *clusterResource) refuseExisting(ctx context.Context, plan tfsdk.Plan, config tfsdk.Config, diags *diag.Diagnostics) {
 	target, id, ok := plannedTarget(ctx, r.meta, plan)
 	if !ok || r.meta == nil || r.meta.Client == nil {
 		return
@@ -197,7 +214,7 @@ func (r *clusterResource) refuseExisting(ctx context.Context, plan tfsdk.Plan, d
 		return
 	}
 	state := stateString(got.JSON200.State)
-	token := createTokenOf(presentMap(got.JSON200.Tags)) != ""
+	token := createTokenOf(presentMap(got.JSON200.Tags))
 	if state == "deleting" || state == "deleted" {
 		return
 	}
@@ -207,12 +224,20 @@ func (r *clusterResource) refuseExisting(ctx context.Context, plan tfsdk.Plan, d
 		busyNote: " With `on_destroy_busy = \"wait\"`, it waits for the operation to finish instead of " +
 			"cancelling it.",
 	}
-	if token {
+	if token != "" {
 		found.warnReplacing(diags)
 		return
 	}
 	if got.JSON200.Uid != nil && wasDropped(id, got.JSON200.Uid.String()) {
 		found.warnDropped(diags)
+		return
+	}
+	configuredToken := types.StringNull()
+	if !config.Raw.IsNull() {
+		diags.Append(config.GetAttribute(ctx, path.Root(createTokenAttribute), &configuredToken)...)
+	}
+	if !configuredToken.IsNull() && !configuredToken.IsUnknown() {
+		found.refuseTokenMismatch(diags)
 		return
 	}
 	found.refuse(diags)
@@ -223,7 +248,7 @@ func (r *clusterResource) refuseExisting(ctx context.Context, plan tfsdk.Plan, d
 // warning: refusing one would block the destroy of a tainted group. A group
 // this state doesn't hold fails at apply instead, by the create's 409, and
 // nothing is deleted first.
-func (r *instanceGroupResource) refuseExisting(ctx context.Context, plan tfsdk.Plan, diags *diag.Diagnostics) {
+func (r *instanceGroupResource) refuseExisting(ctx context.Context, plan tfsdk.Plan, _ tfsdk.Config, diags *diag.Diagnostics) {
 	target, id, ok := plannedTarget(ctx, r.meta, plan)
 	if !ok || r.meta == nil || r.meta.Client == nil {
 		return

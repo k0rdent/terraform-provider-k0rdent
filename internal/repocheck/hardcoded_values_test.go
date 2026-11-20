@@ -147,6 +147,7 @@ var inputClasses = map[attrRef]inputClass{
 	// The configuration's own permission to replace a resource holding tenant state.
 	{"resource", "", "allow_replace"}: free,
 	// The configuration's own lifecycle policy choices.
+	{"resource", "kubernetes_cluster", "create_token"}:      free,
 	{"resource", "kubernetes_cluster", "on_create_timeout"}: free,
 	{"resource", "kubernetes_cluster", "on_destroy_busy"}:   free,
 	{"resource", "kubernetes_cluster", "on_failed"}:         free,

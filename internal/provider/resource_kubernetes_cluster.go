@@ -88,6 +88,7 @@ type clusterModel struct {
 	StorageCeilingGiB   types.Int64    `tfsdk:"storage_ceiling_gib"`
 	SSHAccess           types.Set      `tfsdk:"ssh_access"`
 	SSHPublicKeysWO     types.Map      `tfsdk:"ssh_public_keys_wo"`
+	CreateToken         types.String   `tfsdk:"create_token"`
 	Timeouts            timeouts.Value `tfsdk:"timeouts"`
 
 	// uid is the platform's uid for the cluster read, which own_object.go
@@ -183,10 +184,11 @@ func (r *clusterResource) Schema(ctx context.Context, _ resource.SchemaRequest, 
 			"A tainted cluster without the token, such as an imported one, refuses `terraform destroy` too, " +
 			"since destroy runs that plan first: run `terraform untaint` on it, then `terraform destroy`. " +
 			"If the state doesn't hold it, `terraform destroy -refresh=false` skips that plan. " +
-			"A run killed before the create returns, such as by `kill -9` or a lost CI runner, saves nothing, " +
-			"so the cluster keeps being built with nothing in state: `terraform destroy` finds nothing to " +
-			"destroy, and the next apply fails with \"already exists\" and gives the `terraform import` " +
-			"that takes it back.\n\n" +
+			"A run killed before the create returns, such as by `kill -9` or a lost CI runner, saves no managed object. " +
+			"The cluster keeps being built with nothing in state: `terraform destroy` finds nothing to " +
+			"destroy. With the same durable `create_token` on the next apply, it adopts that cluster and " +
+			"records its UID. Without a matching token, the next apply fails with \"already exists\" and " +
+			"gives the `terraform import` that takes it back.\n\n" +
 			"The platform deletes a cluster only once nothing is running on it, so destroying one that " +
 			"is still `creating` or `updating` " +
 			"cancels that operation first and warns that it did, all within the delete timeout. A plan " +
@@ -382,6 +384,7 @@ func (r *clusterResource) Schema(ctx context.Context, _ resource.SchemaRequest, 
 				NestedObject: sshUserNestedObject(),
 			},
 			"ssh_public_keys_wo":     sshPublicKeysWOAttribute(),
+			createTokenAttribute:     createTokenSchemaAttribute(),
 			onDestroyBusyAttribute:   onDestroyBusySchemaAttribute(),
 			onFailedAttribute:        onFailedSchemaAttribute(),
 			onCreateTimeoutAttribute: onCreateTimeoutSchemaAttribute(),
@@ -549,6 +552,22 @@ func (r *clusterResource) Create(ctx context.Context, req resource.CreateRequest
 	if err != nil {
 		addCreateKeyError(&resp.Diagnostics, "cluster", err)
 		return
+	}
+	configuredToken := types.StringNull()
+	if !req.Config.Raw.IsNull() {
+		resp.Diagnostics.Append(req.Config.GetAttribute(ctx, path.Root(createTokenAttribute), &configuredToken)...)
+	}
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	if configuredToken.IsUnknown() {
+		resp.Diagnostics.AddError("The create token isn't known yet",
+			"Supply a known `create_token` before applying this saved plan. Nothing was sent, so the next run can't adopt the cluster this create makes.")
+		return
+	}
+	if !configuredToken.IsNull() {
+		key.token = configuredToken.ValueString()
+		key.durableToken = true
 	}
 	body := k0rdent.ClusterCreateRequest{
 		Id:          &key.id,
@@ -1194,6 +1213,7 @@ func clusterStateFrom(ctx context.Context, c k0rdent.Cluster, prior clusterModel
 		SSHAccess: clusterSSHAccessState(prior.SSHAccess),
 		// Write-only: never held in state.
 		SSHPublicKeysWO: types.MapNull(types.ListType{ElemType: types.StringType}),
+		CreateToken:     types.StringNull(),
 		Project:         prior.Project,
 		DisplayName:     md.DisplayName,
 		Description:     md.Description,

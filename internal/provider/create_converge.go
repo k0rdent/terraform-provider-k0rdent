@@ -71,7 +71,9 @@ import (
 //     digits made in this call, so finding it is the same proof. A configured
 //     id proves nothing, and a 409 on one is reported with the import command.
 //
-// Nothing is adopted across runs: a token lives only as long as one Create.
+// With no configured token, nothing is adopted across runs: a random token
+// lives only as long as one Create. A cluster can opt into a durable token.
+// Its 409 readback then uses the same proof to recover an interrupted run.
 
 // createTokenTagSuffix follows the provider's name in the token's tag key.
 const createTokenTagSuffix = "/create-token"
@@ -99,6 +101,8 @@ type createKey struct {
 	generated bool
 	// token is empty for a kind that has no tags to carry one.
 	token string
+	// durableToken is a token configuration supplied for recovery across runs.
+	durableToken bool
 }
 
 // newCreateKey takes the configured id, or makes one, and a token when the
@@ -504,6 +508,12 @@ func (c convergingCreate) proof(id string, l createLookup) string {
 // the platform answered when it answered. l is the read that found it.
 func (c convergingCreate) addNotOurs(diags *diag.Diagnostics, id string, l createLookup, why string, a createAnswer) {
 	cannot := "it carries no create token from this apply"
+	if c.key.durableToken {
+		cannot = "its create token does not exactly match the `create_token` this configuration supplied"
+		if l.token == "" {
+			cannot = "it carries no create token, so it cannot exactly match the `create_token` this configuration supplied"
+		}
+	}
 	if c.key.token == "" {
 		cannot = aKindMidSentence(c.kind) + " has no tags to carry a create token, and its id was set in configuration"
 	}
@@ -514,6 +524,11 @@ func (c convergingCreate) addNotOurs(diags *diag.Diagnostics, id string, l creat
 		likely = " It carries this provider's create token from another apply, so a Terraform apply made it. " +
 			"Most often that's an apply stopped before it could save state, such as a killed process or a lost " +
 			"CI runner. Another configuration that uses the same `id` leaves one too."
+	}
+	if c.key.durableToken {
+		likely += " To recover a run interrupted while creating this cluster, pass the same `create_token` " +
+			"it used, with the same `id`, `region`, and `project`. If those values don't belong to this " +
+			"interrupted run, don't adopt it."
 	}
 	detail := fmt.Sprintf("The create for %s %q %s. Reading it back found one this apply cannot "+
 		"show it created, since %s, so it is not taken over.%s\n\n"+
