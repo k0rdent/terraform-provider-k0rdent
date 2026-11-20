@@ -102,9 +102,10 @@ local run sees what CI sees.
 CI runs the acceptance suite under the two newest releases of Terraform and
 of OpenTofu: for each, the newest patch of the newest minor, and the newest
 patch of the minor before it. HashiCorp fixes only those two Terraform
-minors. The `testacc` job's matrix in `.github/workflows/ci.yml` holds the
-Terraform pair, and the `testacc-opentofu` job's matrix the OpenTofu pair.
-Every other job runs the newer one.
+minors. The Terraform matrix also pins 1.15.5 for a large deployment. The
+`testacc` job's matrix in `.github/workflows/ci.yml` holds the two current
+Terraform releases and that pinned line, and the `testacc-opentofu` job's
+matrix holds the OpenTofu pair. Every other job runs the newest release.
 
 - When either project ships a new patch or minor, the nightly's
   `make cli-releases-check` fails, and the nightly-failing issue says so.
@@ -114,9 +115,10 @@ Every other job runs the newer one.
   1.17's newest patch and 1.18.0.
 - A new minor also changes the versions in `docs/support-matrix.md` and
   `templates/guides/getting-started.md.tmpl`.
-- `scripts/check-workflow-actions.sh` refuses anything else: a third version,
-  two that aren't adjacent minors, a matrix check name that doesn't show its
-  version, or a job outside the matrix on the older release.
+- `scripts/check-workflow-actions.sh` holds the newest two entries to adjacent
+  minors, permits one older pinned Terraform line, and refuses any additional
+  version. It also requires a matrix check name that shows its version and a
+  job outside the matrix to use the newest release.
 
 ### The testing matrix
 
