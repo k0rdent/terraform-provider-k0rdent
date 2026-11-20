@@ -169,11 +169,11 @@ func TestOnlyClusterListCreateTokenProvenanceIsAllowed(t *testing.T) {
 		"api_key":      lschema.StringAttribute{Optional: true},
 	}}
 	got := provider.ListResourceCredentialViolations(
-		"k0rdent_kubernetes_cluster", schema)
+		provider.ResourceName("kubernetes_cluster"), schema)
 	if len(got) != 1 || !strings.HasPrefix(got[0], "api_key") {
 		t.Errorf("cluster list violations = %v, want only api_key", got)
 	}
-	got = provider.ListResourceCredentialViolations("k0rdent_network", schema)
+	got = provider.ListResourceCredentialViolations(provider.ResourceName("network"), schema)
 	if len(got) != 2 {
 		t.Errorf("another resource's violations = %v, want both token names", got)
 	}
