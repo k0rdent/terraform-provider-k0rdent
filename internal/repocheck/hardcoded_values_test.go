@@ -286,14 +286,14 @@ var inputClasses = map[attrRef]inputClass{
 
 	// A list block's configuration says where to search, and which of what
 	// it finds to show.
-	{"list resource", "", "project"}:                read("projects"),
-	{"list resource", "", "region"}:                 read("regions"),
-	{"list resource", "", "include_platform_owned"}: free,
-	{"list resource", "project", "organization_id"}: read("projects"),
+	{"list resource", "", "project"}:                        read("projects"),
+	{"list resource", "", "region"}:                         read("regions"),
+	{"list resource", "", "include_platform_owned"}:         free,
+	{"list resource", "project", "organization_id"}:         read("projects"),
 	{"list resource", "kubernetes_cluster", "id"}:           free,
-	{"list resource", "kubernetes_cluster", "create_token"}:  free,
-	{"list resource", "subnet", "network"}:          read("networks"),
-	{"list resource", "vpc_peering", "vpc"}:         read("vpcs"),
+	{"list resource", "kubernetes_cluster", "create_token"}: free,
+	{"list resource", "subnet", "network"}:                  read("networks"),
+	{"list resource", "vpc_peering", "vpc"}:                 read("vpcs"),
 
 	// The cancel action's config block names a cluster the tenant made, where
 	// it is, and optionally the operation the cluster data source reports.
