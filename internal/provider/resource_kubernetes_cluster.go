@@ -64,6 +64,8 @@ type clusterModel struct {
 	// OnFailed is what a plan does with a cluster read `failed`. It is never
 	// sent to the platform: see cluster_failed.go.
 	OnFailed types.String `tfsdk:"on_failed"`
+	// OnCreateTimeout is what a create wait does at its deadline.
+	OnCreateTimeout types.String `tfsdk:"on_create_timeout"`
 
 	ID                  types.String   `tfsdk:"id"`
 	UID                 types.String   `tfsdk:"uid"`
@@ -164,8 +166,11 @@ func (r *clusterResource) Schema(ctx context.Context, _ resource.SchemaRequest, 
 			"each to settle, bounded by its `timeouts` block. Create and delete default to `" +
 			shortDuration(DefaultLongOperationTimeout) + "`, the rest to the provider's `operation_timeout`.\n\n" +
 			"A wait that times out, or a run that is interrupted, does not stop the operation, which keeps " +
-			"running on the platform. A create that stops waiting fails, and Terraform taints the cluster. " +
-			"Run `terraform untaint` on it and then `terraform apply`, which waits for the same cluster. " +
+			"running on the platform. By default a create that stops waiting fails, and Terraform taints " +
+			"the cluster. `on_create_timeout = \"keep\"` instead records a timed-out create untainted with " +
+			"the last lifecycle state it read, usually `creating`. A postcondition on that state can fail " +
+			"the run, and the next apply waits for the same cluster. Without `keep`, run `terraform untaint` " +
+			"on it and then `terraform apply`, which waits for the same cluster. " +
 			"A plan that would replace it instead warns before the approval, in whatever state the " +
 			"platform reports, that applying it cancels what's still being built, or deletes the " +
 			"cluster, and creates it again. A failed cluster's delete can fail too. " +
@@ -376,9 +381,10 @@ func (r *clusterResource) Schema(ctx context.Context, _ resource.SchemaRequest, 
 					"replaced when it changes, unless state has no record of the nodes' users")},
 				NestedObject: sshUserNestedObject(),
 			},
-			"ssh_public_keys_wo":   sshPublicKeysWOAttribute(),
-			onDestroyBusyAttribute: onDestroyBusySchemaAttribute(),
-			onFailedAttribute:      onFailedSchemaAttribute(),
+			"ssh_public_keys_wo":     sshPublicKeysWOAttribute(),
+			onDestroyBusyAttribute:   onDestroyBusySchemaAttribute(),
+			onFailedAttribute:        onFailedSchemaAttribute(),
+			onCreateTimeoutAttribute: onCreateTimeoutSchemaAttribute(),
 		},
 	}
 }
@@ -627,7 +633,7 @@ func (r *clusterResource) Create(ctx context.Context, req resource.CreateRequest
 		retryWait: r.meta.Wait,
 	}
 	created, found := createFinish[clusterModel]{
-		operation: "createCluster", target: target,
+		operation: "createCluster", target: target, keepTimeout: plan.OnCreateTimeout.ValueString() == createTimeoutKeeps,
 		wait: func(ctx context.Context, id string) error {
 			return r.waitForSettled(ctx, target, id, "the cluster to finish creating")
 		},
@@ -1177,8 +1183,9 @@ func clusterStateFrom(ctx context.Context, c k0rdent.Cluster, prior clusterModel
 	md := prior.metadata().read(metadataAnswer{DisplayName: c.DisplayName, Description: c.Description, Tags: tags, Defaults: defaults})
 
 	out := clusterModel{
-		OnDestroyBusy: prior.OnDestroyBusy,
-		OnFailed:      prior.OnFailed,
+		OnDestroyBusy:   prior.OnDestroyBusy,
+		OnFailed:        prior.OnFailed,
+		OnCreateTimeout: prior.OnCreateTimeout,
 
 		ID: types.StringValue(c.Id),
 		// From prior state: the response does not echo them.

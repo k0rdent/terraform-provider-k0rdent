@@ -32,6 +32,7 @@ k0rdent_instance_group timeouts.update import
 k0rdent_instance_group timeouts.update update
 k0rdent_kubernetes_cluster allow_replace import
 k0rdent_kubernetes_cluster description import
+k0rdent_kubernetes_cluster on_create_timeout import
 k0rdent_kubernetes_cluster on_destroy_busy import
 k0rdent_kubernetes_cluster on_failed import
 k0rdent_kubernetes_cluster ssh_access.ssh_public_key_refs update

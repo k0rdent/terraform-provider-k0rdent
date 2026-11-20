@@ -115,7 +115,8 @@ func planWaitOn(ctx context.Context, req resource.ModifyPlanRequest, resp *resou
 // is told to stop waiting (cluster_destroy_busy.go). `on_failed` is: setting
 // it back to `wait` on a `failed` cluster asks the apply to wait for it
 // (cluster_failed.go).
-var providerOnly = map[string]bool{"timeouts": true, allowReplaceAttribute: true, onFailedAttribute: true}
+var providerOnly = map[string]bool{"timeouts": true, allowReplaceAttribute: true, onFailedAttribute: true,
+	onCreateTimeoutAttribute: true}
 
 // onlyResume reports whether an update's plan changes nothing the platform
 // holds beyond what planResume marked unknown.

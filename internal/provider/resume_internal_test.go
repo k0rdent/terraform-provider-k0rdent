@@ -541,6 +541,32 @@ func TestACreateThatStopsWaitingResumesAfterAnUntaint(t *testing.T) {
 	}
 }
 
+// An interrupt isn't a timeout. The opt-in doesn't turn Ctrl-C into a
+// successful create, and the ordinary error still asks for the untaint.
+func TestAKeptCreateStillTaintsOnInterrupt(t *testing.T) {
+	platform := hardwarePlatform(t, "cluster")
+	run := hardwareRun(t, "cluster", platform,
+		map[string]tftypes.Value{onCreateTimeoutAttribute: tftypes.NewValue(tftypes.String, createTimeoutKeeps)},
+		map[string]string{"create": "200ms"})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	null := tftypes.NewValue(run.obj, nil)
+	planned := run.plan(null, nil)
+	platform.mu.Lock()
+	platform.interrupt = cancel
+	platform.mu.Unlock()
+
+	first := run.apply(ctx, null, planned)
+	errs := strings.Join(diagnosticErrors(first.diags), "\n")
+	containsAll(t, "the interrupted create", errs, "the run was interrupted", "tainted", "terraform untaint")
+	if first.state.IsNull() {
+		t.Fatal("the interrupted create left no state")
+	}
+	if n := platform.sent(http.MethodPost, ""); n != 1 {
+		t.Errorf("%d creates sent, want one", n)
+	}
+}
+
 // `allow_replace = true` lets the replacement of a tainted object through, so
 // a deliberate `terraform apply -replace` still works, and an id the platform
 // doesn't hold plans a normal create.

@@ -691,6 +691,9 @@ type createFinish[M any] struct {
 	waitSummary string
 	// reportWait reports a failed wait. Nil means the plain addWaitError.
 	reportWait func(diags *diag.Diagnostics, summary string, err error)
+	// keepTimeout records the last observed state without an error on a create
+	// timeout. An interrupt or any other failure keeps the ordinary error.
+	keepTimeout bool
 	// read reads the settled resource back. found is false on a 404.
 	read func(ctx context.Context, id string) (state M, found bool, diags diag.Diagnostics)
 }
@@ -722,6 +725,10 @@ func (f createFinish[M]) run(ctx context.Context, create convergingCreate, plan 
 		// A wait that stopped while the object read `failed` is reported as
 		// the failure, not as a create still running.
 		if stillRunning(err) && !failedWhenStopped(err) {
+			if f.keepTimeout && !waitInterrupted(err) {
+				keepTimedOutCreate(ctx, create.kind, create.resourceName, state, err, diags)
+				return none, false
+			}
 			addCreateStillRunning(diags, create.kind, create.resourceName, err, true)
 			return none, false
 		}
