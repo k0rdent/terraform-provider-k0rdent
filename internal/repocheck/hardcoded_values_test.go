@@ -290,6 +290,8 @@ var inputClasses = map[attrRef]inputClass{
 	{"list resource", "", "region"}:                 read("regions"),
 	{"list resource", "", "include_platform_owned"}: free,
 	{"list resource", "project", "organization_id"}: read("projects"),
+	{"list resource", "kubernetes_cluster", "id"}:           free,
+	{"list resource", "kubernetes_cluster", "create_token"}:  free,
 	{"list resource", "subnet", "network"}:          read("networks"),
 	{"list resource", "vpc_peering", "vpc"}:         read("vpcs"),
 

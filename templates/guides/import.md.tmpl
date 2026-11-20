@@ -187,6 +187,52 @@ pool and the allocated VLAN id. Edit it down rather than writing from scratch.
   own, cluster types, machine types, address pools, servers and reservations.
   See the known limitations page.
 
+## Recover a cluster after a lost runner
+
+If a runner dies after the platform accepts a create and before Terraform
+saves state, a normal apply with the same `create_token` adopts the cluster on
+its next readback. To adopt only if that match exists, without ever creating
+an absent cluster, discover it with two queries on Terraform 1.14 and later,
+including 1.15.5.
+
+In one workspace, query by `id` to answer whether the object exists. In a
+second workspace, query by both `id` and `create_token` and write the adoption:
+
+```hcl
+list "k0rdent_kubernetes_cluster" "found" {
+  provider = k0rdent
+
+  config {
+    id           = "ml-training"
+    create_token = "the durable token from the lost run"
+  }
+}
+```
+
+```bash
+terraform query -generate-config-out=adopted.tf
+terraform apply
+```
+
+The workspaces are separate because every query runs every `list` block in a
+module. This matters for the result count:
+
+- Both queries return nothing: the object is absent. The matched apply creates
+  nothing and exits cleanly.
+- `id` finds the object and the exact-token query finds nothing: provenance is
+  missing or different. Stop without applying. Correct the token or id in the
+  controller's recovery record, never adopt it anyway.
+- Both return exactly one object: `adopted.tf` imports it with its UID.
+
+The readback is scoped to region and project, and the tag is proof of
+provenance rather than a credential. `create_token` is write-only on the
+managed resource. Don't put it in `tags` or `default_tags`. Use an ephemeral
+input variable when the normal apply supplies it back to Create.
+
+The generated import needs no secret. As with any recovery, keep the durable
+token outside Terraform plan and state, and don't reuse a name or token across
+independent creates.
+
 ## Adopt many at once
 
 On Terraform 1.14 and later, `terraform query` finds what exists and writes

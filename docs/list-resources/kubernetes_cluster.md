@@ -4,14 +4,14 @@ page_title: "k0rdent_kubernetes_cluster List Resource - k0rdent"
 subcategory: ""
 description: |-
   Finds every k0rdent_kubernetes_cluster a terraform query can adopt, by its identity. With include_resource = true, or under -generate-config-out, each result also carries the object as an import of that identity would read it, so the generated configuration is what an import plans against. Terraform 1.14 and later.
-  Every cluster in a project. An object being deleted is left out: adopting it plans against something about to be gone.
+  Every cluster in a project, optionally narrowed to an exact id and create token. An object being deleted is left out: adopting it plans against something about to be gone.
 ---
 
 # k0rdent_kubernetes_cluster (List Resource)
 
 Finds every `k0rdent_kubernetes_cluster` a `terraform query` can adopt, by its identity. With `include_resource = true`, or under `-generate-config-out`, each result also carries the object as an import of that identity would read it, so the generated configuration is what an import plans against. Terraform 1.14 and later.
 
-Every cluster in a project. An object being deleted is left out: adopting it plans against something about to be gone.
+Every cluster in a project, optionally narrowed to an exact id and create token. An object being deleted is left out: adopting it plans against something about to be gone.
 
 ## Example Usage
 
@@ -39,6 +39,8 @@ list "k0rdent_kubernetes_cluster" "staging" {
 
 ### Optional
 
+- `create_token` (String) Only return clusters whose `terraform-provider-k0rdent/create-token` tag exactly matches this value. An empty result can mean the object is absent or the provenance doesn't match. Run the same query with only `id` to tell those cases apart. Don't match by tag alone: pair this with `id` so the result is the interrupted create this configuration owns.
+- `id` (String) Only return the cluster with this exact id. Omit to list every cluster in scope. **Constraints:** Must be lower-case letters, digits and hyphens, starting with a letter and not ending with a hyphen (`[a-z]([-a-z0-9]*[a-z0-9])?`), because it becomes a segment of a request URL.
 - `project` (String) Project to search. Defaults to the provider's `project`. **Constraints:** Must be lower-case letters, digits and hyphens, starting with a letter and not ending with a hyphen (`[a-z]([-a-z0-9]*[a-z0-9])?`), because it becomes a segment of a request URL.
 - `region` (String) Region to search. Defaults to the provider's `region`. **Constraints:** Must be lower-case letters, digits and hyphens, starting with a letter and not ending with a hyphen (`[a-z]([-a-z0-9]*[a-z0-9])?`), because it becomes a segment of a request URL.
 
