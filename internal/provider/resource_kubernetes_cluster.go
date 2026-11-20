@@ -138,8 +138,7 @@ func (r *clusterResource) MoveState(context.Context) []resource.StateMover {
 // # What is deliberately not here
 //
 // The surface is smaller than the API's, and each omission is a decision rather
-// than an oversight. The per-attribute hazard analysis behind these is in
-// `wave2-noop-drift-checklist.md`; the short reasons:
+// than an oversight. The reasons:
 //
 //   - `audit_policy`: write-only. `Cluster` does not echo it, so it can't be
 //     refreshed or drift-detected. `ssh_access` isn't echoed either, but the

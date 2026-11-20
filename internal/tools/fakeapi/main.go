@@ -27,8 +27,8 @@
 // provider then has to pass against that, and a no-op plan becomes a bounded
 // claim: "correct given these assumptions."
 //
-// Every ASSUMPTION below is a row in `wave2-noop-drift-checklist.md` and is
-// unobserved. Grep for `ASSUMPTION` to read them all at once. When the
+// Every ASSUMPTION below is unobserved. Grep for `ASSUMPTION` to read them
+// all at once. When the
 // credential lands and the real behaviour is recorded, each one is either
 // confirmed or replaced, and the provider's handling of it is re-tested.
 //
