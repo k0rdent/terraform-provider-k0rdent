@@ -65,3 +65,11 @@ resource/k0rdent_instance_group: Fix a `cluster_type` that isn't a ClusterType r
 ```release-note:bug
 resource/k0rdent_instance_group: Fix an apply that sizes a pool the group lacks, when the plan could not read the group, sending a scale the platform refuses. It now fails with the plan's "has no pool" error and sends nothing
 ```
+
+```release-note:bug
+resource/k0rdent_kubernetes_cluster: Fix a `terraform destroy` retry failing with "Missing Configuration for Required Attribute" and never sending the delete, when the first destroy timed out after the cluster's VPC was already gone. A cluster being torn down now keeps its `vpc` id, and `data.k0rdent_vpc` warns instead of failing on that VPC during the same run
+```
+
+```release-note:bug
+resource/k0rdent_instance_group: Fix a `terraform destroy` retry failing with "Missing Configuration for Required Attribute" and never sending the delete, when the first destroy timed out after the group's VPC was already gone. A group being torn down now keeps its `vpc` id, and `data.k0rdent_vpc` warns instead of failing on that VPC during the same run
+```
