@@ -1,0 +1,67 @@
+```release-note:bug
+resource/k0rdent_kubernetes_cluster: Stop waiting at once on a cluster a cancel left `failed`, instead of after the 2m provisional window
+```
+
+```release-note:bug
+resource/k0rdent_kubernetes_cluster: Wait for a cluster still being created when an apply sends it nothing, such as the first apply after an import that names only some node pools
+```
+
+```release-note:bug
+resource/k0rdent_kubernetes_cluster: Plan another version of the same ClusterType under a different origin as an in-place upgrade, not a replacement
+```
+
+```release-note:bug
+resource/k0rdent_kubernetes_cluster: Wait for a failed cluster when an update changes only provider settings, as the plan promised
+```
+
+```release-note:bug
+resource/k0rdent_vpc_security_groups: Fix `security_groups = []` on a VPC with no default security group failing only at apply with a 409. The plan now refuses it when the VPC is known
+```
+
+```release-note:bug
+resource/k0rdent_network: Fix the plan after importing a network with `vlan_id = "auto"` showing an in-place update to `"auto"`. It now plans no change
+```
+
+```release-note:bug
+resource/k0rdent_network: Fix a network imported while still `creating` staying `creating` in state after its first apply, and the plan after it not being empty, when that apply also recorded a value such as an InfiniBand `pkey`
+```
+
+```release-note:bug
+resource/k0rdent_network: Fix `terraform apply -replace` of a network the platform made for a cluster removing it from state and then failing. The plan now refuses it, and refuses a create of such a network's `id`, with the import to run
+```
+
+```release-note:bug
+resource/k0rdent_subnet: Fix `terraform apply -replace` of a subnet the platform made for a cluster removing it from state and then failing. The plan now refuses it, and refuses a create of such a subnet's `id`, with the import to run
+```
+
+```release-note:bug
+resource/k0rdent_security_group: Fix `terraform apply -replace` of a security group the platform owns removing it from state and then failing. The plan now refuses it, and refuses a create of such a group's `id`, with the import to run
+```
+
+```release-note:bug
+resource/k0rdent_subnet: Fix a subnet imported while still `creating` staying `creating` in state after its first apply when that apply also recorded `allocate_gateway`
+```
+
+```release-note:bug
+resource/k0rdent_vpc_peering: Fix a VPC peering imported while still `creating` staying `creating` in state after its first apply when that apply also recorded an equivalent `remote_vpc` spelling
+```
+
+```release-note:bug
+resource/k0rdent_file_store: Fix a destroy failing with a 409 CONFLICT_IN_USE when the platform refuses the consumer detach while a capacity change is still settling. The destroy now sends the detach again
+```
+
+```release-note:bug
+provider: Stop `terraform import` warning that the region or project must be repeated in the resource block when it already is. The plan still warns when the block leaves it out
+```
+
+```release-note:bug
+resource/k0rdent_kubernetes_cluster: Fix a `cluster_type` that isn't a ClusterType reference, a bare ClusterType name included, passing `terraform plan` and failing at apply with 422 `clusterType is not a valid ClusterType URI`. The plan now refuses it, and it refuses a `cluster_type` naming another region than the cluster's. A `cluster_type` given as an absolute URL now creates too: the create sends its path, the only form the platform takes
+```
+
+```release-note:bug
+resource/k0rdent_instance_group: Fix a `cluster_type` that isn't a ClusterType reference, a bare ClusterType name included, passing `terraform plan` and failing at apply with 422 `clusterType is not a valid ClusterType URI`. The plan now refuses it, and it refuses a `cluster_type` naming another region than the group's. A `cluster_type` given as an absolute URL now creates too: the create sends its path, the only form the platform takes
+```
+
+```release-note:bug
+resource/k0rdent_instance_group: Fix an apply that sizes a pool the group lacks, when the plan could not read the group, sending a scale the platform refuses. It now fails with the plan's "has no pool" error and sends nothing
+```
