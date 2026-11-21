@@ -171,6 +171,9 @@ type resumable[M any] struct {
 	wait func(ctx context.Context) error
 	// read reads the settled object, reconciled against the plan.
 	read func(ctx context.Context) (M, bool, diag.Diagnostics)
+	// errorState preserves provider-only settings from the plan after a
+	// failed resume, without accepting unknown computed values.
+	errorState func(ctx context.Context, state *tfsdk.State) diag.Diagnostics
 	// waitsOutFailed is a kind whose `failed` the platform can still take
 	// back, and whose configuration doesn't keep it, so an object last read
 	// `failed` is waited on too (cluster_failed.go).
@@ -206,6 +209,11 @@ func (p resumable[M]) finish(ctx context.Context, req resource.UpdateRequest, re
 	}
 	ctx, cancel := withTimeout(ctx, p.timeout, p.fallback, &resp.Diagnostics)
 	defer cancel()
+	defer func() {
+		if resp.Diagnostics.HasError() && p.errorState != nil {
+			resp.Diagnostics.Append(p.errorState(ctx, &resp.State)...)
+		}
+	}()
 	if resp.Diagnostics.HasError() {
 		return true
 	}

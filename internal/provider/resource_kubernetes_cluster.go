@@ -27,6 +27,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/setplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
+	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
 	"github.com/k0rdent/terraform-provider-k0rdent/internal/k0rdent"
@@ -781,6 +782,12 @@ func (r *clusterResource) Update(ctx context.Context, req resource.UpdateRequest
 		},
 		read: func(ctx context.Context) (clusterModel, bool, diag.Diagnostics) {
 			return r.read(ctx, target, id, plan)
+		},
+		errorState: func(ctx context.Context, st *tfsdk.State) diag.Diagnostics {
+			var diags diag.Diagnostics
+			next := planOverPrior(plan, state)
+			diags.Append(st.Set(ctx, &next)...)
+			return diags
 		},
 		waitsOutFailed: plan.OnFailed.ValueString() != failedKept,
 		guardsCreate:   true,
