@@ -195,10 +195,11 @@ func aKind(kind string) string {
 var inFlight = map[string]string{creatingState: "created", "updating": "updated"}
 
 // refuseExisting is createGuard for a cluster. One that carries this
-// provider's create token passes with a warning, in any state: a Terraform
-// apply made it, and when it's tainted, the plan to replace it is also the
-// plan a destroy refreshes with. One without a token was made some other way,
-// so the plan is refused: it isn't this configuration's to replace.
+// provider's create token warns for replacement handling: a Terraform apply
+// made it, and when it's tainted, the plan to replace it is also the plan a
+// destroy refreshes with. An untagged row matching a dropped object warns too.
+// Any other untagged row gets the durable-token mismatch refusal when
+// configuration supplies a token, or the ordinary ownership refusal otherwise.
 func (r *clusterResource) refuseExisting(ctx context.Context, plan tfsdk.Plan, config tfsdk.Config, diags *diag.Diagnostics) {
 	target, id, ok := plannedTarget(ctx, r.meta, plan)
 	if !ok || r.meta == nil || r.meta.Client == nil {

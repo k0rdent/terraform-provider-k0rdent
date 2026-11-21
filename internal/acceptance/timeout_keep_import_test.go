@@ -2,10 +2,15 @@ package acceptance
 
 import (
 	"encoding/json"
+	"os"
 	"testing"
 )
 
 func TestAccKubernetesClusterCreateTimeoutKeepImportedCreate(t *testing.T) {
+	t.Parallel()
+	if os.Getenv("TF_ACC") == "" {
+		skipTest(t, "TF_ACC is not set")
+	}
 	const name = "acc-review-keep-import"
 	addr := clusterType + ".test"
 	creatingOutside(t, name, createsSlowly, 0)
@@ -27,7 +32,7 @@ func TestAccKubernetesClusterCreateTimeoutKeepImportedCreate(t *testing.T) {
 	if got.Status == "tainted" || got.Attributes.State != "creating" || got.Attributes.OnCreateTimeout != "keep" {
 		t.Fatalf("state = %+v, want untainted creating with keep", got)
 	}
-	if out, ok := c.run("plan", "-out=retry.tfplan"); !ok {
+	if out, planned := c.run("plan", "-out=retry.tfplan"); !planned {
 		t.Fatalf("the same-configuration resume plan failed:\n%s", out)
 	}
 	shown, ok := c.run("show", "-json", "retry.tfplan")

@@ -12,15 +12,17 @@ func clusterTokenQuery(id string, token *string) string {
 	if token != nil {
 		tokenLine = fmt.Sprintf("    create_token = %q\n", *token)
 	}
-	return fmt.Sprintf(`list "k0rdent_kubernetes_cluster" "found" {
+	return fmt.Sprintf(`list %q "found" {
   provider = k0rdent
 
   config {
     id = %q
 %s  }
 }
-`, id, tokenLine)
+`, clusterType, id, tokenLine)
 }
+
+const clusterTokenQueryProject = "acc-list-token-query"
 
 func seedClusterQueryProject(t *testing.T, tf, build string) {
 	t.Helper()
@@ -30,7 +32,7 @@ resource %q "seed" {
   organization_id = %q
   region          = "us-texas-1"
 }
-`, projectType, queryProject, accOrg))
+`, projectType, clusterTokenQueryProject, accOrg))
 	seed.mustRun("apply", "-auto-approve")
 	t.Cleanup(func() { seed.mustRun("destroy", "-auto-approve") })
 }
@@ -48,12 +50,16 @@ func removeClusterQueryCluster(t *testing.T, path string) {
 }
 
 func TestAccKubernetesClusterListRejectsBlankCreateToken(t *testing.T) {
+	t.Parallel()
+	if os.Getenv("TF_ACC") == "" {
+		skipTest(t, "TF_ACC is not set")
+	}
 	tf := terraformForQuery(t)
 	build := builtProvider(t)
 	seedClusterQueryProject(t, tf, build)
 	const name = "acc-review-empty-list-token"
-	path := "/v1/regions/us-texas-1/projects/" + queryProject + "/compute/clusters/" + name
-	if err := postFake("/v1/regions/us-texas-1/projects/"+queryProject+"/compute/clusters", fmt.Sprintf(
+	path := "/v1/regions/us-texas-1/projects/" + clusterTokenQueryProject + "/compute/clusters/" + name
+	if err := postFake("/v1/regions/us-texas-1/projects/"+clusterTokenQueryProject+"/compute/clusters", fmt.Sprintf(
 		`{"id":%q,"clusterType":%q,"displayName":"untagged"}`, name, clusterTypeRef)); err != nil {
 		t.Fatal(err)
 	}
@@ -74,7 +80,10 @@ func TestAccKubernetesClusterListRejectsBlankCreateToken(t *testing.T) {
 			query.mustRun("init")
 			code, out := query.run("query", "-generate-config-out=adopted.tf")
 			if code == 0 {
-				generated, _ := os.ReadFile(filepath.Join(query.dir, "adopted.tf"))
+				generated, err := os.ReadFile(filepath.Join(query.dir, "adopted.tf"))
+				if err != nil {
+					t.Fatal(err)
+				}
 				t.Fatalf("a blank token was accepted:\n%s\n%s", out, generated)
 			}
 			mustSay(t, "the blank list token refusal", out, "create_token", "at least one non-whitespace character")

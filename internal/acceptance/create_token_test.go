@@ -128,7 +128,7 @@ func adoptAfterKill(t *testing.T, name, token string) (*cliRun, string) {
 
 // A durable token makes a lost runner recoverable without import. The saved
 // apply adopts the original UID and sends no replacement create.
-func TestAccCreateTokenAdoptsAfterLostRunner(t *testing.T) {
+func TestAccKubernetesClusterCreateTokenAdoptsAfterLostRunner(t *testing.T) {
 	t.Parallel()
 	if runtime.GOOS == "windows" {
 		skipTest(t, "the CLI sequence runs on unix")
@@ -149,7 +149,7 @@ func TestAccCreateTokenAdoptsAfterLostRunner(t *testing.T) {
 // Once adoption has recorded the UID, another cluster under the same id is
 // never adopted or deleted. The refresh drops the stale row and destroy sends
 // no cancel or delete to the replacement.
-func TestAccCreateTokenDestroyLeavesAReusedName(t *testing.T) {
+func TestAccKubernetesClusterCreateTokenDestroyLeavesAReusedName(t *testing.T) {
 	t.Parallel()
 	if runtime.GOOS == "windows" {
 		skipTest(t, "the CLI sequence runs on unix")
@@ -192,7 +192,7 @@ func TestAccCreateTokenDestroyLeavesAReusedName(t *testing.T) {
 
 // Missing or different provenance is refused without state or deletion. The
 // error names the exact-token check and the values to reuse or change.
-func TestAccCreateTokenRefusesMissingAndMismatchedProvenance(t *testing.T) {
+func TestAccKubernetesClusterCreateTokenRefusesMissingAndMismatchedProvenance(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
 		name string
@@ -231,7 +231,7 @@ func TestAccCreateTokenRefusesMissingAndMismatchedProvenance(t *testing.T) {
 // The token lookup is project-scoped. A matching token in another project is
 // not adopted. Region and ClusterType scope likewise has to agree before any
 // create can proceed.
-func TestAccCreateTokenChecksProjectAndRegion(t *testing.T) {
+func TestAccKubernetesClusterCreateTokenChecksProjectAndRegion(t *testing.T) {
 	t.Parallel()
 	t.Run("project", func(t *testing.T) {
 		t.Parallel()

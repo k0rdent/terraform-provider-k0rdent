@@ -21,8 +21,10 @@ func withCreateTokenRedaction(ctx context.Context, token string) context.Context
 }
 
 func createTokenForRedaction(ctx context.Context) string {
-	token, _ := ctx.Value(createTokenRedactionKey{}).(string)
-	return token
+	if token, ok := ctx.Value(createTokenRedactionKey{}).(string); ok {
+		return token
+	}
+	return ""
 }
 
 // createTokenNonBlankValidator rejects blank provenance without changing any
