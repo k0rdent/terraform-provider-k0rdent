@@ -41,6 +41,21 @@ const regionsOperation = "GET /v1/regions"
 // `GET /v1/regions` and the cluster-type catalog.
 const exampleClusterTypeRef = "/v1/regions/us-texas-1/compute/cluster-types/gpu-training"
 
+// clusterTypeRefFormText names the form a ClusterType reference takes, as the
+// platform's create reads it: the `cluster_type` form check and its messages
+// say it, and the schema descriptions state it as the attribute's constraint.
+// Like exampleClusterTypeRef it is documentation, not a path the provider
+// builds, and one constant beats scattered literals when the contract moves.
+const clusterTypeRefFormText = "/v1/regions/{region}/compute/cluster-types/{id}, " +
+	"with an optional /versions/{version_id} to pin a version"
+
+// clusterTypeRefRegionsPrefix is the prefix of a ClusterType reference, as
+// the platform's create parses one. The provider never builds a request URL
+// from it: the plan-time form check reads it out of a configured
+// `cluster_type` value, matching the platform's own parse rule character for
+// character. Here for the same reason as exampleClusterTypeRef.
+const clusterTypeRefRegionsPrefix = "/v1/regions/"
+
 // DefaultOperationTimeout and DefaultPollInterval bound the provider's waiters.
 //
 // The waiter lives here rather than in the client on purpose. ADR D4 says the

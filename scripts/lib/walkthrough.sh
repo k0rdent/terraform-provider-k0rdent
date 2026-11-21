@@ -89,6 +89,64 @@ walkthrough_secrets() {
   export TF_VAR_webhook_secret
 }
 
+# walkthrough_build_off <terraform.tfvars> <switch>... turns build switches off
+# in a walkthrough's terraform.tfvars, as the directory ships it or as
+# walkthrough_tfvars filled it in. A switch that's already off stays off, so
+# one list serves full and full-everything, whose shipped switches differ. A
+# switch that isn't in the build block fails, naming it, so a renamed switch
+# can't leave something on that the caller meant to turn off.
+walkthrough_build_off() {
+  local file="$1"
+  shift
+  [ -f "$file" ] || { echo "walkthrough: no terraform.tfvars at $file" >&2; return 1; }
+  [ "$#" -gt 0 ] || return 0
+  WT_OFF="$*" python3 - "$file" <<'PY'
+import os, re, sys
+path = sys.argv[1]
+off = set(os.environ["WT_OFF"].split())
+out, in_build, seen = [], False, set()
+for line in open(path).read().splitlines():
+    if line.startswith("build = {"):
+        in_build = True
+    elif in_build and line.startswith("}"):
+        in_build = False
+    elif in_build:
+        m = re.match(r"^(\s+)([a-z_]+)(\s*=\s*)(true|false)\b(.*)$", line)
+        if m:
+            seen.add(m.group(2))
+            if m.group(2) in off:
+                line = m.group(1) + m.group(2) + m.group(3) + "false" + m.group(5)
+    out.append(line)
+missing = off - seen
+if missing:
+    sys.exit("walkthrough: %s has no build switch %s" % (path, ", ".join(sorted(missing))))
+open(path, "w").write("\n".join(out) + "\n")
+PY
+}
+
+# walkthrough_drop_subnet_pool_check <main.tf> removes full/'s postcondition
+# that a subnet's CIDR lies inside its pool, for a stack that answers a CIDR
+# without allocating one from the pool, as a kind stack does. The subnet is
+# still created and still counted as coverage, so only the check goes. It
+# fails when the postcondition has moved, so a change to full/ can't keep a
+# check such a stack can't pass. The same edit lives in apply_gaps in
+# scripts/real-api-check.sh, which real runs of this tree's walkthroughs
+# use.
+walkthrough_drop_subnet_pool_check() {
+  local file="$1"
+  [ -f "$file" ] || { echo "walkthrough: no main.tf at $file" >&2; return 1; }
+  python3 - "$file" <<'PY'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+i = s.find('    postcondition {\n      condition = self.cidr != ""')
+if i < 0:
+    sys.exit("walkthrough: %s has no subnet postcondition on self.cidr any more" % p)
+j = s.index("    }\n", s.index("error_message", i)) + 6
+open(p, "w").write(s[:i] + s[j:])
+PY
+}
+
 # walkthrough_tfvars <name> <examples dir> <prefix> prints <name>'s
 # terraform.tfvars, the shipped one with every value a reader fills in set:
 # each top-level key below is replaced, and every other line kept. A key the

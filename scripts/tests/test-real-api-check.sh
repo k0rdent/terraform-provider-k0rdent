@@ -19,6 +19,9 @@
 #     lists it can't read, before it builds anything.
 #   * run refuses an endpoint that isn't on localhost before it builds or
 #     creates anything.
+#   * stack-check refuses the same endpoints and the same dirty stacks, and
+#     a stack at another API version, and names the env file's variables
+#     when they're missing.
 #   * verify-release names the resources only kind ran, unless a hardware
 #     record for the release's code covers them.
 #   * hardware refuses localhost, a landscape it wasn't told to confirm, a
@@ -118,6 +121,19 @@ json.dump({"landscape": "lab-a", "api_version": "v1.3.0-rc.5", "api_version_sour
            "code": os.environ["CODE"], "covered": os.environ["COVERED"].split(), "ran": "2026-11-03T00:00:00Z"},
           open(os.environ["RECORD"], "w"))'
 }
+# hw_record_runs <code hash> writes a hardware record two runs on that code
+# merged, each covering its own slice.
+hw_record_runs() {
+  RECORD="$repo/ci/real-api/hardware-record.json" CODE="$1" python3 -c '
+import json, os
+json.dump({"landscape": "lab-a", "api_version": "v1.3.0-rc.5", "api_version_source": "stated by the runner",
+           "code": os.environ["CODE"],
+           "covered": ["k0rdent_file_store", "k0rdent_instance_group"],
+           "runs": [{"id": "rapi-hw-1", "ran": "2026-11-03T00:00:00Z", "covered": ["k0rdent_file_store"]},
+                    {"id": "rapi-hw-2", "ran": "2026-11-04T00:00:00Z", "covered": ["k0rdent_instance_group"]}],
+           "ran": "2026-11-04T00:00:00Z"},
+          open(os.environ["RECORD"], "w"))'
+}
 hw_record "$("$check" hash code)" k0rdent_kubernetes_cluster k0rdent_file_store
 passes "a release with a hardware record" "$check" verify-release "$repo"
 grep -q 'hardware record: API v1.3.0-rc.5 (stated by the runner) on lab-a, run 2026-11-03T00:00:00Z, covers this release' "$work/out" \
@@ -128,6 +144,19 @@ hw_record other-code k0rdent_kubernetes_cluster k0rdent_file_store k0rdent_subne
 passes "a release with a hardware record for other code" "$check" verify-release "$repo"
 grep -q 'ran other code than this release' "$work/out" && grep -q 'kind only, no hardware for: k0rdent_file_store, k0rdent_subnet$' "$work/out" \
   || { cat "$work/out" >&2; fail "verify-release counts a hardware record for other code"; }
+hw_record_runs "$("$check" hash code)"
+passes "a release with a merged hardware record" "$check" verify-release "$repo"
+grep -q 'runs rapi-hw-1, rapi-hw-2, covers this release: k0rdent_file_store, k0rdent_instance_group' "$work/out" \
+  || { cat "$work/out" >&2; fail "verify-release doesn't print the union of merged runs"; }
+# A record with runs but no covered list still names what they cover together.
+RECORD="$repo/ci/real-api/hardware-record.json" python3 -c '
+import json, os
+r = json.load(open(os.environ["RECORD"]))
+del r["covered"]
+json.dump(r, open(os.environ["RECORD"], "w"))'
+passes "a release whose merged record has no covered list" "$check" verify-release "$repo"
+grep -q 'covers this release: k0rdent_file_store, k0rdent_instance_group' "$work/out" \
+  || { cat "$work/out" >&2; fail "verify-release doesn't take the union from the runs alone"; }
 rm "$repo/ci/real-api/hardware-record.json"
 record v1.3.0-rc.5 PASS
 
@@ -256,6 +285,18 @@ for endpoint in https://api.example.com http://localhost.example.com http://10.0
   fails_with "run against $endpoint" "runs against a local kind stack only" \
     env -i PATH="$work/bin:$PATH" HOME="$work" TF_BIN="$work/bin/tf" K0RDENT_ENDPOINT="$endpoint" \
     "$check" run
+  fails_with "stack-check against $endpoint" "runs against a local kind stack only" \
+    env -i PATH="$work/bin:$PATH" HOME="$work" K0RDENT_ENDPOINT="$endpoint" \
+    "$check" stack-check
+done
+# A run of stack-check with one env-file variable empty, which counts as
+# unset, names it before it touches the stack.
+for var in K0RDENT_REGION REAL_API_ORG_CLIENT_ID; do
+  env -i PATH="$work/bin:$PATH" HOME="$work" K0RDENT_ENDPOINT=http://localhost:14000 \
+    K0RDENT_REGION=r K0RDENT_PROJECT=p REAL_API_ORG_CLIENT_ID=oid REAL_API_ORG_CLIENT_SECRET=osecret \
+    "$var=" "$check" stack-check > "$work/out" 2>&1 && { cat "$work/out" >&2; fail "stack-check with $var empty passed"; }
+  grep -q "$var is not set. The env file make real-api-stack writes sets it." "$work/out" \
+    || { cat "$work/out" >&2; fail "stack-check with $var empty: no message naming it"; }
 done
 
 # --- hardware refuses before it builds or creates anything ---------------------
@@ -278,6 +319,8 @@ fails_with "hardware with another host confirmed" "They have to match" \
   hw_env https://api.example.com REAL_API_CONFIRM=api.example.org
 fails_with "hardware with an unknown switch off" "REAL_API_BUILD_OFF names webhook" \
   hw_env https://api.example.com REAL_API_CONFIRM=api.example.com REAL_API_BUILD_OFF=webhook
+fails_with "hardware with the cluster off but the peering on" "Turn vpc_peering off too" \
+  hw_env https://api.example.com REAL_API_CONFIRM=api.example.com REAL_API_BUILD_OFF=cluster
 fails_with "hardware with a host as its label" "never a host name" \
   hw_env https://api.example.com REAL_API_CONFIRM=api.example.com REAL_API_LANDSCAPE=api.example.com
 fails_with "hardware with no API version" "no API version" \
@@ -323,21 +366,23 @@ s.serve_forever()
 PY
 mkdir -p "$work/stackbin"
 cp "$work/bin/go" "$work/bin/tf" "$work/bin/ssh-keygen" "$work/stackbin/"
-printf '#!/usr/bin/env bash\necho ghcr.io/example/k0r-compute:v1.3.0-rc.5\n' > "$work/stackbin/kubectl"
+printf '#!/usr/bin/env bash\necho "ghcr.io/example/k0r-compute:${STACK_VERSION:-v1.3.0-rc.5}"\n' > "$work/stackbin/kubectl"
 chmod +x "$work/stackbin/kubectl"
 record v1.3.0-rc.5 PASS
 
-# leftovers <API_ANSWERS> runs run against the stand-in, which answers so.
+# leftovers <API_ANSWERS> [subcommand] runs that command of the check against
+# the stand-in, which answers so. Default run.
 leftovers() {
   local port
   API_ANSWERS="$1" python3 "$work/api.py" > "$work/api.port" &
   api_pid=$!
   for _ in $(seq 1 50); do [ -s "$work/api.port" ] && break; sleep 0.1; done
   port="$(cat "$work/api.port")"
-  env -i PATH="$work/stackbin:$PATH" HOME="$work" TF_BIN="$work/stackbin/tf" K0RDENT_ENDPOINT="http://127.0.0.1:$port" \
+  env -i PATH="$work/stackbin:$PATH" HOME="$work" STACK_VERSION="${STACK_VERSION:-v1.3.0-rc.5}" \
+    TF_BIN="$work/stackbin/tf" K0RDENT_ENDPOINT="http://127.0.0.1:$port" \
     K0RDENT_REGION=r K0RDENT_PROJECT=p K0RDENT_CLIENT_ID=id K0RDENT_CLIENT_SECRET=secret \
     REAL_API_ORG_CLIENT_ID=oid REAL_API_ORG_CLIENT_SECRET=osecret REAL_API_CLUSTER_TYPE=ct \
-    "$check" run > "$work/out" 2>&1 || true
+    "$check" "${2:-run}" > "$work/out" 2>&1 || true
   kill "$api_pid" 2>/dev/null; wait "$api_pid" 2>/dev/null || true
   api_pid=
   : > "$work/api.port"
@@ -363,6 +408,17 @@ for answer in "networking/vpcs=403:{}" "notifications/webhooks=500:{}" "storage/
   leftovers "$answer"
   refused "a stack answering $answer" "$want"
 done
+
+# --- stack-check reads the same stack, on its own ---------------------------
+
+leftovers "" stack-check
+clean_stack "a stack with nothing on it, through stack-check"
+leftovers 'compute/clusters=200:{"clusters":[{"id":"c1"}]}' stack-check
+refused "a stack with a cluster on it, through stack-check" "the stack holds what an earlier run left: clusters c1"
+export STACK_VERSION=v1.3.0-rc.6
+leftovers "" stack-check
+refused "a stack at another API version, through stack-check" "the stack runs API v1.3.0-rc.6, and ci/real-api/api-version says v1.3.0-rc.5"
+unset STACK_VERSION
 
 # --- the stack setup takes the tagged source and deletes only its own cluster --
 

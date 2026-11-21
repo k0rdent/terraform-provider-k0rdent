@@ -393,6 +393,45 @@ func TestAccVPCSecurityGroupsEmptyStillReportsDrift(t *testing.T) {
 }
 
 // A `timeouts` block is the one change a peering takes without an operation.
+// A VPC peering imported while it's still `creating` plans an update that
+// waits for it. Once that apply has seen it settle, the next plan is empty.
+func TestAccVPCPeeringImportedWhileCreatingPlansCleanAfterApply(t *testing.T) {
+	t.Parallel()
+	const cluster, name = "acc-import-creating-peer-owner", "acc-import-creating-peer"
+	remotePath := "/v1/regions/us-texas-1/projects/other/networking/vpcs/vpc-inference"
+	config := strings.Replace(peeringConfig(cluster, name, "https://api.example.invalid"+remotePath),
+		"display_name = \"acceptance\"\n  depends_on", "display_name = \""+createsSlowly+"\"\n  depends_on", 1)
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: protoV6,
+		CheckDestroy: resource.ComposeAggregateTestCheckFunc(
+			checkGone(peeringType, peeringPath),
+			checkGone(clusterType, clusterPath),
+		),
+		Steps: []resource.TestStep{
+			{Config: vpcOwnerConfig(cluster)},
+			{
+				PreConfig: func() {
+					if err := postFake("/v1/regions/us-texas-1/projects/demo/networking/vpcs/vpc-"+cluster+"/peerings",
+						fmt.Sprintf(`{"id":%q,"remoteVpc":%q,"displayName":%q}`, name, remotePath, createsSlowly)); err != nil {
+						t.Fatal(err)
+					}
+				},
+				Config: config + fmt.Sprintf(`
+import {
+  to = %s
+  id = "us-texas-1/demo/vpc-%s/%s"
+}
+`, peeringAddr, cluster, name),
+				ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{
+					plancheck.ExpectResourceAction(peeringAddr, plancheck.ResourceActionUpdate),
+				}},
+				Check: resource.TestCheckResourceAttr(peeringAddr, "state", "active"),
+			},
+			{Config: config, PlanOnly: true},
+		},
+	})
+}
+
 func TestAccVPCPeeringTimeoutsChangeInPlace(t *testing.T) {
 	t.Parallel()
 	const cluster, name = "acc-peer-timeouts-owner", "acc-peer-timeouts"

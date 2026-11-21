@@ -3,6 +3,7 @@ package acceptance
 import (
 	"fmt"
 	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -359,4 +360,46 @@ func TestAccClusterUpgradeRefusesARouteAtApply(t *testing.T) {
 			},
 		},
 	})
+}
+
+// A `cluster_type` written under another origin names the same ClusterType
+// as state's when the platform's binding is a path, so a later version under
+// a third origin is an in-place upgrade. The replacement guard used to
+// compare with state's spelling and refuse it as a replacement, next to the
+// plan's warning that it upgrades.
+func TestAccAPinUnderAnotherOriginUpgradesInPlace(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS == "windows" {
+		skipTest(t, "the CLI sequence runs on unix")
+	}
+	const name = "acc-upgrade-other-origin"
+	c := newCLIRun(t)
+	c.write(inferenceConfig(name, 2, 2))
+	if out, ok := c.run("apply", "-auto-approve"); !ok {
+		t.Fatalf("the create failed:\n%s", out)
+	}
+	t.Cleanup(func() {
+		if out, ok := c.run("destroy", "-auto-approve"); !ok {
+			t.Errorf("cleanup destroy failed:\n%s", out)
+		}
+	})
+	c.write(poolConfig(name, "https://elsewhere.test"+inferenceVersion(2), 2))
+	if out, ok := c.run("apply", "-auto-approve"); !ok {
+		t.Fatalf("the apply under another origin failed:\n%s", out)
+	}
+
+	c.write(poolConfig(name, endpoint+inferenceVersion(4), 2))
+	out, ok := c.run("plan")
+	if !ok {
+		t.Fatalf("the plan of the upgrade was refused:\n%s", out)
+	}
+	mustSay(t, "the plan", out, "This plan upgrades the cluster in 1 step", "0 to add, 1 to change, 0 to destroy")
+	mustNotSay(t, "the plan", out, "would replace this cluster")
+	if out, ok = c.run("apply", "-auto-approve"); !ok {
+		t.Fatalf("the upgrade failed:\n%s", out)
+	}
+	mustSay(t, "the upgrade", out, "0 added, 1 changed, 0 destroyed")
+	if out, code := c.runCode("plan", "-detailed-exitcode"); code != 0 {
+		t.Errorf("the plan after the upgrade exited %d, want 0:\n%s", code, out)
+	}
 }

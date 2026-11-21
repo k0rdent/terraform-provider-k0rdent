@@ -269,6 +269,105 @@ func TestAnAcceptedLineNeedsAReason(t *testing.T) {
 	}
 }
 
+// An entry for another landscape neither excuses a difference in this one
+// nor fails as stale: the other landscape's run keeps it current.
+func TestAnEntryForAnotherLandscapeIsNeitherMatchedNorStale(t *testing.T) {
+	fake := []exchange{get("/v1/clusters/a", "$ object", "$.id string", "$.region string")}
+	real := []exchange{get("/v1/clusters/a", "$ object", "$.id string")}
+	accepted := []acceptedDiff{{Operation: getCluster, Field: "response $.region", Side: "fake", Landscape: "hardware", Reason: "the landscape's project predates regions"}}
+
+	clean, out, err := compareFiles(t, fake, real, accepted, "-landscape", "kind")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if clean || !strings.Contains(out, "1 unexcused differences") {
+		t.Errorf("an entry for the hardware landscape excused a difference the kind run found:\n%s", out)
+	}
+	if strings.Contains(out, "no longer differs") || !strings.Contains(out, "0 stale accepted lines") {
+		t.Errorf("the kind run counted the hardware entry as stale:\n%s", out)
+	}
+
+	clean, out, err = compareFiles(t, fake, real, accepted, "-landscape", "hardware")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !clean || !strings.Contains(out, "0 unexcused differences, 1 accepted, 0 stale") {
+		t.Errorf("the hardware run didn't excuse its own landscape's difference:\n%s", out)
+	}
+}
+
+// An entry for the landscape being judged that matches nothing is stale, as
+// one without a landscape is.
+func TestAnEntryForItsLandscapeThatMatchesNothingIsStale(t *testing.T) {
+	same := []exchange{get("/v1/clusters/a", "$ object", "$.id string")}
+	accepted := []acceptedDiff{{Operation: getCluster, Field: "response $.region", Side: "fake", Landscape: "kind", Reason: "was a difference once"}}
+
+	clean, out, err := compareFiles(t, same, same, accepted, "-landscape", "kind")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if clean || !strings.Contains(out, "accepted, but no longer differs: "+getCluster+" response $.region (fake)") ||
+		!strings.Contains(out, "1 stale accepted lines") {
+		t.Errorf("a stale line for this landscape passed:\n%s", out)
+	}
+
+	// The same line under -partial for the other landscape is not even listed
+	// as not seen: this run can't show it.
+	clean, out, err = compareFiles(t, same, same, accepted, "-landscape", "hardware", "-partial")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !clean || strings.Contains(out, "$.region") || !strings.Contains(out, "0 stale accepted lines, 0 not seen") {
+		t.Errorf("a partial run for another landscape listed the kind entry:\n%s", out)
+	}
+}
+
+// An entry without a landscape applies to every landscape.
+func TestAnEntryWithoutALandscapeAppliesToEveryLandscape(t *testing.T) {
+	fake := []exchange{get("/v1/clusters/a", "$ object", "$.id string", "$.region string")}
+	real := []exchange{get("/v1/clusters/a", "$ object", "$.id string")}
+	accepted := []acceptedDiff{{Operation: getCluster, Field: "response $.region", Side: "fake", Reason: "landscape data"}}
+	for _, landscape := range []string{"kind", "hardware"} {
+		clean, out, err := compareFiles(t, fake, real, accepted, "-landscape", landscape)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !clean || !strings.Contains(out, "0 unexcused differences, 1 accepted, 0 stale") {
+			t.Errorf("an entry without a landscape didn't excuse the difference for %s:\n%s", landscape, out)
+		}
+	}
+	// And it still goes stale in both once the difference is gone.
+	same := []exchange{get("/v1/clusters/a", "$ object", "$.id string")}
+	for _, landscape := range []string{"kind", "hardware"} {
+		clean, out, err := compareFiles(t, same, same, accepted, "-landscape", landscape)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if clean || !strings.Contains(out, "1 stale accepted lines") {
+			t.Errorf("an entry without a landscape stopped being stale for %s once nothing matched:\n%s", landscape, out)
+		}
+	}
+}
+
+// A landscape is kind or hardware, both on the flag and on an entry, and an
+// entry that names one needs the flag.
+func TestTheLandscapeIsKindOrHardwareAndNamedEntriesNeedTheFlag(t *testing.T) {
+	fake := []exchange{get("/v1/clusters/a", "$ object")}
+	real := []exchange{get("/v1/clusters/a", "$ object")}
+	_, _, err := compareFiles(t, fake, real, nil, "-landscape", "elsewhere")
+	if err == nil || !strings.Contains(err.Error(), "-landscape is \"elsewhere\", want kind or hardware") {
+		t.Errorf("err = %v, want one naming the bad landscape", err)
+	}
+	_, _, err = compareFiles(t, fake, real, []acceptedDiff{{Operation: getCluster, Field: "response $.uid", Side: "real", Landscape: "fake", Reason: "not a real-side landscape"}})
+	if err == nil || !strings.Contains(err.Error(), "names landscape \"fake\", and the landscapes are kind and hardware") {
+		t.Errorf("err = %v, want one naming the bad entry landscape", err)
+	}
+	_, _, err = compareFiles(t, fake, real, []acceptedDiff{{Operation: getCluster, Field: "response $.uid", Side: "real", Landscape: "hardware", Reason: "the hardware run's alone"}})
+	if err == nil || !strings.Contains(err.Error(), "is for the hardware landscape, so compare needs -landscape") {
+		t.Errorf("err = %v, want one asking for the landscape", err)
+	}
+}
+
 // A path is named by the most literal template that matches it, so
 // /clusters/default isn't read as a cluster called "default", and a path no
 // template matches, such as the fake's own harness calls, is left out.

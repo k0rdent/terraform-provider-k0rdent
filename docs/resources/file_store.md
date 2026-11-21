@@ -7,7 +7,7 @@ description: |-
   This is storage the platform allocates and the tenant mounts. Storage inside a cluster is a CSI concern and is driven through the cluster's kubeconfig, not here.
   capacity_gib is expand-only and share_type is fixed for the life of the store. A store that still lists consumers cannot be deleted, so this resource empties them first, including any the platform lists that the configuration doesn't, and names those in a warning. If the destroy then fails, state records the consumers as detached, because they have lost access: running the destroy again carries on, and an apply grants them again. See the note on consumers.
   Requires region and project on the provider.
-  What replaces it. Changing id, project, region or share_type cannot be done in place and replaces the file store. A file store holds tenant data, and a replacement deletes the store and the data on it before an empty one is created. So a plan that would replace it fails and names the attribute, unless allow_replace = true is set on the resource. Everything else changes in place.
+  What replaces it. Changing id, project, region or share_type cannot be done in place and replaces the file store. A project is locked to one region, so a plan that changes region fails unless project changes with it, to a project in that region. allow_replace = true doesn't change that. A file store holds tenant data, and a replacement deletes the store and the data on it before an empty one is created. So a plan that would replace it fails and names the attribute, unless allow_replace = true is set on the resource. Everything else changes in place.
 ---
 
 # k0rdent_file_store (Resource)
@@ -20,7 +20,7 @@ This is storage the platform allocates and the tenant mounts. Storage *inside* a
 
 Requires `region` and `project` on the provider.
 
-**What replaces it.** Changing `id`, `project`, `region` or `share_type` cannot be done in place and replaces the file store. A file store holds tenant data, and a replacement deletes the store and the data on it before an empty one is created. So a plan that would replace it fails and names the attribute, unless `allow_replace = true` is set on the resource. Everything else changes in place.
+**What replaces it.** Changing `id`, `project`, `region` or `share_type` cannot be done in place and replaces the file store. A project is locked to one region, so a plan that changes `region` fails unless `project` changes with it, to a project in that region. `allow_replace = true` doesn't change that. A file store holds tenant data, and a replacement deletes the store and the data on it before an empty one is created. So a plan that would replace it fails and names the attribute, unless `allow_replace = true` is set on the resource. Everything else changes in place.
 
 ## Example Usage
 
@@ -114,7 +114,7 @@ A key taken from another resource's attribute that is not known until apply hide
 - `display_name` (String) Human-friendly name. Free text, not unique, not used for lookup.
 - `id` (String) Store name, and the id this resource is imported by. Omit it and the provider generates one, `tf-` and 16 hex digits. Either way the create names the store, so a repeat answers `409` rather than provisioning a second one. **Forces replacement** (needs `allow_replace = true`). **Constraints:** Must be lower-case letters, digits and hyphens, starting with a letter and not ending with a hyphen (`[a-z]([-a-z0-9]*[a-z0-9])?`), because it becomes a segment of a request URL. String length must be at most 63.
 - `project` (String) Project this resource belongs to. Defaults to the provider's `project`. It's part of the resource's API path, so a resource can't move between projects. **Forces replacement** (needs `allow_replace = true`). **Constraints:** Must be lower-case letters, digits and hyphens, starting with a letter and not ending with a hyphen (`[a-z]([-a-z0-9]*[a-z0-9])?`), because it becomes a segment of a request URL.
-- `region` (String) Region this resource lives in. Defaults to the provider's `region`. It's part of the resource's API path, so a resource can't move between regions. **Forces replacement** (needs `allow_replace = true`). **Constraints:** Must be lower-case letters, digits and hyphens, starting with a letter and not ending with a hyphen (`[a-z]([-a-z0-9]*[a-z0-9])?`), because it becomes a segment of a request URL.
+- `region` (String) Region this resource lives in. Defaults to the provider's `region`. It's part of the resource's API path, so a resource can't move between regions. **Can force replacement** (needs `allow_replace = true`): when `project` changes with it, to a project in the new region. A change to `region` alone is refused, `allow_replace = true` or not. **Constraints:** Must be lower-case letters, digits and hyphens, starting with a letter and not ending with a hyphen (`[a-z]([-a-z0-9]*[a-z0-9])?`), because it becomes a segment of a request URL.
 - `timeouts` (Block, Optional) How long each operation may take before it fails. Each operation left out defaults to the provider's `operation_timeout`, which is `2h` unless the provider block or `K0RDENT_OPERATION_TIMEOUT` sets it. (see [below for nested schema](#nestedblock--timeouts))
 
 ### Read-Only

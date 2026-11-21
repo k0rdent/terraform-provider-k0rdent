@@ -107,6 +107,15 @@ Nothing else is retried. A 401, a 409 during a change, a 500, and any other
 **Plan and refresh time.** See [performance](performance.md). The supported
 limit is 1,000 resources in one configuration.
 
+## A list read while objects are deleted
+
+The platform pages its lists of projects, organizations, roles, service
+accounts, service account credentials, cluster types, networks, subnets, VPCs,
+address pools and security groups by position, and the provider reads each
+500 at a time. An object deleted while a list is being read moves every later
+object back one place, so the read can miss one. That needs more than 500
+objects in the list, and the next read finds it.
+
 ## Terraform 1.16.0 to 1.16.4
 
 A ctrl-C during an apply that's creating two or more resources can crash
@@ -144,6 +153,10 @@ so a refusal at apply would come after the delete.
   network or project, without `allow_replace = true`
 - A smaller `capacity_gib` on a file store
 - A `region` that isn't the project's
+- An empty `security_groups` on a `k0rdent_vpc_security_groups` whose VPC has
+  no default security group
+- A network, subnet or security group whose `id` names one the platform made
+  for a cluster, when this state doesn't hold it
 
 Set the configuration back to what's applied, or run
 `terraform destroy -refresh=false`, which destroys from state as it is.

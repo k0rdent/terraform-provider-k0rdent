@@ -537,5 +537,163 @@
     "field": "response $.progressUpdatedAt",
     "side": "fake",
     "reason": "Hardware only: API v1.3.0 stamps it as a pool's reservation reports progress (services/compute/db/queries/instance_group_reconciler.sql:121) and omits it while unset, and kind has no hosts to reserve. The fake answers it in flight for a group with hosts. Read nil-safe at datasource_instance_group.go:229 through timeOrNull."
-  }
+  },
+
+{
+  "operation": "GET /v1/regions/{region}/projects/{project}/compute/clusters/{id} 200",
+  "field": "response $.runtime*",
+  "side": "real",
+  "landscape": "hardware",
+  "reason": "Not read: the runtime block is observability-only (ClusterRuntime, services/compute/internal/model/model.go:471) and internal/provider has no use for it; resource_kubernetes_cluster.go names `runtime` among what the resource must not store. The prod landscape runs the runtime controller, which answers it on every read. It is the hardware landscape's line alone: a kind stack runs no runtime controller, so its record doesn't judge it."
+},
+{
+  "operation": "GET /v1/regions/{region}/projects/{project}/compute/clusters/{id} 200",
+  "field": "response $.nodePools[].progress*",
+  "side": "real",
+  "landscape": "hardware",
+  "reason": "Not read: a node pool's server progress has no use in internal/provider; the cluster data source reads each pool's count only (datasource_kubernetes_cluster.go:398). The prod landscape's reservation pipeline reports it while a pool is in flight. It is the hardware landscape's line alone: a kind stack has no hosts to reserve, so its record doesn't judge it."
+},
+{
+  "operation": "GET /v1/regions/{region}/projects/{project}/compute/clusters/{id} 200",
+  "field": "response $.nodePools[].reservationId",
+  "side": "real",
+  "landscape": "hardware",
+  "reason": "Not read: a node pool's reservation id has no use in internal/provider. The prod landscape's reservation pipeline issues one for every pool. It is the hardware landscape's line alone: a kind stack has no hosts to reserve, so its record doesn't judge it."
+},
+{
+  "operation": "GET /v1/regions/{region}/projects/{project}/compute/clusters/{id} 200",
+  "field": "response $.progressUpdatedAt",
+  "side": "real",
+  "landscape": "hardware",
+  "reason": "Not read: the cluster's own progress stamp has no use in internal/provider; the data source reads the operation's progress, not the cluster's. The prod landscape's reservation pipeline stamps it. It is the hardware landscape's line alone: a kind stack runs no reservation pipeline, so its record doesn't judge it."
+},
+{
+  "operation": "GET /v1/regions/{region}/compute/cluster-types/{id}/versions/{versionId} 200",
+  "field": "response $.k8s.nodeNetwork*",
+  "side": "real",
+  "landscape": "hardware",
+  "reason": "Not read: a cluster type version's node network has no use in internal/provider. The prod landscape's cluster types carry one, with legacyAddressDetection beside it; kind's types predate the field. It is the hardware landscape's line alone: a kind stack's types carry none, so its record doesn't judge it."
+},
+{
+  "operation": "GET /v1/regions/{region}/projects/{project}/compute/clusters/{id} 200",
+  "field": "response $.stateMessage",
+  "side": "fake",
+  "reason": "Hardware only: the prod landscape's workflow reports what an operation is doing from its first progress report (run rapi-hw-039727: stateMessage on 615 of 1045 reads, always while an operation was in flight), and the fake answers the operation's note from the first read after it starts. A kind stack's workflow writes no message in flight (recorded at v1.3.0-rc.5, and the v1.3.0 kind record needed no line), so its real side never answers it. Read at datasource_kubernetes_cluster.go:69."
+},
+{
+  "operation": "GET /v1/regions/{region}/projects/{project}/compute/clusters/{id} 200",
+  "field": "response $.operation.message",
+  "side": "fake",
+  "reason": "Hardware only: an operation in flight carries the same message the cluster's stateMessage does on the prod landscape (run rapi-hw-039727), and the fake answers the operation's note beside it, as finish does for a failure. A kind stack's workflow writes no message in flight, so its real side never answers it. Read at datasource_kubernetes_cluster.go:95."
+},
+{
+  "operation": "GET /v1/regions/{region}/projects/{project}/compute/clusters/{id} 200",
+  "field": "response $.health.observedAt",
+  "side": "type",
+  "reason": "Hardware only: the health writer stamps observedAt once it has observed the cluster (ApplyClusterHealth, services/compute/internal/service/cluster_health_status.go:31), and the prod landscape runs one, answering null until the first observation and a timestamp after (run rapi-hw-039727: 1024 of 1037 reads). The fake stamps once the cluster settles, so both sides answer null and string. A kind stack runs no health writer, so its real side answers null only. The provider reads no health timestamp."
+},
+{
+  "operation": "GET /v1/regions/{region}/projects/{project}/networking/networks 200",
+  "field": "response $.networks[].infiniband",
+  "side": "fake",
+  "reason": "Hardware only: the fake's seeded landscape holds the rows an earlier cluster's workflow left, an InfiniBand network among them, so its lists answer an infiniband block. A kind stack starts empty and its own runs make no InfiniBand, so its lists answer none."
+},
+{
+  "operation": "GET /v1/regions/{region}/projects/{project}/networking/networks/{id} 200",
+  "field": "response $.clusterId",
+  "side": "fake",
+  "reason": "Hardware only: the seeded landscape holds a leftover cluster's network, which carries what the cluster lifecycle made (services/compute/internal/service/network.go:589-628 sets clusterId, the Vpc CR name and the schema entry together), and look/ reads it first. A kind stack starts empty, so its reads by id are of tenant networks, which carry none. Read at datasource_managed_singulars.go:76."
+},
+{
+  "operation": "GET /v1/regions/{region}/projects/{project}/networking/networks/{id} 200",
+  "field": "response $.vpc",
+  "side": "fake",
+  "reason": "Hardware only: the seeded landscape's leftover cluster network names the UFO Vpc CR it attaches to, and look/ reads it first. A kind stack starts empty, so its reads by id are of tenant networks, which name none. Read at datasource_managed_singulars.go:75."
+},
+{
+  "operation": "GET /v1/regions/{region}/projects/{project}/networking/networks/{id} 200",
+  "field": "response $.schemaEntryId",
+  "side": "fake",
+  "reason": "Hardware only: the seeded landscape's leftover cluster network names the networkSchema entry it came from, and look/ reads it first. A kind stack starts empty, so its reads by id are of tenant networks, which name none."
+},
+{
+  "operation": "GET /v1/regions/{region}/projects/{project}/networking/networks/{id} 200",
+  "field": "response $.infiniband",
+  "side": "fake",
+  "reason": "Hardware only: the seeded landscape's leftover cluster made an InfiniBand network too, the schema's infiniband entry with no attributes, which answers an empty object as the prod landscape's own does, and look/ reads it first. A kind stack runs no InfiniBand. Read at resource_network.go:58."
+},
+{
+  "operation": "GET /v1/regions/{region}/projects/{project}/networking/networks/{id} 200",
+  "field": "response $.subnets[].clusterId",
+  "side": "fake",
+  "reason": "Hardware only: the seeded landscape's leftover cluster network carries its workflow-made subnet, which answers clusterId, and look/ reads the network first. A kind stack starts empty, so its reads by id are of tenant subnets, which carry none."
+},
+{
+  "operation": "GET /v1/regions/{region}/projects/{project}/networking/networks/{id} 200",
+  "field": "response $.subnets[].schemaEntryId",
+  "side": "fake",
+  "reason": "Hardware only: the seeded landscape's leftover cluster network carries its workflow-made subnet, which names its schema entry, and look/ reads the network first. A kind stack starts empty, so its reads by id are of tenant subnets, which name none."
+},
+{
+  "operation": "GET /v1/regions/{region}/projects/{project}/networking/networks/{networkId}/subnets 200",
+  "field": "response $.subnets[].clusterId",
+  "side": "fake",
+  "reason": "Hardware only: the seeded landscape holds a leftover cluster's subnet, and look/ lists it under the network it reads first. A kind stack starts empty, so its subnet lists hold only tenant subnets, which carry no clusterId."
+},
+{
+  "operation": "GET /v1/regions/{region}/projects/{project}/networking/networks/{networkId}/subnets 200",
+  "field": "response $.subnets[].schemaEntryId",
+  "side": "fake",
+  "reason": "Hardware only: the seeded landscape holds a leftover cluster's subnet, and look/ lists it under the network it reads first. A kind stack starts empty, so its subnet lists hold only tenant subnets, which name no schema entry."
+},
+{
+  "operation": "GET /v1/regions/{region}/projects/{project}/networking/networks/{networkId}/subnets/{id} 200",
+  "field": "response $.clusterId",
+  "side": "fake",
+  "reason": "Hardware only: the seeded landscape holds a leftover cluster's subnet, which answers clusterId, and look/ reads it first. A kind stack starts empty, so its reads by id are of tenant subnets, which carry none. Read at datasource_managed_singulars.go:76."
+},
+{
+  "operation": "GET /v1/regions/{region}/projects/{project}/networking/networks/{networkId}/subnets/{id} 200",
+  "field": "response $.schemaEntryId",
+  "side": "fake",
+  "reason": "Hardware only: the seeded landscape holds a leftover cluster's subnet, which names its schema entry, and look/ reads it first. A kind stack starts empty, so its reads by id are of tenant subnets, which name none."
+},
+{
+  "operation": "GET /v1/regions/{region}/projects/{project}/networking/security-groups/{id} 200",
+  "field": "response $.ownerId",
+  "side": "fake",
+  "reason": "Hardware only: the seeded landscape's leftover VPC holds the default group its workflow made, owned by the VPC, and look/ reads it first. A kind stack starts empty, so its reads by id are of tenant groups, which carry no owner. Read at datasource_managed_singulars.go:371."
+},
+{
+  "operation": "GET /v1/regions/{region}/projects/{project}/networking/security-groups/{id} 200",
+  "field": "response $.ownerKind",
+  "side": "fake",
+  "reason": "Hardware only: the seeded landscape's leftover VPC holds the default group its workflow made, owned by the VPC, and look/ reads it first. A kind stack starts empty, so its reads by id are of tenant groups, which carry no owner. Read at datasource_managed_singulars.go:370."
+},
+{
+  "operation": "GET /v1/regions/{region}/networking/address-pools 200",
+  "field": "response $.addressPools[].description",
+  "side": "fake",
+  "reason": "Hardware only: the fake's catalog documents its three named pools, as the prod landscape's does (its reads answered a description on 2 of 11 pools), and look/ reads all three first. A kind stack's pools carry no description. Read at datasource_address_pools.go:50."
+},
+{
+  "operation": "GET /v1/regions/{region}/networking/address-pools/{id} 200",
+  "field": "response $.description",
+  "side": "fake",
+  "reason": "Hardware only: the fake's catalog documents its three named pools, as the prod landscape's does, and look/ reads all three first. A kind stack's pools carry no description. Read at datasource_address_pools.go:50."
+},
+{
+  "operation": "GET /v1/regions/global/organizations/{orgId}/projects/{id} 200",
+  "field": "response $.region",
+  "side": "fake",
+  "landscape": "hardware",
+  "reason": "Hardware only: the landscape's project predates regions and never answers one, while API v1.3.0 does and so does a kind stack, so only their recordings differ from the fake. The fake must keep answering it: the region-mismatch acceptance coverage and the kind record read it. Read at datasource_project.go:195, which answers null for a project made before regions were required."
+},
+{
+  "operation": "GET /v1/regions/global/projects 200",
+  "field": "response $.projects[].region",
+  "side": "fake",
+  "landscape": "hardware",
+  "reason": "Hardware only: the landscape's project predates regions and never answers one, while API v1.3.0 does and so does a kind stack, so only their recordings differ from the fake. The fake must keep answering it: the region-mismatch acceptance coverage and the kind record read it. Read at datasource_projects.go:40, which answers null for a project made before regions were required."
+}
 ]

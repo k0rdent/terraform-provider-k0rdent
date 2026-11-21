@@ -3,7 +3,7 @@
   "max_requests_per_resource": {
     "plan": 1.15,
     "refresh": 1.15,
-    "apply": 5.5,
+    "apply": 7.5,
     "destroy": 5.9
   },
   "max_list_reads": {

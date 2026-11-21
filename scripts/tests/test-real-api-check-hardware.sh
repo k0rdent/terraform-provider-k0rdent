@@ -5,6 +5,9 @@
 #
 #   * a run that passes writes ci/real-api/hardware-record.json, naming the
 #     resources it created, and prints a line while Terraform waits.
+#   * a run with REAL_API_BUILD_OFF="cluster vpc_peering" runs the instance
+#     group alone, grows it by one, and merges what it covers into a record
+#     an earlier run on the same code wrote.
 #   * a run killed while it creates stops Terraform, destroys what it made,
 #     and leaves results.txt saying so.
 #   * a run stopped with ctrl-C does the same, with one interrupt to
@@ -12,7 +15,7 @@
 #   * a run whose landscape goes away while it creates lists what it left,
 #     with each id and the command that removes it.
 #
-# The four runs go at once, each in its own copy of the tree against its own
+# The five runs go at once, each in its own copy of the tree against its own
 # stand-in. The provider polls every 5s, so a create in the run that passes
 # outlasts the 10s Terraform waits before it says "Still creating", and a kill
 # has a poll to land in, as mid_create says. The run whose landscape goes away
@@ -114,6 +117,7 @@ hardware() {
     K0RDENT_REGION=us-texas-1 K0RDENT_PROJECT=demo K0RDENT_CLIENT_ID="$FAKE_CLIENT_ID" \
     K0RDENT_CLIENT_SECRET="$FAKE_CLIENT_SECRET" K0RDENT_POLL_INTERVAL="$poll" REAL_API_CLUSTER_TYPE=gpu-training \
     REAL_API_VERSION=v1.3.0-rc.5 REAL_API_LANDSCAPE=stand-in REAL_API_HEARTBEAT=5 REAL_API_MINT_PACE=0 \
+    REAL_API_BUILD_OFF="${REAL_API_BUILD_OFF:-}" \
     "$repo/scripts/real-api-check.sh" hardware > "$1" 2>&1
 }
 
@@ -166,8 +170,8 @@ left_on_standin() {
 # says_what_is_left <output> <run dir>: the summary names every object the
 # stand-in still holds for the run, and says nothing is left only when that's
 # so. A create that a kill interrupts with its request in flight leaves an
-# object no state holds when its id is set in configuration, as the
-# walkthrough's file store is, so a killed run may leave one.
+# object no state holds when its id is set in configuration, so a killed run
+# may leave one.
 says_what_is_left() {
   local left kind id
   left="$(left_on_standin "$(basename "$2")")"
@@ -179,6 +183,33 @@ says_what_is_left() {
   while read -r kind id; do
     grep -q "^ *$kind $id\$" "$1" || { cat "$1" >&2; fail "the stand-in still holds $kind $id, and the summary doesn't say so"; }
   done <<< "$left"
+}
+
+# names_what_it_is <run id>: everything the stand-in holds for the run says in
+# its display name and description that a Terraform provider automated test
+# made it, safe to delete if left over.
+names_what_it_is() {
+  local tok kind
+  tok="$(curl -sS -m 10 -X POST "$LAND/v1/regions/global/auth/token" -H 'Content-Type: application/json' \
+    --data "{\"grant_type\":\"client_credentials\",\"client_id\":\"$FAKE_CLIENT_ID\",\"client_secret\":\"$FAKE_CLIENT_SECRET\"}" \
+    | python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])')" || fail "no token from the stand-in"
+  for kind in compute/clusters:clusters compute/instance-groups:instanceGroups storage/file-stores:fileStores \
+      networking/networks:networks networking/security-groups:securityGroups; do
+    printf 'Authorization: Bearer %s\n' "$tok" | curl -sS -m 10 -H @- "$LAND/v1/regions/us-texas-1/projects/demo/${kind%%:*}?limit=100" \
+      | python3 -c '
+import json, sys
+for o in json.load(sys.stdin).get(sys.argv[1]) or []:
+    if not o["id"].startswith(sys.argv[2]):
+        continue
+    problems = []
+    if "Terraform provider automated test" not in (o.get("displayName") or ""):
+        problems.append("display name %r" % o.get("displayName"))
+    if "safe to delete if left over" not in (o.get("description") or ""):
+        problems.append("description %r" % o.get("description"))
+    if problems:
+        sys.exit("%s %s: %s" % (sys.argv[1], o["id"], ", ".join(problems)))
+' "${kind#*:}" "$1" || fail "the run made something that does not say what it is"
+  done
 }
 
 # unlocked: the run took away its lock on the stand-in.
@@ -222,6 +253,68 @@ if "127.0.0.1" in json.dumps(r):
     problems.append("the record names the host")
 if problems:
     sys.exit("; ".join(problems))' || fail "the record is wrong"
+  unlocked
+}
+
+# --- a run of the instance group alone, with no cluster -----------------------
+
+# A landscape whose quota fits no cluster and group at once runs the group by
+# itself: REAL_API_BUILD_OFF leaves the cluster and the peering out, the run
+# creates the group, plans again, grows its worker pool by one, plans again,
+# then destroys. It runs on a record an earlier run on the same code wrote
+# covering the cluster, and keeps it: the record holds the union.
+group_only() {
+  scenario group-only 50ms 1s
+  out="$dir/out"
+  code="$("$repo/scripts/real-api-check.sh" hash code "$repo")"
+  RECORD="$record" CODE="$code" python3 -c '
+import json, os
+json.dump({"landscape": "stand-in", "api_version": "v1.3.0-rc.5", "api_version_source": "stated by the runner",
+           "code": os.environ["CODE"], "covered": ["k0rdent_kubernetes_cluster"],
+           "runs": [{"id": "rapi-hw-earlier", "ran": "2026-11-01T00:00:00Z", "covered": ["k0rdent_kubernetes_cluster"]}],
+           "ran": "2026-11-01T00:00:00Z"},
+          open(os.environ["RECORD"], "w"))'
+  # file_store stays off: growing a group re-grants a file store to the new
+  # host asynchronously, so the grow replan isn't empty yet (open item I154).
+  export REAL_API_BUILD_OFF="cluster vpc_peering file_store"
+  ( hardware "$out" ) &
+  check_pid=$!
+  wait_for "$out" "real/full-everything-apply passed"
+  run="$(the_run "$out")"
+  names_what_it_is "$(basename "$run")"
+  wait "$check_pid" || { cat "$out" >&2; fail "a run of the group alone exited non-zero"; }
+  for step in preflight build real/look real/full-everything-apply real/full-everything-replan \
+      real/full-everything-grow-apply real/full-everything-grow-replan real/full-everything-destroy \
+      real/look-destroy "fake drift" record; do
+    grep -qE "^PASS +$step( |$)" "$run/results.txt" || { cat "$run/results.txt" >&2; fail "no PASS line for $step"; }
+  done
+  has "$out" "this run creates: k0rdent_instance_group k0rdent_network k0rdent_security_group k0rdent_subnet k0rdent_vpc_security_groups"
+  has "$out" "no cluster: the instance group runs alone, and grows by one host before the destroy"
+  for side in fake real; do
+    has "$run/$side/full-everything-apply.log" "k0rdent_instance_group.this\[0\]: Creation complete"
+    grep -q "k0rdent_kubernetes_cluster.this\[0\]: Creation complete" "$run/$side/full-everything-apply.log" \
+      && { cat "$run/$side/full-everything-apply.log" >&2; fail "a run with the cluster off created one on the $side side"; }
+    grep -qE "k0rdent_instance_group.this\[0\]: Modifications complete" "$run/$side/full-everything-grow-apply.log" \
+      || { cat "$run/$side/full-everything-grow-apply.log" >&2; fail "the grow apply did not scale the group on the $side side"; }
+  done
+  has "$out" "nothing left on ${LAND#http://} from this run"
+  [ -z "$(left_on_standin "$(basename "$run")")" ] || fail "a run that passed left $(left_on_standin "$(basename "$run")")"
+  RECORD="$record" RUN_ID="$(basename "$run")" python3 -c '
+import json, os, sys
+r = json.load(open(os.environ["RECORD"]))
+want = {"k0rdent_kubernetes_cluster", "k0rdent_instance_group", "k0rdent_subnet"}
+problems = []
+if not want <= set(r["covered"]):
+    problems.append("covered %s, missing %s" % (r["covered"], sorted(want - set(r["covered"]))))
+if r["build"].get("cluster") != "off for this run" or r["build"].get("instance_group") != "on":
+    problems.append("build switches wrong: %s" % r["build"])
+ids = [x.get("id") for x in r["runs"]]
+if r["runs"][-1].get("build", {}).get("cluster") != "off for this run":
+    problems.append("the run entry has no build switches: %s" % r["runs"][-1])
+if ids != ["rapi-hw-earlier", os.environ["RUN_ID"]]:
+    problems.append("runs %s, want the earlier run and %s" % (ids, os.environ["RUN_ID"]))
+if problems:
+    sys.exit("; ".join(problems))' || fail "the merged record is wrong"
   unlocked
 }
 
@@ -307,7 +400,7 @@ gone() {
 
 # Each run prints a line as it ends. One still going after ten minutes,
 # inside CI's fifteen, fails the test.
-runs=(passes killed ctrl_c gone)
+runs=(passes group_only killed ctrl_c gone)
 for r in "${runs[@]}"; do
   ( "$r" ) 2> "$work/$r.err" &
   pids+=($!)

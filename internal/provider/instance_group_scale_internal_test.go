@@ -13,6 +13,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
+	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-go/tftypes"
 
 	"github.com/k0rdent/terraform-provider-k0rdent/internal/k0rdent"
@@ -486,5 +487,32 @@ func TestInstanceGroupDeleteStopsOnAnUnknownState(t *testing.T) {
 	err := waitDeleted(t, server, time.Hour)
 	if err == nil || !strings.Contains(err.Error(), "quiescing") {
 		t.Errorf("wait: %v", err)
+	}
+}
+
+// When the plan couldn't read the group, the apply sizes an added pool. An id
+// the group doesn't have is refused there as the plan refuses it, not sent as
+// a scale the platform answers with a 422.
+func TestInstanceGroupScaleRefusesAPoolTheGroupLacks(t *testing.T) {
+	server, posts := groupServer(t, "active", 0, http.StatusOK, "")
+	r := &instanceGroupResource{meta: testClusterMeta(t, server.URL, time.Minute)}
+	pools := func(sizes map[string]int64) types.Map {
+		m := map[string]instanceGroupPoolModel{}
+		for id, size := range sizes {
+			m[id] = instanceGroupPoolModel{Size: types.Int64Value(size)}
+		}
+		v, diags := types.MapValueFrom(context.Background(), instanceGroupPoolObjectType(), m)
+		if diags.HasError() {
+			t.Fatalf("pools: %s", diagText(diags))
+		}
+		return v
+	}
+	plan := instanceGroupModel{NodePool: pools(map[string]int64{"workers": 2, "cpu-workers": 1})}
+	state := instanceGroupModel{NodePool: pools(map[string]int64{"workers": 2})}
+	scaled, diags := r.scaleUp(context.Background(), clusterTarget{region: "test", project: "test"}, "g1", plan, state)
+	text := diagText(diags)
+	if scaled || posts.Load() != 0 || !diags.HasError() || !strings.Contains(text, `has no pool "cpu-workers"`) ||
+		!strings.Contains(text, `"workers"`) {
+		t.Errorf("scaled=%v posts=%d diags=%s", scaled, posts.Load(), text)
 	}
 }

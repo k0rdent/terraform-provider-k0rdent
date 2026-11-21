@@ -3,6 +3,7 @@
     "What make upgrade-test lets through when state from a published release meets this tree.",
     "changes: a finding in one walkthrough directory, for the release the check upgrades from by default. An entry for any other release fails the run, as does one that no finding matches, so an entry goes once that release is no longer the one upgraded from.",
     "not_covered: a resource type no walkthrough directory puts in state, so its upgrade is never tried. An entry for a type that is covered fails the run.",
+    "An entry may name a landscape: fake, the run against the fake; kind, the run against the kind stack; hardware, the run against a confirmed landscape. Without one, a change applies to every landscape and a not_covered entry to the fake run's, whose directories cover the most.",
     "Every entry needs a reason. TESTING.md has the rest."
   ],
   "changes": [
@@ -28,7 +29,8 @@
       "from": "0.1.0",
       "directory": "full-everything",
       "change": "k0rdent_instance_group.this[0] drift",
-      "reason": "The first refresh after the upgrade reads the instance group's new uid from the platform, where the previous release stored none. The plan is empty and nothing is sent."
+      "landscape": "fake",
+      "reason": "The first refresh after the upgrade reads the instance group's new uid from the platform, where the previous release stored none. The plan is empty and nothing is sent. Only the fake's full-everything builds an instance group: a kind stack has no host for one, so that run can't match this."
     },
     {
       "from": "0.1.0",
@@ -37,5 +39,31 @@
       "reason": "The first refresh after the upgrade reads the cluster's new uid and api_endpoint from the platform, where the previous release stored neither. The plan is empty and nothing is sent."
     }
   ],
-  "not_covered": []
+  "not_covered": [
+    {
+      "type": "k0rdent_file_store",
+      "landscape": "kind",
+      "reason": "A kind stack runs no storage service, so full-everything leaves file_store off there. The fake and a landscape with hardware cover it."
+    },
+    {
+      "type": "k0rdent_instance_group",
+      "landscape": "kind",
+      "reason": "A kind stack has no server for an instance group's host, so full-everything leaves instance_group off there. The fake and a landscape with hardware cover it."
+    },
+    {
+      "type": "k0rdent_vpc_peering",
+      "landscape": "kind",
+      "reason": "full-everything's vpc_peering peers the cluster's VPC with the hosts', and a kind stack has no host, so the switch is off there. The fake and a landscape with hardware cover it."
+    },
+    {
+      "type": "k0rdent_project",
+      "landscape": "hardware",
+      "reason": "A project needs organizations-admin, which the landscape's service account doesn't carry, so cluster-own-project doesn't run there and full-everything leaves own_project off. The fake and a kind stack cover it."
+    },
+    {
+      "type": "k0rdent_webhook",
+      "landscape": "hardware",
+      "reason": "No address on a landscape serves full/'s webhook, so the switch is off there. The fake and a kind stack cover it."
+    }
+  ]
 }

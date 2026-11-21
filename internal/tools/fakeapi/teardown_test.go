@@ -7,10 +7,10 @@ import (
 	"testing"
 )
 
-// What dev.4 answered for a resource straight after its DELETE
-// (live-shapes-dev4.txt, section E): an instance group reads `"sshAccess":[]`
-// and a cluster `"nodePools":[]` with `"nodeCount":0`, because the platform
-// releases both as it moves the resource to `deleting`.
+// What the platform releases as it moves a resource to `deleting`: an
+// instance group reads `"sshAccess":[]` and a cluster's SSH users list `[]`.
+// A cluster's node pools stay until the delete settles `deleted` (API v1.3.0),
+// so a cluster being torn down, or whose teardown failed, still reads them.
 
 func activeGroup(t *testing.T, s *state, displayName string) {
 	t.Helper()
@@ -60,26 +60,46 @@ func TestAGroupMarkedToDeleteSlowlyStaysDeletingThenGoes(t *testing.T) {
 	}
 }
 
-func TestADeletingClusterReadsItsNodePoolsBlank(t *testing.T) {
-	s := newState()
-	body := `{"id":"c","clusterType":"` + inferenceRef + `/versions/` + inferenceV2 + `"}`
-	if code, out := call(t, s.createCluster, http.MethodPost, "", body); code != http.StatusCreated {
-		t.Fatalf("create: %d %v", code, out)
-	}
-	for range 10 {
-		if _, out := read(t, s); out["state"] == "active" {
-			break
-		}
-	}
-	if _, out := read(t, s); fmt.Sprint(out["nodeCount"]) == "0" {
-		t.Fatalf("the active cluster has no nodes, so this can't tell a teardown apart: %v", out)
-	}
-	if code, out := call(t, s.deleteCluster, http.MethodDelete, "c", ""); code != http.StatusNoContent {
-		t.Fatalf("delete: %d %v", code, out)
-	}
-	_, got := read(t, s)
-	if got["state"] != "deleting" || fmt.Sprint(got["nodePools"]) != "[]" || fmt.Sprint(got["nodeCount"]) != "0" {
-		t.Errorf("state %v, nodePools %v, nodeCount %v, want deleting, [] and 0", got["state"], got["nodePools"], got["nodeCount"])
+func TestAClusterBeingTornDownKeepsItsNodePools(t *testing.T) {
+	for _, displayName := range []string{"c", teardownFails} {
+		t.Run(displayName, func(t *testing.T) {
+			s := newState()
+			body := `{"id":"c","clusterType":"` + inferenceRef + `/versions/` + inferenceV2 +
+				`","displayName":"` + displayName + `","sshAccess":[{"username":"ops","sshPublicKeys":["k"]}]}`
+			if code, out := call(t, s.createCluster, http.MethodPost, "", body); code != http.StatusCreated {
+				t.Fatalf("create: %d %v", code, out)
+			}
+			var active map[string]any
+			for range 10 {
+				if _, active = read(t, s); active["state"] == "active" {
+					break
+				}
+			}
+			if fmt.Sprint(active["nodeCount"]) == "0" {
+				t.Fatalf("the active cluster has no nodes, so this can't tell a teardown apart: %v", active)
+			}
+			if code, out := call(t, s.deleteCluster, http.MethodDelete, "c", ""); code != http.StatusNoContent {
+				t.Fatalf("delete: %d %v", code, out)
+			}
+			want := "deleting"
+			if displayName == teardownFails {
+				want = "failed"
+			}
+			var got map[string]any
+			for range 10 {
+				if _, got = read(t, s); got["state"] == want {
+					break
+				}
+			}
+			if got["state"] != want || fmt.Sprint(got["nodePools"]) != fmt.Sprint(active["nodePools"]) ||
+				fmt.Sprint(got["nodeCount"]) != fmt.Sprint(active["nodeCount"]) {
+				t.Errorf("state %v, nodePools %v, nodeCount %v, want %s with the active cluster's %v and %v",
+					got["state"], got["nodePools"], got["nodeCount"], want, active["nodePools"], active["nodeCount"])
+			}
+			if _, users := clusterSSHAccess(s); users != "[]" {
+				t.Errorf("SSH users = %s, want [] once the delete started", users)
+			}
+		})
 	}
 }
 

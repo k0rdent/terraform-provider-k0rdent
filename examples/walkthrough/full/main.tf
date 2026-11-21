@@ -37,9 +37,11 @@ provider "k0rdent" {
 
 locals {
   # The cluster keeps this name, so nodes/ finds it as <prefix>-walkthrough.
-  name         = "${var.prefix}-walkthrough"
-  display_name = "${var.prefix} walkthrough"
-  description  = "${var.environment} walkthrough for ${var.prefix}, from examples/walkthrough/full. Safe to delete."
+  name = "${var.prefix}-walkthrough"
+  # A scripted run, not a person, says so in what it names itself, so what a
+  # killed run leaves behind reads as safe to delete.
+  display_name = var.test_purpose != "" ? "${var.prefix} ${var.test_purpose}" : "${var.prefix} walkthrough"
+  description  = var.test_purpose != "" ? "${var.test_purpose} for ${var.prefix}, safe to delete if left over." : "${var.environment} walkthrough for ${var.prefix}, from examples/walkthrough/full. Safe to delete."
 
   tags = {
     app         = "walkthrough"
@@ -369,6 +371,8 @@ locals {
 }
 
 resource "k0rdent_kubernetes_cluster" "this" {
+  count = var.build.cluster ? 1 : 0
+
   id           = local.name
   project      = local.project
   cluster_type = local.cluster_type_ref
@@ -438,15 +442,16 @@ resource "k0rdent_kubernetes_cluster" "this" {
 
 locals {
   # Every VPC this makes, by what made it: the cluster's, and the instance
-  # group's if it's on. A VPC can't be created on its own.
+  # group's if it's on. A VPC can't be created on its own. With build.cluster
+  # off, only the ones the instance group makes are here.
   owners = merge(
-    {
+    var.build.cluster ? {
       cluster = {
         kind = "cluster"
-        id   = k0rdent_kubernetes_cluster.this.id
-        vpc  = k0rdent_kubernetes_cluster.this.vpc
+        id   = k0rdent_kubernetes_cluster.this[0].id
+        vpc  = k0rdent_kubernetes_cluster.this[0].vpc
       }
-    },
+    } : {},
     var.build.instance_group ? {
       hosts = {
         kind = "instance_group"
@@ -466,21 +471,21 @@ data "k0rdent_vpc" "owned" {
 }
 
 # Each VPC's default group, which the platform makes with the VPC. Its id is
-# random, so it's found by the name the platform gives it, "Default (<VPC
-# id>)", and by owner_kind, which only the platform's groups carry. The VPC's
-# own security_groups can't be used: it lists the binding, which this
-# changes.
+# random, so it's found as the group in the VPC's own security_groups that
+# the platform owns: owner_kind is "vpc" only on the platform's groups. The
+# binding below keeps the default in that list, so later plans find it too.
 data "k0rdent_security_groups" "vpc_default" {
   for_each = var.build.vpc_security_groups ? local.owners : {}
 
-  project            = local.project
-  display_name_regex = "^Default \\(${each.value.vpc}\\)$"
+  project = local.project
+  # The VPC's region, from its read, so the list waits until the VPC exists.
+  region = data.k0rdent_vpc.owned[each.key].region
 }
 
 locals {
   vpc_default_group = {
     for owner, d in data.k0rdent_security_groups.vpc_default :
-    owner => [for g in d.security_groups : g.id if g.owner_kind == "vpc"]
+    owner => [for g in d.security_groups : g.id if g.owner_kind == "vpc" && contains(data.k0rdent_vpc.owned[owner].security_groups, g.id)]
   }
 }
 
@@ -491,8 +496,8 @@ locals {
 resource "k0rdent_vpc_security_groups" "this" {
   for_each = var.build.vpc_security_groups ? local.owners : {}
 
-  vpc             = each.value.vpc
-  project         = local.project
+  vpc     = each.value.vpc
+  project = local.project
   # Two entries, so a first plan shows ours first even before the default's id
   # is known. The precondition below stops anything but one default.
   security_groups = [k0rdent_security_group.this[0].id, try(one(local.vpc_default_group[each.key]), null)]
@@ -507,7 +512,7 @@ resource "k0rdent_vpc_security_groups" "this" {
     # Fail rather than drop the default group from the VPC.
     precondition {
       condition     = data.k0rdent_vpc.owned[each.key].backend != "nico" || length(local.vpc_default_group[each.key]) == 1
-      error_message = "Found ${length(local.vpc_default_group[each.key])} default groups for the ${each.key} VPC, ${each.value.vpc}, not 1. Either the VPC has none, as from API v1.3.0-rc.4 a VPC with no subnet prefixes or more than 16 doesn't, or no single group with owner_kind = \"vpc\" is named \"Default (${each.value.vpc})\". Without one, this binding would replace the VPC's rules for traffic between its subnets, and on a VPC with none it couldn't be taken off again. Set build.vpc_security_groups = false, or check the VPC's groups with the k0rdent_security_groups data source."
+      error_message = "Found ${length(local.vpc_default_group[each.key])} default groups for the ${each.key} VPC, ${each.value.vpc}, not 1. Either the VPC has none, as from API v1.3.0-rc.4 a VPC with no subnet prefixes or more than 16 doesn't, or more than one group with owner_kind = \"vpc\" is in its security_groups. Without one, this binding would replace the VPC's rules for traffic between its subnets, and on a VPC with none it couldn't be taken off again. Set build.vpc_security_groups = false, or check the VPC's groups with the k0rdent_security_groups data source."
     }
   }
 }
@@ -585,14 +590,26 @@ resource "k0rdent_instance_group" "this" {
   display_name = "${local.display_name} hosts"
   description  = local.description
 
+  # worker_counts sizes the pool here too, so a run with no cluster can grow
+  # the group. Left out, the pool starts at the smallest count the cluster
+  # type allows, at least one host.
   node_pool = {
     (local.worker_pools[0].id) = {
-      size = max(1, coalesce(local.worker_pools[0].node_count_min, 0))
+      size = max(1, local.worker_counts[local.worker_pools[0].id])
     }
   }
 
   ssh_access         = local.ssh_access
   ssh_public_keys_wo = local.ssh_keys
+
+  lifecycle {
+    # Fail the plan if there's no pool to put a host in. The cluster's own
+    # check is gone with build.cluster = false.
+    precondition {
+      condition     = length(local.worker_pools) > 0
+      error_message = "Cluster type ${var.cluster_type} has no worker pool to put hosts in."
+    }
+  }
 
   timeouts {
     create = "3h"
@@ -626,10 +643,16 @@ data "k0rdent_share_type" "chosen" {
   count = var.build.file_store ? 1 : 0
 
   # file_store.share_type if set, else the first active one. try() gives ""
-  # when there's none, and the read then fails with a clear error.
+  # when there's none, and the precondition below stops the plan.
   id = var.file_store.share_type != "" ? var.file_store.share_type : try(data.k0rdent_share_types.active[0].ids[0], "")
 
   lifecycle {
+    # Fail the plan if there's no share type to use.
+    precondition {
+      condition     = var.file_store.share_type != "" || length(data.k0rdent_share_types.active[0].ids) > 0
+      error_message = "Region ${var.region} has no active share type, so no file store can be made. Set file_store.share_type to one, set build.file_store = false, or ask whoever runs the landscape for one."
+    }
+
     postcondition {
       condition     = self.state == "active"
       error_message = "Share type ${self.id} is ${coalesce(self.state, "in no state")}, and only an active one gives out storage."
@@ -641,7 +664,8 @@ data "k0rdent_share_type" "chosen" {
 resource "k0rdent_file_store" "this" {
   count = var.build.file_store ? 1 : 0
 
-  id           = local.name
+  # No id, so the provider generates one. A create interrupted with its
+  # request in flight is then kept in state, tainted, rather than left out.
   project      = local.project
   display_name = local.display_name
   description  = local.description
@@ -734,7 +758,7 @@ data "k0rdent_tenant_quota" "this" {
 # for a new display name, they're read at plan time.
 resource "terraform_data" "made" {
   input = {
-    cluster        = k0rdent_kubernetes_cluster.this.self_link
+    cluster        = var.build.cluster ? k0rdent_kubernetes_cluster.this[0].self_link : null
     hosts          = k0rdent_instance_group.this[*].self_link
     network        = [for n in k0rdent_network.this : { link = n.self_link, tags = n.tags_all }]
     security_group = [for g in k0rdent_security_group.this : { link = g.self_link, tags = g.tags_all, rules = g.rule_count }]
@@ -744,6 +768,8 @@ resource "terraform_data" "made" {
 
 # The cluster as the platform reports it, for its API address.
 data "k0rdent_kubernetes_cluster" "this" {
+  count = var.build.cluster ? 1 : 0
+
   id      = local.name
   project = local.project
 
@@ -753,6 +779,8 @@ data "k0rdent_kubernetes_cluster" "this" {
 # Whether the cluster has a kubeconfig yet. Only the record, not the
 # kubeconfig. nodes/ uses the kubeconfig itself.
 data "k0rdent_cluster_kubeconfig" "this" {
+  count = var.build.cluster ? 1 : 0
+
   cluster_id = local.name
   project    = local.project
 

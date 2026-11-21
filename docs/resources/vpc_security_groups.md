@@ -6,13 +6,13 @@ description: |-
   The security groups attached to a VPC, in the order the fabric applies them.
   A VPC is created with a cluster or instance group and has no lifecycle of its own, so this binding is the only part of one that Terraform can write. It is a whole-list replace: the groups named here are attached, and any attached before and absent now are detached. A list without the VPC's default group replaces it, and with it the default's rules for traffic between the VPC's subnets. To keep them, list the default group's id too.
   Destroying this resource does not leave the VPC unfiltered. It reinstates the VPC's platform-managed DEFAULT group. From the k0rdent API v1.3.0-rc.3, a new VPC's default group permits traffic between the VPC's own subnet prefixes and nothing else. Traffic leaving the VPC needs a group of your own. A default group from an earlier release also carries an allow-all egress rule, which never took effect on the nico fabric.
-  From the API v1.3.0-rc.4, a VPC with no subnet prefixes, or more than 16, has no default group, and its binding starts empty. The platform won't take the groups off such a VPC once any are bound. A destroy leaves them on, warns and drops the resource from state, and they stay until the VPC is deleted with its cluster or instance group. A delete of one of those groups in the same run waits for that. The plan warns when a binding is created on such a VPC, if the VPC is known by then, and the apply warns again.
+  From the API v1.3.0-rc.4, a VPC with no subnet prefixes, or more than 16, has no default group, and its binding starts empty. The platform won't take the groups off such a VPC once any are bound. A destroy leaves them on, warns and drops the resource from state, and they stay until the VPC is deleted with its cluster or instance group. A delete of one of those groups in the same run waits for that. The plan warns when a binding is created on such a VPC, if the VPC is known by then, and the apply warns again. A plan that sends such a VPC an empty list is refused, if the VPC is known by then.
   A replacement destroys the old binding, so it does either of these to the old VPC. The plan warns about a destroy, and about a replacement that a change to vpc, region or project causes. It can't warn about one forced by -replace or replace_triggered_by, because Terraform decides those without asking the provider.
   A destroy only clears the binding this resource holds. It reads the VPC first, and if the VPC holds anything but the list this resource last read, in the same order, or holds a list another instance of this resource wrote earlier in the same apply, it leaves the VPC as it is, drops the resource from state and warns. That's what makes create_before_destroy safe on the same VPC: the new binding is written first, and the old one's destroy finds it and leaves it, even when it names the same groups, as -replace does. It also means a destroy doesn't undo a binding that another configuration or the console set since the last refresh. Writes to the same VPC from this apply wait for the destroy's read and write to finish. A change from anywhere else that lands between them is still overwritten, because the platform has no conditional write for a binding.
   These groups are applied after the owning cluster or instance group's own groups, so an interface inside this VPC filters on the owner's groups first. A group attached to both is applied once, at the owner's position. Writing here re-renders the owner's network bundles, which is why the owner goes transitional for a moment.
   Only a VPC on the nico fabric backend can carry security groups. Read backend from the k0rdent_vpc data source first.
   Requires region and project on the provider.
-  What replaces it. Changing project, region or vpc cannot be done in place and replaces the binding. Everything else changes in place.
+  What replaces it. Changing project, region or vpc cannot be done in place and replaces the binding. A project is locked to one region, so a plan that changes region fails unless project changes with it, to a project in that region. Everything else changes in place.
 ---
 
 # k0rdent_vpc_security_groups (Resource)
@@ -23,7 +23,7 @@ A VPC is created with a cluster or instance group and has no lifecycle of its ow
 
 **Destroying this resource does not leave the VPC unfiltered.** It reinstates the VPC's platform-managed DEFAULT group. From the k0rdent API v1.3.0-rc.3, a new VPC's default group permits traffic between the VPC's own subnet prefixes and nothing else. Traffic leaving the VPC needs a group of your own. A default group from an earlier release also carries an allow-all egress rule, which never took effect on the `nico` fabric.
 
-From the API v1.3.0-rc.4, a VPC with no subnet prefixes, or more than 16, has no default group, and its binding starts empty. The platform won't take the groups off such a VPC once any are bound. A destroy leaves them on, warns and drops the resource from state, and they stay until the VPC is deleted with its cluster or instance group. A delete of one of those groups in the same run waits for that. The plan warns when a binding is created on such a VPC, if the VPC is known by then, and the apply warns again.
+From the API v1.3.0-rc.4, a VPC with no subnet prefixes, or more than 16, has no default group, and its binding starts empty. The platform won't take the groups off such a VPC once any are bound. A destroy leaves them on, warns and drops the resource from state, and they stay until the VPC is deleted with its cluster or instance group. A delete of one of those groups in the same run waits for that. The plan warns when a binding is created on such a VPC, if the VPC is known by then, and the apply warns again. A plan that sends such a VPC an empty list is refused, if the VPC is known by then.
 
 A replacement destroys the old binding, so it does either of these to the old VPC. The plan warns about a destroy, and about a replacement that a change to `vpc`, `region` or `project` causes. It can't warn about one forced by `-replace` or `replace_triggered_by`, because Terraform decides those without asking the provider.
 
@@ -35,7 +35,7 @@ Only a VPC on the `nico` fabric backend can carry security groups. Read `backend
 
 Requires `region` and `project` on the provider.
 
-**What replaces it.** Changing `project`, `region` or `vpc` cannot be done in place and replaces the binding. Everything else changes in place.
+**What replaces it.** Changing `project`, `region` or `vpc` cannot be done in place and replaces the binding. A project is locked to one region, so a plan that changes `region` fails unless `project` changes with it, to a project in that region. Everything else changes in place.
 
 ## Example Usage
 
@@ -77,13 +77,13 @@ output "actually_attached" {
 
 - `security_groups` (List of String) Ids of the groups to attach, in the order the fabric should apply them. Order is significant: it reaches the fabric as written, and rule evaluation is first-match.
 
-An empty list is accepted and means *reinstate the default group*, not *attach nothing*. A VPC with no default group refuses it with `409`. **Constraints:** List must contain at most 16 elements. Each security group id must be lower-case letters, digits and hyphens, starting with a letter, not ending with a hyphen, and at most 63 characters long.
+An empty list is accepted and means *reinstate the default group*, not *attach nothing*. A VPC with no default group refuses it: the plan fails if the VPC is known by then, and the apply fails with `409` otherwise. **Constraints:** List must contain at most 16 elements. Each security group id must be lower-case letters, digits and hyphens, starting with a letter, not ending with a hyphen, and at most 63 characters long.
 - `vpc` (String) Id of the VPC to bind. This is also the id this resource is imported by, because a VPC has exactly one binding. **Forces replacement**. **Constraints:** Must be lower-case letters, digits and hyphens, starting with a letter and not ending with a hyphen (`[a-z]([-a-z0-9]*[a-z0-9])?`), because it becomes a segment of a request URL.
 
 ### Optional
 
 - `project` (String) Project this resource belongs to. Defaults to the provider's `project`. It's part of the resource's API path, so a resource can't move between projects. **Forces replacement**. **Constraints:** Must be lower-case letters, digits and hyphens, starting with a letter and not ending with a hyphen (`[a-z]([-a-z0-9]*[a-z0-9])?`), because it becomes a segment of a request URL.
-- `region` (String) Region this resource lives in. Defaults to the provider's `region`. It's part of the resource's API path, so a resource can't move between regions. **Forces replacement**. **Constraints:** Must be lower-case letters, digits and hyphens, starting with a letter and not ending with a hyphen (`[a-z]([-a-z0-9]*[a-z0-9])?`), because it becomes a segment of a request URL.
+- `region` (String) Region this resource lives in. Defaults to the provider's `region`. It's part of the resource's API path, so a resource can't move between regions. **Can force replacement**: when `project` changes with it, to a project in the new region. A change to `region` alone is refused. **Constraints:** Must be lower-case letters, digits and hyphens, starting with a letter and not ending with a hyphen (`[a-z]([-a-z0-9]*[a-z0-9])?`), because it becomes a segment of a request URL.
 - `timeouts` (Block, Optional) How long each operation may take before it fails. Each operation left out defaults to the provider's `operation_timeout`, which is `2h` unless the provider block or `K0RDENT_OPERATION_TIMEOUT` sets it. (see [below for nested schema](#nestedblock--timeouts))
 
 ### Read-Only

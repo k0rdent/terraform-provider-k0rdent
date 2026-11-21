@@ -10,18 +10,18 @@ output "project" {
 }
 
 output "cluster" {
-  value = {
-    id                 = k0rdent_kubernetes_cluster.this.id
-    state              = k0rdent_kubernetes_cluster.this.state
-    kubernetes_version = k0rdent_kubernetes_cluster.this.kubernetes_version
-    nodes              = k0rdent_kubernetes_cluster.this.node_count
+  value = var.build.cluster ? {
+    id                 = k0rdent_kubernetes_cluster.this[0].id
+    state              = k0rdent_kubernetes_cluster.this[0].state
+    kubernetes_version = k0rdent_kubernetes_cluster.this[0].kubernetes_version
+    nodes              = k0rdent_kubernetes_cluster.this[0].node_count
     worker_pools       = { for id, p in local.cluster_node_pool : id => p.node_count }
-    vpc                = "${k0rdent_kubernetes_cluster.this.vpc} on ${coalesce(data.k0rdent_vpc.owned["cluster"].backend, "no backend reported")}"
-    security_groups    = k0rdent_kubernetes_cluster.this.security_groups
-    ssh_users          = [for u in k0rdent_kubernetes_cluster.this.ssh_access : u.username]
+    vpc                = "${k0rdent_kubernetes_cluster.this[0].vpc} on ${coalesce(data.k0rdent_vpc.owned["cluster"].backend, "no backend reported")}"
+    security_groups    = k0rdent_kubernetes_cluster.this[0].security_groups
+    ssh_users          = [for u in k0rdent_kubernetes_cluster.this[0].ssh_access : u.username]
     on_destroy_busy    = local.on_destroy_busy
-    tags               = k0rdent_kubernetes_cluster.this.tags_all
-  }
+    tags               = k0rdent_kubernetes_cluster.this[0].tags_all
+  } : null
 
   # Fail if a VPC this made isn't in the project's list.
   precondition {
@@ -46,8 +46,8 @@ output "cluster_type" {
 # The security group filters node interfaces, not the API address. Test it on
 # a node's SSH port: one nc command per host address.
 output "kubernetes_api" {
-  value = {
-    endpoint = coalesce(data.k0rdent_kubernetes_cluster.this.api_endpoint, "not reported yet")
+  value = var.build.cluster ? {
+    endpoint = coalesce(data.k0rdent_kubernetes_cluster.this[0].api_endpoint, "not reported yet")
     filtered = "No. The security group doesn't filter the Kubernetes API address."
     test_the_group = var.build.security_group ? concat(
       var.build.instance_group ? flatten([
@@ -61,12 +61,12 @@ output "kubernetes_api" {
         "A change to the group can take a few minutes to reach the nodes.",
       ],
     ) : []
-  }
+  } : null
 }
 
 output "ssh" {
   value = {
-    cluster = "Apply nodes/ with prefix ${var.prefix}, region ${var.region} and project ${local.project}. It lists ${k0rdent_kubernetes_cluster.this.id}'s nodes with an ssh command for each, as ${join(" or ", keys(var.ssh_users))}."
+    cluster = var.build.cluster ? "Apply nodes/ with prefix ${var.prefix}, region ${var.region} and project ${local.project}. It lists ${k0rdent_kubernetes_cluster.this[0].id}'s nodes with an ssh command for each, as ${join(" or ", keys(var.ssh_users))}." : "No cluster. build.cluster is off"
     hosts = var.build.instance_group ? flatten([
       for i in data.k0rdent_instances.hosts[0].instances : [
         for n in i.network_interfaces : [
@@ -168,9 +168,9 @@ output "scorecard" {
   value = {
     "project"                       = var.build.own_project ? "made ${local.project}" : "used ${local.project}. build.own_project makes one, with organizations-admin on the organization"
     "quota"                         = !var.quota_checks ? "not read. quota_checks is false" : length(local.over_quota) == 0 ? "within every limit" : "over on ${join(", ", local.over_quota)}"
-    "cluster"                       = "made ${k0rdent_kubernetes_cluster.this.id}, ${k0rdent_kubernetes_cluster.this.state}, with ${join(", ", keys(var.ssh_users))} on every node"
-    "control plane"                 = coalesce(data.k0rdent_kubernetes_cluster.this.control_plane_state, "not reported")
-    "kubeconfig"                    = "${coalesce(data.k0rdent_cluster_kubeconfig.this.status, "no status")}, issued for ${coalesce(data.k0rdent_cluster_kubeconfig.this.issued_for, "no one named")}"
+    "cluster"                       = var.build.cluster ? "made ${k0rdent_kubernetes_cluster.this[0].id}, ${k0rdent_kubernetes_cluster.this[0].state}, with ${join(", ", keys(var.ssh_users))} on every node" : "off. build.cluster = false, for a run of the hosts alone"
+    "control plane"                 = var.build.cluster ? coalesce(data.k0rdent_kubernetes_cluster.this[0].control_plane_state, "not reported") : "no cluster. build.cluster is off"
+    "kubeconfig"                    = var.build.cluster ? "${coalesce(data.k0rdent_cluster_kubeconfig.this[0].status, "no status")}, issued for ${coalesce(data.k0rdent_cluster_kubeconfig.this[0].issued_for, "no one named")}" : "no cluster. build.cluster is off"
     "network and subnets"           = var.build.network ? format("made %s, with %s", k0rdent_network.this[0].id, join(", ", [for purpose, s in k0rdent_subnet.this : "${purpose} ${s.cidr}"])) : "off. build.network, needs an address pool that isn't routable"
     "tags landed"                   = length(local.tags_landed) > 0 ? join(", ", local.tags_landed) : "nothing tagged to look for"
     "security group on the cluster" = var.build.security_group ? "made ${k0rdent_security_group.this[0].id}, rules: ${length(local.ingress_rules) + length(local.ingress_denies) + length(local.egress_rules)} sent, ${coalesce(k0rdent_security_group.this[0].rule_count, 0)} on the platform" : "off. build.security_group, needs a cluster type whose nodes sit on a nico-backed VPC"

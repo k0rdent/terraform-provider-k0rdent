@@ -138,8 +138,7 @@ func (r *clusterResource) MoveState(context.Context) []resource.StateMover {
 // # What is deliberately not here
 //
 // The surface is smaller than the API's, and each omission is a decision rather
-// than an oversight. The per-attribute hazard analysis behind these is in
-// `wave2-noop-drift-checklist.md`; the short reasons:
+// than an oversight. The reasons:
 //
 //   - `audit_policy`: write-only. `Cluster` does not echo it, so it can't be
 //     refreshed or drift-detected. `ssh_access` isn't echoed either, but the
@@ -238,7 +237,7 @@ func (r *clusterResource) Schema(ctx context.Context, _ resource.SchemaRequest, 
 					knownGap("A tenant can't read the hardware or the image behind a ClusterType's machine types, "+
 						"so choosing a ClusterType for its hardware means writing one an operator named."),
 				PlanModifiers: []planmodifier.String{clusterTypeVersionGuard()},
-				Validators:    []validator.String{clusterTypeVersionRef{}},
+				Validators:    []validator.String{clusterTypeRefForm{}, clusterTypeVersionRef{}},
 			},
 			"cluster_type_resolved": schema.StringAttribute{
 				Computed: true,
@@ -473,6 +472,9 @@ func (r *clusterResource) Configure(_ context.Context, req resource.ConfigureReq
 func (r *clusterResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
 	// Runs on every plan, create included: the resolved scope has to reach state.
 	modifyScopePlan(ctx, r.meta, req, resp)
+	// After the scope resolves the region, so a cluster type from another
+	// region is refused here rather than by the create.
+	refuseClusterTypeRegionMove(ctx, resp.Plan, &resp.Diagnostics, "cluster")
 	// Before planTagsAll, which plans `tags_all` unknown for default tags
 	// not known yet: that one is a change.
 	planNoChangeOverUnreadAttributes(req, resp)
@@ -544,7 +546,7 @@ func (r *clusterResource) Create(ctx context.Context, req resource.CreateRequest
 	}
 	body := k0rdent.ClusterCreateRequest{
 		Id:          &key.id,
-		ClusterType: plan.ClusterType.ValueString(),
+		ClusterType: clusterTypeCreateRef(plan.ClusterType.ValueString()),
 	}
 	md, diags := plan.metadata().create(ctx)
 	resp.Diagnostics.Append(diags...)
@@ -688,8 +690,8 @@ func (r *clusterResource) Read(ctx context.Context, req resource.ReadRequest, re
 	if found {
 		read, reported, diags := r.readSSHAccess(ctx, target, state.ID.ValueString(), prior.SSHAccess)
 		resp.Diagnostics.Append(diags...)
-		// A delete releases the users with the node pools, and a failed
-		// teardown leaves them gone: see teardown_read.go.
+		// A delete releases the users, and a failed teardown leaves them
+		// gone: see teardown_read.go.
 		released := slices.Contains(clusterStates.released, state.State.ValueString())
 		var held bool
 		state.SSHAccess, held = heldThroughTeardown(released, noSSHUsers(read), read, clusterSSHAccessState(prior.SSHAccess))
@@ -740,7 +742,7 @@ func (r *clusterResource) Update(ctx context.Context, req resource.UpdateRequest
 		return
 	}
 	id := state.ID.ValueString()
-	if (resumable[clusterModel]{
+	resumed := resumable[clusterModel]{
 		kind: "cluster", resourceName: ResourceName(clusterResourceSuffix),
 		timeout: plan.Timeouts.Create, fallback: clusterStates.timeout(r.meta.Wait),
 		wait: func(ctx context.Context) error {
@@ -755,9 +757,11 @@ func (r *clusterResource) Update(ctx context.Context, req resource.UpdateRequest
 		},
 		waitsOutFailed: plan.OnFailed.ValueString() != failedKept,
 		guardsCreate:   true,
-	}).resume(ctx, req, resp) {
+	}
+	if resumed.resume(ctx, req, resp) {
 		return
 	}
+	outer := ctx
 	ctx, cancel := withTimeout(ctx, plan.Timeouts.Update, r.meta.Wait.Timeout, &resp.Diagnostics)
 	defer cancel()
 	if resp.Diagnostics.HasError() {
@@ -796,6 +800,12 @@ func (r *clusterResource) Update(ctx context.Context, req resource.UpdateRequest
 	// waiting for. `allow_replace` alone never reaches here
 	// (replace_guard_resource.go).
 	if !metadataChanged && onlyProviderSettingsChanged(plan, state) {
+		// A create still running, or a `failed` the plan waits on, is the
+		// exception, as below: the plan promised that wait, such as the first
+		// after an import.
+		if plan.OnDestroyBusy.Equal(state.OnDestroyBusy) && resumed.finish(outer, req, resp) {
+			return
+		}
 		next := planOverPrior(plan, state)
 		resp.Diagnostics.Append(resp.State.Set(ctx, &next)...)
 		return
@@ -896,8 +906,15 @@ func (r *clusterResource) Update(ctx context.Context, req resource.UpdateRequest
 
 	// Nothing went to the platform, such as a node_pool that stops naming a
 	// pool, which an import makes common. Waiting would sit out whatever the
-	// cluster is doing, a create included, for a change that was never sent.
+	// cluster is doing for a change that was never sent. A create, or a
+	// `failed` the plan waits on, is the exception: the plan promised that
+	// wait, as it does when nothing else changed. A changed `on_destroy_busy`
+	// still never waits, as above.
 	if !queued && !metadataChanged {
+		// Under the create's timeout, as a resume is, not the update's.
+		if plan.OnDestroyBusy.Equal(state.OnDestroyBusy) && resumed.finish(outer, req, resp) {
+			return
+		}
 		next := planOverPrior(plan, state)
 		resp.Diagnostics.Append(resp.State.Set(ctx, &next)...)
 		return
@@ -1240,8 +1257,7 @@ func clusterStateFrom(ctx context.Context, c k0rdent.Cluster, prior clusterModel
 	}
 
 	keep := settled
-	released := clusterStates.releasedInputs(c) && len(c.NodePools) == 0
-	if !released && !prior.NodePool.IsNull() && !prior.NodePool.IsUnknown() {
+	if !prior.NodePool.IsNull() && !prior.NodePool.IsUnknown() {
 		known, d := clusterPoolsFromModel(ctx, prior.NodePool)
 		diags.Append(d...)
 		keep = map[string]int64{}
@@ -1270,19 +1286,7 @@ func clusterStateFrom(ctx context.Context, c k0rdent.Cluster, prior clusterModel
 	}
 	m, d := types.MapValueFrom(ctx, clusterNodePoolObjectType(), pools)
 	diags.Append(d...)
-	// A delete took the pools, not the configuration: see teardown_read.go.
-	var held bool
-	out.NodePool, held = heldThroughTeardown(released, true, m, prior.NodePool)
-	if held && c.State != nil && *c.State == k0rdent.ClusterStateFailed {
-		diags.AddWarning(
-			"The platform reports no node pools on this failed cluster",
-			fmt.Sprintf("%q is `failed` and the platform answers no node pools for it, which is what a "+
-				"delete whose teardown failed leaves. State keeps the configured `node_pool` so a "+
-				"destroy can run again. If the cluster is meant to stay, it no longer has those "+
-				"pools: destroy it, or set `allow_replace = true`, replace it with "+
-				"`terraform apply -replace`, then remove `allow_replace`.", c.Id),
-		)
-	}
+	out.NodePool = m
 
 	// Security groups, always as the platform reports them and in its order.
 	// The field is required and `[]` when none, and an omission is read the

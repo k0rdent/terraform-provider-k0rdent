@@ -840,17 +840,25 @@ func TestAnUpdateThatSendsNothingRecordsThePlan(t *testing.T) {
 }
 
 // An import adopts every pool, so a configuration that names only the workers
-// plans dropping the control plane's pool from node_pool. That sends nothing,
-// and on a cluster still `creating` it must not wait for the create either.
-// It did, for the whole update timeout, on the first import on hardware.
-func TestNarrowingNodePoolOnABusyClusterSendsNothing(t *testing.T) {
+// plans dropping the control plane's pool from node_pool. That sends nothing.
+// On a cluster still `creating` the update waits for the create, as a resume
+// does, and records it `active`: the plan promised that wait. It waits under
+// the create's timeout, not the update's, which a hardware create outlasts.
+func TestNarrowingNodePoolOnACreatingClusterWaitsAndSendsNothing(t *testing.T) {
 	var mu sync.Mutex
 	var calls []string
+	reads := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
-		calls = append(calls, r.Method+" "+r.URL.Path)
-		mu.Unlock()
-		writeJSON(w, map[string]any{"id": "c1", "state": "creating"})
+		defer mu.Unlock()
+		if r.Method != http.MethodGet {
+			calls = append(calls, r.Method+" "+r.URL.Path)
+		}
+		state := "creating"
+		if reads++; reads > 3 {
+			state = "active"
+		}
+		writeJSON(w, map[string]any{"id": "c1", "state": state})
 	}))
 	t.Cleanup(server.Close)
 
@@ -859,7 +867,7 @@ func TestNarrowingNodePoolOnABusyClusterSendsNothing(t *testing.T) {
 		return tftypes.NewValue(obj, map[string]tftypes.Value{"node_count": tftypes.NewValue(tftypes.Number, n)})
 	}
 
-	r := &clusterResource{meta: testClusterMeta(t, server.URL, 200*time.Millisecond)}
+	r := &clusterResource{meta: testClusterMeta(t, server.URL, 10*time.Second)}
 	stateValues := clusterValues(verRef(1), verRef(1), 1, "creating")
 	stateValues["node_pool"] = tftypes.NewValue(tftypes.Map{ElementType: obj},
 		map[string]tftypes.Value{"control-plane": pool(1), "workers": pool(1)})
@@ -870,7 +878,6 @@ func TestNarrowingNodePoolOnABusyClusterSendsNothing(t *testing.T) {
 	planRaw, _ := testValue(t, r, planValues)
 
 	resp := resource.UpdateResponse{State: tfsdk.State{Raw: planRaw, Schema: s.Schema}}
-	started := time.Now()
 	r.Update(context.Background(), resource.UpdateRequest{
 		State: tfsdk.State{Raw: stateRaw, Schema: s.Schema},
 		Plan:  tfsdk.Plan{Raw: planRaw, Schema: s.Schema},
@@ -878,16 +885,13 @@ func TestNarrowingNodePoolOnABusyClusterSendsNothing(t *testing.T) {
 	if resp.Diagnostics.HasError() {
 		t.Fatalf("Update: %v", resp.Diagnostics.Errors())
 	}
-	if elapsed := time.Since(started); elapsed > 100*time.Millisecond {
-		t.Errorf("the update took %s, so it waited on the cluster", elapsed)
-	}
 	mu.Lock()
 	defer mu.Unlock()
 	if len(calls) != 0 {
 		t.Errorf("the update sent %v, want nothing", calls)
 	}
-	if got := stateAttr(t, resp.State, "state"); got != "creating" {
-		t.Errorf("state = %q, want the prior %q", got, "creating")
+	if got := stateAttr(t, resp.State, "state"); got != "active" {
+		t.Errorf("state = %q, want %q once the create finished", got, "active")
 	}
 }
 
