@@ -617,6 +617,10 @@ type Meta struct {
 	// moves all of them.
 	Wait waitConfig
 
+	// vpcTeardown is each VPC an owner stopped reporting during teardown. See
+	// teardown_read.go.
+	vpcTeardown vpcTeardownMemo
+
 	// vpcBindings is what each VPC binding written in this run of the
 	// provider holds. One run serves one plan or one apply, so it's how a
 	// destroy tells a binding a newer instance wrote moments ago from the one

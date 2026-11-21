@@ -4,9 +4,11 @@ import (
 	"context"
 	"reflect"
 	"slices"
+	"sync"
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
 // What a read keeps while the platform tears a resource down.
@@ -88,4 +90,49 @@ func wasReleased(ctx context.Context, private privateState) bool {
 	}
 	raw, diags := private.GetKey(ctx, releasedKey)
 	return !diags.HasError() && string(raw) == "true"
+}
+
+// vpcTeardownMemo records the VPC a deleting owner stopped reporting in this
+// provider run. The owner's data sources depend on its vpc attribute, so its
+// read records the held id first.
+type vpcTeardownMemo struct {
+	mu  sync.Mutex
+	ids map[string]struct{}
+}
+
+func vpcTeardownKey(target clusterTarget, id string) string {
+	return target.region + "/" + target.project + "/" + id
+}
+
+func (m *vpcTeardownMemo) record(target clusterTarget, id string, held bool) {
+	if id == "" {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	key := vpcTeardownKey(target, id)
+	if !held {
+		delete(m.ids, key)
+		return
+	}
+	if m.ids == nil {
+		m.ids = map[string]struct{}{}
+	}
+	m.ids[key] = struct{}{}
+}
+
+func (m *vpcTeardownMemo) held(target clusterTarget, id string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	_, ok := m.ids[vpcTeardownKey(target, id)]
+	return ok
+}
+
+// holdVPCThroughTeardown keeps the id a released owner stopped reporting and
+// lets its data source tolerate the VPC's 404 until this run ends. A live
+// owner's missing VPC remains drift and a missing id remains a data error.
+func holdVPCThroughTeardown(meta *Meta, target clusterTarget, released bool, read, prior types.String) types.String {
+	value, held := heldThroughTeardown(released, read.IsNull(), read, prior)
+	meta.vpcTeardown.record(target, prior.ValueString(), held)
+	return value
 }

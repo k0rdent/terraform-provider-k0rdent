@@ -290,6 +290,17 @@ func (d *vpcDataSource) Read(ctx context.Context, req datasource.ReadRequest, re
 		return
 	}
 	if isNotFound(got.HTTPResponse, got.Body) {
+		if d.meta.vpcTeardown.held(target, id) {
+			data.Region = types.StringValue(target.region)
+			data.Project = types.StringValue(target.project)
+			resp.Diagnostics.AddWarning(
+				"VPC released by its owner",
+				fmt.Sprintf("The platform no longer has VPC %q after its owner's teardown released it. "+
+					"Other attributes are null for this read so the owner and its dependencies can finish destroying.", id),
+			)
+			resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+			return
+		}
 		// A data source that cannot find what it was asked for is an error, not
 		// an empty result: the configuration named this VPC and everything
 		// downstream of it is about to be planned against nothing.

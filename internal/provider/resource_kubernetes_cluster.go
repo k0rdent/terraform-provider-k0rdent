@@ -1157,6 +1157,9 @@ func (r *clusterResource) read(ctx context.Context, target clusterTarget, id str
 		out.VPC, d = ownedVPC(ctx, r.meta, target, k0rdent.ListVPCsParams{ClusterId: &uid})
 		diags.Append(d...)
 	}
+	if !diags.HasError() {
+		out.VPC = holdVPCThroughTeardown(r.meta, target, clusterStates.releasedInputs(*got.JSON200), out.VPC, prior.VPC)
+	}
 	return out, true, diags
 }
 
