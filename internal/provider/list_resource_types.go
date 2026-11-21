@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	listschema "github.com/hashicorp/terraform-plugin-framework/list/schema"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
@@ -45,7 +46,8 @@ func clusterListSpec() listSpec {
 				MarkdownDescription: "Only return the cluster with this exact id. Omit to list every cluster in scope.",
 			},
 			"create_token": listschema.StringAttribute{
-				Optional: true,
+				Optional:   true,
+				Validators: []validator.String{stringvalidator.LengthAtLeast(1)},
 				MarkdownDescription: "Only return clusters whose `terraform-provider-k0rdent/create-token` tag " +
 					"exactly matches this value. An empty result can mean the object is absent or the provenance " +
 					"doesn't match. Run the same query with only `id` to tell those cases apart. Don't match by " +
@@ -65,8 +67,9 @@ func clusterListSpec() listSpec {
 			token, provenance := known(config.str("create_token", diags))
 			var out []listedObject
 			for _, c := range rows {
+				candidateToken := createTokenOf(presentMap(c.Tags))
 				if c.Id == "" || goingAway(stateString(c.State)) || (scoped && c.Id != wantedID) ||
-					(provenance && createTokenOf(presentMap(c.Tags)) != token) {
+					(provenance && (token == "" || candidateToken == "" || candidateToken != token)) {
 					continue
 				}
 				out = append(out, listedObject{scopedIdentity(target, "id", c.Id), displayName(c.DisplayName, c.Id)})

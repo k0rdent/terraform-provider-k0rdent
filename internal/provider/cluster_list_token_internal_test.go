@@ -15,7 +15,8 @@ func TestAClusterListMatchesIDScopeAndCreateToken(t *testing.T) {
 	api := listAPI(t, map[string]http.HandlerFunc{
 		"GET " + projectPath + "/compute/clusters": paged(t, "clusters", false,
 			map[string]any{"id": "c1", "tags": map[string]any{createTokenTag(): "token-1"}},
-			map[string]any{"id": "c2", "tags": map[string]any{createTokenTag(): "token-2"}}),
+			map[string]any{"id": "c2", "tags": map[string]any{createTokenTag(): "token-2"}},
+			map[string]any{"id": "c3"}),
 	})
 	for _, tc := range []struct {
 		name string
@@ -25,8 +26,9 @@ func TestAClusterListMatchesIDScopeAndCreateToken(t *testing.T) {
 		{"id alone", map[string]any{"id": "c2"}, []string{"c2"}},
 		{"exact token", map[string]any{"id": "c2", "create_token": "token-2"}, []string{"c2"}},
 		{"different token", map[string]any{"id": "c2", "create_token": "token-1"}, []string{}},
+		{"empty token never matches an untagged object", map[string]any{"id": "c3", "create_token": ""}, []string{}},
 		{"token for another object", map[string]any{"create_token": "token-2"}, []string{"c2"}},
-		{"no filters", nil, []string{"c1", "c2"}},
+		{"no filters", nil, []string{"c1", "c2", "c3"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
