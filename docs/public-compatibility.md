@@ -63,6 +63,12 @@ terraform state push -force before-upgrade.tfstate
 
 Attributes added in a new version read as null until the first refresh.
 
+`k0rdent_kubernetes_cluster` has an optional write-only `create_token` for
+recovering an interrupted create. A fresh create plan shows
+`+ create_token = (write-only attribute)` even when configuration omits it.
+Plans for existing state don't change. The attribute needs Terraform or
+OpenTofu 1.11 or later.
+
 ## Import
 
 Every resource imports by its id, or by parent and id for a subnet or a

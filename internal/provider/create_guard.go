@@ -148,8 +148,11 @@ func (e existing) refuseAdopt(diags *diag.Diagnostics, token string) {
 		fmt.Sprintf("%s named %q has different provenance", aKind(e.kind), e.id),
 		redactDiagnosticText(fmt.Sprintf("The platform reports %s %q as `%s`, and %s. `adopt_only = true` "+
 			"requires an exact `create_token` match in the configured region and project, so it won't be "+
-			"adopted. No create was sent or state recorded. To finish an interrupted run of this "+
-			"configuration, pass the original `create_token`. Otherwise choose another `id`, or deliberately "+
+			"adopted. No create or delete was sent. This check ran after the import. A failed plan saves no "+
+			"managed row. A failed saved-plan apply leaves the imported row for the old UID in state. With that "+
+			"row present, the next plain plan leaves it in place and refuses the changed provenance, and "+
+			"`terraform destroy` refuses it too and sends no delete or cancel. To finish an interrupted run of "+
+			"this configuration, pass the original `create_token`. Otherwise choose another `id`, or deliberately "+
 			"remove `adopt_only` to allow a create.", e.kind, e.id, e.state, provenance)))
 }
 

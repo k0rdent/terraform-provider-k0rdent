@@ -287,9 +287,15 @@ terraform apply destroy.tfplan
 The lookup returns at most one cluster. No match means both `for_each` maps
 are empty, so the apply creates nothing and records no managed cluster. An
 exact match imports that cluster with its UID and sends no create request. A
-same-named cluster with a missing or different token fails the plan before
-any import or state write. UID guards the subsequent destroy. A cluster still
+same-named cluster with a missing or different token fails the plan after its
+import read but before a state write. UID guards the subsequent destroy. A cluster still
 creating is allowed to settle first, after which the same destroy applies.
+
+If provenance changes between a saved plan and its apply, the import completes
+before the apply refuses it. No create or delete is sent. The failed apply
+leaves the imported row for the old UID in state. The next plain plan leaves that row in place and
+refuses the changed provenance. `terraform destroy` refuses it too and sends no
+delete or cancel.
 
 The token is checked only by the managed resource, where it's write-only and
 never enters plan or state. Keep it outside those files and use the same

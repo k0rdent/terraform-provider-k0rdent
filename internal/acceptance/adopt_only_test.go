@@ -184,6 +184,28 @@ func seedAdoptCandidate(t *testing.T, name, token string) string {
 	return fakeUID(t, path)
 }
 
+func TestAccKubernetesClusterAdoptOnlyWithoutImportSendsNoCreate(t *testing.T) { //nolint:paralleltest // it counts creates shared fake serves
+	const name, token = "acc-adopt-only-bare", "bare-adopt-token"
+	uid := seedAdoptCandidate(t, name, token)
+	c := newCLIRun(t)
+	c.addEnv("TF_VAR_create_token", token)
+	config := strings.Replace(createTokenConfig(name, ""), "  create_token      = var.create_token", "  create_token      = var.create_token\n  adopt_only        = true", 1)
+	config = strings.Replace(config, `display_name      = "fake-creates-slowly"`, `display_name      = "acceptance"`, 1)
+	c.write(config)
+	creates := &requestCounter{method: http.MethodPost, path: "/v1/regions/us-texas-1/projects/demo/compute/clusters"}
+	creates.start(t)()
+	if out, ok := c.run("apply", "-auto-approve"); !ok {
+		t.Fatalf("bare adopt-only apply failed:\n%s", out)
+	}
+	requireCreateCount(t, creates, 0)
+	if got := c.cliInstance(clusterType + ".test"); got.Attributes.UID != uid {
+		t.Fatalf("adopted uid = %s, want %s", got.Attributes.UID, uid)
+	}
+	if out, ok := c.run("destroy", "-auto-approve"); !ok {
+		t.Fatalf("destroy after bare adoption failed:\n%s", out)
+	}
+}
+
 func TestAccKubernetesClusterAdoptOnlyMatchAndFlipBack(t *testing.T) { //nolint:paralleltest // it counts creates shared fake serves
 	if os.Getenv("TF_ACC") == "" {
 		skipTest(t, "TF_ACC is not set")
@@ -260,13 +282,126 @@ func TestAccKubernetesClusterAdoptOnlyRefusesWrongProvenance(t *testing.T) { //n
 			if ok {
 				t.Fatalf("%s provenance planned an adoption:\n%s", tc.name, out)
 			}
-			mustSay(t, "the provenance refusal", out, "exact `create_token`", tc.want, "No create was sent or state recorded")
+			mustSay(t, "the provenance refusal", out, "exact `create_token`", tc.want, "No create or delete was sent", "A failed plan saves no managed row")
 			requireNoManagedResourceState(t, c)
 			if got := fakeUID(t, clusterAPIPath(name)); got != uid {
 				t.Fatalf("refused cluster uid changed from %s to %s", uid, got)
 			}
 			requireCreateCount(t, creates, 0)
 		})
+	}
+}
+
+func TestAccKubernetesClusterAdoptOnlyRefusesProvenanceChangedAfterPlan(t *testing.T) { //nolint:paralleltest // it counts requests shared fake serves
+	const name, token = "acc-adopt-only-token-race", "token-before-plan"
+	uid := seedAdoptCandidate(t, name, token)
+	c := newCLIRun(t)
+	c.addEnv("TF_VAR_adopt_only", "true")
+	c.addEnv("TF_VAR_cluster_id", name)
+	c.addEnv("TF_VAR_create_token", token)
+	writeFile(t, filepath.Join(c.dir, "main.tf"), adoptOnlyConfig(name))
+	if out, ok := c.run("init", "-input=false"); !ok {
+		t.Fatalf("init failed:\n%s", out)
+	}
+	if out, ok := c.run("plan", "-out=adopt.tfplan"); !ok {
+		t.Fatalf("plan before the provenance change failed:\n%s", out)
+	}
+	if err := patchFake(clusterAPIPath(name), `{"tags":{"terraform-provider-k0rdent/create-token":"different-after-plan"}}`); err != nil {
+		t.Fatal(err)
+	}
+	path := clusterAPIPath(name)
+	creates := &requestCounter{method: http.MethodPost, path: "/v1/regions/us-texas-1/projects/demo/compute/clusters"}
+	deletes := &requestCounter{method: http.MethodDelete, path: path}
+	cancels := &requestCounter{method: http.MethodPost, path: path + "/cancel"}
+	creates.start(t)()
+	deletes.start(t)()
+	cancels.start(t)()
+	out, ok := c.run("apply", "adopt.tfplan")
+	if ok {
+		t.Fatalf("apply adopted a cluster whose token changed after the plan:\n%s", out)
+	}
+	mustSay(t, "apply after the provenance change", out, "No create or delete was sent", "leaves the imported row for the old UID in state", "next plain plan", "`terraform destroy`")
+	if got := c.cliInstance(clusterType + ".test"); got.Attributes.UID != uid {
+		t.Fatalf("saved-plan apply recorded uid %s, want the original %s", got.Attributes.UID, uid)
+	}
+	out, ok = c.run("plan", "-out=after.tfplan")
+	if ok {
+		t.Fatalf("plain plan accepted the changed provenance:\n%s", out)
+	}
+	mustSay(t, "plain plan after the provenance change", out, "create_token")
+	if got := c.cliInstance(clusterType + ".test"); got.Attributes.UID != uid {
+		t.Fatalf("plain plan changed the recorded uid to %s, want %s", got.Attributes.UID, uid)
+	}
+	out, ok = c.run("destroy", "-auto-approve")
+	if ok {
+		t.Fatalf("destroy accepted the changed provenance:\n%s", out)
+	}
+	mustSay(t, "destroy after the provenance change", out, "create_token")
+	requireCreateCount(t, creates, 0)
+	requireCreateCount(t, deletes, 0)
+	requireCreateCount(t, cancels, 0)
+	if got := fakeUID(t, path); got != uid {
+		t.Fatalf("provenance-changed cluster uid = %s, want %s", got, uid)
+	}
+}
+
+func TestAccKubernetesClusterAdoptOnlyRefusesReplacementCreatedAfterPlan(t *testing.T) { //nolint:paralleltest // it counts requests shared fake serves
+	const name, token = "acc-adopt-only-reuse-race", "token-before-reuse"
+	uid := seedAdoptCandidate(t, name, token)
+	c := newCLIRun(t)
+	c.addEnv("TF_VAR_adopt_only", "true")
+	c.addEnv("TF_VAR_cluster_id", name)
+	c.addEnv("TF_VAR_create_token", token)
+	writeFile(t, filepath.Join(c.dir, "main.tf"), adoptOnlyConfig(name))
+	if out, ok := c.run("init", "-input=false"); !ok {
+		t.Fatalf("init failed:\n%s", out)
+	}
+	if out, ok := c.run("plan", "-out=adopt.tfplan"); !ok {
+		t.Fatalf("plan before name reuse failed:\n%s", out)
+	}
+	path := clusterAPIPath(name)
+	if status, body, err := callFake(http.MethodDelete, path); err != nil || status >= 300 {
+		t.Fatalf("delete original: %d %s %v", status, body, err)
+	}
+	awaitFakeGone(t, path)
+	if err := postFake("/v1/regions/us-texas-1/projects/demo/compute/clusters", fmt.Sprintf(
+		`{"id":%q,"clusterType":%q,"displayName":"replacement","tags":{"terraform-provider-k0rdent/create-token":"replacement-token"}}`, name, clusterTypeRef)); err != nil {
+		t.Fatal(err)
+	}
+	awaitFakeState(t, path, "active")
+	replacementUID := fakeUID(t, path)
+	creates := &requestCounter{method: http.MethodPost, path: "/v1/regions/us-texas-1/projects/demo/compute/clusters"}
+	deletes := &requestCounter{method: http.MethodDelete, path: path}
+	cancels := &requestCounter{method: http.MethodPost, path: path + "/cancel"}
+	creates.start(t)()
+	deletes.start(t)()
+	cancels.start(t)()
+	out, ok := c.run("apply", "adopt.tfplan")
+	if ok {
+		t.Fatalf("apply adopted the replacement created after the plan:\n%s", out)
+	}
+	mustSay(t, "apply after name reuse", out, "No create or delete was sent", "leaves the imported row for the old UID in state", "next plain plan", "`terraform destroy`")
+	if got := c.cliInstance(clusterType + ".test"); got.Attributes.UID != uid {
+		t.Fatalf("saved-plan apply recorded uid %s, want the original %s", got.Attributes.UID, uid)
+	}
+	out, ok = c.run("plan", "-out=after.tfplan")
+	if ok {
+		t.Fatalf("plain plan accepted the replacement:\n%s", out)
+	}
+	mustSay(t, "plain plan after name reuse", out, "create_token")
+	if got := c.cliInstance(clusterType + ".test"); got.Attributes.UID != uid {
+		t.Fatalf("plain plan recorded uid %s, want the original %s instead of replacement %s", got.Attributes.UID, uid, replacementUID)
+	}
+	out, ok = c.run("destroy", "-auto-approve")
+	if ok {
+		t.Fatalf("destroy accepted the replacement:\n%s", out)
+	}
+	mustSay(t, "destroy after name reuse", out, "create_token")
+	requireCreateCount(t, creates, 0)
+	requireCreateCount(t, deletes, 0)
+	requireCreateCount(t, cancels, 0)
+	if got := fakeUID(t, path); got != replacementUID {
+		t.Fatalf("replacement uid changed from %s to %s", replacementUID, got)
 	}
 }
 
