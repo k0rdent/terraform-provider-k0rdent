@@ -263,7 +263,7 @@ resource "k0rdent_kubernetes_cluster" "test" {
   cluster_type      = "/v1/regions/us-texas-1/compute/cluster-types/gpu-training"
   adopt_only        = var.adopt_only
   create_token      = var.create_token
-  display_name      = "fake-creates-slowly"
+  display_name      = "acceptance"
   node_pool = {
     "gpu-workers" = { node_count = 2 }
   }
