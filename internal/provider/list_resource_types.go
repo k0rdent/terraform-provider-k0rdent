@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	listschema "github.com/hashicorp/terraform-plugin-framework/list/schema"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
@@ -47,9 +46,10 @@ func clusterListSpec() listSpec {
 			},
 			"create_token": listschema.StringAttribute{
 				Optional:   true,
-				Validators: []validator.String{stringvalidator.LengthAtLeast(1)},
+				Validators: []validator.String{createTokenNonBlankValidator()},
 				MarkdownDescription: "Only return clusters whose `terraform-provider-k0rdent/create-token` tag " +
-					"exactly matches this value. An empty result can mean the object is absent or the provenance " +
+					"exactly matches this value. Empty and whitespace-only values are refused. An empty result can " +
+					"mean the object is absent or the provenance " +
 					"doesn't match. Run the same query with only `id` to tell those cases apart. Don't match by " +
 					"tag alone: pair this with `id` so the result is the interrupted create this configuration owns.",
 			},

@@ -47,7 +47,7 @@ func removeClusterQueryCluster(t *testing.T, path string) {
 	}
 }
 
-func TestAccKubernetesClusterListRejectsEmptyCreateToken(t *testing.T) {
+func TestAccKubernetesClusterListRejectsBlankCreateToken(t *testing.T) {
 	tf := terraformForQuery(t)
 	build := builtProvider(t)
 	seedClusterQueryProject(t, tf, build)
@@ -60,14 +60,24 @@ func TestAccKubernetesClusterListRejectsEmptyCreateToken(t *testing.T) {
 	awaitFakeState(t, path, "active")
 	t.Cleanup(func() { removeClusterQueryCluster(t, path) })
 
-	query := newQueryWorkspace(t, tf, build, "")
-	empty := ""
-	writeFile(t, filepath.Join(query.dir, "found.tfquery.hcl"), clusterTokenQuery(name, &empty))
-	query.mustRun("init")
-	code, out := query.run("query", "-generate-config-out=adopted.tf")
-	if code == 0 {
-		generated, _ := os.ReadFile(filepath.Join(query.dir, "adopted.tf"))
-		t.Fatalf("an empty token adopted an untagged cluster:\n%s\n%s", out, generated)
+	for _, tc := range []struct {
+		name  string
+		token string
+	}{
+		{"empty", ""},
+		{"space", " "},
+		{"mixed whitespace", " \t\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			query := newQueryWorkspace(t, tf, build, "")
+			writeFile(t, filepath.Join(query.dir, "found.tfquery.hcl"), clusterTokenQuery(name, &tc.token))
+			query.mustRun("init")
+			code, out := query.run("query", "-generate-config-out=adopted.tf")
+			if code == 0 {
+				generated, _ := os.ReadFile(filepath.Join(query.dir, "adopted.tf"))
+				t.Fatalf("a blank token was accepted:\n%s\n%s", out, generated)
+			}
+			mustSay(t, "the blank list token refusal", out, "create_token", "at least one non-whitespace character")
+		})
 	}
-	mustSay(t, "the empty list token refusal", out, "create_token", "at least 1")
 }

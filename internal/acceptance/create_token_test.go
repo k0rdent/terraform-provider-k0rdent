@@ -284,15 +284,26 @@ func TestAccCreateTokenChecksProjectAndRegion(t *testing.T) {
 	})
 }
 
-// A supplied empty token is not silently replaced by a random one.
-func TestAccCreateTokenRefusesEmpty(t *testing.T) {
+// Blank provenance is refused before a request, never replaced by a random token.
+func TestAccKubernetesClusterCreateTokenRejectsBlank(t *testing.T) {
 	t.Parallel()
-	c := newCLIRun(t)
-	c.addEnv("TF_VAR_create_token", "")
-	c.write(createTokenConfig("acc-create-token-empty", ""))
-	out, ok := c.run("plan")
-	if ok {
-		t.Fatalf("an empty create token planned:\n%s", out)
+	for _, tc := range []struct {
+		name  string
+		token string
+	}{
+		{"empty", ""},
+		{"space", " "},
+		{"mixed whitespace", " \t\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := newCLIRun(t)
+			c.addEnv("TF_VAR_create_token", tc.token)
+			c.write(createTokenConfig("acc-create-token-blank", ""))
+			out, ok := c.run("plan")
+			if ok {
+				t.Fatalf("a blank create token planned:\n%s", out)
+			}
+			mustSay(t, "the blank token refusal", out, "create_token", "at least one non-whitespace character")
+		})
 	}
-	mustSay(t, "the empty token refusal", out, "create_token", "at least 1")
 }

@@ -39,7 +39,7 @@ list "k0rdent_kubernetes_cluster" "staging" {
 
 ### Optional
 
-- `create_token` (String) Only return clusters whose `terraform-provider-k0rdent/create-token` tag exactly matches this value. An empty result can mean the object is absent or the provenance doesn't match. Run the same query with only `id` to tell those cases apart. Don't match by tag alone: pair this with `id` so the result is the interrupted create this configuration owns.
+- `create_token` (String) Only return clusters whose `terraform-provider-k0rdent/create-token` tag exactly matches this value. Empty and whitespace-only values are refused. An empty result can mean the object is absent or the provenance doesn't match. Run the same query with only `id` to tell those cases apart. Don't match by tag alone: pair this with `id` so the result is the interrupted create this configuration owns. **Constraints:** Must contain at least one non-whitespace character.
 - `id` (String) Only return the cluster with this exact id. Omit to list every cluster in scope. **Constraints:** Must be lower-case letters, digits and hyphens, starting with a letter and not ending with a hyphen (`[a-z]([-a-z0-9]*[a-z0-9])?`), because it becomes a segment of a request URL.
 - `project` (String) Project to search. Defaults to the provider's `project`. **Constraints:** Must be lower-case letters, digits and hyphens, starting with a letter and not ending with a hyphen (`[a-z]([-a-z0-9]*[a-z0-9])?`), because it becomes a segment of a request URL.
 - `region` (String) Region to search. Defaults to the provider's `region`. **Constraints:** Must be lower-case letters, digits and hyphens, starting with a letter and not ending with a hyphen (`[a-z]([-a-z0-9]*[a-z0-9])?`), because it becomes a segment of a request URL.
