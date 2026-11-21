@@ -24,7 +24,7 @@ func TestAccKubernetesClusterCreateTimeoutKeepImportedCreate(t *testing.T) {
 	if out, ok := c.run("import", addr, name); !ok {
 		t.Fatalf("import failed:\n%s", out)
 	}
-	out, ok := c.run("apply", "-auto-approve")
+	out, ok := c.run("apply", "-auto-approve", "-refresh=false")
 	if ok {
 		t.Fatalf("the imported create returned success at its resumed timeout:\n%s", out)
 	}
@@ -32,7 +32,7 @@ func TestAccKubernetesClusterCreateTimeoutKeepImportedCreate(t *testing.T) {
 	if got.Status == "tainted" || got.Attributes.State != "creating" || got.Attributes.OnCreateTimeout != "keep" {
 		t.Fatalf("state = %+v, want untainted creating with keep", got)
 	}
-	if out, planned := c.run("plan", "-out=retry.tfplan"); !planned {
+	if out, planned := c.run("plan", "-out=retry.tfplan", "-refresh=false"); !planned {
 		t.Fatalf("the same-configuration resume plan failed:\n%s", out)
 	}
 	shown, ok := c.run("show", "-json", "retry.tfplan")

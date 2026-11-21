@@ -56,11 +56,12 @@ type touch struct {
 // skipped gets a CellSkipped line instead. For each object, over the
 // providers that touched it in the order they started:
 //
-//   - A provider follows an import when it made the import, or the one
-//     before it in the same working directory did and this one doesn't read
-//     the object again (`terraform import`, then a plan with -refresh=false). Its plans credit the import
-//     cells every one of them keeps: in plugin-testing's generate step it
-//     also plans the copy it keeps in state, and the two can't be told apart.
+//   - A provider follows an import when it made the import, or it follows
+//     another provider that followed the import in this working directory and
+//     it doesn't read the object again (`terraform import`, then plans with
+//     -refresh=false). Its plans credit the import cells every one of them
+//     keeps: in plugin-testing's generate step it also plans the copy it keeps
+//     in state, and the two can't be told apart.
 //   - Any other provider credits update or replace cells for what its plans
 //     move, where the configuration differs from every one the object had in
 //     the same working directory, back to the last provider there that
@@ -113,7 +114,7 @@ func Finish(file string, complete bool) error {
 		touches := slices.SortedFunc(maps.Values(byInstance), func(a, b *touch) int { return cmp.Compare(a.started, b.started) })
 		for i, t := range touches {
 			prev := lastIn(touches[:i], t.dir)
-			t.afterImport = t.imported || prev != nil && prev.imported && !t.read
+			t.afterImport = t.imported || prev != nil && prev.afterImport && !t.read
 			if t.afterImport {
 				add(CellImport, keptByAll(t.plans)...)
 				continue

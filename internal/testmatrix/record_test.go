@@ -252,6 +252,17 @@ func TestTwoObjectsWithNoIDImportedTogetherAreBothCredited(t *testing.T) {
 	expect(t, "unchanged", recorded(t, file))
 }
 
+// A sequence of refresh-free commands still follows the import. An import
+// cell observed after its first plan stays an import on the next plan too.
+func TestARefreshFreeSequenceAfterImportKeepsImportAttribution(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "record.jsonl")
+	start(t, file).importBinding("vpc-a")
+	start(t, file).plan("vpc-a", "")
+	start(t, file).plan("vpc-a", "s3cret")
+	want := append(slices.Clone(importedBinding), "import secret_wo")
+	expect(t, "refresh-free sequence", recorded(t, file), want...)
+}
+
 // terraform-plugin-testing's generate step plans the object twice in one
 // command: the copy in state, with the test's configuration, and the
 // import, with the generated one, which can't hold a write-only value. In
