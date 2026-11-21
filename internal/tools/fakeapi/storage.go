@@ -724,6 +724,29 @@ func (o *objects) resolveGroupConsumer(entry fakeConsumer, status *fakeConsumerS
 		return "instance group " + entry.Ref + " has no members to grant"
 	}
 
+	narrowed := entry.Network.MacAddress != nil || entry.Network.GUID != nil
+	if nameCarries(group.displayName, apiV131) || !narrowed {
+		members := o.consumerInstancesOf(group)
+		if !nameCarries(group.displayName, apiV131) {
+			for i := range members {
+				members[i].lifecycle = ""
+			}
+		}
+		addresses, refusal := selectConsumerAddresses(members, *entry.Network)
+		if refusal != "" {
+			return refusal
+		}
+		if len(addresses) == 0 {
+			return "no member of instance group " + entry.Ref + " carries a grantable IPv4 address yet"
+		}
+		status.addresses = addresses
+		status.narrowed = narrowed
+		if strings.Contains(entry.Ref, consumerUngrantableMarker) {
+			status.target, status.reason = "failed", "GROUP_NO_LONGER_GRANTABLE"
+		}
+		return ""
+	}
+
 	// A selector narrowed by a MAC address or a GUID grants only the interface
 	// it names, and one that names no interface in the group is a 422.
 	if entry.Network.MacAddress != nil || entry.Network.GUID != nil {
@@ -735,17 +758,6 @@ func (o *objects) resolveGroupConsumer(entry fakeConsumer, status *fakeConsumerS
 		return ""
 	}
 
-	// One address per member machine on the selected interface, which is what
-	// makes `resolvedAddresses` the record of which machines the grant was
-	// derived from rather than a restatement of the ref.
-	octet := len(entry.Ref)%200 + 10
-	for i := 1; i <= members; i++ {
-		status.addresses = append(status.addresses, fmt.Sprintf("10.80.%d.%d", octet, i))
-	}
-
-	if strings.Contains(entry.Ref, consumerUngrantableMarker) {
-		status.target, status.reason = "failed", "GROUP_NO_LONGER_GRANTABLE"
-	}
 	return ""
 }
 
@@ -764,6 +776,16 @@ func (o *objects) sweepGroupGrants(fs *fakeFileStore) {
 		for _, size := range group.pools {
 			members += int(size)
 		}
+		var currentAddresses []string
+		if nameCarries(group.displayName, apiV131) {
+			var refusal string
+			currentAddresses, refusal = selectConsumerAddresses(o.consumerInstancesOf(group), fakeConsumerNetwork{Type: "ethernet"})
+			if refusal != "" {
+				cs.state, cs.target, cs.reason, cs.reads = "failed", "failed", "GROUP_MEMBERSHIP_DRIFTED", 0
+				continue
+			}
+			members = len(currentAddresses)
+		}
 		if members == len(cs.addresses) {
 			continue
 		}
@@ -776,8 +798,12 @@ func (o *objects) sweepGroupGrants(fs *fakeFileStore) {
 		// while it is under way.
 		octet := len(cs.ref)%200 + 10
 		cs.addresses = cs.addresses[:0]
-		for i := 1; i <= members; i++ {
-			cs.addresses = append(cs.addresses, fmt.Sprintf("10.80.%d.%d", octet, i))
+		if nameCarries(group.displayName, apiV131) {
+			cs.addresses = append(cs.addresses, currentAddresses...)
+		} else {
+			for i := 1; i <= members; i++ {
+				cs.addresses = append(cs.addresses, fmt.Sprintf("10.80.%d.%d", octet, i))
+			}
 		}
 		cs.state, cs.target, cs.reason, cs.reads = "creating", "active", "", 0
 	}
