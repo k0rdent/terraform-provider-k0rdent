@@ -294,7 +294,22 @@ func cancelAndRemoveFromFake(t *testing.T, name string) {
 			t.Logf("cleanup of %s: %v", name, err)
 		}
 	}
-	removeFromFake(t, name)
+	for range 200 {
+		status, body, err := callFake(http.MethodDelete, clusterAPIPath(name))
+		if status == http.StatusNotFound {
+			return
+		}
+		if status >= 200 && status < 300 {
+			awaitFakeGone(t, clusterAPIPath(name))
+			return
+		}
+		if err != nil || (status >= 300 && status != http.StatusConflict) {
+			t.Logf("cleanup of %s: %d %s %v", name, status, body, err)
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Errorf("timed out deleting %s", name)
 }
 
 // removeFromFake deletes a cluster a test left on the fake, if it's there.

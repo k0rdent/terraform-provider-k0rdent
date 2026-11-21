@@ -365,6 +365,7 @@ func (p *aiProvider) DataSources(_ context.Context) []func() datasource.DataSour
 		newOrganizationsDataSource,
 		newOrganizationDataSource,
 		newClusterDataSource,
+		newClusterCandidatesDataSource,
 		newInstanceGroupDataSource,
 		newInstancesDataSource,
 		newInstanceDataSource,

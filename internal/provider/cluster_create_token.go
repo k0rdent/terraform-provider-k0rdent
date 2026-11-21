@@ -12,6 +12,23 @@ import (
 // createTokenAttribute is the durable create token's attribute name.
 const createTokenAttribute = "create_token"
 
+// adoptOnlyAttribute controls recovery without creation on the ordinary managed resource.
+const adoptOnlyAttribute = "adopt_only"
+
+// adoptOnlySchemaAttribute makes absence a clean no-op and provenance a
+// precondition for recording an existing cluster.
+func adoptOnlySchemaAttribute() schema.BoolAttribute {
+	return schema.BoolAttribute{
+		Optional: true,
+		MarkdownDescription: "Adopt an existing cluster by `create_token` without ever creating one. " +
+			"Requires a non-empty `create_token`. Use the `" + ResourceName(clusterDataSourceSuffix+"s") + "` lookup with import and " +
+			"resource `for_each`, as the recovery guide shows, so absence plans no managed instance. An exact " +
+			"match records the platform UID and waits for `creating` to settle without a create request. " +
+			"Missing or different provenance is refused. A later destroy uses the recorded UID, so a " +
+			"replacement under the same id is never adopted or deleted.",
+	}
+}
+
 type createTokenRedactionKey struct{}
 
 // withCreateTokenRedaction carries the write-only value only through the call

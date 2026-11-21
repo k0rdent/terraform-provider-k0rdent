@@ -243,6 +243,10 @@ const (
 	// the create landed. Record the id in state, so the next run refreshes it
 	// rather than creating again, and fail.
 	createUnconfirmed
+	// createAdoptAbsent: an adopt-only lookup found no object. A caller can
+	// plan no instances through the presence lookup, while a bare Create gets
+	// an actionable explanation instead of accepting empty managed state.
+	createAdoptAbsent
 )
 
 // createdAs is the object a converging create ended on.
@@ -272,6 +276,9 @@ type convergingCreate struct {
 	// timeoutID is the id a 504 names in its metadata, if it names one. Nil
 	// for a kind whose 504 names none.
 	timeoutID func(resp *http.Response, body []byte) string
+	// adoptOnly checks the id first and never sends a create. Exact durable
+	// provenance adopts, absence leaves state null, and mismatch is refused.
+	adoptOnly bool
 	// busy waits out a 409 the platform answers while something the create
 	// depends on is mid-change. Nil for a kind whose create has no such 409.
 	busy *busyRetry
@@ -314,6 +321,9 @@ type convergingCreate struct {
 // A resource found by reading it back is done with the uid that read named.
 func (c convergingCreate) run(ctx context.Context) (createOutcome, createdAs, diag.Diagnostics) {
 	var diags diag.Diagnostics
+	if c.adoptOnly {
+		return c.adopt(ctx)
+	}
 	lost, raced := 0, 0
 	for {
 		a := c.send(ctx)
@@ -428,6 +438,34 @@ func (c convergingCreate) run(ctx context.Context) (createOutcome, createdAs, di
 			return createFailed, createdAs{}, diags
 		}
 	}
+}
+
+// adopt checks an existing object without sending a create. This is the
+// unattended apply counterpart of import, with a clean exit when it's absent.
+func (c convergingCreate) adopt(ctx context.Context) (createOutcome, createdAs, diag.Diagnostics) {
+	var diags diag.Diagnostics
+	l := c.lookup(ctx, c.key.id)
+	if l.failed() {
+		addLookupError(&diags, c.kind, c.key.id, l)
+		return createFailed, createdAs{}, diags
+	}
+	if !l.found {
+		diags.AddWarning(
+			fmt.Sprintf("No %s to adopt", c.kind),
+			fmt.Sprintf("There is no %s %q in the configured region and project. Nothing was created "+
+				"or recorded, so a later destroy has nothing in state to act on.", c.kind, c.key.id))
+		return createAdoptAbsent, createdAs{}, diags
+	}
+	if c.proof(c.key.id, l) == "" {
+		c.addNotOurs(&diags, c.key.id, l, "was checked by an adopt-only apply", createAnswer{})
+		return createFailed, createdAs{}, diags
+	}
+	diags.AddWarning(
+		fmt.Sprintf("Adopting the existing %s", c.kind),
+		fmt.Sprintf("The platform's %s %q has the exact `create_token` this configuration supplied. "+
+			"No create request was sent. State records its UID, and the apply waits if it's still creating.",
+			c.kind, c.key.id))
+	return createDone, createdAs{id: c.key.id, uid: l.uid}, diags
 }
 
 // unconfirmed ends a create that a read could not settle. A generated id is
@@ -722,6 +760,15 @@ func (f createFinish[M]) run(ctx context.Context, create convergingCreate, plan 
 	var none M
 	outcome, made, createDiags := create.run(ctx)
 	diags.Append(createDiags...)
+	if outcome == createAdoptAbsent {
+		diags.AddError(
+			fmt.Sprintf("No %s to adopt", create.kind),
+			fmt.Sprintf("There is no %s %q in the configured region and project. Drive the managed resource's "+
+				"`for_each` from `"+ResourceName(clusterDataSourceSuffix+"s")+"`, as the recovery guide shows, so absence plans no "+
+				"managed instance instead.", create.kind, create.key.id),
+		)
+		return none, false
+	}
 	if outcome == createFailed {
 		return none, false
 	}

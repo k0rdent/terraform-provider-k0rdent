@@ -191,47 +191,111 @@ pool and the allocated VLAN id. Edit it down rather than writing from scratch.
 
 If a runner dies after the platform accepts a create and before Terraform
 saves state, a normal apply with the same `create_token` adopts the cluster on
-its next readback. To adopt only if that match exists, without ever creating
-an absent cluster, discover it with two queries on Terraform 1.14 and later,
-including 1.15.5.
-
-In one workspace, query by `id` to answer whether the object exists. In a
-second workspace, query by both `id` and `create_token` and write the adoption:
+its next readback. A delete flow can adopt before destroy without creating an
+absent cluster, with no query commands, extra workspaces, import commands or
+state edits. Put this module around the managed resource:
 
 ```hcl
-list "k0rdent_kubernetes_cluster" "found" {
-  provider = k0rdent
+terraform {
+  required_providers {
+    k0rdent = { source = "k0rdent/k0rdent" }
+  }
+}
 
-  config {
-    id           = "ml-training"
-    create_token = "the durable token from the lost run"
+variable "adopt_only" {
+  type    = bool
+  default = false
+}
+
+variable "cluster_id" {
+  type = string
+}
+
+variable "region" {
+  type    = string
+  default = null
+}
+
+variable "project" {
+  type    = string
+  default = null
+}
+
+variable "create_token" {
+  type      = string
+  ephemeral = true
+}
+
+data "k0rdent_kubernetes_clusters" "recovery" {
+  count   = var.adopt_only ? 1 : 0
+  id      = var.cluster_id
+  region  = var.region
+  project = var.project
+}
+
+locals {
+  adoptees = var.adopt_only ? {
+    for cluster in data.k0rdent_kubernetes_clusters.recovery[0].clusters : cluster.id => cluster
+    } : {
+    (var.cluster_id) = {
+      id      = var.cluster_id
+      region  = var.region
+      project = var.project
+    }
+  }
+}
+
+import {
+  for_each = var.adopt_only ? local.adoptees : {}
+  to       = k0rdent_kubernetes_cluster.test[each.key]
+  identity = {
+    id      = each.key
+    region  = each.value.region
+    project = each.value.project
+  }
+}
+
+resource "k0rdent_kubernetes_cluster" "test" {
+  for_each          = local.adoptees
+  id                = each.key
+  region            = each.value.region
+  project           = each.value.project
+  cluster_type      = "/v1/regions/us-texas-1/compute/cluster-types/gpu-training"
+  adopt_only        = var.adopt_only
+  create_token      = var.create_token
+  display_name      = "fake-creates-slowly"
+  node_pool = {
+    "gpu-workers" = { node_count = 2 }
+  }
+  timeouts {
+    create = "10m"
   }
 }
 ```
 
+Set `adopt_only = true`, keep the same cluster id, token, region and project,
+then apply once before the normal destroy:
+
 ```bash
-terraform query -generate-config-out=adopted.tf
-terraform apply
+terraform init
+terraform plan -out=adopt.tfplan
+terraform apply adopt.tfplan
+terraform plan -destroy -out=destroy.tfplan
+terraform apply destroy.tfplan
 ```
 
-The workspaces are separate because every query runs every `list` block in a
-module. This matters for the result count:
+The lookup returns at most one cluster. No match means both `for_each` maps
+are empty, so the apply creates nothing and records no managed cluster. An
+exact match imports that cluster with its UID and sends no create request. A
+same-named cluster with a missing or different token fails the plan before
+any import or state write. UID guards the subsequent destroy. A cluster still
+creating is allowed to settle first, after which the same destroy applies.
 
-- Both queries return nothing: the object is absent. The matched apply creates
-  nothing and exits cleanly.
-- `id` finds the object and the exact-token query finds nothing: provenance is
-  missing or different. Stop without applying. Correct the token or id in the
-  controller's recovery record, never adopt it anyway.
-- Both return exactly one object: `adopted.tf` imports it with its UID.
-
-The readback is scoped to region and project, and the tag is proof of
-provenance rather than a credential. `create_token` is write-only on the
-managed resource. Don't put it in `tags` or `default_tags`. Use an ephemeral
-input variable when the normal apply supplies it back to Create.
-
-The generated import needs no secret. As with any recovery, keep the durable
-token outside Terraform plan and state, and don't reuse a name or token across
-independent creates.
+The token is checked only by the managed resource, where it's write-only and
+never enters plan or state. Keep it outside those files and use the same
+value when applying the saved plan. Setting `adopt_only` back to `false`
+keeps the same resource address, so it doesn't replace the adopted cluster
+and ordinary creates still work.
 
 ## Adopt many at once
 

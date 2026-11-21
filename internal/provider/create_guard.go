@@ -128,6 +128,31 @@ func (e existing) refuseTokenMismatch(diags *diag.Diagnostics) {
 		e.kind, e.id, e.state, scopedImportID(e.target)(e.id))))
 }
 
+// warnAdopt confirms the exact durable-token match before an apply records it.
+func (e existing) warnAdopt(diags *diag.Diagnostics) {
+	diags.AddAttributeWarning(path.Root("id"),
+		fmt.Sprintf("Adopting the existing %s %q", e.kind, e.id),
+		redactDiagnosticText(fmt.Sprintf("The platform reports %s %q as `%s`, with the exact `create_token` "+
+			"this configuration supplied. The apply records its UID and waits if it's still creating. No create "+
+			"request is sent.", e.kind, e.id, e.state)))
+}
+
+// refuseAdopt rejects absent or different provenance during adopt-only,
+// before anything can be created.
+func (e existing) refuseAdopt(diags *diag.Diagnostics, token string) {
+	provenance := "it carries no create token"
+	if token != "" {
+		provenance = "its create token differs"
+	}
+	diags.AddAttributeError(path.Root("id"),
+		fmt.Sprintf("%s named %q has different provenance", aKind(e.kind), e.id),
+		redactDiagnosticText(fmt.Sprintf("The platform reports %s %q as `%s`, and %s. `adopt_only = true` "+
+			"requires an exact `create_token` match in the configured region and project, so it won't be "+
+			"adopted. No create was sent or state recorded. To finish an interrupted run of this "+
+			"configuration, pass the original `create_token`. Otherwise choose another `id`, or deliberately "+
+			"remove `adopt_only` to allow a create.", e.kind, e.id, e.state, provenance)))
+}
+
 // warnReplacing passes a plan to create over an object the provider can
 // take for this configuration's, and says what applying it does. A tainted
 // object plans this way, and so does the plan a destroy refreshes with, which
@@ -194,6 +219,48 @@ func aKind(kind string) string {
 // the word a sentence uses for each.
 var inFlight = map[string]string{creatingState: "created", "updating": "updated"}
 
+// checkAdoptOnly refuses absent configuration or wrong provenance on any
+// adopt plan, including the resource state refreshed by an import block.
+func (r *clusterResource) checkAdoptOnly(ctx context.Context, plan tfsdk.Plan, config tfsdk.Config, diags *diag.Diagnostics) {
+	var adoptOnly types.Bool
+	diags.Append(plan.GetAttribute(ctx, path.Root(adoptOnlyAttribute), &adoptOnly)...)
+	if diags.HasError() || !adoptOnly.ValueBool() {
+		return
+	}
+	configuredToken := types.StringNull()
+	diags.Append(config.GetAttribute(ctx, path.Root(createTokenAttribute), &configuredToken)...)
+	if diags.HasError() {
+		return
+	}
+	if configuredToken.IsNull() {
+		diags.AddAttributeError(path.Root(adoptOnlyAttribute), "Adopt-only requires a create token",
+			"Set a non-empty `create_token` to prove which interrupted create this configuration owns, or remove `adopt_only`. No lookup or create was sent.")
+		return
+	}
+	target, id, ok := plannedTarget(ctx, r.meta, plan)
+	if !ok || r.meta == nil || r.meta.Client == nil {
+		return
+	}
+	ctx = withCreateTokenRedaction(ctx, configuredToken.ValueString())
+	got, err := r.meta.Client.GetClusterWithResponse(ctx, target.region, target.project, id, nil)
+	if err != nil {
+		addAPIErrorHiding(diags, configuredToken.ValueString(), "read the cluster before adopting it", nil, nil, err)
+		return
+	}
+	if got.JSON200 == nil {
+		return
+	}
+	token := createTokenOf(presentMap(got.JSON200.Tags))
+	if configuredToken.IsUnknown() || token == configuredToken.ValueString() {
+		return
+	}
+	found := existing{
+		kind: "cluster", resourceName: ResourceName(clusterResourceSuffix), target: target, id: id,
+		state: stateString(got.JSON200.State), tagged: true,
+	}
+	found.refuseAdopt(diags, token)
+}
+
 // refuseExisting is createGuard for a cluster. One that carries this
 // provider's create token warns for replacement handling: a Terraform apply
 // made it, and when it's tainted, the plan to replace it is also the plan a
@@ -209,6 +276,11 @@ func (r *clusterResource) refuseExisting(ctx context.Context, plan tfsdk.Plan, c
 	if !config.Raw.IsNull() {
 		diags.Append(config.GetAttribute(ctx, path.Root(createTokenAttribute), &configuredToken)...)
 	}
+	if diags.HasError() {
+		return
+	}
+	var adoptOnly types.Bool
+	diags.Append(plan.GetAttribute(ctx, path.Root(adoptOnlyAttribute), &adoptOnly)...)
 	if diags.HasError() {
 		return
 	}
@@ -232,6 +304,14 @@ func (r *clusterResource) refuseExisting(ctx context.Context, plan tfsdk.Plan, c
 		tagged: true,
 		busyNote: " With `on_destroy_busy = \"wait\"`, it waits for the operation to finish instead of " +
 			"cancelling it.",
+	}
+	if adoptOnly.ValueBool() {
+		if !configuredToken.IsNull() && !configuredToken.IsUnknown() && token == configuredToken.ValueString() {
+			found.warnAdopt(diags)
+		} else {
+			found.refuseAdopt(diags, token)
+		}
+		return
 	}
 	if token != "" {
 		found.warnReplacing(diags)

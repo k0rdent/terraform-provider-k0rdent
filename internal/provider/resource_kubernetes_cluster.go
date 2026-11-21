@@ -90,6 +90,7 @@ type clusterModel struct {
 	SSHAccess           types.Set      `tfsdk:"ssh_access"`
 	SSHPublicKeysWO     types.Map      `tfsdk:"ssh_public_keys_wo"`
 	CreateToken         types.String   `tfsdk:"create_token"`
+	AdoptOnly           types.Bool     `tfsdk:"adopt_only"`
 	Timeouts            timeouts.Value `tfsdk:"timeouts"`
 
 	// uid is the platform's uid for the cluster read, which own_object.go
@@ -386,6 +387,7 @@ func (r *clusterResource) Schema(ctx context.Context, _ resource.SchemaRequest, 
 			},
 			"ssh_public_keys_wo":     sshPublicKeysWOAttribute(),
 			createTokenAttribute:     createTokenSchemaAttribute(),
+			adoptOnlyAttribute:       adoptOnlySchemaAttribute(),
 			onDestroyBusyAttribute:   onDestroyBusySchemaAttribute(),
 			onFailedAttribute:        onFailedSchemaAttribute(),
 			onCreateTimeoutAttribute: onCreateTimeoutSchemaAttribute(),
@@ -495,6 +497,12 @@ func (r *clusterResource) ModifyPlan(ctx context.Context, req resource.ModifyPla
 		return
 	}
 	checkConfiguredKeys(ctx, req, &resp.Diagnostics)
+	if !resp.Plan.Raw.IsNull() && !req.Config.Raw.IsNull() {
+		r.checkAdoptOnly(ctx, resp.Plan, req.Config, &resp.Diagnostics)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+	}
 	planNoUsersWhenLeftOut(ctx, req, resp)
 	warnUnrecordedSSHAccess(ctx, req, resp)
 	replaceOnChangedKeys(ctx, req, resp)
@@ -572,6 +580,11 @@ func (r *clusterResource) Create(ctx context.Context, req resource.CreateRequest
 		ctx = withCreateTokenRedaction(ctx, key.token)
 		defer redactDiagnosticsHiding(&resp.Diagnostics, key.token)
 	}
+	if plan.AdoptOnly.ValueBool() && !key.durableToken {
+		resp.Diagnostics.AddError("Adopt-only requires a create token",
+			"Set a non-empty `create_token` to prove which interrupted create this configuration owns. No lookup or create was sent.")
+		return
+	}
 	body := k0rdent.ClusterCreateRequest{
 		Id:          &key.id,
 		ClusterType: clusterTypeCreateRef(plan.ClusterType.ValueString()),
@@ -625,7 +638,7 @@ func (r *clusterResource) Create(ctx context.Context, req resource.CreateRequest
 	// `details[].metadata.clusterId`. That is the service's own answer to this
 	// request, so that cluster is recorded and waited out like a 201.
 	create := convergingCreate{
-		key: key, kind: "cluster", what: "create the cluster",
+		key: key, kind: "cluster", what: "create the cluster", adoptOnly: plan.AdoptOnly.ValueBool(),
 		resourceName: ResourceName(clusterResourceSuffix),
 		importID:     scopedImportID(target),
 		send: func(ctx context.Context) createAnswer {
@@ -1223,6 +1236,7 @@ func clusterStateFrom(ctx context.Context, c k0rdent.Cluster, prior clusterModel
 		// Write-only: never held in state.
 		SSHPublicKeysWO: types.MapNull(types.ListType{ElemType: types.StringType}),
 		CreateToken:     types.StringNull(),
+		AdoptOnly:       prior.AdoptOnly,
 		Project:         prior.Project,
 		DisplayName:     md.DisplayName,
 		Description:     md.Description,
