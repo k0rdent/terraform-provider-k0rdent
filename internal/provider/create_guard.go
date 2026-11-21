@@ -204,12 +204,20 @@ func (r *clusterResource) refuseExisting(ctx context.Context, plan tfsdk.Plan, c
 	if !ok || r.meta == nil || r.meta.Client == nil {
 		return
 	}
+	configuredToken := types.StringNull()
+	if !config.Raw.IsNull() {
+		diags.Append(config.GetAttribute(ctx, path.Root(createTokenAttribute), &configuredToken)...)
+	}
+	if diags.HasError() {
+		return
+	}
+	ctx = withCreateTokenRedaction(ctx, configuredToken.ValueString())
 	got, err := r.meta.Client.GetClusterWithResponse(ctx, target.region, target.project, id, nil)
 	if err != nil || got.JSON200 == nil {
 		// A 404 is a create like any other. A read that failed leaves it to
 		// the create, which reads the id back on a 409.
 		if err != nil {
-			tflog.Debug(ctx, "the plan-time read of the cluster failed", map[string]any{"error": redactDiagnosticText(err.Error())})
+			tflog.Debug(ctx, "the plan-time read of the cluster failed", map[string]any{"error": redactDiagnosticTextHiding(err.Error(), createTokenForRedaction(ctx))})
 		}
 		return
 	}
@@ -231,10 +239,6 @@ func (r *clusterResource) refuseExisting(ctx context.Context, plan tfsdk.Plan, c
 	if got.JSON200.Uid != nil && wasDropped(id, got.JSON200.Uid.String()) {
 		found.warnDropped(diags)
 		return
-	}
-	configuredToken := types.StringNull()
-	if !config.Raw.IsNull() {
-		diags.Append(config.GetAttribute(ctx, path.Root(createTokenAttribute), &configuredToken)...)
 	}
 	if !configuredToken.IsNull() && !configuredToken.IsUnknown() {
 		found.refuseTokenMismatch(diags)

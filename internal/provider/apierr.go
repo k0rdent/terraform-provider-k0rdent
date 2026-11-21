@@ -29,18 +29,40 @@ type apiCall string
 func addAPIErrorHiding(diags *diag.Diagnostics, secret string, what apiCall, resp *http.Response, body []byte, transportErr error) {
 	var got diag.Diagnostics
 	addAPIError(&got, what, resp, body, transportErr)
-	for _, d := range got {
-		summary, detail := d.Summary(), d.Detail()
-		if secret != "" {
-			summary = strings.ReplaceAll(summary, secret, "[REDACTED]")
-			detail = strings.ReplaceAll(detail, secret, "[REDACTED]")
-		}
-		if d.Severity() == diag.SeverityError {
-			diags.AddError(summary, detail)
-		} else {
-			diags.AddWarning(summary, detail)
+	redactDiagnosticsHiding(&got, secret)
+	diags.Append(got...)
+}
+
+// redactDiagnosticsHiding applies the ordinary diagnostic redaction after
+// replacing a call-specific value in both errors and warnings.
+func redactDiagnosticsHiding(diags *diag.Diagnostics, secret string) {
+	if secret == "" {
+		return
+	}
+	var got diag.Diagnostics
+	for _, d := range *diags {
+		summary := redactDiagnosticTextHiding(d.Summary(), secret)
+		detail := redactDiagnosticTextHiding(d.Detail(), secret)
+		withPath, hasPath := d.(diag.DiagnosticWithPath)
+		switch {
+		case d.Severity() == diag.SeverityError && hasPath:
+			got.AddAttributeError(withPath.Path(), summary, detail)
+		case d.Severity() == diag.SeverityError:
+			got.AddError(summary, detail)
+		case hasPath:
+			got.AddAttributeWarning(withPath.Path(), summary, detail)
+		default:
+			got.AddWarning(summary, detail)
 		}
 	}
+	*diags = got
+}
+
+func redactDiagnosticTextHiding(text, secret string) string {
+	if secret == "" {
+		return redactDiagnosticText(text)
+	}
+	return redactDiagnosticText(strings.ReplaceAll(text, secret, "[REDACTED]"))
 }
 
 // addAPIError turns a transport error or a non-2xx response into a diagnostic.

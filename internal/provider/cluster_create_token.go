@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"context"
 	"regexp"
 
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
@@ -10,6 +11,19 @@ import (
 
 // createTokenAttribute is the durable create token's attribute name.
 const createTokenAttribute = "create_token"
+
+type createTokenRedactionKey struct{}
+
+// withCreateTokenRedaction carries the write-only value only through the call
+// context so transport logs can redact it without storing it in state.
+func withCreateTokenRedaction(ctx context.Context, token string) context.Context {
+	return context.WithValue(ctx, createTokenRedactionKey{}, token)
+}
+
+func createTokenForRedaction(ctx context.Context) string {
+	token, _ := ctx.Value(createTokenRedactionKey{}).(string)
+	return token
+}
 
 // createTokenNonBlankValidator rejects blank provenance without changing any
 // nonblank byte, since the platform tag comparison is exact.

@@ -348,7 +348,7 @@ func (c convergingCreate) run(ctx context.Context) (createOutcome, createdAs, di
 				return createFailed, createdAs{}, diags
 			}
 			tflog.Info(ctx, "the create's answer was lost and the id reads as absent, so sending it again",
-				map[string]any{"id": c.key.id, "attempt": lost + 1, "error": redactDiagnosticText(a.err.Error())})
+				map[string]any{"id": c.key.id, "attempt": lost + 1, "error": redactDiagnosticTextHiding(a.err.Error(), c.key.token)})
 
 		case status == http.StatusConflict:
 			l := c.lookup(ctx, c.key.id)

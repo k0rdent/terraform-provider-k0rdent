@@ -568,6 +568,8 @@ func (r *clusterResource) Create(ctx context.Context, req resource.CreateRequest
 	if !configuredToken.IsNull() {
 		key.token = configuredToken.ValueString()
 		key.durableToken = true
+		ctx = withCreateTokenRedaction(ctx, key.token)
+		defer redactDiagnosticsHiding(&resp.Diagnostics, key.token)
 	}
 	body := k0rdent.ClusterCreateRequest{
 		Id:          &key.id,

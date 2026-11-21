@@ -10,7 +10,8 @@ import (
 
 // redactDiagnosticText is the boundary before TF_LOG as well as before a
 // diagnostic, and an error's text can carry whatever the platform or the
-// token endpoint answered. So every log field holding one goes through it.
+// token endpoint answered. So every log field holding one goes through it or
+// its call-specific form.
 func TestEveryLoggedErrorIsRedacted(t *testing.T) {
 	files, err := filepath.Glob("*.go")
 	if err != nil {
@@ -26,7 +27,8 @@ func TestEveryLoggedErrorIsRedacted(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, m := range logged.FindAllSubmatch(src, -1) {
-			if v := string(m[1]); strings.Contains(v, ".Error()") && !strings.HasPrefix(v, "redactDiagnosticText(") {
+			if v := string(m[1]); strings.Contains(v, ".Error()") &&
+				!strings.HasPrefix(v, "redactDiagnosticText(") && !strings.HasPrefix(v, "redactDiagnosticTextHiding(") {
 				t.Errorf("%s logs %s unredacted", f, v)
 			}
 		}
