@@ -185,6 +185,9 @@ func seedAdoptCandidate(t *testing.T, name, token string) string {
 }
 
 func TestAccKubernetesClusterAdoptOnlyWithoutImportSendsNoCreate(t *testing.T) { //nolint:paralleltest // it counts creates shared fake serves
+	if os.Getenv("TF_ACC") == "" {
+		skipTest(t, "TF_ACC is not set")
+	}
 	const name, token = "acc-adopt-only-bare", "bare-adopt-token"
 	uid := seedAdoptCandidate(t, name, token)
 	c := newCLIRun(t)
@@ -293,6 +296,9 @@ func TestAccKubernetesClusterAdoptOnlyRefusesWrongProvenance(t *testing.T) { //n
 }
 
 func TestAccKubernetesClusterAdoptOnlyRefusesProvenanceChangedAfterPlan(t *testing.T) { //nolint:paralleltest // it counts requests shared fake serves
+	if os.Getenv("TF_ACC") == "" {
+		skipTest(t, "TF_ACC is not set")
+	}
 	const name, token = "acc-adopt-only-token-race", "token-before-plan"
 	uid := seedAdoptCandidate(t, name, token)
 	c := newCLIRun(t)
@@ -346,6 +352,9 @@ func TestAccKubernetesClusterAdoptOnlyRefusesProvenanceChangedAfterPlan(t *testi
 }
 
 func TestAccKubernetesClusterAdoptOnlyRefusesReplacementCreatedAfterPlan(t *testing.T) { //nolint:paralleltest // it counts requests shared fake serves
+	if os.Getenv("TF_ACC") == "" {
+		skipTest(t, "TF_ACC is not set")
+	}
 	const name, token = "acc-adopt-only-reuse-race", "token-before-reuse"
 	uid := seedAdoptCandidate(t, name, token)
 	c := newCLIRun(t)
