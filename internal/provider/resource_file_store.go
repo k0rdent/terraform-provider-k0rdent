@@ -299,9 +299,15 @@ func (r *fileStoreResource) Schema(ctx context.Context, _ resource.SchemaRequest
 					"entry; to detach one, remove it.\n\n" +
 					"An empty or absent map is a store mountable by nobody, which is the " +
 					"intended default.\n\n" +
-					"Entries are resolved before the store is accepted, so an instance group that " +
-					"is still provisioning fails the whole create rather than producing a store " +
-					"with a partial export policy. Grant progress is in `consumer_status`.\n\n" +
+					"Entries are resolved before the store is accepted. An `instanceGroup` entry " +
+					"fails the whole create while no member has an address on the selected fabric. " +
+					"On API v1.3.0 it also fails while any member has none, unless `network` names " +
+					"one interface. A host still being provisioned may have none yet. From API v1.3.1 a " +
+					"member whose `state` on the `" + ResourceName(instancesDataSourceSuffix) +
+					"` data source is `not_provisioned`, `provisioning`, `deprovisioning` or " +
+					"`degraded` isn't checked: it's granted any address it already has. A " +
+					"`deleting` member is left out. Grant progress and the addresses granted are " +
+					"in `consumer_status`.\n\n" +
 					"An `instanceGroup` entry is resolved to addresses when it is sent, and the " +
 					"platform resolves it again by itself when the group's membership moves. When " +
 					"that repair is off or does not stick, `consumer_status` reports " +
@@ -325,8 +331,8 @@ func (r *fileStoreResource) Schema(ctx context.Context, _ resource.SchemaRequest
 							Computed: true,
 							Default:  stringdefault.StaticString(string(k0rdent.ConsumerTypeIpAddress)),
 							MarkdownDescription: "`ipAddress` to grant one address directly, or " +
-								"`instanceGroup` to grant every member of a group on the interface " +
-								"`network` selects. Defaults to `ipAddress`.",
+								"`instanceGroup` to grant the addresses a group's members have on " +
+								"the interfaces `network` selects.",
 							Validators: []validator.String{oneOfEnum(k0rdent.ConsumerTypeValues())},
 						},
 						// OneOf holds the contract's enum, `ro` included, so that

@@ -654,7 +654,7 @@ data "k0rdent_share_type" "chosen" {
   }
 }
 
-# With an instance group, every host in it may mount the store.
+# With an instance group, its hosts may mount the store.
 resource "k0rdent_file_store" "this" {
   count = var.build.file_store ? 1 : 0
 

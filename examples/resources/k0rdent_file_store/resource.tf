@@ -26,7 +26,7 @@ resource "k0rdent_file_store" "datasets" {
   }
 }
 
-# A store every host in an instance group mounts, keyed by the group's id.
+# A store the hosts in an instance group mount, keyed by the group's id.
 # `network` says which fabric's addresses to grant.
 resource "k0rdent_file_store" "checkpoints" {
   id           = "training-checkpoints"

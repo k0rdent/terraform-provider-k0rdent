@@ -96,7 +96,7 @@ func configuredRefs(consumers types.Map) []string {
 // consumers.
 type grantVerdicts struct {
 	// resend are drifted groups whose entry goes again, which is the
-	// contract's only way to grant a group's current members.
+	// contract's only way to grant the group as it is now.
 	resend []string
 	// held are drifted groups whose re-send was refused, with addresses that
 	// have not moved since. Proposing them again would be refused again.
@@ -173,9 +173,9 @@ func (v grantVerdicts) planDiagnostics(replacing bool) diag.Diagnostics {
 		// Local: the provider's reading of a verdict the API already reported.
 		diags.AddAttributeWarning(path.Root("consumers").AtMapKey(ref),
 			"A consumer group will be resolved again",
-			fmt.Sprintf("The instance group %q has changed membership since its grant was written, so "+
-				"machines that joined it cannot mount the store. This apply sends the entry again and "+
-				"the platform grants the group's current members.", ref))
+			fmt.Sprintf("The instance group %q has changed since its grant was written, so some of its "+
+				"machines may not be able to mount the store. This apply sends the entry again, and "+
+				"the platform grants the members it can address now.", ref))
 	}
 	return diags
 }
@@ -328,7 +328,7 @@ func (r grantReport) failureWarnings() diag.Diagnostics {
 				"A consumer's instance group has changed membership",
 				fmt.Sprintf("The grant for %q still covers the machines it was written against and "+
 					"is still enforced, but the group's membership has moved since. The next plan "+
-					"proposes sending the entry again, which grants the group's current members.",
+					"proposes sending the entry again, which grants the members the platform can address then.",
 					ref),
 			)
 			continue

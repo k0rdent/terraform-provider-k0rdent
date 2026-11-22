@@ -53,7 +53,7 @@ resource "k0rdent_file_store" "datasets" {
   }
 }
 
-# A store every host in an instance group mounts, keyed by the group's id.
+# A store the hosts in an instance group mount, keyed by the group's id.
 # `network` says which fabric's addresses to grant.
 resource "k0rdent_file_store" "checkpoints" {
   id           = "training-checkpoints"
@@ -105,7 +105,7 @@ output "checkpoint_grants" {
 
 An empty or absent map is a store mountable by nobody, which is the intended default.
 
-Entries are resolved before the store is accepted, so an instance group that is still provisioning fails the whole create rather than producing a store with a partial export policy. Grant progress is in `consumer_status`.
+Entries are resolved before the store is accepted. An `instanceGroup` entry fails the whole create while no member has an address on the selected fabric. On API v1.3.0 it also fails while any member has none, unless `network` names one interface. A host still being provisioned may have none yet. From API v1.3.1 a member whose `state` on the `k0rdent_instances` data source is `not_provisioned`, `provisioning`, `deprovisioning` or `degraded` isn't checked: it's granted any address it already has. A `deleting` member is left out. Grant progress and the addresses granted are in `consumer_status`.
 
 An `instanceGroup` entry is resolved to addresses when it is sent, and the platform resolves it again by itself when the group's membership moves. When that repair is off or does not stick, `consumer_status` reports `GROUP_MEMBERSHIP_DRIFTED` and the next plan proposes sending the entry again. If the platform refuses that, the rest of the change is applied and plans stop proposing the re-send until its report changes. A group reported as `GROUP_NO_LONGER_GRANTABLE` is gone or now names a different group. Until its entry is removed, the plan warns, and an apply that changes the store in place fails without changing it. A replacement forced with `-replace` or `replace_triggered_by` deletes the store and creates the new one with the entry, so remove the entry first.
 
@@ -140,7 +140,7 @@ Optional:
 - `network` (Attributes) Which of a resolved member's interfaces supplies the address to grant. Required on an `instanceGroup` entry and refused on an `ipAddress` entry, where `ref` already is the address.
 
 The operator names the fabric; the platform never infers it, because a member machine sits on several at once. (see [below for nested schema](#nestedatt--consumers--network))
-- `type` (String) `ipAddress` to grant one address directly, or `instanceGroup` to grant every member of a group on the interface `network` selects. Defaults to `ipAddress`. Defaults to `ipAddress`. **Constraints:** Value must be one of: ["ipAddress" "instanceGroup"].
+- `type` (String) `ipAddress` to grant one address directly, or `instanceGroup` to grant the addresses a group's members have on the interfaces `network` selects. Defaults to `ipAddress`. **Constraints:** Value must be one of: ["ipAddress" "instanceGroup"].
 
 <a id="nestedatt--consumers--network"></a>
 ### Nested Schema for `consumers.network`
@@ -228,7 +228,7 @@ resource "k0rdent_file_store" "example" {
 - [`k0rdent_file_store`](../data-sources/file_store.md) data source: reads one this configuration doesn't manage.
 - [`k0rdent_file_store`](../list-resources/file_store.md) list resource: finds every one, for `terraform query` to adopt.
 - [`k0rdent_share_types`](../data-sources/share_types.md) data source: lists the classes `share_type` takes.
-- [`k0rdent_instance_group`](../resources/instance_group.md) resource: a consumer that grants every host in the group.
+- [`k0rdent_instance_group`](../resources/instance_group.md) resource: a consumer that grants the group's hosts.
 - [`k0rdent_instances`](../data-sources/instances.md) data source: reads the addresses a narrower grant names.
 
 ## Import

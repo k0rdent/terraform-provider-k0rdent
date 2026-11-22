@@ -153,7 +153,7 @@ resource "k0rdent_instance_group" "example" {
 - [`k0rdent_cluster_types`](../data-sources/cluster_types.md) data source: lists the ClusterTypes whose `self_link` `cluster_type` takes.
 - [`k0rdent_cluster_type`](../data-sources/cluster_type.md) data source: reads one ClusterType, whose `self_link` `cluster_type` takes.
 - [`k0rdent_instances`](../data-sources/instances.md) data source: lists the hosts the group holds.
-- [`k0rdent_file_store`](../resources/file_store.md) resource: mounts storage on every host in the group.
+- [`k0rdent_file_store`](../resources/file_store.md) resource: lets the group's hosts mount storage.
 - [`k0rdent_effective_security_groups`](../data-sources/effective_security_groups.md) data source: reports what actually filters the group's interfaces.
 
 ## Import
