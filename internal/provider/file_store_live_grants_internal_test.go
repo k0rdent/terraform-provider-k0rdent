@@ -14,7 +14,7 @@ import (
 
 // The plan judges grants from the last refresh. A group the platform has since
 // called no longer grantable, deleted and made again under its id, must not
-// be sent: that grants whatever machines the id names now.
+// be sent: that resolves whatever group the id names now.
 func TestFileStoreUpdateJudgesGrantsAgainstTheLiveStore(t *testing.T) {
 	var mu sync.Mutex
 	var order []string

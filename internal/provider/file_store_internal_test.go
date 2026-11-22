@@ -562,7 +562,7 @@ func statusValue(t *testing.T, r resource.Resource, ref, reason string) tftypes.
 }
 
 // A plan that could not read the keys reaches Update unchecked, and sending a
-// group the platform calls no longer grantable grants whatever its id names now.
+// group the platform calls no longer grantable resolves whatever group its id names now.
 func TestFileStoreUpdateRefusesAnUngrantableGroup(t *testing.T) {
 	var rec patchRecorder
 	server := rec.server(t, fileStoreBody("active"))

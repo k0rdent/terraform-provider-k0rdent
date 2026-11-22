@@ -300,16 +300,20 @@ func (r *fileStoreResource) Schema(ctx context.Context, _ resource.SchemaRequest
 					"An empty or absent map is a store mountable by nobody, which is the " +
 					"intended default.\n\n" +
 					"Entries are resolved before the store is accepted. An `instanceGroup` entry " +
-					"fails the whole create while no member has an address on the selected fabric. " +
-					"On API v1.3.0 it also fails while any member has none, unless `network` names " +
-					"one interface. A host still being provisioned may have none yet. From API v1.3.1 a " +
-					"member whose `state` on the `" + ResourceName(instancesDataSourceSuffix) +
+					"fails the whole create when it resolves to no address. On API v1.3.1 it also " +
+					"fails when a member outside the states below has no address where `network` " +
+					"selects one. On API v1.3.0 this per-member failure applies to every member " +
+					"unless `network` names one interface. A host still being provisioned may have " +
+					"none yet. From API v1.3.1 a member whose `state` on the `" + ResourceName(instancesDataSourceSuffix) +
 					"` data source is `not_provisioned`, `provisioning`, `deprovisioning` or " +
-					"`degraded` isn't checked: it's granted any address it already has. A " +
-					"`deleting` member is left out. Grant progress and the addresses granted are " +
-					"in `consumer_status`.\n\n" +
+					"`degraded` isn't required to have an address. It contributes any IPv4 address " +
+					"it already has on the interfaces `network` selects, and a missing address " +
+					"doesn't refuse the entry. Other member states keep the per-member checks. A " +
+					"`deleting` member is left out. Grant progress and the addresses it resolved to " +
+					"are in `consumer_status`, whose `state` says whether they are enforced yet.\n\n" +
 					"An `instanceGroup` entry is resolved to addresses when it is sent, and the " +
-					"platform resolves it again by itself when the group's membership moves. When " +
+					"platform resolves it again by itself when the group no longer matches what the " +
+					"entry resolved to. When " +
 					"that repair is off or does not stick, `consumer_status` reports " +
 					"`GROUP_MEMBERSHIP_DRIFTED` and the next plan proposes sending the entry again. " +
 					"If the platform refuses that, the rest of the change is applied and plans stop " +
@@ -409,8 +413,9 @@ func (r *fileStoreResource) Schema(ctx context.Context, _ resource.SchemaRequest
 					"recorded, so this is what says whether a host can mount.\n\n" +
 					"**A `failed` entry is not necessarily an outage.** " +
 					"`GROUP_MEMBERSHIP_DRIFTED` is reported as `failed` while the grant still " +
-					"covers the machines it was written against: the group's membership moved and " +
-					"the platform's own repair did not happen or did not stick. An entry being " +
+					"covers the machines it was written against: the group no longer matches what " +
+					"the entry resolved to and the platform's own repair did not happen or did not " +
+					"stick. An entry being " +
 					"repaired reads `creating` with no reason. Alert on " +
 					"`state == \"failed\" && state_reason != \"GROUP_MEMBERSHIP_DRIFTED\"`.",
 				NestedObject: schema.NestedAttributeObject{
@@ -731,10 +736,10 @@ func (r *fileStoreResource) ModifyPlan(ctx context.Context, req resource.ModifyP
 	}
 	// A re-send is a write, and a write moves the revision.
 	resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, path.Root("etag"), types.StringUnknown())...)
-	// The grant reaches only the members the group had when it was written,
-	// and sending the entry again is the contract's only way to resolve it to
-	// the current ones. An unknown `consumer_status` is what makes the plan an
-	// update, and Update sends `consumers` when it sees the same verdict.
+	// The grant holds the addresses resolved when it was written, and sending
+	// the entry again forces an immediate re-resolution. An unknown
+	// `consumer_status` is what makes the plan an update, and Update sends
+	// `consumers` when it sees the same verdict.
 	resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, path.Root("consumer_status"),
 		types.MapUnknown(fileStoreConsumerStatusType()))...)
 	// The re-send reconciles the store, which can republish its locations.
@@ -899,7 +904,7 @@ func (r *fileStoreResource) Update(ctx context.Context, req resource.UpdateReque
 		return
 	}
 	// A group recreated under its id since the refresh would still read as
-	// granted, and sending `consumers` would grant whatever group holds that
+	// granted, and sending `consumers` would resolve whatever group holds that
 	// id now. So the grants are judged again against the live store.
 	if grants.sends() && !r.grantsStillAllowed(ctx, target, id, plan, grants, &resp.Diagnostics) {
 		return
@@ -991,8 +996,8 @@ func (r *fileStoreResource) recordUpdate(ctx context.Context, target clusterTarg
 type grantChange struct {
 	report   grantReport
 	refusals refusedResends
-	// drifted are the groups whose entries go again because their membership
-	// moved.
+	// drifted are groups whose entries go again because each group no longer
+	// matches its grant.
 	drifted []string
 	// changed says the configuration changed `consumers` itself.
 	changed bool

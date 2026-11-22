@@ -95,8 +95,8 @@ func configuredRefs(consumers types.Map) []string {
 // grantVerdicts is what the platform's report asks of the configured
 // consumers.
 type grantVerdicts struct {
-	// resend are drifted groups whose entry goes again, which is the
-	// contract's only way to grant the group as it is now.
+	// resend are drifted groups whose entry goes again, forcing the immediate
+	// re-resolution that the platform otherwise runs on its freshness interval.
 	resend []string
 	// held are drifted groups whose re-send was refused, with addresses that
 	// have not moved since. Proposing them again would be refused again.
@@ -150,8 +150,8 @@ func (v grantVerdicts) planDiagnostics(replacing bool) diag.Diagnostics {
 	for _, ref := range v.held {
 		diags.AddAttributeWarning(path.Root("consumers").AtMapKey(ref),
 			"A consumer group cannot be resolved again yet",
-			fmt.Sprintf("The instance group %q has changed membership and the platform refused to "+
-				"resolve it again. Its grant still covers the machines it was written against. "+
+			fmt.Sprintf("The instance group %q no longer matches its grant and the platform refused "+
+				"to resolve it again. Its grant still covers the machines it was written against. "+
 				"This plan does not propose the re-send again until the platform's report changes.", ref))
 	}
 	if replacing {
@@ -174,8 +174,8 @@ func (v grantVerdicts) planDiagnostics(replacing bool) diag.Diagnostics {
 		diags.AddAttributeWarning(path.Root("consumers").AtMapKey(ref),
 			"A consumer group will be resolved again",
 			fmt.Sprintf("The instance group %q has changed since its grant was written, so some of its "+
-				"machines may not be able to mount the store. This apply sends the entry again, and "+
-				"the platform grants the members it can address now.", ref))
+				"machines may not be able to mount the store. This apply sends the entry again and "+
+				"asks the platform to resolve and grant the group again.", ref))
 	}
 	return diags
 }
@@ -193,7 +193,7 @@ func (v grantVerdicts) ungrantableErrors() diag.Diagnostics {
 	for _, ref := range v.ungrantable {
 		// Local: the provider's reading of a verdict the API already reported.
 		diags.AddAttributeError(path.Root("consumers").AtMapKey(ref), ungrantableSummary,
-			ungrantableReason(ref)+" Sending the entry again would grant whatever machines the id names "+
+			ungrantableReason(ref)+" Sending the entry again would resolve whatever group the id names "+
 				"now, so nothing is sent. Remove the entry, or point it at the group that should hold the access.")
 	}
 	return diags
@@ -292,11 +292,11 @@ func writeRefused(ctx context.Context, private privateWriter, marker refusedRese
 
 // warnOnConsumerFailures surfaces a grant that did not settle.
 //
-// A warning rather than an error. `GROUP_MEMBERSHIP_DRIFTED` means a group's
-// membership moved and the platform's repair did not stick, while the grant
-// still covers the old members. Failing the apply on it would fail on a
-// scale-up, and saying nothing would leave a mount reaching fewer machines than
-// its owner thinks.
+// A warning rather than an error. `GROUP_MEMBERSHIP_DRIFTED` means an instance
+// group no longer matches its grant and the platform's repair did not stick,
+// while the grant still covers the addresses it resolved to. Failing the apply
+// on it would fail on a scale-up, and saying nothing would leave a mount
+// reaching fewer machines than its owner thinks.
 func warnOnConsumerFailures(ctx context.Context, m fileStoreModel, diags *diag.Diagnostics) {
 	// Only the state and the reason are read. The warnings never name an
 	// address, so a set that fails to decode is no reason to drop them.
@@ -325,11 +325,11 @@ func (r grantReport) failureWarnings() diag.Diagnostics {
 		}
 		if cs.reason == drifted {
 			diags.AddWarning(
-				"A consumer's instance group has changed membership",
+				"A consumer's instance group no longer matches its grant",
 				fmt.Sprintf("The grant for %q still covers the machines it was written against and "+
-					"is still enforced, but the group's membership has moved since. The next plan "+
-					"proposes sending the entry again, which grants the members the platform can address then.",
-					ref),
+					"is still enforced, but the group no longer matches what the entry resolved to. "+
+					"The next plan proposes sending the entry again, which asks the platform to "+
+					"resolve and grant the group again.", ref),
 			)
 			continue
 		}
