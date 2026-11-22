@@ -460,9 +460,12 @@ func TestAccKubernetesClusterAdoptOnlyNullTokenRefusesAnUntaggedCluster(t *testi
 	creates.start(t)()
 	deletes.start(t)()
 	cancels.start(t)()
-	out, ok := planAndApply(t, c, "adopt.tfplan")
+	if out, ok := c.run("init", "-input=false"); !ok {
+		t.Fatalf("init failed:\n%s", out)
+	}
+	out, ok := c.run("plan", "-out=adopt.tfplan")
 	if ok {
-		t.Fatalf("adopt-only with a null token adopted an untagged cluster:\n%s", out)
+		t.Fatalf("adopt-only with a null token planned an untagged cluster's adoption:\n%s", out)
 	}
 	mustSay(t, "the null-token refusal", out, "Adopt-only requires a create token")
 	requireNoManagedResourceState(t, c)
