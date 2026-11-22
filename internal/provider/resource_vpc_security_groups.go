@@ -123,9 +123,9 @@ func (r *vpcSecurityGroupsResource) Schema(ctx context.Context, _ resource.Schem
 			"else that lands between them is still overwritten, because the platform has no " +
 			"conditional write for a binding.\n\n" +
 			"If a destroy stops after the cluster or instance group that owns the VPC has taken it " +
-			"with it, a later plan that still reads the owner as deleting warns on a binding it " +
-			"would create or change on that VPC, and the apply fails for it with an error naming " +
-			"the VPC. Running `terraform destroy` finishes the teardown.\n\n" +
+			"with it, a later plan that reads the owner as deleting, or failed after a teardown, " +
+			"warns on a binding it would create or change on that VPC, and the apply fails for it " +
+			"with an error naming the VPC. Running `terraform destroy` finishes the teardown.\n\n" +
 			"These groups are applied *after* the owning cluster or instance group's own groups, " +
 			"so an interface inside this VPC filters on the owner's groups first. A group " +
 			"attached to both is applied once, at the owner's position. Writing here re-renders " +

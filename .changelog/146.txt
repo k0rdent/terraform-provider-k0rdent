@@ -67,11 +67,11 @@ resource/k0rdent_instance_group: Fix an apply that sizes a pool the group lacks,
 ```
 
 ```release-note:bug
-resource/k0rdent_kubernetes_cluster: Fix a `terraform destroy` retry failing with "Missing Configuration for Required Attribute" and never sending the delete, when the first destroy timed out after the cluster's VPC was already gone. A cluster being torn down now keeps its `vpc` id, and `data.k0rdent_vpc` warns instead of failing on that VPC during the same run
+resource/k0rdent_kubernetes_cluster: Fix a `terraform destroy` retry failing with "Missing Configuration for Required Attribute" and never sending the delete, when the first destroy timed out after the cluster's VPC was already gone. A cluster whose teardown started now keeps its `vpc` id, and `data.k0rdent_vpc` warns instead of failing on that VPC during the same run when its id comes from the cluster's `vpc` or the data source depends on the cluster
 ```
 
 ```release-note:bug
-resource/k0rdent_instance_group: Fix a `terraform destroy` retry failing with "Missing Configuration for Required Attribute" and never sending the delete, when the first destroy timed out after the group's VPC was already gone. A group being torn down now keeps its `vpc` id, and `data.k0rdent_vpc` warns instead of failing on that VPC during the same run
+resource/k0rdent_instance_group: Fix a `terraform destroy` retry failing with "Missing Configuration for Required Attribute" and never sending the delete, when the first destroy timed out after the group's VPC was already gone. A group whose teardown started now keeps its `vpc` id, and `data.k0rdent_vpc` warns instead of failing on that VPC during the same run when its id comes from the group's `vpc` or the data source depends on the group
 ```
 
 ```release-note:bug

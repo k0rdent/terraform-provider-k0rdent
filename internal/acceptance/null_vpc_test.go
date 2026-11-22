@@ -117,7 +117,7 @@ func goneVPCWarnings(t *testing.T, c *cliRun) map[string]int {
 		if json.Unmarshal([]byte(line), &message) != nil || message.Type != "diagnostic" {
 			continue
 		}
-		if d := message.Diagnostic; d.Severity == "warning" && d.Summary == "VPC gone while its owner is being torn down" {
+		if d := message.Diagnostic; d.Severity == "warning" && d.Summary == "VPC gone after its owner's teardown started" {
 			warned[d.Address]++
 		}
 	}
@@ -224,15 +224,15 @@ func TestAccADestroyRetryAfterTheOwnedVPCIsGone(t *testing.T) { //nolint:paralle
 
 			dropFakeVPC(t, name)
 
-			gone := fmt.Sprintf(`VPC %q in project "demo" of region "us-texas-1" is gone because the `+
-				"cluster or instance group that owned it is being torn down. Applying this plan will fail "+
+			gone := fmt.Sprintf(`VPC %q in project "demo" of region "us-texas-1" is gone because its `+
+				"owner's teardown started. Applying this plan will fail "+
 				"for this resource. Run `terraform destroy` to finish the teardown.", "vpc-"+name)
 			planned, ok := c.run("plan")
 			if !ok {
 				t.Fatalf("a plain plan after the interrupt failed:\n%s", planned)
 			}
 			mustSay(t, "the plan after the interrupt", planned, "VPC released by its owner",
-				"Plan: 4 to add", "Warning: VPC gone while its owner is being torn down", gone)
+				"Plan: 4 to add", "Warning: VPC gone after its owner's teardown started", gone)
 			// The CLI folds warnings with one summary into the first, so the
 			// JSON plan says which resources warned.
 			warned := goneVPCWarnings(t, c)
@@ -257,9 +257,9 @@ func TestAccADestroyRetryAfterTheOwnedVPCIsGone(t *testing.T) { //nolint:paralle
 			if ok {
 				t.Fatalf("a plain apply on the gone VPC passed:\n%s", applied)
 			}
-			advice := fmt.Sprintf(`VPC %q doesn't exist in project "demo" of region "us-texas-1". If the `+
-				"cluster or instance group that owned it is being torn down, run `terraform destroy` to "+
-				"finish the teardown. Otherwise check the VPC id in", "vpc-"+name)
+			advice := fmt.Sprintf(`VPC %q doesn't exist in project "demo" of region "us-texas-1". If its `+
+				"owner's teardown started, run `terraform destroy` to finish it. "+
+				"Otherwise check the VPC id in", "vpc-"+name)
 			mustSay(t, "the plain apply", applied,
 				fmt.Sprintf(`Error: Could not create the VPC peering because VPC %q doesn't exist`, "vpc-"+name),
 				fmt.Sprintf(`Error: Could not attach the security groups to the VPC because VPC %q doesn't exist`, "vpc-"+name),
@@ -335,6 +335,68 @@ data %q "also_missing" {
 	}
 }
 
+// The documented reads of a held VPC must also finish a destroy. Each case
+// applies its resource before the interrupt, so the retry evaluates it.
+func TestAccADestroyRetryAfterTheOwnedVPCIsGoneDocumentedReads(t *testing.T) { //nolint:paralleltest // it interrupts a destroy through the real CLI
+	if runtime.GOOS == "windows" {
+		skipTest(t, "the CLI sequence runs on unix")
+	}
+	for _, tc := range nullVPCOwners {
+		for _, repro := range []string{"self_link", "security_groups"} {
+			t.Run(tc.ownerType+"/"+repro, func(t *testing.T) {
+				owner := tc
+				owner.name = strings.Replace(tc.name, "-retry", "-"+strings.ReplaceAll(repro, "_", "-"), 1)
+				owner.ownerPath = strings.Replace(tc.ownerPath, tc.name, owner.name, 1)
+				liveVPC := liveVPCOwner(t, owner.name+"-live")
+
+				var extra string
+				switch repro {
+				case "self_link":
+					extra = fmt.Sprintf(`
+resource %q "viaself" {
+  id         = "%s-viaself"
+  vpc        = %q
+  remote_vpc = data.%s.owned.self_link
+}
+`, peeringType, owner.name, liveVPC, vpcType)
+				case "security_groups":
+					extra = fmt.Sprintf(`
+data %q "all" {
+  region = data.%s.owned.region
+}
+
+locals {
+  def = [for g in data.%s.all.security_groups : g.id if g.owner_kind == "vpc" && contains(data.%s.owned.security_groups, g.id)]
+}
+
+resource %q "b" {
+  vpc             = %s.test.vpc
+  security_groups = local.def
+
+  lifecycle {
+    precondition {
+      condition     = data.%s.owned.backend == "nico"
+      error_message = "not nico"
+    }
+  }
+}
+`, securityGroupsType, vpcType, securityGroupsType, vpcType, vpcBindingType, owner.ownerType, vpcType)
+				}
+
+				c := nullVPCDeletingOwner(t, owner, extra)
+				destroyed, ok := c.run("destroy", "-auto-approve")
+				if !ok {
+					t.Fatalf("the destroy retry using %s failed:\n%s", repro, destroyed)
+				}
+				mustSay(t, "the destroy retry using "+repro, destroyed, "Destroy complete!")
+				if listed, ok := c.run("state", "list"); !ok || strings.TrimSpace(listed) != "" {
+					t.Fatalf("state isn't empty after the %s retry:\n%s", repro, listed)
+				}
+			})
+		}
+	}
+}
+
 // A failed first teardown releases the same networking values as a delete in
 // flight and finishes.
 func TestAccAFailedDestroyRetryAfterTheOwnedVPCIsGone(t *testing.T) {
@@ -374,8 +436,13 @@ func TestAccAFailedDestroyRetryAfterTheOwnedVPCIsGone(t *testing.T) {
 			}
 			dropFakeVPC(t, name)
 
-			if out, ok := c.run("plan"); !ok {
-				t.Fatalf("a plan after the failed teardown failed:\n%s", out)
+			planned, ok := c.run("plan")
+			if !ok {
+				t.Fatalf("a plan after the failed teardown failed:\n%s", planned)
+			}
+			if tc.ownerType == clusterType {
+				mustSay(t, "the cluster plan after the failed teardown", planned,
+					"Warning: VPC gone after its owner's teardown started")
 			}
 			out, ok := c.run("destroy", "-auto-approve")
 			if !ok {
@@ -407,6 +474,108 @@ func TestAccAMissingVPCStillFailsAPlan(t *testing.T) {
 	})
 }
 
+// interruptOwnerDestroy stops a destroy after the fake accepts the owner's
+// delete, while its state still says deleting.
+func interruptOwnerDestroy(t *testing.T, c *cliRun, ownerPath string) {
+	t.Helper()
+	deletes := &requestCounter{method: http.MethodDelete, path: ownerPath}
+	deletes.start(t)()
+	var interrupted bytes.Buffer
+	destroy := c.command("destroy", "-auto-approve", "-no-color")
+	destroy.Stdout, destroy.Stderr = &interrupted, &interrupted
+	if err := destroy.Start(); err != nil {
+		t.Fatal(err)
+	}
+	for deadline := time.Now().Add(2 * time.Minute); ; time.Sleep(20 * time.Millisecond) {
+		n, err := fakeServed(http.MethodDelete, ownerPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if n > deletes.before {
+			break
+		}
+		if time.Now().After(deadline) {
+			if err := destroy.Process.Kill(); err != nil {
+				t.Errorf("stopping the destroy: %v", err)
+			}
+			if err := destroy.Wait(); err == nil {
+				t.Error("the destroy without an owner delete unexpectedly passed")
+			}
+			t.Fatalf("destroy never started the owner delete:\n%s", interrupted.String())
+		}
+	}
+	if err := destroy.Process.Signal(os.Interrupt); err != nil {
+		t.Fatalf("interrupt: %v", err)
+	}
+	var exited *exec.ExitError
+	if err := destroy.Wait(); !errors.As(err, &exited) {
+		t.Fatalf("interrupted destroy ended with %v:\n%s", err, interrupted.String())
+	}
+	if got := fakeObject(t, ownerPath)["state"]; got != "deleting" {
+		t.Fatalf("owner state = %v, want deleting", got)
+	}
+	t.Logf("interrupted destroy output:\n%s", interrupted.String())
+}
+
+// The full walkthrough's destroy retry exercises its default-group lookup,
+// preconditions and outputs, not a reduced copy of their expressions.
+func TestAccAWalkthroughFullDestroyRetryAfterTheOwnedVPCIsGone(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		skipTest(t, "the CLI sequence runs on unix")
+	}
+	const prefix = "acc-nullvpc-full"
+	name := prefix + "-walkthrough"
+	ownerPath := clusterAPIPath(name)
+	c := newCLIRun(t)
+	for _, file := range []string{"main.tf", "outputs.tf", "variables.tf"} {
+		body, err := os.ReadFile(filepath.Join("..", "..", "examples", "walkthrough", "full", file)) //nolint:gosec // A checked-in example.
+		if err != nil {
+			t.Fatal(err)
+		}
+		writeFile(t, filepath.Join(c.dir, file), string(body))
+	}
+	keyPath := filepath.Join(c.dir, "id_ed25519.pub")
+	writeFile(t, keyPath, "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICalTR9icsm8WarWXVQxwy8TRDjP7bQ/eoJdFARMvUlQ walkthrough\n")
+	writeFile(t, filepath.Join(c.dir, "terraform.tfvars"), fmt.Sprintf(`
+prefix              = %q
+region              = "us-texas-1"
+project             = "demo"
+cluster_type        = "gpu-training"
+ssh_public_key_file = %q
+allowed_cidrs       = ["203.0.113.0/24", "198.51.100.0/25"]
+webhook_url         = "https://hooks.example.com/k0rdent"
+test_purpose        = %q
+`, prefix, keyPath, deletesSlowly))
+	t.Setenv("TF_VAR_webhook_secret", strings.Repeat("0123456789abcdef", 4))
+	t.Cleanup(func() {
+		if out, ok := c.run("destroy", "-auto-approve"); !ok {
+			t.Logf("cleanup destroy failed:\n%s", out)
+		}
+	})
+
+	applied, ok := c.run("apply", "-auto-approve")
+	if !ok {
+		t.Fatalf("the full walkthrough apply failed:\n%s", applied)
+	}
+	t.Logf("full walkthrough apply output:\n%s", applied)
+	if out, planOK := c.run("plan", "-detailed-exitcode"); !planOK {
+		t.Fatalf("the full walkthrough's healthy plan wasn't empty:\n%s", out)
+	}
+
+	interruptOwnerDestroy(t, c, ownerPath)
+	dropFakeVPC(t, name)
+
+	destroyed, ok := c.run("destroy", "-auto-approve")
+	t.Logf("plain destroy retry output:\n%s", destroyed)
+	if !ok {
+		t.Fatalf("the full walkthrough's plain destroy retry failed:\n%s", destroyed)
+	}
+	mustSay(t, "the full walkthrough's destroy retry", destroyed, "Destroy complete!")
+	if listed, ok := c.run("state", "list"); !ok || strings.TrimSpace(listed) != "" {
+		t.Fatalf("the full walkthrough's state isn't empty after its retry:\n%s", listed)
+	}
+}
+
 func nullVPCDeletingOwner(t *testing.T, owner nullVPCOwner, extraConfig string) *cliRun {
 	t.Helper()
 	t.Cleanup(func() {
@@ -431,42 +600,7 @@ func nullVPCDeletingOwner(t *testing.T, owner nullVPCOwner, extraConfig string) 
 		mustSay(t, "healthy plan", out, "No changes.")
 	}
 
-	deletes := &requestCounter{method: http.MethodDelete, path: owner.ownerPath}
-	deletes.start(t)()
-	var interrupted bytes.Buffer
-	destroy := c.command("destroy", "-auto-approve", "-no-color")
-	destroy.Stdout, destroy.Stderr = &interrupted, &interrupted
-	if err := destroy.Start(); err != nil {
-		t.Fatal(err)
-	}
-	for deadline := time.Now().Add(2 * time.Minute); ; time.Sleep(20 * time.Millisecond) {
-		n, err := fakeServed(http.MethodDelete, owner.ownerPath)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if n > deletes.before {
-			break
-		}
-		if time.Now().After(deadline) {
-			if err := destroy.Process.Kill(); err != nil {
-				t.Errorf("stopping the destroy: %v", err)
-			}
-			if err := destroy.Wait(); err == nil {
-				t.Error("the destroy without an owner delete unexpectedly passed")
-			}
-			t.Fatalf("destroy never started the owner delete:\n%s", interrupted.String())
-		}
-	}
-	if err := destroy.Process.Signal(os.Interrupt); err != nil {
-		t.Fatal(err)
-	}
-	var exited *exec.ExitError
-	if err := destroy.Wait(); !errors.As(err, &exited) {
-		t.Fatalf("interrupted destroy ended with %v:\n%s", err, interrupted.String())
-	}
-	if got := fakeObject(t, owner.ownerPath)["state"]; got != "deleting" {
-		t.Fatalf("owner state = %v, want deleting", got)
-	}
+	interruptOwnerDestroy(t, c, owner.ownerPath)
 	dropFakeVPC(t, owner.name)
 	return c
 }
@@ -532,8 +666,8 @@ func mustJSON(t *testing.T, v any) json.RawMessage {
 	return raw
 }
 
-// A destroy without refresh finishes from state as it is, also when an
-// earlier run left the owner's vpc null.
+// This is a regression test for destroy without refresh, not proof of the
+// owner-side hold. It also covers state from before the hold, with vpc null.
 func TestAccADestroyReleasedVPCWithoutRefresh(t *testing.T) { //nolint:paralleltest // this drives and interrupts the CLI
 	for i, owner := range nullVPCOwners {
 		t.Run(owner.ownerType, func(t *testing.T) {
@@ -543,11 +677,36 @@ func TestAccADestroyReleasedVPCWithoutRefresh(t *testing.T) { //nolint:parallelt
 
 			if i == 1 {
 				nullVPCSetOwnerVPCNull(t, c, owner)
-				shown, ok := c.run("state", "show", owner.ownerType+".test")
+				shown, ok := c.run("show", "-json")
 				if !ok {
-					t.Fatalf("state show failed:\n%s", shown)
+					t.Fatalf("state JSON show failed:\n%s", shown)
 				}
-				mustSay(t, "changed state", shown, "vpc", "null")
+				var state struct {
+					Values struct {
+						RootModule struct {
+							Resources []struct {
+								Address string                     `json:"address"`
+								Values  map[string]json.RawMessage `json:"values"`
+							} `json:"resources"`
+						} `json:"root_module"`
+					} `json:"values"`
+				}
+				if err := json.Unmarshal([]byte(shown), &state); err != nil {
+					t.Fatal(err)
+				}
+				found := false
+				for _, r := range state.Values.RootModule.Resources {
+					if r.Address != owner.ownerType+".test" {
+						continue
+					}
+					found = true
+					if vpc, present := r.Values["vpc"]; !present || string(vpc) != "null" {
+						t.Errorf("the changed owner's vpc = %s, want explicit null", string(vpc))
+					}
+				}
+				if !found {
+					t.Errorf("the changed owner isn't in state JSON:\n%s", shown)
+				}
 			}
 
 			destroyed, ok := c.run("destroy", "-refresh=false", "-auto-approve")

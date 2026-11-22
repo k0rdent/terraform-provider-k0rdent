@@ -262,7 +262,12 @@ func (d *vpcDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, re
 
 	resp.Schema = schema.Schema{
 		MarkdownDescription: "One VPC, by name.\n\n" +
-			"Use `" + ResourceName(vpcsDataSourceSuffix) + "` when the name is not known ahead of time.",
+			"Use `" + ResourceName(vpcsDataSourceSuffix) + "` when the name is not known ahead of time.\n\n" +
+			"After an interrupted destroy has released a VPC, a read in the same run warns instead " +
+			"of failing when `id` comes from its owner's `vpc`, or this data source has `depends_on` " +
+			"for that owner. The held read returns `id`, `region`, `project`, the VPC path in " +
+			"`self_link`, and an empty `security_groups` list. Its other attributes are null. A " +
+			"literal `id` without that dependency can be read before the owner and still fails.",
 		Attributes: attrs,
 	}
 	documentDataSourceSchema(&resp.Schema)
@@ -293,10 +298,19 @@ func (d *vpcDataSource) Read(ctx context.Context, req datasource.ReadRequest, re
 		if d.meta.vpcTeardown.held(target, id) {
 			data.Region = types.StringValue(target.region)
 			data.Project = types.StringValue(target.project)
+			data.SelfLink = types.StringValue(remoteVPCURI(target, id))
+			groups, diags := types.ListValueFrom(ctx, types.StringType, []string{})
+			resp.Diagnostics.Append(diags...)
+			if resp.Diagnostics.HasError() {
+				return
+			}
+			data.SecurityGroups = groups
 			resp.Diagnostics.AddWarning(
 				"VPC released by its owner",
 				fmt.Sprintf("The platform no longer has VPC %q after its owner's teardown released it. "+
-					"Other attributes are null for this read so the owner and its dependencies can finish destroying.", id),
+					"This held read returns `id`, `region`, `project`, `self_link` and an empty "+
+					"`security_groups` list. Its other attributes are null so the owner and its "+
+					"dependencies can finish destroying.", id),
 			)
 			resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 			return

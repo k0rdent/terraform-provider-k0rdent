@@ -95,7 +95,7 @@ func goneVPCWarnings(t *testing.T, diags diag.Diagnostics) []string {
 	}
 	var on []string
 	for _, d := range diags.Warnings() {
-		if d.Summary() != "VPC gone while its owner is being torn down" {
+		if d.Summary() != "VPC gone after its owner's teardown started" {
 			continue
 		}
 		if !strings.Contains(d.Detail(), "Applying this plan will fail for this resource. "+
@@ -172,8 +172,8 @@ func TestAddMissingVPCError(t *testing.T) {
 		return fmt.Sprintf(`{"error":{"code":0,"message":%q,"requestId":"r1","details":[{"reason":%q,"message":%q}]}}`,
 			message, reason, message)
 	}
-	const advice = "If the cluster or instance group that owned it is being torn down, run " +
-		"`terraform destroy` to finish the teardown. Otherwise check the VPC id in "
+	const advice = "If its owner's teardown started, run `terraform destroy` to finish it. " +
+		"Otherwise check the VPC id in "
 	cases := []struct {
 		name          string
 		status        int

@@ -97,9 +97,9 @@ func wasReleased(ctx context.Context, private privateState) bool {
 	return !diags.HasError() && string(raw) == "true"
 }
 
-// vpcTeardownMemo records the VPC a deleting owner stopped reporting in this
-// provider run. The owner's data sources depend on its vpc attribute, so its
-// read records the held id first.
+// vpcTeardownMemo records the VPC a released owner stopped reporting in this
+// provider run. A data source whose id comes from the owner's vpc, or that
+// depends_on the owner, reads after the owner records the held id.
 type vpcTeardownMemo struct {
 	mu  sync.Mutex
 	ids map[string]struct{}
@@ -187,9 +187,9 @@ func warnHeldVPCWrite(ctx context.Context, meta *Meta, req resource.ModifyPlanRe
 			continue
 		}
 		resp.Diagnostics.AddAttributeWarning(path.Root(attribute),
-			"VPC gone while its owner is being torn down",
-			fmt.Sprintf("VPC %q in project %q of region %q is gone because the cluster or instance group "+
-				"that owned it is being torn down. Applying this plan will fail for this resource. "+
+			"VPC gone after its owner's teardown started",
+			fmt.Sprintf("VPC %q in project %q of region %q is gone because its owner's teardown "+
+				"started. Applying this plan will fail for this resource. "+
 				"Run `terraform destroy` to finish the teardown.", id, at.project, at.region))
 	}
 }
@@ -239,8 +239,8 @@ func addMissingVPCError(diags *diag.Diagnostics, what apiCall, target clusterTar
 	}
 	diags.AddError(fmt.Sprintf("Could not %s because VPC %q doesn't exist", what, id),
 		apiErrorDetailNext(apiErrorOf(resp, body), fmt.Sprintf("VPC %q doesn't exist in project %q of "+
-			"region %q. If the cluster or instance group that owned it is being torn down, run "+
-			"`terraform destroy` to finish the teardown. Otherwise check the VPC id in `%s`.",
+			"region %q. If its owner's teardown started, run `terraform destroy` to finish it. "+
+			"Otherwise check the VPC id in `%s`.",
 			id, at.project, at.region, attribute)))
 	return true
 }
