@@ -1,7 +1,6 @@
 package provider
 
 import (
-	"context"
 	"regexp"
 
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
@@ -29,21 +28,6 @@ func adoptOnlySchemaAttribute() schema.BoolAttribute {
 	}
 }
 
-type createTokenRedactionKey struct{}
-
-// withCreateTokenRedaction carries the write-only value only through the call
-// context so transport logs can redact it without storing it in state.
-func withCreateTokenRedaction(ctx context.Context, token string) context.Context {
-	return context.WithValue(ctx, createTokenRedactionKey{}, token)
-}
-
-func createTokenForRedaction(ctx context.Context) string {
-	if token, ok := ctx.Value(createTokenRedactionKey{}).(string); ok {
-		return token
-	}
-	return ""
-}
-
 // createTokenNonBlankValidator rejects blank provenance without changing any
 // nonblank byte, since the platform tag comparison is exact.
 func createTokenNonBlankValidator() validator.String {
@@ -68,6 +52,9 @@ func createTokenSchemaAttribute() schema.StringAttribute {
 			"`region` and `project` and adopts the cluster only when this token exactly matches. It " +
 			"records the platform UID, and a missing or different token is refused. A supplied empty or " +
 			"whitespace-only string is refused rather than silently reverting to a per-call token.\n\n" +
+			"A run interrupted while the create waits, such as by a CI cancel or a job timeout, records the " +
+			"cluster untainted with the last state it read, as `on_create_timeout = \"keep\"` does for a " +
+			"timeout. So the next apply waits for the same cluster rather than replacing it.\n\n" +
 			"This is proof of provenance, not a secret credential. The platform returns the tag on reads. " +
 			"Terraform passes the value to Create on each run but never writes it to plan or state. Use " +
 			"an ephemeral input variable so a saved plan's apply also receives it without persisting the " +

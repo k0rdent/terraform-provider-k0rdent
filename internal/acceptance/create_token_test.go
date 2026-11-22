@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"os/exec"
 	"runtime"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -304,6 +306,129 @@ func TestAccKubernetesClusterCreateTokenRejectsBlank(t *testing.T) {
 				t.Fatalf("a blank create token planned:\n%s", out)
 			}
 			mustSay(t, "the blank token refusal", out, "create_token", "at least one non-whitespace character")
+		})
+	}
+}
+
+// After a kill -9, a fresh plan's warning says the apply adopts the cluster,
+// since its token equals the configured one, and the apply does.
+func TestAccKubernetesClusterCreateTokenFreshPlanAfterKillSaysItAdopts(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS == "windows" {
+		skipTest(t, "the CLI sequence runs on unix")
+	}
+	const name, token = "acc-create-token-fresh-plan", "fresh-plan-token"
+	c := newCLIRun(t)
+	c.addEnv("TF_VAR_create_token", token)
+	c.write(createTokenConfig(name, ""))
+	t.Cleanup(func() { cancelAndRemoveFromFake(t, name) })
+	killAfterAcceptedCreate(t, c, name)
+	path := clusterAPIPath(name)
+	uid := fakeUID(t, path)
+
+	out, ok := c.run("plan", "-out=again.tfplan")
+	if !ok {
+		t.Fatalf("the plan after the kill failed:\n%s", out)
+	}
+	mustSay(t, "the plan after the kill", out, "applying this plan adopts it",
+		"equals the `create_token` this configuration supplied", "the apply adopts it", "records its UID")
+	if strings.Contains(out, "already exists") {
+		t.Errorf("the plan after the kill says the create fails:\n%s", out)
+	}
+	deletes := &requestCounter{method: http.MethodDelete, path: path}
+	cancels := &requestCounter{method: http.MethodPost, path: path + "/cancel"}
+	deletes.start(t)()
+	cancels.start(t)()
+	if out, ok := c.run("apply", "again.tfplan"); !ok {
+		t.Fatalf("the apply after the kill failed:\n%s", out)
+	} else {
+		mustSay(t, "the apply after the kill", out, "its create token matches", "Apply complete!")
+	}
+	if got := c.cliInstance(clusterType + ".test").Attributes.UID; got != uid {
+		t.Errorf("recorded uid %s, want the original %s", got, uid)
+	}
+	for _, counter := range []*requestCounter{deletes, cancels} {
+		if got, err := fakeServed(counter.method, counter.path); err != nil || got != counter.before {
+			t.Errorf("the apply sent %d %s %s: %v", got-counter.before, counter.method, counter.path, err)
+		}
+	}
+	if out, ok := c.run("destroy", "-auto-approve"); !ok {
+		t.Fatalf("the destroy failed:\n%s", out)
+	}
+}
+
+// A CI cancel or a job timeout sends SIGTERM, and Ctrl-C sends SIGINT. With a
+// `create_token`, the interrupted create is saved untainted, so the next
+// ordinary apply waits for the same cluster. Terraform still fails the run.
+func TestAccKubernetesClusterCreateTokenInterruptKeepsTheCluster(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS == "windows" {
+		skipTest(t, "the CLI sequence runs on unix")
+	}
+	for name, sig := range map[string]os.Signal{"sigint": os.Interrupt, "sigterm": syscall.SIGTERM} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			id := "acc-create-token-" + name
+			path := clusterAPIPath(id)
+			c := newCLIRun(t)
+			c.addEnv("TF_VAR_create_token", "interrupt-token-"+name)
+			c.write(createTokenConfig(id, ""))
+			t.Cleanup(func() { cancelAndRemoveFromFake(t, id) })
+			if out, ok := c.run("plan", "-out=create.tfplan"); !ok {
+				t.Fatalf("the create plan failed:\n%s", out)
+			}
+			apply := c.command("apply", "-no-color", "create.tfplan")
+			var out bytes.Buffer
+			apply.Stdout, apply.Stderr = &out, &out
+			if err := apply.Start(); err != nil {
+				t.Fatal(err)
+			}
+			for deadline := time.Now().Add(2 * time.Minute); ; time.Sleep(20 * time.Millisecond) {
+				if status, _, err := readFake(path); err == nil && status == http.StatusOK {
+					break
+				}
+				if time.Now().After(deadline) {
+					t.Fatalf("the create was never accepted: %v\n%s", apply.Process.Kill(), out.String())
+				}
+			}
+			// Past the create's answer, into its wait.
+			time.Sleep(300 * time.Millisecond)
+			if err := apply.Process.Signal(sig); err != nil {
+				t.Fatal(err)
+			}
+			if err := apply.Wait(); err == nil {
+				t.Errorf("the interrupted apply exited 0:\n%s", out.String())
+			}
+			mustSay(t, "the interrupted apply", out.String(), "The run was interrupted while the cluster was")
+			uid := fakeUID(t, path)
+			if shown, ok := c.run("show"); !ok || strings.Contains(shown, "tainted") || !strings.Contains(shown, uid) {
+				t.Fatalf("state doesn't hold the cluster untainted at %s:\n%s", uid, shown)
+			}
+
+			deletes := &requestCounter{method: http.MethodDelete, path: path}
+			cancels := &requestCounter{method: http.MethodPost, path: path + "/cancel"}
+			deletes.start(t)()
+			cancels.start(t)()
+			planned, ok := c.run("plan", "-out=again.tfplan")
+			if !ok {
+				t.Fatalf("the plan after the interrupt failed:\n%s", planned)
+			}
+			mustSay(t, "the plan after the interrupt", planned, "0 to add, 1 to change, 0 to destroy")
+			if applied, ok := c.run("apply", "again.tfplan"); !ok {
+				t.Fatalf("the apply after the interrupt failed:\n%s", applied)
+			}
+			got := c.cliInstance(clusterType + ".test")
+			if got.Attributes.UID != uid || got.Attributes.State != "active" {
+				t.Errorf("after the resume: %+v, want active at the original uid %s", got.Attributes, uid)
+			}
+			for _, counter := range []*requestCounter{deletes, cancels} {
+				if n, err := fakeServed(counter.method, counter.path); err != nil || n != counter.before {
+					t.Errorf("the resume sent %d %s %s: %v", n-counter.before, counter.method, counter.path, err)
+				}
+			}
+			if out, ok := c.run("destroy", "-auto-approve"); !ok {
+				t.Fatalf("the destroy failed:\n%s", out)
+			}
 		})
 	}
 }

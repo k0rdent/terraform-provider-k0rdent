@@ -437,3 +437,75 @@ func TestAccKubernetesClusterAdoptOnlyFalseStillCreates(t *testing.T) { //nolint
 		t.Fatalf("ordinary destroy failed:\n%s", out)
 	}
 }
+
+// The guide's module with a null token, against a cluster with no token. An
+// untagged cluster's empty token equals a null token's empty value, so only the
+// plan's adopt-only token check stops the import flow from adopting, and later
+// destroying, a cluster this configuration never made.
+func TestAccKubernetesClusterAdoptOnlyNullTokenRefusesAnUntaggedCluster(t *testing.T) { //nolint:paralleltest // it counts requests shared fake serves
+	if os.Getenv("TF_ACC") == "" {
+		skipTest(t, "TF_ACC is not set")
+	}
+	const name = "acc-adopt-only-null-token"
+	uid := seedAdoptCandidate(t, name, "")
+	c := newCLIRun(t)
+	c.addEnv("TF_VAR_adopt_only", "true")
+	c.addEnv("TF_VAR_cluster_id", name)
+	writeFile(t, filepath.Join(c.dir, "main.tf"), adoptOnlyConfig(name))
+	writeFile(t, filepath.Join(c.dir, "terraform.tfvars"), "create_token = null\n")
+	path := clusterAPIPath(name)
+	creates := &requestCounter{method: http.MethodPost, path: "/v1/regions/us-texas-1/projects/demo/compute/clusters"}
+	deletes := &requestCounter{method: http.MethodDelete, path: path}
+	cancels := &requestCounter{method: http.MethodPost, path: path + "/cancel"}
+	creates.start(t)()
+	deletes.start(t)()
+	cancels.start(t)()
+	out, ok := planAndApply(t, c, "adopt.tfplan")
+	if ok {
+		t.Fatalf("adopt-only with a null token adopted an untagged cluster:\n%s", out)
+	}
+	mustSay(t, "the null-token refusal", out, "Adopt-only requires a create token")
+	requireNoManagedResourceState(t, c)
+	requireCreateCount(t, creates, 0)
+	requireCreateCount(t, deletes, 0)
+	requireCreateCount(t, cancels, 0)
+	if got := fakeUID(t, path); got != uid {
+		t.Fatalf("the untagged cluster's uid changed from %s to %s", uid, got)
+	}
+}
+
+// A bare adopt-only resource with `allow_replace = true`, which skips the plan
+// guard, against a cluster with another token. It's still refused, and
+// nothing is created, cancelled or deleted.
+func TestAccKubernetesClusterAdoptOnlyMismatchWithAllowReplaceIsRefused(t *testing.T) { //nolint:paralleltest // it counts requests shared fake serves
+	if os.Getenv("TF_ACC") == "" {
+		skipTest(t, "TF_ACC is not set")
+	}
+	const name = "acc-adopt-only-allow-replace"
+	uid := seedAdoptCandidate(t, name, "another-token")
+	c := newCLIRun(t)
+	c.addEnv("TF_VAR_create_token", "wanted-token")
+	config := strings.Replace(createTokenConfig(name, ""), "  create_token      = var.create_token",
+		"  create_token      = var.create_token\n  adopt_only        = true\n  allow_replace     = true", 1)
+	config = strings.Replace(config, `display_name      = "fake-creates-slowly"`, `display_name      = "acceptance"`, 1)
+	c.write(config)
+	path := clusterAPIPath(name)
+	creates := &requestCounter{method: http.MethodPost, path: "/v1/regions/us-texas-1/projects/demo/compute/clusters"}
+	deletes := &requestCounter{method: http.MethodDelete, path: path}
+	cancels := &requestCounter{method: http.MethodPost, path: path + "/cancel"}
+	creates.start(t)()
+	deletes.start(t)()
+	cancels.start(t)()
+	out, ok := c.run("apply", "-auto-approve")
+	if ok {
+		t.Fatalf("adopt-only with allow_replace adopted another token's cluster:\n%s", out)
+	}
+	mustSay(t, "the refusal", out, "has different provenance", "create token differs", "No create or delete was sent")
+	requireNoManagedState(t, c)
+	requireCreateCount(t, creates, 0)
+	requireCreateCount(t, deletes, 0)
+	requireCreateCount(t, cancels, 0)
+	if got := fakeUID(t, path); got != uid {
+		t.Fatalf("the refused cluster's uid changed from %s to %s", uid, got)
+	}
+}

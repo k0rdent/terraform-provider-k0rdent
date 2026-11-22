@@ -414,9 +414,13 @@ func timeoutsSection(s docSurface) string {
 	if s.kind == "resource" && slices.Contains(ops, "create") {
 		b.WriteString("A wait that runs out, or a run that is interrupted, stops nothing on the platform. " +
 			"A create that stops waiting fails, and Terraform taints the object: run `terraform untaint` on it " +
-			"and then `terraform apply`, which waits for the same object. A delete that stops waiting fails " +
-			"and stays in state, and the next `terraform destroy` waits for the same delete without sending " +
-			"another.\n\n")
+			"and then `terraform apply`, which waits for the same object. ")
+		if s.name == ResourceName(clusterResourceSuffix) {
+			b.WriteString("`on_create_timeout` and `create_token` change that for a cluster, as their " +
+				"descriptions say. ")
+		}
+		b.WriteString("A delete that stops waiting fails and stays in state, and the next `terraform destroy` " +
+			"waits for the same delete without sending another.\n\n")
 	}
 	block, indent := "resource", "  "
 	switch s.kind {

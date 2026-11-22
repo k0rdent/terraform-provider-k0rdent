@@ -541,29 +541,81 @@ func TestACreateThatStopsWaitingResumesAfterAnUntaint(t *testing.T) {
 	}
 }
 
-// An interrupt isn't a timeout. The opt-in doesn't turn Ctrl-C into a
-// successful create, and the ordinary error still asks for the untaint.
-func TestAKeptCreateStillTaintsOnInterrupt(t *testing.T) {
-	platform := hardwarePlatform(t, "cluster")
-	run := hardwareRun(t, "cluster", platform,
-		map[string]tftypes.Value{onCreateTimeoutAttribute: tftypes.NewValue(tftypes.String, createTimeoutKeeps)},
-		map[string]string{"create": "200ms"})
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	null := tftypes.NewValue(run.obj, nil)
-	planned := run.plan(null, nil)
-	platform.mu.Lock()
-	platform.interrupt = cancel
-	platform.mu.Unlock()
+// A CI cancel or a job timeout interrupts the run. With `on_create_timeout =
+// "keep"` or a `create_token`, the interrupted create is recorded untainted, as
+// a kept timeout is, so the next ordinary apply waits for the same cluster
+// instead of cancelling and deleting it. With neither, it's still an error,
+// and Terraform taints the cluster.
+func TestAnInterruptedCreateIsKeptWithAnOptIn(t *testing.T) {
+	for name, tc := range map[string]struct {
+		set  map[string]tftypes.Value
+		kept bool
+	}{
+		"keep": {set: map[string]tftypes.Value{
+			onCreateTimeoutAttribute: tftypes.NewValue(tftypes.String, createTimeoutKeeps)}, kept: true},
+		"create_token": {set: map[string]tftypes.Value{
+			createTokenAttribute: tftypes.NewValue(tftypes.String, "interrupt-token")}, kept: true},
+		"neither": {},
+	} {
+		t.Run(name, func(t *testing.T) {
+			platform := hardwarePlatform(t, "cluster")
+			run := hardwareRun(t, "cluster", platform, tc.set, map[string]string{"create": "200ms"})
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			null := tftypes.NewValue(run.obj, nil)
+			planned := run.plan(null, nil)
+			platform.mu.Lock()
+			platform.interrupt = cancel
+			platform.mu.Unlock()
 
-	first := run.apply(ctx, null, planned)
-	errs := strings.Join(diagnosticErrors(first.diags), "\n")
-	containsAll(t, "the interrupted create", errs, "the run was interrupted", "tainted", "terraform untaint")
-	if first.state.IsNull() {
-		t.Fatal("the interrupted create left no state")
-	}
-	if n := platform.sent(http.MethodPost, ""); n != 1 {
-		t.Errorf("%d creates sent, want one", n)
+			first := run.apply(ctx, null, planned)
+			if first.state.IsNull() {
+				t.Fatal("the interrupted create left no state")
+			}
+			errs := strings.Join(diagnosticErrors(first.diags), "\n")
+			if !tc.kept {
+				containsAll(t, "the interrupted create", errs, "the run was interrupted", "tainted", "terraform untaint")
+				return
+			}
+			if errs != "" {
+				t.Fatalf("the interrupted create returned an error, so Terraform taints it: %s", errs)
+			}
+			var warnings []string
+			for _, d := range first.diags {
+				warnings = append(warnings, d.Summary+": "+d.Detail)
+			}
+			containsAll(t, "the interrupted create's warning", strings.Join(warnings, "\n"),
+				"still being created", "The run was interrupted while the cluster was `creating`", "untainted")
+			if got := stateOf(t, first.state); got != "creating" {
+				t.Errorf("recorded state = %q, want creating", got)
+			}
+
+			refreshed, private := run.read(first.state, first.private)
+			resume := run.plan(refreshed, private)
+			if len(resume.replace) > 0 {
+				t.Fatalf("the next plan replaces the cluster over %v", resume.replace)
+			}
+			if got := stateOf(t, resume.state); got != "(known after apply)" {
+				t.Errorf("planned state = %s, want it known after apply, so the plan is an update that waits", got)
+			}
+			platform.settle()
+			second := run.apply(context.Background(), refreshed, resume)
+			if errs := diagnosticErrors(second.diags); len(errs) > 0 {
+				t.Fatalf("the resumed apply failed: %v", errs)
+			}
+			if got := stateOf(t, second.state); got != "active" {
+				t.Errorf("state after the resumed apply = %q, want active", got)
+			}
+			if n := platform.sent(http.MethodPost, ""); n != 1 {
+				t.Errorf("%d creates sent, want one", n)
+			}
+			if n := platform.sent(http.MethodDelete, ""); n != 0 {
+				t.Errorf("%d deletes sent, want none", n)
+			}
+			if n := platform.sent(http.MethodPost, "/cancel"); n != 0 {
+				t.Errorf("%d cancels sent, want none", n)
+			}
+		})
 	}
 }
 

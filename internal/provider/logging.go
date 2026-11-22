@@ -33,13 +33,13 @@ func (t loggingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	resp, err := t.base.RoundTrip(req)
 	elapsed := time.Since(started).Round(time.Millisecond)
 	if err != nil {
-		// Transport errors can wrap an upstream answer, so both credential
-		// redaction and any write-only token in this call's context apply.
+		// Transport errors can wrap an upstream answer, so credential
+		// redaction applies.
 		tflog.Trace(ctx, "platform request failed before a response", map[string]any{
 			"method":   req.Method,
 			"path":     req.URL.Path,
 			"duration": elapsed.String(),
-			"error":    redactDiagnosticTextHiding(err.Error(), createTokenForRedaction(ctx)),
+			"error":    redactDiagnosticText(err.Error()),
 		})
 		return nil, err
 	}

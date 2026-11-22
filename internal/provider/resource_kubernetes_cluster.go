@@ -172,7 +172,8 @@ func (r *clusterResource) Schema(ctx context.Context, _ resource.SchemaRequest, 
 			"running on the platform. By default a create that stops waiting fails, and Terraform taints " +
 			"the cluster. `on_create_timeout = \"keep\"` instead records a timed-out create untainted with " +
 			"the last lifecycle state it read, usually `creating`. A postcondition on that state can fail " +
-			"the run, and the next apply waits for the same cluster. Without `keep`, run `terraform untaint` " +
+			"the run, and the next apply waits for the same cluster. With `keep` or a `create_token`, an " +
+			"interrupted create is recorded the same way. Otherwise, run `terraform untaint` " +
 			"on it and then `terraform apply`, which waits for the same cluster. " +
 			"A plan that would replace it instead warns before the approval, in whatever state the " +
 			"platform reports, that applying it cancels what's still being built, or deletes the " +
@@ -498,7 +499,7 @@ func (r *clusterResource) ModifyPlan(ctx context.Context, req resource.ModifyPla
 	}
 	checkConfiguredKeys(ctx, req, &resp.Diagnostics)
 	if !resp.Plan.Raw.IsNull() && !req.Config.Raw.IsNull() {
-		r.checkAdoptOnly(ctx, resp.Plan, req.Config, &resp.Diagnostics)
+		r.checkAdoptOnly(ctx, resp.Plan, req.State, req.Config, &resp.Diagnostics)
 		if resp.Diagnostics.HasError() {
 			return
 		}
@@ -577,8 +578,6 @@ func (r *clusterResource) Create(ctx context.Context, req resource.CreateRequest
 	if !configuredToken.IsNull() {
 		key.token = configuredToken.ValueString()
 		key.durableToken = true
-		ctx = withCreateTokenRedaction(ctx, key.token)
-		defer redactDiagnosticsHiding(&resp.Diagnostics, key.token)
 	}
 	if plan.AdoptOnly.ValueBool() && !key.durableToken {
 		resp.Diagnostics.AddError("Adopt-only requires a create token",
@@ -667,8 +666,12 @@ func (r *clusterResource) Create(ctx context.Context, req resource.CreateRequest
 		retryOn:   []string{conflictVersion},
 		retryWait: r.meta.Wait,
 	}
+	keep := plan.OnCreateTimeout.ValueString() == createTimeoutKeeps
 	created, found := createFinish[clusterModel]{
-		operation: "createCluster", target: target, keepTimeout: plan.OnCreateTimeout.ValueString() == createTimeoutKeeps,
+		operation: "createCluster", target: target, keepTimeout: keep,
+		// A CI cancel or a job timeout interrupts the run. Tainted, the next
+		// apply would cancel and delete the cluster, so an opt-in keeps it.
+		keepInterrupt: keep || key.durableToken,
 		wait: func(ctx context.Context, id string) error {
 			return r.waitForSettled(ctx, target, id, "the cluster to finish creating")
 		},

@@ -243,9 +243,9 @@ const (
 	// the create landed. Record the id in state, so the next run refreshes it
 	// rather than creating again, and fail.
 	createUnconfirmed
-	// createAdoptAbsent: an adopt-only lookup found no object. A caller can
-	// plan no instances through the presence lookup, while a bare Create gets
-	// an actionable explanation instead of accepting empty managed state.
+	// createAdoptAbsent: an adopt-only lookup found no object. The caller
+	// reports it. A configuration can plan no instance through the presence
+	// lookup instead.
 	createAdoptAbsent
 )
 
@@ -358,7 +358,7 @@ func (c convergingCreate) run(ctx context.Context) (createOutcome, createdAs, di
 				return createFailed, createdAs{}, diags
 			}
 			tflog.Info(ctx, "the create's answer was lost and the id reads as absent, so sending it again",
-				map[string]any{"id": c.key.id, "attempt": lost + 1, "error": redactDiagnosticTextHiding(a.err.Error(), c.key.token)})
+				map[string]any{"id": c.key.id, "attempt": lost + 1, "error": redactDiagnosticText(a.err.Error())})
 
 		case status == http.StatusConflict:
 			l := c.lookup(ctx, c.key.id)
@@ -450,10 +450,6 @@ func (c convergingCreate) adopt(ctx context.Context) (createOutcome, createdAs, 
 		return createFailed, createdAs{}, diags
 	}
 	if !l.found {
-		diags.AddWarning(
-			fmt.Sprintf("No %s to adopt", c.kind),
-			fmt.Sprintf("There is no %s %q in the configured region and project. Nothing was created "+
-				"or recorded, so a later destroy has nothing in state to act on.", c.kind, c.key.id))
 		return createAdoptAbsent, createdAs{}, diags
 	}
 	if c.proof(c.key.id, l) == "" {
@@ -745,8 +741,9 @@ type createFinish[M any] struct {
 	// reportWait reports a failed wait. Nil means the plain addWaitError.
 	reportWait func(diags *diag.Diagnostics, summary string, err error)
 	// keepTimeout records the last observed state without an error on a create
-	// timeout. An interrupt or any other failure keeps the ordinary error.
-	keepTimeout bool
+	// timeout, and keepInterrupt does the same when the run is interrupted. Any
+	// other failure keeps the ordinary error.
+	keepTimeout, keepInterrupt bool
 	// read reads the settled resource back. found is false on a 404.
 	read func(ctx context.Context, id string) (state M, found bool, diags diag.Diagnostics)
 }
@@ -763,9 +760,9 @@ func (f createFinish[M]) run(ctx context.Context, create convergingCreate, plan 
 	if outcome == createAdoptAbsent {
 		diags.AddError(
 			fmt.Sprintf("No %s to adopt", create.kind),
-			fmt.Sprintf("There is no %s %q in the configured region and project. Drive the managed resource's "+
-				"`for_each` from `"+ResourceName(clusterDataSourceSuffix+"s")+"`, as the recovery guide shows, so absence plans no "+
-				"managed instance instead.", create.kind, create.key.id),
+			fmt.Sprintf("There is no %s %q in the configured region and project. Nothing was created or "+
+				"recorded. Drive the managed resource's `for_each` from `"+ResourceName(clusterDataSourceSuffix+"s")+
+				"`, as the recovery guide shows, so absence plans no managed instance instead.", create.kind, create.key.id),
 		)
 		return none, false
 	}
@@ -787,8 +784,8 @@ func (f createFinish[M]) run(ctx context.Context, create convergingCreate, plan 
 		// A wait that stopped while the object read `failed` is reported as
 		// the failure, not as a create still running.
 		if stillRunning(err) && !failedWhenStopped(err) {
-			if f.keepTimeout && !waitInterrupted(err) {
-				keepTimedOutCreate(ctx, create.kind, create.resourceName, state, err, diags)
+			if interrupted := waitInterrupted(err); (interrupted && f.keepInterrupt) || (!interrupted && f.keepTimeout) {
+				keepStoppedCreate(ctx, create.kind, create.resourceName, made.uid, state, err, diags)
 				return none, false
 			}
 			addCreateStillRunning(diags, create.kind, create.resourceName, err, true)

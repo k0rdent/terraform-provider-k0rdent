@@ -291,6 +291,14 @@ same-named cluster with a missing or different token fails the plan after its
 import read but before a state write. UID guards the subsequent destroy. A cluster still
 creating is allowed to settle first, after which the same destroy applies.
 
+A run interrupted while the create waits, such as by a CI cancel or a job
+timeout, saves the cluster untainted when `create_token` is set. Terraform
+still ends that run with `execution halted`. The next apply, normal or
+adopt-only, waits for the same cluster. A row Terraform holds tainted, such as
+after a create the platform failed, is replaced instead: the adopt-only apply
+deletes the cluster and then fails with no cluster to adopt. Its plan warns
+about this before the apply.
+
 If provenance changes between a saved plan and its apply, the import completes
 before the apply refuses it. No create or delete is sent. The failed apply
 leaves the imported row for the old UID in state. The next plain plan leaves that row in place and
