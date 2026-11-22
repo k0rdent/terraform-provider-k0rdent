@@ -236,8 +236,6 @@ var inputClasses = map[attrRef]inputClass{
 	{"data source", "cluster_kubeconfig", "id"}:                 free,
 	{"data source", "kubernetes_cluster", "id"}:                 free,
 	{"data source", "kubernetes_clusters", "id"}:                free,
-	{"data source", "kubernetes_clusters", "clusters.project"}:  read("projects"),
-	{"data source", "kubernetes_clusters", "clusters.region"}:   read("regions"),
 	{"data source", "instance_group", "id"}:                     free,
 	{"data source", "file_store", "id"}:                         free,
 	{"data source", "effective_security_groups", "object_kind"}: free,
