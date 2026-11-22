@@ -246,11 +246,19 @@ func counterpartLinks(page string, registered map[string]docSurface) []relatedLi
 			out = append(out, relatedLink{"resources/" + short, "manages one."})
 		}
 		if _, ok := registered["data-sources/"+short+"s"]; ok {
-			out = append(out, relatedLink{"data-sources/" + short + "s", "lists every one."})
+			lists := "lists every one."
+			if short == clusterDataSourceSuffix {
+				// The recovery lookup, not a list.
+				lists = "finds one by exact id, or none, for adopt-only recovery."
+			}
+			out = append(out, relatedLink{"data-sources/" + short + "s", lists})
 		}
 		if singular, ok := strings.CutSuffix(short, "s"); ok {
 			if _, ok := registered["data-sources/"+singular]; ok {
 				out = append(out, relatedLink{"data-sources/" + singular, "reads one by id."})
+			}
+			if _, ok := registered["resources/"+singular]; ok && singular == clusterDataSourceSuffix {
+				out = append(out, relatedLink{"resources/" + singular, "adopts what this finds, with `adopt_only`."})
 			}
 		}
 	}

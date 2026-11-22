@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 
+	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
@@ -56,7 +57,12 @@ func (d *clusterCandidatesDataSource) Schema(_ context.Context, _ datasource.Sch
 				MarkdownDescription: "The cluster's exact id.",
 				Validators:          []validator.String{urlSafeIdentifier{}},
 			},
-			"state":   stateFilterAttribute("clusters", "state", enumStrings(k0rdent.ClusterStateValues()...), false),
+			"state": schema.StringAttribute{
+				Optional: true,
+				MarkdownDescription: "Return the cluster only when its `state` is this value. Filtered in the " +
+					"provider, on the one read of `id`. When the state differs, the list is empty.",
+				Validators: []validator.String{stringvalidator.OneOf(enumStrings(k0rdent.ClusterStateValues()...)...)},
+			},
 			"region":  dataSourceRegionAttribute(),
 			"project": dataSourceProjectAttribute(),
 			"clusters": schema.ListNestedAttribute{
@@ -73,8 +79,14 @@ func (d *clusterCandidatesDataSource) Schema(_ context.Context, _ datasource.Sch
 							Computed:            true,
 							MarkdownDescription: "Lifecycle state as last read from the platform.",
 						},
-						"region":  dataSourceRegionAttribute(),
-						"project": dataSourceProjectAttribute(),
+						"region": schema.StringAttribute{
+							Computed:            true,
+							MarkdownDescription: "The region the cluster was read in.",
+						},
+						"project": schema.StringAttribute{
+							Computed:            true,
+							MarkdownDescription: "The project the cluster was read in.",
+						},
 					},
 				},
 			},

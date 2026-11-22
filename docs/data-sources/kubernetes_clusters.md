@@ -30,7 +30,7 @@ data "k0rdent_kubernetes_clusters" "training" {
 
 - `project` (String) Project to read. Defaults to the provider's `project`. **Constraints:** Must be lower-case letters, digits and hyphens, starting with a letter and not ending with a hyphen (`[a-z]([-a-z0-9]*[a-z0-9])?`), because it becomes a segment of a request URL.
 - `region` (String) Region to read. Defaults to the provider's `region`. **Constraints:** Must be lower-case letters, digits and hyphens, starting with a letter and not ending with a hyphen (`[a-z]([-a-z0-9]*[a-z0-9])?`), because it becomes a segment of a request URL.
-- `state` (String) Return only the clusters whose `state` is this value. Filtered in the provider, after the whole list is read: the list operation takes no such filter. **Constraints:** Value must be one of: ["creating" "updating" "deleting" "active" "failed" "deleted"].
+- `state` (String) Return the cluster only when its `state` is this value. Filtered in the provider, on the one read of `id`. When the state differs, the list is empty. **Constraints:** Value must be one of: ["creating" "updating" "deleting" "active" "failed" "deleted"].
 
 ### Read-Only
 
@@ -39,17 +39,15 @@ data "k0rdent_kubernetes_clusters" "training" {
 <a id="nestedatt--clusters"></a>
 ### Nested Schema for `clusters`
 
-Optional:
-
-- `project` (String) Project to read. Defaults to the provider's `project`. **Constraints:** Must be lower-case letters, digits and hyphens, starting with a letter and not ending with a hyphen (`[a-z]([-a-z0-9]*[a-z0-9])?`), because it becomes a segment of a request URL.
-- `region` (String) Region to read. Defaults to the provider's `region`. **Constraints:** Must be lower-case letters, digits and hyphens, starting with a letter and not ending with a hyphen (`[a-z]([-a-z0-9]*[a-z0-9])?`), because it becomes a segment of a request URL.
-
 Read-Only:
 
 - `id` (String) The cluster's exact id.
+- `project` (String) The project the cluster was read in.
+- `region` (String) The region the cluster was read in.
 - `state` (String) Lifecycle state as last read from the platform.
 - `uid` (String) The platform's unique id for this cluster, a UUID. Unlike `id`, it's never reused: another cluster created later under the same `id` gets a different one.
 
 ## Related
 
 - [`k0rdent_kubernetes_cluster`](../data-sources/kubernetes_cluster.md) data source: reads one by id.
+- [`k0rdent_kubernetes_cluster`](../resources/kubernetes_cluster.md) resource: adopts what this finds, with `adopt_only`.
