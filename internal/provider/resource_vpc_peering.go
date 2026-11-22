@@ -228,6 +228,7 @@ func (r *vpcPeeringResource) Configure(_ context.Context, req resource.Configure
 
 func (r *vpcPeeringResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
 	modifyScopePlan(ctx, r.meta, req, resp)
+	warnHeldVPCWrite(ctx, r.meta, req, resp, "vpc", "remote_vpc")
 	planTagsAllAtCreation(ctx, r.meta, "VPC peering", req, resp)
 	if resp.Diagnostics.HasError() {
 		return
@@ -307,6 +308,9 @@ func (r *vpcPeeringResource) Create(ctx context.Context, req resource.CreateRequ
 			})
 		},
 		busy: newBusyRetry("createVPCPeering", r.meta.Wait, r.dependencies(target, vpc, remote)...),
+		refused: func(diags *diag.Diagnostics, resp *http.Response, body []byte) bool {
+			return addMissingVPCError(diags, "create the VPC peering", target, resp, body, vpc, remote)
+		},
 	}
 	created, ok := createFinish[vpcPeeringModel]{
 		operation: "createVPCPeering", target: target,

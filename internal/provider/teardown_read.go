@@ -2,12 +2,17 @@ package provider
 
 import (
 	"context"
+	"fmt"
+	"net/http"
 	"reflect"
 	"slices"
+	"strings"
 	"sync"
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/path"
+	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
@@ -135,4 +140,100 @@ func holdVPCThroughTeardown(meta *Meta, target clusterTarget, released bool, rea
 	value, held := heldThroughTeardown(released, read.IsNull(), read, prior)
 	meta.vpcTeardown.record(target, prior.ValueString(), held)
 	return value
+}
+
+// warnHeldVPCWrite warns when a planned create or change names a VPC this
+// run saw its owner release. Terraform's pre-destroy refresh is a normal
+// plan, so an error here would also stop the destroy that ends the teardown.
+// The write itself fails at apply with addMissingVPCError.
+func warnHeldVPCWrite(ctx context.Context, meta *Meta, req resource.ModifyPlanRequest,
+	resp *resource.ModifyPlanResponse, attributes ...string) {
+	if meta == nil || req.Plan.Raw.IsNull() || req.Plan.Raw.Equal(req.State.Raw) {
+		return
+	}
+	var target clusterTarget
+	for name, into := range map[string]*string{"region": &target.region, "project": &target.project} {
+		var v types.String
+		if resp.Plan.GetAttribute(ctx, path.Root(name), &v).HasError() {
+			return
+		}
+		value, ok := known(v)
+		if !ok {
+			return
+		}
+		*into = value
+	}
+	for _, attribute := range attributes {
+		var v types.String
+		if resp.Plan.GetAttribute(ctx, path.Root(attribute), &v).HasError() {
+			continue
+		}
+		id, ok := known(v)
+		if !ok {
+			continue
+		}
+		at := target
+		if attribute == "remote_vpc" {
+			p, ok := vpcRoute.params(remoteVPCURI(target, id))
+			if !ok {
+				continue
+			}
+			at, id = clusterTarget{region: p["region"], project: p["project"]}, p["id"]
+		}
+		if !meta.vpcTeardown.held(at, id) {
+			continue
+		}
+		resp.Diagnostics.AddAttributeWarning(path.Root(attribute),
+			"VPC gone while its owner is being torn down",
+			fmt.Sprintf("VPC %q in project %q of region %q is gone because the cluster or instance group "+
+				"that owned it is being torn down. Applying this plan will fail for this resource. "+
+				"Run `terraform destroy` to finish the teardown.", id, at.project, at.region))
+	}
+}
+
+// missingVPCIn is the VPC a refused write shows doesn't exist, with the
+// attribute that names it, or "" when the answer doesn't show that. The
+// service's 404 on a write under a VPC means the VPC in the path is missing.
+// A missing remote VPC is a 422 whose reason other refusals share, so the
+// platform's message is what tells it apart.
+func missingVPCIn(resp *http.Response, body []byte, local, remote string) (id, attribute string) {
+	if isNotFound(resp, body) {
+		return local, "vpc"
+	}
+	apiErr := apiErrorOf(resp, body)
+	if remote != "" && apiErr != nil && apiErr.StatusCode == http.StatusUnprocessableEntity &&
+		strings.Contains(apiErr.Message, fmt.Sprintf("remoteVpc %q not found", remote)) {
+		return remote, "remote_vpc"
+	}
+	return "", ""
+}
+
+// addMissingVPCError reports a write refused because the VPC it names
+// doesn't exist, and reports whether it was one. A VPC goes only with its
+// cluster or instance group, so it says how to finish that teardown.
+func addMissingVPCError(diags *diag.Diagnostics, what apiCall, target clusterTarget,
+	resp *http.Response, body []byte, local, remote string) bool {
+	remoteAt := target
+	if remote != "" {
+		p, ok := vpcRoute.params(remoteVPCURI(target, remote))
+		if !ok {
+			remote = ""
+		} else {
+			remoteAt, remote = clusterTarget{region: p["region"], project: p["project"]}, p["id"]
+		}
+	}
+	id, attribute := missingVPCIn(resp, body, local, remote)
+	if id == "" {
+		return false
+	}
+	at := target
+	if attribute == "remote_vpc" {
+		at = remoteAt
+	}
+	diags.AddError(fmt.Sprintf("Could not %s because VPC %q doesn't exist", what, id),
+		apiErrorDetailNext(apiErrorOf(resp, body), fmt.Sprintf("VPC %q doesn't exist in project %q of "+
+			"region %q. If the cluster or instance group that owned it is being torn down, run "+
+			"`terraform destroy` to finish the teardown. Otherwise check the VPC id in `%s`.",
+			id, at.project, at.region, attribute)))
+	return true
 }

@@ -246,6 +246,7 @@ func (r *vpcSecurityGroupsResource) scopedDefaultGroup(ctx context.Context, vpc,
 
 func (r *vpcSecurityGroupsResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
 	modifyScopePlan(ctx, r.meta, req, resp)
+	warnHeldVPCWrite(ctx, r.meta, req, resp, "vpc")
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -495,6 +496,10 @@ func (r *vpcSecurityGroupsResource) apply(ctx context.Context, plan vpcSecurityG
 		var httpResp *http.Response
 		if set != nil {
 			respBody, httpResp = set.Body, set.HTTPResponse
+		}
+		if err == nil && addMissingVPCError(&diags, "attach the security groups to the VPC", target,
+			httpResp, respBody, vpc, "") {
+			return vpcSecurityGroupsModel{}, diags
 		}
 		addAPIError(&diags, "attach the security groups to the VPC", httpResp, respBody, err)
 		// `CONFLICT_IMMUTABLE` is the backend refusing, and the upstream message

@@ -2,11 +2,13 @@ package acceptance
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"runtime"
 	"strings"
@@ -55,6 +57,73 @@ resource %q "second" {
 		peeringType, name, ownerType, remote)
 }
 
+// nullVPCWrites are writes a plain apply makes again after the owner's VPC
+// is gone: a peering that names it as remote_vpc from a live VPC, and a
+// security group binding on it.
+func nullVPCWrites(ownerType, name, liveVPC string) string {
+	return fmt.Sprintf(`
+resource %q "toward" {
+  id         = "%s-toward"
+  vpc        = %q
+  remote_vpc = %s.test.vpc
+}
+
+resource %q "binding" {
+  vpc             = %s.test.vpc
+  security_groups = []
+}
+`, peeringType, name, liveVPC, ownerType, vpcBindingType, ownerType)
+}
+
+// liveVPCOwner applies a cluster in a directory of its own, so its VPC stays
+// up while the test tears the other owner down, and destroys it at the end.
+func liveVPCOwner(t *testing.T, name string) string {
+	t.Helper()
+	live := newCLIRun(t)
+	live.write(slowObject(clusterType, name, "live", `create = "2m"`))
+	if out, ok := live.run("apply", "-auto-approve"); !ok {
+		t.Fatalf("applying the live owner failed:\n%s", out)
+	}
+	t.Cleanup(func() {
+		if out, ok := live.run("destroy", "-auto-approve"); !ok {
+			t.Errorf("destroying the live owner failed:\n%s", out)
+		}
+	})
+	return "vpc-" + name
+}
+
+// countSaid is how many times out, folded to single spaces, says want.
+func countSaid(out, want string) int {
+	return strings.Count(strings.Join(strings.Fields(strings.ReplaceAll(out, "│", " ")), " "), want)
+}
+
+// goneVPCWarnings counts, by address, the gone-VPC warnings a JSON plan gives.
+func goneVPCWarnings(t *testing.T, c *cliRun) map[string]int {
+	t.Helper()
+	out, ok := c.run("plan", "-json")
+	if !ok {
+		t.Fatalf("the JSON plan failed:\n%s", out)
+	}
+	warned := map[string]int{}
+	for _, line := range strings.Split(out, "\n") {
+		var message struct {
+			Type       string `json:"type"`
+			Diagnostic struct {
+				Severity string `json:"severity"`
+				Summary  string `json:"summary"`
+				Address  string `json:"address"`
+			} `json:"diagnostic"`
+		}
+		if json.Unmarshal([]byte(line), &message) != nil || message.Type != "diagnostic" {
+			continue
+		}
+		if d := message.Diagnostic; d.Severity == "warning" && d.Summary == "VPC gone while its owner is being torn down" {
+			warned[d.Address]++
+		}
+	}
+	return warned
+}
+
 func dropFakeVPC(t *testing.T, name string) {
 	t.Helper()
 	req, err := http.NewRequest(http.MethodPost, endpoint+
@@ -88,8 +157,10 @@ func TestAccADestroyRetryAfterTheOwnedVPCIsGone(t *testing.T) { //nolint:paralle
 		t.Run(tc.ownerType, func(t *testing.T) {
 			name, ownerPath := tc.name, tc.ownerPath
 			vpcPath := vpcAPIPath("demo", "vpc-"+name)
+			liveVPC := liveVPCOwner(t, name+"-live")
+			config := nullVPCDestroyConfig(tc.ownerType, name) + nullVPCWrites(tc.ownerType, name, liveVPC)
 			c := newCLIRun(t)
-			c.write(nullVPCDestroyConfig(tc.ownerType, name))
+			c.write(config)
 			t.Cleanup(func() {
 				if status, _, err := readFakeStore(ownerPath); err == nil && status == http.StatusOK {
 					code, _, err := callFake(http.MethodDelete, ownerPath)
@@ -153,13 +224,78 @@ func TestAccADestroyRetryAfterTheOwnedVPCIsGone(t *testing.T) { //nolint:paralle
 
 			dropFakeVPC(t, name)
 
-			if out, ok := c.run("plan"); !ok {
-				t.Fatalf("a plain plan after the interrupt failed:\n%s", out)
-			} else {
-				mustSay(t, "the plan after the interrupt", out, "VPC released by its owner")
+			gone := fmt.Sprintf(`VPC %q in project "demo" of region "us-texas-1" is gone because the `+
+				"cluster or instance group that owned it is being torn down. Applying this plan will fail "+
+				"for this resource. Run `terraform destroy` to finish the teardown.", "vpc-"+name)
+			planned, ok := c.run("plan")
+			if !ok {
+				t.Fatalf("a plain plan after the interrupt failed:\n%s", planned)
+			}
+			mustSay(t, "the plan after the interrupt", planned, "VPC released by its owner",
+				"Plan: 4 to add", "Warning: VPC gone while its owner is being torn down", gone)
+			// The CLI folds warnings with one summary into the first, so the
+			// JSON plan says which resources warned.
+			warned := goneVPCWarnings(t, c)
+			for _, want := range []string{
+				peeringType + ".first", peeringType + ".second", peeringType + ".toward", vpcBindingType + ".binding",
+			} {
+				if warned[want] != 1 {
+					t.Errorf("%s warned %d times about the gone VPC, want once: %v", want, warned[want], warned)
+				}
+			}
+			if len(warned) != 4 {
+				t.Errorf("the gone VPC warned on %v, want the four writes only", warned)
 			}
 
-			c.write(nullVPCDestroyConfig(tc.ownerType, name) + fmt.Sprintf(`
+			peerings := &requestCounter{method: http.MethodPost, path: vpcPath + "/peerings"}
+			peerings.start(t)()
+			toward := &requestCounter{method: http.MethodPost, path: vpcAPIPath("demo", liveVPC) + "/peerings"}
+			toward.start(t)()
+			binding := &requestCounter{method: http.MethodPost, path: vpcPath}
+			binding.start(t)()
+			applied, ok := c.run("apply", "-auto-approve")
+			if ok {
+				t.Fatalf("a plain apply on the gone VPC passed:\n%s", applied)
+			}
+			advice := fmt.Sprintf(`VPC %q doesn't exist in project "demo" of region "us-texas-1". If the `+
+				"cluster or instance group that owned it is being torn down, run `terraform destroy` to "+
+				"finish the teardown. Otherwise check the VPC id in", "vpc-"+name)
+			mustSay(t, "the plain apply", applied,
+				fmt.Sprintf(`Error: Could not create the VPC peering because VPC %q doesn't exist`, "vpc-"+name),
+				fmt.Sprintf(`Error: Could not attach the security groups to the VPC because VPC %q doesn't exist`, "vpc-"+name),
+				"The platform answered 404 Not Found.", "The platform answered 422 Unprocessable Entity.",
+				advice+" `vpc`.", advice+" `remote_vpc`.")
+			if n := countSaid(applied, advice); n != 4 {
+				t.Errorf("the apply gave the advice %d times, want 4:\n%s", n, applied)
+			}
+			// The service's 404 for a VPC under a write, as v1.3.0 answers it.
+			if n := countSaid(applied, "Detail reasons: NOT_FOUND"); n != 3 {
+				t.Errorf("the apply quoted NOT_FOUND %d times, want 3:\n%s", n, applied)
+			}
+			// The writes the apply already makes, one each, and nothing more.
+			for _, sent := range []struct {
+				counter *requestCounter
+				want    int
+			}{{peerings, 2}, {toward, 1}, {binding, 1}} {
+				if got, err := fakeServed(http.MethodPost, sent.counter.path); err != nil || got-sent.counter.before != sent.want {
+					t.Errorf("POST %s sent %d, want %d (%v)", sent.counter.path, got-sent.counter.before, sent.want, err)
+				}
+			}
+			for _, path := range []string{
+				vpcPath + "/peerings/" + name + "-first",
+				vpcPath + "/peerings/" + name + "-second",
+				vpcAPIPath("demo", liveVPC) + "/peerings/" + name + "-toward",
+			} {
+				if status, _, err := readFakeStore(path); err != nil || status != http.StatusNotFound {
+					t.Errorf("the failed apply left %s: %d %v", path, status, err)
+				}
+			}
+			if listed, listedOK := c.run("state", "list"); !listedOK || strings.Contains(listed, peeringType) ||
+				strings.Contains(listed, vpcBindingType) {
+				t.Errorf("the failed apply recorded a write in state:\n%s", listed)
+			}
+
+			c.write(config + fmt.Sprintf(`
 data %q "also_missing" {
   id = "acc-nullvpc-also-missing"
 }
@@ -172,7 +308,7 @@ data %q "also_missing" {
 			if strings.Contains(out, "Missing Configuration for Required Attribute") {
 				t.Fatalf("the held VPC was null while checking the second missing VPC:\n%s", out)
 			}
-			c.write(nullVPCDestroyConfig(tc.ownerType, name))
+			c.write(config)
 			out, ok = c.run("destroy", "-auto-approve")
 			if !ok {
 				t.Fatalf("the plain destroy retry failed:\n%s", out)
@@ -269,4 +405,159 @@ func TestAccAMissingVPCStillFailsAPlan(t *testing.T) {
 			ExpectError: regexp.MustCompile(`No such VPC`),
 		}},
 	})
+}
+
+func nullVPCDeletingOwner(t *testing.T, owner nullVPCOwner, extraConfig string) *cliRun {
+	t.Helper()
+	t.Cleanup(func() {
+		if status, _, err := readFakeStore(owner.ownerPath); err == nil && status == http.StatusOK {
+			code, _, err := callFake(http.MethodDelete, owner.ownerPath)
+			if err != nil || (code != http.StatusNoContent && code != http.StatusConflict) {
+				t.Errorf("cleanup delete answered %d: %v", code, err)
+				return
+			}
+			awaitFakeGone(t, owner.ownerPath)
+		}
+	})
+
+	c := newCLIRun(t)
+	c.write(nullVPCDestroyConfig(owner.ownerType, owner.name) + extraConfig)
+	if out, ok := c.run("apply", "-auto-approve"); !ok {
+		t.Fatalf("apply failed:\n%s", out)
+	}
+	if out, ok := c.run("plan", "-detailed-exitcode"); !ok {
+		t.Fatalf("healthy plan failed:\n%s", out)
+	} else {
+		mustSay(t, "healthy plan", out, "No changes.")
+	}
+
+	deletes := &requestCounter{method: http.MethodDelete, path: owner.ownerPath}
+	deletes.start(t)()
+	var interrupted bytes.Buffer
+	destroy := c.command("destroy", "-auto-approve", "-no-color")
+	destroy.Stdout, destroy.Stderr = &interrupted, &interrupted
+	if err := destroy.Start(); err != nil {
+		t.Fatal(err)
+	}
+	for deadline := time.Now().Add(2 * time.Minute); ; time.Sleep(20 * time.Millisecond) {
+		n, err := fakeServed(http.MethodDelete, owner.ownerPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if n > deletes.before {
+			break
+		}
+		if time.Now().After(deadline) {
+			if err := destroy.Process.Kill(); err != nil {
+				t.Errorf("stopping the destroy: %v", err)
+			}
+			if err := destroy.Wait(); err == nil {
+				t.Error("the destroy without an owner delete unexpectedly passed")
+			}
+			t.Fatalf("destroy never started the owner delete:\n%s", interrupted.String())
+		}
+	}
+	if err := destroy.Process.Signal(os.Interrupt); err != nil {
+		t.Fatal(err)
+	}
+	var exited *exec.ExitError
+	if err := destroy.Wait(); !errors.As(err, &exited) {
+		t.Fatalf("interrupted destroy ended with %v:\n%s", err, interrupted.String())
+	}
+	if got := fakeObject(t, owner.ownerPath)["state"]; got != "deleting" {
+		t.Fatalf("owner state = %v, want deleting", got)
+	}
+	dropFakeVPC(t, owner.name)
+	return c
+}
+
+// nullVPCSetOwnerVPCNull writes vpc = null into the owner's state, as a run
+// before the hold could have left it.
+func nullVPCSetOwnerVPCNull(t *testing.T, c *cliRun, owner nullVPCOwner) {
+	t.Helper()
+	statePath := filepath.Join(c.dir, "terraform.tfstate")
+	raw, err := os.ReadFile(statePath) //nolint:gosec // Test state in its temporary directory.
+	if err != nil {
+		t.Fatal(err)
+	}
+	var document map[string]json.RawMessage
+	var resources []map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &document); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(document["resources"], &resources); err != nil {
+		t.Fatal(err)
+	}
+	changed := false
+	for _, r := range resources {
+		var mode, typ, name string
+		for key, into := range map[string]*string{"mode": &mode, "type": &typ, "name": &name} {
+			if err := json.Unmarshal(r[key], into); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if mode != "managed" || typ != owner.ownerType || name != "test" {
+			continue
+		}
+		var instances []map[string]json.RawMessage
+		if err := json.Unmarshal(r["instances"], &instances); err != nil {
+			t.Fatal(err)
+		}
+		for _, instance := range instances {
+			var attributes map[string]json.RawMessage
+			if err := json.Unmarshal(instance["attributes"], &attributes); err != nil {
+				t.Fatal(err)
+			}
+			attributes["vpc"] = json.RawMessage("null")
+			instance["attributes"] = mustJSON(t, attributes)
+			changed = true
+		}
+		r["instances"] = mustJSON(t, instances)
+	}
+	if !changed {
+		t.Fatal("owner state was not found")
+	}
+	document["resources"] = mustJSON(t, resources)
+	if err := os.WriteFile(statePath, mustJSON(t, document), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func mustJSON(t *testing.T, v any) json.RawMessage {
+	t.Helper()
+	raw, err := json.Marshal(v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return raw
+}
+
+// A destroy without refresh finishes from state as it is, also when an
+// earlier run left the owner's vpc null.
+func TestAccADestroyReleasedVPCWithoutRefresh(t *testing.T) { //nolint:paralleltest // this drives and interrupts the CLI
+	for i, owner := range nullVPCOwners {
+		t.Run(owner.ownerType, func(t *testing.T) {
+			owner.name = strings.Replace(owner.name, "-retry", "-no-refresh", 1)
+			owner.ownerPath = strings.Replace(owner.ownerPath, nullVPCOwners[i].name, owner.name, 1)
+			c := nullVPCDeletingOwner(t, owner, "")
+
+			if i == 1 {
+				nullVPCSetOwnerVPCNull(t, c, owner)
+				shown, ok := c.run("state", "show", owner.ownerType+".test")
+				if !ok {
+					t.Fatalf("state show failed:\n%s", shown)
+				}
+				mustSay(t, "changed state", shown, "vpc", "null")
+			}
+
+			destroyed, ok := c.run("destroy", "-refresh=false", "-auto-approve")
+			if !ok {
+				t.Fatalf("destroy without refresh failed:\n%s", destroyed)
+			}
+			mustSay(t, "destroy without refresh", destroyed, "Destroy complete!")
+			if listed, ok := c.run("state", "list"); !ok || strings.TrimSpace(listed) != "" {
+				t.Fatalf("state is not empty after destroy without refresh:\n%s", listed)
+			}
+		})
+	}
 }
