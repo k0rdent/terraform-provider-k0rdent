@@ -335,14 +335,77 @@ data %q "also_missing" {
 	}
 }
 
+// assertHeldVPCPlan requires a plain plan and pins every value its held read
+// returns, so a placeholder can't turn into another value unnoticed.
+func assertHeldVPCPlan(t *testing.T, c *cliRun, owner nullVPCOwner) {
+	t.Helper()
+	planned, ok := c.run("plan", "-out=held.tfplan")
+	if !ok {
+		t.Fatalf("a plain plan after the interrupt failed:\n%s", planned)
+	}
+	mustSay(t, "the plan after the interrupt", planned, "VPC released by its owner",
+		"`terraform destroy -refresh=false`")
+	shown, ok := c.run("show", "-json", "held.tfplan")
+	if !ok {
+		t.Fatalf("showing the held-read plan failed:\n%s", shown)
+	}
+	var plan struct {
+		PriorState struct {
+			Values struct {
+				RootModule struct {
+					Resources []struct {
+						Address string                     `json:"address"`
+						Values  map[string]json.RawMessage `json:"values"`
+					} `json:"resources"`
+				} `json:"root_module"`
+			} `json:"values"`
+		} `json:"prior_state"`
+	}
+	if err := json.Unmarshal([]byte(shown), &plan); err != nil {
+		t.Fatal(err)
+	}
+	var values map[string]json.RawMessage
+	for _, r := range plan.PriorState.Values.RootModule.Resources {
+		if r.Address == "data."+vpcType+".owned" {
+			values = r.Values
+			break
+		}
+	}
+	if values == nil {
+		t.Fatalf("the held VPC isn't in the planned values:\n%s", shown)
+	}
+	want := map[string]string{
+		"id":              string(mustJSON(t, "vpc-"+owner.name)),
+		"region":          `"us-texas-1"`,
+		"project":         `"demo"`,
+		"self_link":       string(mustJSON(t, vpcAPIPath("demo", "vpc-"+owner.name))),
+		"security_groups": "[]",
+		"display_name":    "null",
+		"backend":         "null",
+		"owner_kind":      "null",
+		"owner_id":        "null",
+		"state":           "null",
+		"ufo_cr_name":     "null",
+	}
+	if len(values) != len(want) {
+		t.Errorf("the held VPC has %d attributes, want %d: %v", len(values), len(want), values)
+	}
+	for attribute, expected := range want {
+		got, present := values[attribute]
+		if !present || string(got) != expected {
+			t.Errorf("the held VPC's %s = %s, want %s", attribute, got, expected)
+		}
+	}
+}
+
 // The documented reads of a held VPC must also finish a destroy. Each case
-// applies its resource before the interrupt, so the retry evaluates it.
+// applies its configuration before the interrupt, so the retry evaluates it.
 func TestAccADestroyRetryAfterTheOwnedVPCIsGoneDocumentedReads(t *testing.T) { //nolint:paralleltest // it interrupts a destroy through the real CLI
 	if runtime.GOOS == "windows" {
 		skipTest(t, "the CLI sequence runs on unix")
 	}
 	for _, tc := range nullVPCOwners {
-		for _, repro := range []string{"self_link", "security_groups"} {
+		for _, repro := range []string{"self_link", "security_groups", "one", "walkthrough-precondition"} {
 			t.Run(tc.ownerType+"/"+repro, func(t *testing.T) {
 				owner := tc
 				owner.name = strings.Replace(tc.name, "-retry", "-"+strings.ReplaceAll(repro, "_", "-"), 1)
@@ -361,6 +424,23 @@ resource %q "viaself" {
 `, peeringType, owner.name, liveVPC, vpcType)
 				case "security_groups":
 					extra = fmt.Sprintf(`
+output "attached_groups" {
+  value = data.%s.owned.security_groups
+}
+`, vpcType)
+				case "one":
+					extra = fmt.Sprintf(`
+data %q "default" {
+  count = length(data.%s.owned.security_groups) == 1 ? 1 : 0
+  id    = one(data.%s.owned.security_groups)
+}
+
+output "default_ingress" {
+  value = flatten(data.%s.default[*].ingress)
+}
+`, securityGroupType, vpcType, vpcType, securityGroupType)
+				case "walkthrough-precondition":
+					extra = fmt.Sprintf(`
 data %q "all" {
   region = data.%s.owned.region
 }
@@ -375,15 +455,21 @@ resource %q "b" {
 
   lifecycle {
     precondition {
-      condition     = data.%s.owned.backend == "nico"
+      condition     = data.%s.owned.state == null || data.%s.owned.backend == "nico"
       error_message = "not nico"
+    }
+    precondition {
+      condition     = data.%s.owned.backend != "nico" || length(local.def) == 1
+      error_message = "not one default group"
     }
   }
 }
-`, securityGroupsType, vpcType, securityGroupsType, vpcType, vpcBindingType, owner.ownerType, vpcType)
+`, securityGroupsType, vpcType, securityGroupsType, vpcType, vpcBindingType, owner.ownerType,
+						vpcType, vpcType, vpcType)
 				}
 
 				c := nullVPCDeletingOwner(t, owner, extra)
+				assertHeldVPCPlan(t, c, owner)
 				destroyed, ok := c.run("destroy", "-auto-approve")
 				if !ok {
 					t.Fatalf("the destroy retry using %s failed:\n%s", repro, destroyed)
@@ -440,10 +526,8 @@ func TestAccAFailedDestroyRetryAfterTheOwnedVPCIsGone(t *testing.T) {
 			if !ok {
 				t.Fatalf("a plan after the failed teardown failed:\n%s", planned)
 			}
-			if tc.ownerType == clusterType {
-				mustSay(t, "the cluster plan after the failed teardown", planned,
-					"Warning: VPC gone after its owner's teardown started")
-			}
+			mustSay(t, "the plan after the failed teardown", planned,
+				"Warning: VPC gone after its owner's teardown started")
 			out, ok := c.run("destroy", "-auto-approve")
 			if !ok {
 				t.Fatalf("the destroy after a failed teardown failed:\n%s", out)
@@ -565,6 +649,13 @@ test_purpose        = %q
 	interruptOwnerDestroy(t, c, ownerPath)
 	dropFakeVPC(t, name)
 
+	planned, planOK := c.run("plan")
+	if !planOK {
+		t.Fatalf("the full walkthrough's plain plan after the interrupt failed:\n%s", planned)
+	}
+	mustSay(t, "the full walkthrough's plan after the interrupt", planned,
+		"VPC released by its owner", "`terraform destroy -refresh=false`")
+
 	destroyed, ok := c.run("destroy", "-auto-approve")
 	t.Logf("plain destroy retry output:\n%s", destroyed)
 	if !ok {
@@ -590,9 +681,16 @@ func nullVPCDeletingOwner(t *testing.T, owner nullVPCOwner, extraConfig string) 
 	})
 
 	c := newCLIRun(t)
-	c.write(nullVPCDestroyConfig(owner.ownerType, owner.name) + extraConfig)
+	config := nullVPCDestroyConfig(owner.ownerType, owner.name)
+	c.write(config)
 	if out, ok := c.run("apply", "-auto-approve"); !ok {
 		t.Fatalf("apply failed:\n%s", out)
+	}
+	if extraConfig != "" {
+		c.write(config + extraConfig)
+		if out, ok := c.run("apply", "-auto-approve"); !ok {
+			t.Fatalf("applying the documented read failed:\n%s", out)
+		}
 	}
 	if out, ok := c.run("plan", "-detailed-exitcode"); !ok {
 		t.Fatalf("healthy plan failed:\n%s", out)

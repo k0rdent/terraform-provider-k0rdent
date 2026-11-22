@@ -81,3 +81,7 @@ resource/k0rdent_vpc_peering: Fix a plan after an interrupted destroy, once the 
 ```release-note:bug
 resource/k0rdent_vpc_security_groups: Fix a plan after an interrupted destroy, once the VPC is gone with its cluster or instance group, planning the binding as a create that failed at apply with a bare 404. The plan now warns that the apply will fail for it and that `terraform destroy` finishes the teardown, and the apply error names the missing VPC
 ```
+
+```release-note:bug
+data-source/k0rdent_vpc: Fix the documented default security group read and walkthrough preconditions failing a plain `terraform destroy` retry or `terraform plan` after an interrupt released the VPC. The held-read warning now names `terraform destroy -refresh=false` for expressions that can't use its values
+```

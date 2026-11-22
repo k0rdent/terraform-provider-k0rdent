@@ -267,7 +267,11 @@ func (d *vpcDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, re
 			"of failing when `id` comes from its owner's `vpc`, or this data source has `depends_on` " +
 			"for that owner. The held read returns `id`, `region`, `project`, the VPC path in " +
 			"`self_link`, and an empty `security_groups` list. Its other attributes are null. A " +
-			"literal `id` without that dependency can be read before the owner and still fails.",
+			"literal `id` without that dependency can be read before the owner and still fails. A live " +
+			"VPC always has `state`, so `state == null` marks a held read. Use it to let preconditions " +
+			"pass while the owner destroys. `one(security_groups)` is null on a held read. If a later " +
+			"expression in the plan fails on these values, `terraform destroy -refresh=false` finishes " +
+			"the teardown.",
 		Attributes: attrs,
 	}
 	documentDataSourceSchema(&resp.Schema)
@@ -310,7 +314,8 @@ func (d *vpcDataSource) Read(ctx context.Context, req datasource.ReadRequest, re
 				fmt.Sprintf("The platform no longer has VPC %q after its owner's teardown released it. "+
 					"This held read returns `id`, `region`, `project`, `self_link` and an empty "+
 					"`security_groups` list. Its other attributes are null so the owner and its "+
-					"dependencies can finish destroying.", id),
+					"dependencies can finish destroying. If a later expression in the plan fails on "+
+					"these values, run `terraform destroy -refresh=false` to finish the teardown.", id),
 			)
 			resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 			return
