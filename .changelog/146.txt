@@ -73,3 +73,11 @@ resource/k0rdent_kubernetes_cluster: Fix a `terraform destroy` retry failing wit
 ```release-note:bug
 resource/k0rdent_instance_group: Fix a `terraform destroy` retry failing with "Missing Configuration for Required Attribute" and never sending the delete, when the first destroy timed out after the group's VPC was already gone. A group being torn down now keeps its `vpc` id, and `data.k0rdent_vpc` warns instead of failing on that VPC during the same run
 ```
+
+```release-note:bug
+resource/k0rdent_vpc_peering: Fix a plan after an interrupted destroy, once the VPC is gone with its cluster or instance group, planning the peering as a create that failed at apply with a bare 404 or 422. The plan now warns that the apply will fail for it and that `terraform destroy` finishes the teardown, and the apply error names the missing VPC
+```
+
+```release-note:bug
+resource/k0rdent_vpc_security_groups: Fix a plan after an interrupted destroy, once the VPC is gone with its cluster or instance group, planning the binding as a create that failed at apply with a bare 404. The plan now warns that the apply will fail for it and that `terraform destroy` finishes the teardown, and the apply error names the missing VPC
+```
