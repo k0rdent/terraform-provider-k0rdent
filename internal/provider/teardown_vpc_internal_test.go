@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"testing"
@@ -61,6 +62,14 @@ func TestHoldVPCThroughTeardown(t *testing.T) {
 	})
 }
 
+// unscoped is a planned value whose configuration leaves the region and
+// project to the provider.
+func unscoped(planned map[string]tftypes.Value) map[string]tftypes.Value {
+	out := maps.Clone(planned)
+	out["region"], out["project"] = tftypes.NewValue(tftypes.String, nil), tftypes.NewValue(tftypes.String, nil)
+	return out
+}
+
 func heldVPCPlan(t *testing.T, r resource.ResourceWithModifyPlan, prior, planned map[string]tftypes.Value) resource.ModifyPlanResponse {
 	t.Helper()
 	pair := pairOf(t, r, prior, planned)
@@ -108,6 +117,8 @@ func TestWarnHeldVPCWrite(t *testing.T) {
 	meta := &Meta{}
 	meta.vpcTeardown.record(target, "vpc-gone", true)
 	meta.vpcTeardown.record(clusterTarget{region: "us-texas-1", project: "other"}, "vpc-elsewhere", true)
+	defaulted := &Meta{Region: target.region, Project: target.project}
+	defaulted.vpcTeardown.record(target, "vpc-gone", true)
 	peering := func(vpc, remote string) map[string]tftypes.Value {
 		return map[string]tftypes.Value{"region": str(target.region), "project": str(target.project),
 			"id": str("p"), "vpc": str(vpc), "remote_vpc": str(remote)}
@@ -131,11 +142,15 @@ func TestWarnHeldVPCWrite(t *testing.T) {
 			nil, peering("vpc-live", "/v1/regions/us-texas-1/projects/other/networking/vpcs/vpc-elsewhere"),
 			[]string{"remote_vpc"}},
 		{"a binding created on it", &vpcSecurityGroupsResource{meta: meta}, nil, binding, []string{"vpc"}},
+		{"a peering created on it whose scope the provider fills in", &vpcPeeringResource{meta: defaulted},
+			nil, unscoped(peering("vpc-live", "vpc-gone")), []string{"remote_vpc"}},
 		{"a peering on live VPCs", &vpcPeeringResource{meta: meta}, nil, peering("vpc-live", "vpc-other"), nil},
 		{"the same id in another project", &vpcPeeringResource{meta: meta},
 			nil, peering("vpc-live", "/v1/regions/us-texas-1/projects/other/networking/vpcs/vpc-gone"), nil},
 		{"an unchanged peering", &vpcPeeringResource{meta: meta},
 			peering("vpc-gone", "vpc-live"), peering("vpc-gone", "vpc-live"), nil},
+		{"an unchanged peering whose scope the provider fills in", &vpcPeeringResource{meta: defaulted},
+			peering("vpc-live", "vpc-gone"), unscoped(peering("vpc-live", "vpc-gone")), nil},
 		{"a destroy", &vpcPeeringResource{meta: meta}, peering("vpc-gone", "vpc-live"), nil, nil},
 		{"a run that saw no teardown", &vpcPeeringResource{meta: &Meta{}}, nil, peering("vpc-gone", "vpc-live"), nil},
 	}
@@ -193,6 +208,10 @@ func TestAddMissingVPCError(t *testing.T) {
 				advice + "`remote_vpc`."}},
 		{name: "a 404 without the service's envelope", status: 404, body: "404 page not found",
 			remote: "vpc-live", wantUnhandled: true},
+		{name: "the service's 404 for the project", status: 404,
+			body: envelope(`not found: project "demo"`, "NOT_FOUND"), remote: "vpc-live", wantUnhandled: true},
+		{name: "the service's 404 for another VPC", status: 404,
+			body: envelope(`not found: vpc "vpc-somebody-elses"`, "NOT_FOUND"), remote: "vpc-live", wantUnhandled: true},
 		{name: "a 422 another project gives, which doesn't say the VPC is missing", status: 422,
 			body: envelope(`validation: remoteVpc "vpc-gone" is not available for peering: it must name an `+
 				`existing, active VPC in the same region`, "INVALID_ARGUMENT"),

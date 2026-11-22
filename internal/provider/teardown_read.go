@@ -148,7 +148,10 @@ func holdVPCThroughTeardown(meta *Meta, target clusterTarget, released bool, rea
 // The write itself fails at apply with addMissingVPCError.
 func warnHeldVPCWrite(ctx context.Context, meta *Meta, req resource.ModifyPlanRequest,
 	resp *resource.ModifyPlanResponse, attributes ...string) {
-	if meta == nil || req.Plan.Raw.IsNull() || req.Plan.Raw.Equal(req.State.Raw) {
+	// resp.Plan, which holds the region and project modifyScopePlan filled
+	// in, so a configuration that leaves them to the provider still reads as
+	// unchanged.
+	if meta == nil || resp.Plan.Raw.IsNull() || resp.Plan.Raw.Equal(req.State.Raw) {
 		return
 	}
 	var target clusterTarget
@@ -192,15 +195,19 @@ func warnHeldVPCWrite(ctx context.Context, meta *Meta, req resource.ModifyPlanRe
 }
 
 // missingVPCIn is the VPC a refused write shows doesn't exist, with the
-// attribute that names it, or "" when the answer doesn't show that. The
-// service's 404 on a write under a VPC means the VPC in the path is missing.
-// A missing remote VPC is a 422 whose reason other refusals share, so the
-// platform's message is what tells it apart.
+// attribute that names it, or "" when the answer doesn't show that. A 404
+// counts only when its message names the VPC in the path, as API v1.3.0's
+// `not found: vpc "<id>"` does, so a 404 for the project or region keeps its
+// own message. A missing remote VPC is a 422 whose reason other refusals
+// share, so the platform's message is what tells it apart.
 func missingVPCIn(resp *http.Response, body []byte, local, remote string) (id, attribute string) {
-	if isNotFound(resp, body) {
-		return local, "vpc"
-	}
 	apiErr := apiErrorOf(resp, body)
+	if isNotFound(resp, body) {
+		if apiErr != nil && strings.Contains(apiErr.Message, fmt.Sprintf("not found: vpc %q", local)) {
+			return local, "vpc"
+		}
+		return "", ""
+	}
 	if remote != "" && apiErr != nil && apiErr.StatusCode == http.StatusUnprocessableEntity &&
 		strings.Contains(apiErr.Message, fmt.Sprintf("remoteVpc %q not found", remote)) {
 		return remote, "remote_vpc"
