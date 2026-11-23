@@ -167,16 +167,21 @@ waits for the apply and doesn't stop a destroy.
 ## A VPC read after an interrupted destroy
 
 The platform can release a VPC with its cluster or instance group while the
-owner is still being torn down. An interrupted destroy can then leave two
+owner is still being torn down. An interrupted destroy can then leave four
 configuration shapes that stop the next plan:
 
 - A `k0rdent_vpc` read whose `id` doesn't come from the owner's `vpc` and has
   no `depends_on` on the owner fails with "No such VPC".
 - A value from the held read can fail a required argument, such as
   `one(security_groups)` feeding a security group's `id`.
+- A plan with `-refresh=false` doesn't refresh the owner, so it can't establish
+  the held read and fails with "No such VPC".
+- State from an older provider can already hold `vpc = null` on the owner. An
+  ordinary destroy retry then fails with "Missing Configuration for Required
+  Attribute" because there's no prior VPC id to hold.
 
-For either shape, `terraform destroy -refresh=false` finishes the teardown.
-Taking the read's `id` from the owner's `vpc` avoids the first failure. See
+For any of these shapes, `terraform destroy -refresh=false` finishes the
+teardown. Taking the read's `id` from the owner's `vpc` avoids the first failure. See
 [`k0rdent_vpc`](data-sources/vpc.md) for the values a held read returns.
 
 ## Values you still have to hardcode
