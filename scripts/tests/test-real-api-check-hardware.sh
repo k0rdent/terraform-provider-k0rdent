@@ -170,8 +170,8 @@ left_on_standin() {
 # says_what_is_left <output> <run dir>: the summary names every object the
 # stand-in still holds for the run, and says nothing is left only when that's
 # so. A create that a kill interrupts with its request in flight leaves an
-# object no state holds when its id is set in configuration, as the
-# walkthrough's file store is, so a killed run may leave one.
+# object no state holds when its id is set in configuration, so a killed run
+# may leave one.
 says_what_is_left() {
   local left kind id
   left="$(left_on_standin "$(basename "$2")")"

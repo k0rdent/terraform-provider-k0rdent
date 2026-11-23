@@ -369,7 +369,18 @@ func TestAccWebhookSubscriptionImportThenSecret(t *testing.T) {
 	adoptedAddr := webhookType + ".adopted"
 	var id string
 	adopted := strings.Replace(webhookConfig(url, nil, 1, ""), `"test"`, `"adopted"`, 1)
-	adoption := adopted + fmt.Sprintf(`
+	// OpenTofu doesn't wait for what an import block's identity reads, so
+	// var.adopted_id could be read before it's set. The precondition reads it
+	// from the resource, which OpenTofu does wait for. The import guide gives
+	// the same advice.
+	adoptedWaiting := strings.Replace(webhookConfig(url, nil, 1, `  lifecycle {
+    precondition {
+      condition     = var.adopted_id != ""
+      error_message = "adopted_id is empty."
+    }
+  }
+`), `"test"`, `"adopted"`, 1)
+	adoption := adoptedWaiting + fmt.Sprintf(`
 variable "adopted_id" {
   type = string
 }
