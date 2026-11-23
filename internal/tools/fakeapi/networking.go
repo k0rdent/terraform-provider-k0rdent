@@ -979,6 +979,18 @@ func (s *state) createVPCPeering(w http.ResponseWriter, r *http.Request) {
 			"remoteVpc must not be the local VPC")
 		return
 	}
+	// A remote in this project is looked up, and one that isn't there is
+	// this 422, as v1.3.0 answers on kind. One in another project isn't
+	// modelled.
+	ownPrefix := "/v1/regions/" + o.scope.region + "/projects/" + o.scope.project + "/networking/vpcs/"
+	if remote, own := strings.CutPrefix(vpcPath(body.RemoteVpc), ownPrefix); own {
+		if _, found := vpcKind.stateIn(o, remote); !found {
+			message := fmt.Sprintf("validation: remoteVpc %q not found in project %q", remote, o.scope.project)
+			errorEnvelope(w, http.StatusUnprocessableEntity, "", message,
+				[]any{errorDetail{Reason: "INVALID_ARGUMENT", Message: message}})
+			return
+		}
+	}
 
 	if body.ID != nil && strings.Contains(*body.ID, vpcLockLostMarker) && s.loseVPCLockOnce(o.scope, vpc+"/"+*body.ID) {
 		// The contract's body is deliberately generic and carries no
@@ -1092,6 +1104,12 @@ func (s *state) setVPCSecurityGroups(w http.ResponseWriter, r *http.Request) {
 	defer s.mu.Unlock()
 	o := s.in(r)
 
+	// v1.3.0 on kind answers a binding on a missing VPC with NOT_FOUND in
+	// details, as a create under one does.
+	if _, ok := vpcKind.stateIn(o, r.PathValue("id")); !ok {
+		vpcKind.missingOnCreate(w, r.PathValue("id"))
+		return
+	}
 	target, _, ok := vpcKind.find(w, r, o)
 	if !ok {
 		return

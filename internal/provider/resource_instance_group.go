@@ -1086,6 +1086,9 @@ func (r *instanceGroupResource) read(ctx context.Context, target clusterTarget, 
 		out.VPC, d = ownedVPC(ctx, r.meta, target, k0rdent.ListVPCsParams{InstanceGroupId: &uid})
 		diags.Append(d...)
 	}
+	if !diags.HasError() {
+		out.VPC = holdVPCThroughTeardown(r.meta, target, instanceGroupStates.releasedInputs(*got.JSON200), out.VPC, prior.VPC)
+	}
 	out.uid = uidOf(got.JSON200.Uid)
 	return out, true, diags
 }

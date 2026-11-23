@@ -262,7 +262,16 @@ func (d *vpcDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, re
 
 	resp.Schema = schema.Schema{
 		MarkdownDescription: "One VPC, by name.\n\n" +
-			"Use `" + ResourceName(vpcsDataSourceSuffix) + "` when the name is not known ahead of time.",
+			"Use `" + ResourceName(vpcsDataSourceSuffix) + "` when the name is not known ahead of time.\n\n" +
+			"After an interrupted destroy has released a VPC, a read in the same run warns instead " +
+			"of failing when `id` comes from its owner's `vpc`, or this data source has `depends_on` " +
+			"for that owner. The held read returns `id`, `region`, `project`, the VPC path in " +
+			"`self_link`, and an empty `security_groups` list. Its other attributes are null. A live " +
+			"VPC always has `state`, so `state == null` marks a held read. Use it to let preconditions " +
+			"pass while the owner destroys. A literal `id` without that dependency can be read before " +
+			"the owner and still fails with \"No such VPC\". In that case, or when a later expression " +
+			"in the plan fails on the held values, such as `one(security_groups)` feeding a security " +
+			"group's required `id`, `terraform destroy -refresh=false` finishes the teardown.",
 		Attributes: attrs,
 	}
 	documentDataSourceSchema(&resp.Schema)
@@ -290,6 +299,27 @@ func (d *vpcDataSource) Read(ctx context.Context, req datasource.ReadRequest, re
 		return
 	}
 	if isNotFound(got.HTTPResponse, got.Body) {
+		if d.meta.vpcTeardown.held(target, id) {
+			data.Region = types.StringValue(target.region)
+			data.Project = types.StringValue(target.project)
+			data.SelfLink = types.StringValue(remoteVPCURI(target, id))
+			groups, diags := types.ListValueFrom(ctx, types.StringType, []string{})
+			resp.Diagnostics.Append(diags...)
+			if resp.Diagnostics.HasError() {
+				return
+			}
+			data.SecurityGroups = groups
+			resp.Diagnostics.AddWarning(
+				"VPC released by its owner",
+				fmt.Sprintf("The platform no longer has VPC %q after its owner's teardown released it. "+
+					"This held read returns `id`, `region`, `project`, `self_link` and an empty "+
+					"`security_groups` list. Its other attributes are null so the owner and its "+
+					"dependencies can finish destroying. If a later expression in the plan fails on "+
+					"these values, run `terraform destroy -refresh=false` to finish the teardown.", id),
+			)
+			resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+			return
+		}
 		// A data source that cannot find what it was asked for is an error, not
 		// an empty result: the configuration named this VPC and everything
 		// downstream of it is about to be planned against nothing.
@@ -297,7 +327,9 @@ func (d *vpcDataSource) Read(ctx context.Context, req datasource.ReadRequest, re
 			"No such VPC",
 			fmt.Sprintf("No VPC named %q in project %q of region %q. A VPC comes with a "+
 				"cluster or an instance group, so the owning resource may not have been "+
-				"applied yet.", id, target.project, target.region),
+				"applied yet. If a destroy of the cluster or instance group that owns the VPC "+
+				"was interrupted, `terraform destroy -refresh=false` finishes the teardown.",
+				id, target.project, target.region),
 		)
 		return
 	}

@@ -122,6 +122,10 @@ func (r *vpcSecurityGroupsResource) Schema(ctx context.Context, _ resource.Schem
 			"this apply wait for the destroy's read and write to finish. A change from anywhere " +
 			"else that lands between them is still overwritten, because the platform has no " +
 			"conditional write for a binding.\n\n" +
+			"If a destroy stops after the cluster or instance group that owns the VPC has taken it " +
+			"with it, a later plan that reads the owner as deleting, or failed after a teardown, " +
+			"warns on a binding it would create or change on that VPC, and the apply fails for it " +
+			"with an error naming the VPC. Running `terraform destroy` finishes the teardown.\n\n" +
 			"These groups are applied *after* the owning cluster or instance group's own groups, " +
 			"so an interface inside this VPC filters on the owner's groups first. A group " +
 			"attached to both is applied once, at the owner's position. Writing here re-renders " +
@@ -246,6 +250,7 @@ func (r *vpcSecurityGroupsResource) scopedDefaultGroup(ctx context.Context, vpc,
 
 func (r *vpcSecurityGroupsResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
 	modifyScopePlan(ctx, r.meta, req, resp)
+	warnHeldVPCWrite(ctx, r.meta, req, resp, "vpc")
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -495,6 +500,10 @@ func (r *vpcSecurityGroupsResource) apply(ctx context.Context, plan vpcSecurityG
 		var httpResp *http.Response
 		if set != nil {
 			respBody, httpResp = set.Body, set.HTTPResponse
+		}
+		if err == nil && addMissingVPCError(&diags, "attach the security groups to the VPC", target,
+			httpResp, respBody, vpc, "") {
+			return vpcSecurityGroupsModel{}, diags
 		}
 		addAPIError(&diags, "attach the security groups to the VPC", httpResp, respBody, err)
 		// `CONFLICT_IMMUTABLE` is the backend refusing, and the upstream message

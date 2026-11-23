@@ -5,6 +5,7 @@ subcategory: ""
 description: |-
   One VPC, by name.
   Use k0rdent_vpcs when the name is not known ahead of time.
+  After an interrupted destroy has released a VPC, a read in the same run warns instead of failing when id comes from its owner's vpc, or this data source has depends_on for that owner. The held read returns id, region, project, the VPC path in self_link, and an empty security_groups list. Its other attributes are null. A live VPC always has state, so state == null marks a held read. Use it to let preconditions pass while the owner destroys. A literal id without that dependency can be read before the owner and still fails with "No such VPC". In that case, or when a later expression in the plan fails on the held values, such as one(security_groups) feeding a security group's required id, terraform destroy -refresh=false finishes the teardown.
 ---
 
 # k0rdent_vpc (Data Source)
@@ -12,6 +13,8 @@ description: |-
 One VPC, by name.
 
 Use `k0rdent_vpcs` when the name is not known ahead of time.
+
+After an interrupted destroy has released a VPC, a read in the same run warns instead of failing when `id` comes from its owner's `vpc`, or this data source has `depends_on` for that owner. The held read returns `id`, `region`, `project`, the VPC path in `self_link`, and an empty `security_groups` list. Its other attributes are null. A live VPC always has `state`, so `state == null` marks a held read. Use it to let preconditions pass while the owner destroys. A literal `id` without that dependency can be read before the owner and still fails with "No such VPC". In that case, or when a later expression in the plan fails on the held values, such as `one(security_groups)` feeding a security group's required `id`, `terraform destroy -refresh=false` finishes the teardown.
 
 ## Example Usage
 
