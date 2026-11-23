@@ -129,9 +129,9 @@ func (r *vpcPeeringResource) Schema(ctx context.Context, _ resource.SchemaReques
 			"delete. Destroying it, or destroying the owner of the local VPC, is what clears it.\n\n" +
 			"If a destroy stops after the cluster or instance group that owns `vpc` or `remote_vpc` " +
 			"has taken that VPC with it, a later plan that reads the owner as deleting, or failed " +
-			"after a teardown, warns on each peering it would create against that VPC, and the " +
-			"apply fails for it with an error naming the VPC. Running `terraform destroy` finishes " +
-			"the teardown.\n\n" +
+			"after a teardown, warns on each peering it would create against that VPC. If the VPC is " +
+			"still gone when the apply runs, the apply fails with an error naming the VPC. Running " +
+			"`terraform destroy` finishes the teardown.\n\n" +
 			"Requires `region` and `project` on the provider.",
 		Blocks: map[string]schema.Block{
 			// No Update: the API has no operation for one.

@@ -120,7 +120,7 @@ func vpcEntryAttributes() map[string]schema.Attribute {
 			Computed:    true,
 			ElementType: types.StringType,
 			MarkdownDescription: "Ids of the attached security groups, in the order they were last " +
-				"set. Never empty on a `nico` VPC: clearing the binding reinstates the platform's " +
+				"set. Never empty on a live `nico` VPC: clearing the binding reinstates the platform's " +
 				"DEFAULT group rather than leaving none.",
 		},
 		"state": schema.StringAttribute{
