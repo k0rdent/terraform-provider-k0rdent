@@ -1,0 +1,9 @@
+```release-note:bug
+resource/k0rdent_file_store: Fix a destroy failing with a 409 CONFLICT_IN_USE when the platform refuses the consumer detach while a capacity change is still settling. The destroy now sends the detach again
+```
+```release-note:bug
+provider: Stop `terraform import` warning that the region or project must be repeated in the resource block when it already is. The plan still warns when the block leaves it out
+```
+```release-note:bug
+resource/k0rdent_instance_group: Fix an apply that sizes a pool the group lacks, when the plan could not read the group, sending a scale the platform refuses. It now fails with the plan's "has no pool" error and sends nothing
+```
