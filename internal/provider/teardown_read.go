@@ -145,7 +145,7 @@ func holdVPCThroughTeardown(meta *Meta, target clusterTarget, released bool, rea
 // warnHeldVPCWrite warns when a planned create or change names a VPC this
 // run saw its owner release. Terraform's pre-destroy refresh is a normal
 // plan, so an error here would also stop the destroy that ends the teardown.
-// The write itself fails at apply with addMissingVPCError.
+// A write that still finds the VPC missing fails at apply with addMissingVPCError.
 func warnHeldVPCWrite(ctx context.Context, meta *Meta, req resource.ModifyPlanRequest,
 	resp *resource.ModifyPlanResponse, attributes ...string) {
 	// resp.Plan, which holds the region and project modifyScopePlan filled
@@ -189,8 +189,8 @@ func warnHeldVPCWrite(ctx context.Context, meta *Meta, req resource.ModifyPlanRe
 		resp.Diagnostics.AddAttributeWarning(path.Root(attribute),
 			"VPC gone after its owner's teardown started",
 			fmt.Sprintf("VPC %q in project %q of region %q is gone because its owner's teardown "+
-				"started. Applying this plan will fail for this resource. "+
-				"Run `terraform destroy` to finish the teardown.", id, at.project, at.region))
+				"started. Applying this plan will fail for this resource if the VPC is still gone "+
+				"when the apply runs. Run `terraform destroy` to finish the teardown.", id, at.project, at.region))
 	}
 }
 

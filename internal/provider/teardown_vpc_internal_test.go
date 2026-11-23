@@ -98,8 +98,8 @@ func goneVPCWarnings(t *testing.T, diags diag.Diagnostics) []string {
 		if d.Summary() != "VPC gone after its owner's teardown started" {
 			continue
 		}
-		if !strings.Contains(d.Detail(), "Applying this plan will fail for this resource. "+
-			"Run `terraform destroy` to finish the teardown.") {
+		if !strings.Contains(d.Detail(), "Applying this plan will fail for this resource if the VPC is still gone "+
+			"when the apply runs. Run `terraform destroy` to finish the teardown.") {
 			t.Errorf("the warning doesn't say what happens next: %s", d.Detail())
 		}
 		withPath, ok := d.(diag.DiagnosticWithPath)

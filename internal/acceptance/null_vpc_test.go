@@ -225,8 +225,8 @@ func TestAccADestroyRetryAfterTheOwnedVPCIsGone(t *testing.T) { //nolint:paralle
 			dropFakeVPC(t, name)
 
 			gone := fmt.Sprintf(`VPC %q in project "demo" of region "us-texas-1" is gone because its `+
-				"owner's teardown started. Applying this plan will fail "+
-				"for this resource. Run `terraform destroy` to finish the teardown.", "vpc-"+name)
+				"owner's teardown started. Applying this plan will fail for this resource if the VPC is still gone "+
+				"when the apply runs. Run `terraform destroy` to finish the teardown.", "vpc-"+name)
 			planned, ok := c.run("plan")
 			if !ok {
 				t.Fatalf("a plain plan after the interrupt failed:\n%s", planned)
