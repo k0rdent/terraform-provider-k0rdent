@@ -7,6 +7,7 @@ import (
 	"math"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework-timeouts/resource/timeouts"
 	"github.com/hashicorp/terraform-plugin-framework-validators/int64validator"
@@ -17,6 +18,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/mapplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/setplanmodifier"
@@ -62,11 +64,12 @@ type instanceGroupModel struct {
 	SSHPublicKeysWO     types.Map    `tfsdk:"ssh_public_keys_wo"`
 	// SSHAccessHeld is a read's note that it kept ssh_access the platform
 	// answered blank. Not stored in state: see teardown_read.go.
-	SSHAccessHeld bool           `tfsdk:"-"`
-	State         types.String   `tfsdk:"state"`
-	SelfLink      types.String   `tfsdk:"self_link"`
-	VPC           types.String   `tfsdk:"vpc"`
-	Timeouts      timeouts.Value `tfsdk:"timeouts"`
+	SSHAccessHeld          bool           `tfsdk:"-"`
+	State                  types.String   `tfsdk:"state"`
+	SelfLink               types.String   `tfsdk:"self_link"`
+	VPC                    types.String   `tfsdk:"vpc"`
+	WaitForFileStoreGrants types.Bool     `tfsdk:"wait_for_file_store_grants"`
+	Timeouts               timeouts.Value `tfsdk:"timeouts"`
 
 	// uid is the platform's uid for the instance group read, which own_object.go
 	// keeps in private state. UID is the same value as an attribute.
@@ -164,6 +167,15 @@ func (r *instanceGroupResource) Schema(ctx context.Context, _ resource.SchemaReq
 			"description": schema.StringAttribute{
 				Optional:            true,
 				MarkdownDescription: "Free-form description. The other mutable field.",
+			},
+			"wait_for_file_store_grants": schema.BoolAttribute{
+				Optional: true,
+				Computed: true,
+				Default:  booldefault.StaticBool(false),
+				MarkdownDescription: "After a scale-up, wait until every file-store grant naming this group " +
+					"reports at least the group's member count in `resolved_addresses`. Off by default. " +
+					"A failed grant or a verdict that means no repair is coming ends the wait. The `update` " +
+					"timeout bounds the wait.",
 			},
 			// Optional+Computed. See the same attribute on the cluster: an
 			// unnamed pool is created by the platform and not drift-checked.
@@ -676,8 +688,11 @@ func (r *instanceGroupResource) Update(ctx context.Context, req resource.UpdateR
 			return
 		}
 	}
-	if scaled {
+	if scaled && plan.WaitForFileStoreGrants.ValueBool() {
 		if err := r.waitForConsumerGrants(ctx, target, id); err != nil {
+			if stillRunning(err) && !waitInterrupted(err) {
+				r.recordScaledGroup(ctx, target, id, plan, resp)
+			}
 			addWaitError(&resp.Diagnostics, "The file-store grants did not settle after the instance group grew", err)
 			return
 		}
@@ -704,6 +719,20 @@ func (r *instanceGroupResource) Update(ctx context.Context, req resource.UpdateR
 			"The instance group disappeared during the update",
 			fmt.Sprintf("Reading %q after the change answered 404.", id),
 		)
+		return
+	}
+	resp.Diagnostics.Append(resp.State.Set(ctx, &next)...)
+}
+
+// recordScaledGroup saves the scale whose grant wait timed out. The read gets
+// its own deadline because the update's deadline has already passed.
+func (r *instanceGroupResource) recordScaledGroup(ctx context.Context, target clusterTarget, id string,
+	plan instanceGroupModel, resp *resource.UpdateResponse) {
+	readCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
+	defer cancel()
+	next, found, diags := r.read(readCtx, target, id, plan)
+	resp.Diagnostics.Append(diags...)
+	if !found || resp.Diagnostics.HasError() {
 		return
 	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &next)...)
@@ -1103,16 +1132,17 @@ func instanceGroupStateFrom(ctx context.Context, g k0rdent.InstanceGroup, prior 
 	md := prior.metadata().read(metadataAnswer{DisplayName: g.DisplayName, Description: g.Description})
 	out := instanceGroupModel{
 
-		ID:                  types.StringValue(g.Id),
-		Region:              prior.Region,
-		Timeouts:            prior.Timeouts,
-		Project:             prior.Project,
-		DisplayName:         md.DisplayName,
-		Description:         md.Description,
-		SelfLink:            stringOrNull(g.SelfLink),
-		UID:                 uidValue(g.Uid),
-		ClusterTypeResolved: types.StringValue(g.ClusterType),
-		State:               types.StringNull(),
+		ID:                     types.StringValue(g.Id),
+		Region:                 prior.Region,
+		Timeouts:               prior.Timeouts,
+		Project:                prior.Project,
+		DisplayName:            md.DisplayName,
+		Description:            md.Description,
+		SelfLink:               stringOrNull(g.SelfLink),
+		UID:                    uidValue(g.Uid),
+		ClusterTypeResolved:    types.StringValue(g.ClusterType),
+		WaitForFileStoreGrants: prior.WaitForFileStoreGrants,
+		State:                  types.StringNull(),
 		// Write-only: never held in state.
 		SSHPublicKeysWO: types.MapNull(types.ListType{ElemType: types.StringType}),
 	}
@@ -1188,8 +1218,14 @@ func (r *instanceGroupResource) waitForSettled(ctx context.Context, target clust
 
 // waitForConsumerGrants lets the platform finish extending grants to the new hosts.
 func (r *instanceGroupResource) waitForConsumerGrants(ctx context.Context, target clusterTarget, id string) error {
-	return waitFor(ctx, r.meta.Wait, "the instance group's file-store grants to settle",
+	memberCount, err := r.groupMemberCount(ctx, target, id)
+	if err != nil {
+		return err
+	}
+	pendingStore, pendingState := "", ""
+	err = waitFor(ctx, r.meta.Wait, "the instance group's file-store grants to settle",
 		func(ctx context.Context) (bool, error) {
+			pendingStore, pendingState = "", ""
 			var diags diag.Diagnostics
 			stores, ok := listFileStores(ctx, r.meta, target, &diags)
 			if !ok {
@@ -1202,19 +1238,44 @@ func (r *instanceGroupResource) waitForConsumerGrants(ctx context.Context, targe
 				if !storeNamesGroup(store, id) {
 					continue
 				}
-				got, err := r.meta.Client.GetFileStoreWithResponse(ctx, target.region, target.project, store.Id)
-				if err != nil {
-					return false, err
+				got, readErr := r.meta.Client.GetFileStoreWithResponse(ctx, target.region, target.project, store.Id)
+				if readErr != nil {
+					return false, readErr
+				}
+				if isNotFound(got.HTTPResponse, got.Body) {
+					continue
 				}
 				if got.JSON200 == nil {
 					return false, k0rdent.CheckResponse(got.HTTPResponse, got.Body)
 				}
-				if !groupGrantsSettled([]k0rdent.FileStore{*got.JSON200}, id) {
+				settled, state := consumerGrantSettled(*got.JSON200, id, memberCount)
+				if !settled {
+					pendingStore, pendingState = store.Id, state
 					return false, nil
 				}
 			}
 			return true, nil
 		})
+	if stillRunning(err) && pendingStore != "" {
+		return fmt.Errorf("%w. The grant was still %q. Read file store %q and instance group %q to check it",
+			err, pendingState, pendingStore, id)
+	}
+	return err
+}
+
+func (r *instanceGroupResource) groupMemberCount(ctx context.Context, target clusterTarget, id string) (int, error) {
+	got, err := r.meta.Client.GetInstanceGroupWithResponse(ctx, target.region, target.project, id, nil)
+	if err != nil {
+		return 0, err
+	}
+	if got.JSON200 == nil {
+		return 0, k0rdent.CheckResponse(got.HTTPResponse, got.Body)
+	}
+	count := 0
+	for _, pool := range rowsOf(got.JSON200.NodePools) {
+		count += int(pool.DesiredCount)
+	}
+	return count, nil
 }
 
 func storeNamesGroup(store k0rdent.FileStore, groupID string) bool {
@@ -1235,19 +1296,37 @@ func storeNamesGroup(store k0rdent.FileStore, groupID string) bool {
 	return false
 }
 
-func groupGrantsSettled(stores []k0rdent.FileStore, groupID string) bool {
-	for _, store := range stores {
-		if store.ConsumerStatus == nil {
+func consumerGrantSettled(store k0rdent.FileStore, groupID string, memberCount int) (bool, string) {
+	for _, status := range rowsOf(store.ConsumerStatus) {
+		if deref(status.Ref) != groupID {
 			continue
 		}
-		for _, status := range *store.ConsumerStatus {
-			if deref(status.Ref) == groupID &&
-				stateString(status.State) == string(k0rdent.FileStoreConsumerStatusStateCreating) {
-				return false
-			}
+		state := stateString(status.State)
+		reason := ""
+		if status.StateReason != nil {
+			reason = string(*status.StateReason)
 		}
+		if state == string(k0rdent.FileStoreConsumerStatusStateFailed) || grantVerdictStopsWait(reason) {
+			return true, ""
+		}
+		if state == string(k0rdent.FileStoreConsumerStatusStateActive) &&
+			len(rowsOf(status.ResolvedAddresses)) >= memberCount {
+			return true, ""
+		}
+		return false, state
 	}
-	return true
+	return true, ""
+}
+
+func grantVerdictStopsWait(reason string) bool {
+	switch reason {
+	case string(k0rdent.FileStoreConsumerStateReasonNETWORKMATCHEDNOINTERFACE),
+		string(k0rdent.FileStoreConsumerStateReasonGROUPNOLONGERGRANTABLE),
+		string(k0rdent.FileStoreConsumerStateReasonGROUPMEMBERSETEMPTY):
+		return true
+	default:
+		return strings.HasPrefix(reason, "STORAGE_")
+	}
 }
 
 // reader reads the instance group for a wait.

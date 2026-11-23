@@ -8,7 +8,7 @@ Read this before your first large configuration. It covers:
 
 ## Where the plan can't predict the outcome
 
-There are seven.
+There are eight.
 
 ### 1. A cluster type reference may be resolved to a different string
 
@@ -48,13 +48,21 @@ The API can only grow an instance group's pool. Growing one updates in place.
 Shrinking one, or adding or removing a pool, replaces the whole group. The
 plan says `# forced replacement`, but not why.
 
-### 6. A file store's capacity isn't a hard limit
+### 6. File-store grants settle after an instance group grows
+
+After a group grows, its file-store grants settle on the platform's own repair
+timer. That can take up to the platform's drift interval, 5 minutes by default.
+A plan in that window shows the grant settling if the configuration reads its
+status. Set `wait_for_file_store_grants = true` on the instance group to make
+the apply wait for the grants.
+
+### 7. A file store's capacity isn't a hard limit
 
 `capacity_gib` can only grow, and the plan refuses a shrink. But storage
 can use more than the capacity, and the API doesn't report how much a store
 holds.
 
-### 7. Default timeouts are estimates
+### 8. Default timeouts are estimates
 
 Every resource that waits has a `timeouts` block with a default. Hardware
 build and teardown times vary, so set the block yourself where it matters.

@@ -590,6 +590,9 @@ resource "k0rdent_instance_group" "this" {
   display_name = "${local.display_name} hosts"
   description  = local.description
 
+  # The grow replan reads the grant, so wait for the platform's repair.
+  wait_for_file_store_grants = true
+
   # worker_counts sizes the pool here too, so a run with no cluster can grow
   # the group. Left out, the pool starts at the smallest count the cluster
   # type allows, at least one host.

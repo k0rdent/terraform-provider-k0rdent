@@ -1,3 +1,3 @@
 ```release-note:bug
-resource/k0rdent_instance_group: Wait for file-store grants naming the group to settle after scaling, so the next plan doesn't report transient consumer and output changes
+resource/k0rdent_instance_group: Add `wait_for_file_store_grants` to wait for repaired grants after scaling, and save the group's new size if the wait times out
 ```

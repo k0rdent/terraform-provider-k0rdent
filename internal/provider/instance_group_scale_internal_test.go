@@ -508,8 +508,8 @@ func TestGroupGrantsSettledWaitsOnlyForTheScaledGroup(t *testing.T) {
 			if err := json.Unmarshal([]byte(tc.body), &store); err != nil {
 				t.Fatal(err)
 			}
-			if got := groupGrantsSettled([]k0rdent.FileStore{store}, "g1"); got != tc.want {
-				t.Errorf("groupGrantsSettled() = %v, want %v", got, tc.want)
+			if got, _ := consumerGrantSettled(store, "g1", 0); got != tc.want {
+				t.Errorf("consumerGrantSettled() = %v, want %v", got, tc.want)
 			}
 		})
 	}

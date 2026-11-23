@@ -488,7 +488,28 @@ resource %q "test" {
 // groupStoreConfig is a store with one instance-group consumer and the group,
 // at the given size.
 func groupStoreConfig(store, group string, size int) string {
-	return instanceGroupConfig(group, size) + fmt.Sprintf(`
+	return groupStoreConfigWithWait(store, group, size, false, "")
+}
+
+func groupStoreConfigWithWait(store, group string, size int, wait bool, updateTimeout string) string {
+	waitSetting := ""
+	if wait {
+		waitSetting = "\n  wait_for_file_store_grants = true"
+	}
+	timeouts := ""
+	if updateTimeout != "" {
+		timeouts = fmt.Sprintf("\n  timeouts {\n    update = %q\n  }\n", updateTimeout)
+	}
+	return fmt.Sprintf(`
+resource %q "test" {
+  id           = %q
+  cluster_type = %q
+  display_name = "acceptance"%s
+  node_pool = {
+    "gpu-workers" = { size = %d }
+  }%s
+}
+
 resource %q "test" {
   id           = %q
   share_type   = "general"
@@ -501,11 +522,11 @@ resource %q "test" {
     }
   }
 }
-`, fileStoreType, store, instanceGroupType)
+`, instanceGroupType, group, clusterTypeRef, waitSetting, size, timeouts, fileStoreType, store, instanceGroupType)
 }
 
-// A group that grows is repaired by the platform on its own, so the plan stays
-// clean while the grant catches up to the new members.
+// The opt-in waits for the platform's repair after a group grows, so the plan
+// stays clean while the grant catches up to the new members.
 func TestAccFileStoreRepairedGroupPlansNothing(t *testing.T) {
 	t.Parallel()
 	const group = "acc-trainers-repaired"
@@ -515,13 +536,64 @@ func TestAccFileStoreRepairedGroupPlansNothing(t *testing.T) {
 		ProtoV6ProviderFactories: protoV6,
 		CheckDestroy:             checkGone(fileStoreType, fileStorePath),
 		Steps: []resource.TestStep{
-			{Config: groupStoreConfig("acc-repaired", group, 2)},
-			{Config: groupStoreConfig("acc-repaired", group, 3)},
+			{Config: groupStoreConfigWithWait("acc-repaired", group, 2, true, "")},
+			{Config: groupStoreConfigWithWait("acc-repaired", group, 3, true, "")},
 			{
-				Config: groupStoreConfig("acc-repaired", group, 3),
+				Config: groupStoreConfigWithWait("acc-repaired", group, 3, true, ""),
 				// Three workers and the control-plane host the platform adds.
 				Check: resource.TestCheckResourceAttr(fileStoreAddr, status+"resolved_addresses.#", "4"),
 			},
+		},
+	})
+}
+
+// A scale has no file-store wait unless the configuration opts in. Ordinary
+// resource refreshes still read the store, but nothing lists every store.
+func TestAccInstanceGroupScaleSkipsGrantWaitByDefault(t *testing.T) { //nolint:paralleltest // the fake's request count is shared
+	const group = "acc-trainers-default"
+	stores := &requestCounter{method: http.MethodGet,
+		path: "/v1/regions/us-texas-1/projects/demo/storage/file-stores"}
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: protoV6,
+		CheckDestroy:             checkGone(fileStoreType, fileStorePath),
+		Steps: []resource.TestStep{
+			{Config: groupStoreConfig("acc-default-wait", group, 2)},
+			{
+				PreConfig: stores.start(t),
+				Config:    groupStoreConfig("acc-default-wait", group, 3),
+				Check: func(*terraform.State) error {
+					got, err := fakeServed(stores.method, stores.path)
+					if err != nil {
+						return err
+					}
+					if got != stores.before {
+						return fmt.Errorf("the default scale listed file stores %d time(s), want none", got-stores.before)
+					}
+					return nil
+				},
+			},
+		},
+	})
+}
+
+// An opt-in timeout fails the apply after recording the group's new size. The
+// plain plan that follows has no group scale left to send.
+func TestAccInstanceGroupGrantWaitTimeoutSavesScale(t *testing.T) {
+	t.Parallel()
+	const group = "acc-trainers-timeout"
+	grown := groupStoreConfigWithWait("acc-grant-timeout", group, 3, true, "1s")
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: protoV6,
+		CheckDestroy:             checkGone(fileStoreType, fileStorePath),
+		Steps: []resource.TestStep{
+			{Config: groupStoreConfigWithWait("acc-grant-timeout", group, 2, true, "1s")},
+			{
+				Config:      grown,
+				ExpectError: regexp.MustCompile(`(?s)acc-grant-timeout.*acc-trainers-timeout`),
+			},
+			{Config: grown, PlanOnly: true},
 		},
 	})
 }
