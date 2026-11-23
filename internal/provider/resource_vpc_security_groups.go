@@ -104,7 +104,8 @@ func (r *vpcSecurityGroupsResource) Schema(ctx context.Context, _ resource.Schem
 			"from state, and they stay until the VPC is deleted with its cluster or instance " +
 			"group. A delete of one of those groups in the same run waits for that. The plan warns " +
 			"when a binding is created on such a VPC, if the VPC is known by then, and the apply " +
-			"warns again.\n\n" +
+			"warns again. A plan that sends such a VPC an empty list is refused, if the VPC is " +
+			"known by then.\n\n" +
 			"A replacement destroys the old binding, so it does either of these to the old VPC. The " +
 			"plan warns about a destroy, and about a replacement that a change to `vpc`, `region` " +
 			"or `project` causes. It can't warn about one forced by `-replace` or " +
@@ -156,7 +157,8 @@ func (r *vpcSecurityGroupsResource) Schema(ctx context.Context, _ resource.Schem
 					"apply them. Order is significant: it reaches the fabric as written, and rule " +
 					"evaluation is first-match.\n\n" +
 					"An empty list is accepted and means *reinstate the default group*, not " +
-					"*attach nothing*. A VPC with no default group refuses it with `409`.",
+					"*attach nothing*. A VPC with no default group refuses it: the plan fails if the VPC " +
+					"is known by then, and the apply fails with `409` otherwise.",
 				Validators: []validator.List{
 					listvalidator.SizeAtMost(k0rdent.VPCSecurityGroupsRequestSecurityGroupsMaxItems),
 					idList("security group id"),
@@ -214,6 +216,20 @@ func warnNoDefaultOnCreate(diags *diag.Diagnostics, vpc string) {
 	)
 }
 
+// refuseEmptyBinding fails the plan of an empty list for a VPC with no
+// default group, which the platform refuses with 409.
+func refuseEmptyBinding(diags *diag.Diagnostics, vpc string) {
+	diags.AddAttributeError(path.Root("security_groups"),
+		"This VPC can't take an empty list",
+		fmt.Sprintf("%q has no default security group to fall back to. %s An empty `security_groups` "+
+			"asks for the default group back, so the platform would refuse this write. List at least one "+
+			"security group to attach. Nothing was sent: the plan was refused.\n\n"+
+			"If you ran `terraform destroy`: Terraform plans a refresh before every destroy as if "+
+			"applying, and this refusal stops that plan. Run `terraform destroy -refresh=false` to "+
+			"destroy from state as it is.", vpc, noDefaultGroupWhy),
+	)
+}
+
 // scopedDefaultGroup looks up the default group of the VPC an object of this
 // resource names, when its vpc, region and project are all known.
 func (r *vpcSecurityGroupsResource) scopedDefaultGroup(ctx context.Context, vpc, region, project types.String) defaultGroupState {
@@ -235,14 +251,27 @@ func (r *vpcSecurityGroupsResource) ModifyPlan(ctx context.Context, req resource
 	}
 
 	// A binding created on a VPC with no default group stays until the VPC
-	// goes, which is worth knowing before it's written.
-	if req.State.Raw.IsNull() && !req.Plan.Raw.IsNull() {
-		var planned vpcSecurityGroupsModel
+	// goes, which is worth knowing before it's written. Such a VPC refuses
+	// `[]`, so a plan that writes it is refused here rather than at apply.
+	if !req.Plan.Raw.IsNull() {
+		var planned, prior vpcSecurityGroupsModel
 		resp.Diagnostics.Append(resp.Plan.Get(ctx, &planned)...)
+		if !req.State.Raw.IsNull() {
+			resp.Diagnostics.Append(req.State.Get(ctx, &prior)...)
+		}
 		if resp.Diagnostics.HasError() {
 			return
 		}
-		if r.scopedDefaultGroup(ctx, planned.VPC, planned.Region, planned.Project) == defaultGroupMissing {
+		creating := req.State.Raw.IsNull()
+		empty := !planned.SecurityGroups.IsUnknown() && len(planned.SecurityGroups.Elements()) == 0
+		emptying := empty && (creating || !planned.SecurityGroups.Equal(prior.SecurityGroups) ||
+			!planned.VPC.Equal(prior.VPC))
+		if (creating || emptying) &&
+			r.scopedDefaultGroup(ctx, planned.VPC, planned.Region, planned.Project) == defaultGroupMissing {
+			if emptying {
+				refuseEmptyBinding(&resp.Diagnostics, planned.VPC.ValueString())
+				return
+			}
 			warnNoDefaultOnCreate(&resp.Diagnostics, planned.VPC.ValueString())
 		}
 	}

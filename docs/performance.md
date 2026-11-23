@@ -55,8 +55,10 @@ From `make bench` against the local fake, 3ms a request:
 | 1,000 | 2.22 | 1.24 | 29.01 | 28.34 |
 
 - 3ms is the median request time of a local kind stack.
-- Apply makes about 5 requests a resource against the fake. A real platform
-  takes longer to settle each object, so it needs more reads, one per
+- Apply makes about 7 requests a resource against the fake. Two of them are
+  the plan-time reads that refuse a network, subnet or security group the
+  platform owns, once in the plan and once in the apply's own plan. A real
+  platform takes longer to settle each object, so it needs more reads, one per
   `poll_interval`.
 - The provider's memory grows by about 0.1 MiB a resource during a plan,
   about 140 MiB at 1,000.
@@ -88,7 +90,7 @@ make bench BENCH_SIZES=100,500,1000 BENCH_PARALLELISM=10 BENCH_BUDGET=internal/t
 
 | Limit | Value | What breaking it means |
 | --- | --- | --- |
-| Requests a resource | plan and refresh 1.15, apply 5.5, destroy 5.9 | A command sends more requests per resource than before |
+| Requests a resource | plan and refresh 1.15, apply 7.5, destroy 5.9 | A command sends more requests per resource than before |
 | Lists read | exact counts at each size, 21 in a plan of 1,000 | A lookup that lists every object for each object is back |
 | Growth | plan and refresh time a resource, at the largest size over 100: 2.0 | The work no longer grows in step with the size |
 | Seconds at 1,000 | plan 15, refresh 10, apply 120, destroy 150 | A large slowdown |
