@@ -392,19 +392,6 @@
   },
 
   {
-    "operation": "GET /v1/regions/{region}/projects/{project}/compute/clusters/{clusterId}/kubeconfigs 200",
-    "field": "response $.kubeconfigs[].displayName",
-    "side": "real",
-    "reason": "Not read: Kubeconfig.DisplayName (types.gen.go:8503) has no use in internal/provider."
-  },
-  {
-    "operation": "GET /v1/regions/{region}/projects/{project}/compute/clusters/{clusterId}/kubeconfigs 200",
-    "field": "response $.kubeconfigs[].uid",
-    "side": "real",
-    "reason": "Not read: Kubeconfig.Uid (types.gen.go:8521) has no use in internal/provider."
-  },
-
-  {
     "operation": "GET /v1/regions/{region}/projects/{project}/compute/clusters/{id} 200",
     "field": "response $.operation.stages*",
     "side": "real",
