@@ -204,6 +204,78 @@ func TestTokenCache_ConcurrentCallersMintOnce(t *testing.T) {
 	}
 }
 
+func TestTokenCache_ConcurrentCallersShareAFailedMint(t *testing.T) {
+	var mints atomic.Int64
+	var failing atomic.Bool
+	failing.Store(true)
+	firstStarted := make(chan struct{})
+	releaseFirst := make(chan struct{})
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /v1/regions/global/auth/token", func(w http.ResponseWriter, r *http.Request) {
+		n := mints.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		if n == 1 {
+			close(firstStarted)
+			<-releaseFirst
+		}
+		if failing.Load() {
+			w.WriteHeader(http.StatusTooManyRequests)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"error": map[string]any{"code": 429, "message": "rate limited", "requestId": "failed-mint"},
+			})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"access_token": "retry-token", "token_type": "Bearer", "expires_in": 900,
+		})
+	})
+	mux.HandleFunc("GET /v1/regions/{region}/compute/cluster-types", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"clusterTypes": []any{}})
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	c := testClient(t, srv)
+
+	const callers = 10
+	start := make(chan struct{})
+	errs := make(chan error, callers)
+	var wg sync.WaitGroup
+	for range callers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			_, err := c.ListClusterTypesWithResponse(context.Background(), "us-texas-1", nil)
+			errs <- err
+		}()
+	}
+	close(start)
+	<-firstStarted
+	// Let every other caller reach the mint already in flight before it fails.
+	time.Sleep(50 * time.Millisecond)
+	close(releaseFirst)
+	wg.Wait()
+	close(errs)
+
+	for err := range errs {
+		if !errors.Is(err, ErrTokenMint) || !strings.Contains(err.Error(), "failed-mint") {
+			t.Errorf("queued caller error = %v, want the shared mint failure", err)
+		}
+	}
+	if got := mints.Load(); got != 1 {
+		t.Errorf("mints = %d after %d concurrent callers, want 1", got, callers)
+	}
+
+	failing.Store(false)
+	if _, err := c.ListClusterTypesWithResponse(context.Background(), "us-texas-1", nil); err != nil {
+		t.Fatalf("the next call didn't retry: %v", err)
+	}
+	if got := mints.Load(); got != 2 {
+		t.Errorf("mints = %d after the next call, want 2", got)
+	}
+}
+
 func TestTokenCache_ReusesTokenAcrossSequentialCalls(t *testing.T) {
 	f := &fakeAPI{}
 	srv := f.server(t)
