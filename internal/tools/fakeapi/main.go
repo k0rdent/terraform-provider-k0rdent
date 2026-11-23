@@ -981,6 +981,34 @@ func resolveClusterTypeRef(region, ref string) (string, fakeClusterType, fakeVer
 	return versionRef(region, ct, v), ct, v, true
 }
 
+// clusterTypeURIHasForm reports whether a path has the form the platform's
+// create parses, the rule its parseClusterTypeURI applies:
+// /v1/regions/{region}/compute/cluster-types/{id}, where the region and the
+// id are not empty and carry no `/`, with an optional /versions/{version_id}
+// that is not empty and carries no `/` either (the platform's compute
+// service). The provider refuses the
+// same values at plan through the same rule (internal/provider's
+// clustertyperef.go), so a form error never reaches the fake either.
+func clusterTypeURIHasForm(path string) bool {
+	const middle = "/compute/cluster-types/"
+	const versions = "/versions/"
+	rest, ok := strings.CutPrefix(path, "/v1/regions/")
+	// The whole value, as sent: an absolute URL fails the prefix, as on the
+	// platform. A query or fragment would be part of an id no type has.
+	if !ok || strings.ContainsAny(rest, "?#") {
+		return false
+	}
+	region, tail, _ := strings.Cut(rest, middle)
+	slug, version, pinned := strings.Cut(tail, versions)
+	if pinned && (version == "" || strings.Contains(version, "/")) {
+		return false
+	}
+	if region == "" || slug == "" || strings.Contains(region, "/") || strings.Contains(slug, "/") {
+		return false
+	}
+	return true
+}
+
 func (s *state) listRegions(w http.ResponseWriter, r *http.Request) {
 	rows := make([]any, 0, len(fakeRegions))
 	for _, region := range fakeRegions {
@@ -1300,6 +1328,13 @@ func (s *state) createCluster(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.ClusterType == "" {
 		apiError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "clusterType is required")
+		return
+	}
+	// The platform parses the reference's form before it looks the type up,
+	// and answers 422 with the same sentence for every malformed one.
+	if !clusterTypeURIHasForm(body.ClusterType) {
+		apiError(w, http.StatusUnprocessableEntity, "INVALID_ARGUMENT",
+			"validation: clusterType is not a valid ClusterType URI")
 		return
 	}
 	resolved, ct, version, ok := resolveClusterTypeRef(region, body.ClusterType)
@@ -2188,6 +2223,13 @@ func (s *state) createInstanceGroup(w http.ResponseWriter, r *http.Request) {
 	}
 	if msg := invalidSSHAccess(body.SSHAccess); msg != "" {
 		apiError(w, http.StatusUnprocessableEntity, "INVALID_ARGUMENT", msg)
+		return
+	}
+	// The same form rule the platform's createInstanceGroup applies, with the
+	// same sentence for every malformed one.
+	if !clusterTypeURIHasForm(body.ClusterType) {
+		apiError(w, http.StatusUnprocessableEntity, "INVALID_ARGUMENT",
+			"validation: clusterType is not a valid ClusterType URI")
 		return
 	}
 	resolved, ct, version, ok := resolveClusterTypeRef(region, body.ClusterType)

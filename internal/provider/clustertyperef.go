@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"fmt"
 	"net/url"
 	"strings"
 
@@ -9,6 +10,8 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
+	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 
@@ -122,7 +125,15 @@ func clusterTypeVersionGuard() planmodifier.String {
 	return stringplanmodifier.RequiresReplaceIf(func(ctx context.Context, req planmodifier.StringRequest, resp *stringplanmodifier.RequiresReplaceIfFuncResponse) {
 		clusterTypeRefRequiresReplace(ctx, req, resp)
 		if resp.RequiresReplace {
-			change, _ := classifyRefChange(req.ConfigValue.ValueString(), req.StateValue.ValueString(), "")
+			// The binding the platform reported, as planVersionChange and the
+			// apply compare with, so the three agree on another version.
+			bound := req.StateValue.ValueString()
+			var resolved types.String
+			req.State.GetAttribute(ctx, path.Root("cluster_type_resolved"), &resolved)
+			if r := resolved.ValueString(); r != "" {
+				bound = r
+			}
+			change, _ := classifyRefChange(req.ConfigValue.ValueString(), bound, "")
 			resp.RequiresReplace = change == refReplace
 		}
 	}, desc, desc)
@@ -196,6 +207,132 @@ func refPath(ref string) (path, origin string) {
 		host = strings.TrimSuffix(host, ":80")
 	}
 	return path, scheme + "://" + host
+}
+
+// clusterTypeURIRegion reports the region a reference's path names, and
+// false when the path is not a form the platform's create accepts.
+//
+// The rule is the platform's own, so the provider refuses at plan exactly
+// what a create would refuse at apply: the path is
+// /v1/regions/{region}/compute/cluster-types/{id}, where the region and the
+// id have no `/` and are not empty, with an optional /versions/{version_id}
+// whose id is not empty and has no `/` either. A bare ClusterType name, a
+// missing `/v1`, a `/versions/` with nothing after it and an extra segment
+// are all refused. The path is what the value itself carries, as
+// clusterTypeSentPath reads it, so an absolute URL whose path has this form
+// passes, the way the comparison code reads one.
+func clusterTypeURIRegion(path string) (region string, ok bool) {
+	const middle = "/compute/cluster-types/"
+	const versions = "/versions/"
+	rest, ok := strings.CutPrefix(path, clusterTypeRefRegionsPrefix)
+	// The platform's parse would take a query or a fragment as part of the
+	// id, which no ClusterType has, so the create fails on it either way.
+	if !ok || strings.ContainsAny(rest, "?#") {
+		return "", false
+	}
+	region, tail, _ := strings.Cut(rest, middle)
+	slug, version, pinned := strings.Cut(tail, versions)
+	if pinned && (version == "" || strings.Contains(version, "/")) {
+		return "", false
+	}
+	if region == "" || slug == "" || strings.Contains(region, "/") || strings.Contains(slug, "/") {
+		return "", false
+	}
+	return region, true
+}
+
+// clusterTypeSentPath reports the path a `cluster_type` value carries when
+// the create sends it verbatim, and false when the value isn't URL-shaped
+// enough to have one. Unlike refPath it doesn't tidy the value: the
+// platform's create parses what was sent, trailing slash and all, so a
+// path the tidy form would accept can still be one the create refuses.
+func clusterTypeSentPath(ref string) (string, bool) {
+	u, err := url.Parse(ref)
+	if err != nil || u.RawQuery != "" || u.Fragment != "" {
+		return "", false
+	}
+	return u.Path, true
+}
+
+// clusterTypeCreateRef is the `clusterType` a create sends: the path of an
+// absolute URL, the value as written otherwise. The platform's create parses
+// only the path form, and the provider already reads a reference's origin as
+// no part of which ClusterType it names, so sending the path keeps an
+// absolute URL working on a create as it does on an update.
+func clusterTypeCreateRef(ref string) string {
+	if p, ok := clusterTypeSentPath(ref); ok && p != ref {
+		return p
+	}
+	return ref
+}
+
+// clusterTypeRefForm refuses a `cluster_type` value the platform's create
+// answers with 422 "clusterType is not a valid ClusterType URI", at plan
+// rather than after the plan was approved.
+//
+// The contract types the field `uri-reference`, which holds any reference,
+// so the contract itself refuses nothing here. The platform's create does:
+// it reads only the form clusterTypeRefFormText names, and a bare
+// ClusterType name reaches it whole and is refused there, after other
+// resources in the plan may already have been made.
+type clusterTypeRefForm struct{}
+
+func (clusterTypeRefForm) Description(context.Context) string {
+	return "must be a ClusterType reference, " + clusterTypeRefFormText
+}
+
+func (v clusterTypeRefForm) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+
+func (clusterTypeRefForm) ValidateString(_ context.Context, req validator.StringRequest, resp *validator.StringResponse) {
+	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() {
+		return
+	}
+	ref := req.ConfigValue.ValueString()
+	if p, parseable := clusterTypeSentPath(ref); parseable {
+		if _, ok := clusterTypeURIRegion(p); ok {
+			return
+		}
+	}
+	// Local: configuration validation, no request made.
+	resp.Diagnostics.AddAttributeError(req.Path, "Not a ClusterType reference",
+		fmt.Sprintf("%q is not a ClusterType reference. A reference is %s. "+
+			"Use the `self_link` of the `%s` data source, which has that form in the region it read.",
+			ref, clusterTypeRefFormText, ResourceName(clusterTypeDataSourceSuffix)))
+}
+
+// refuseClusterTypeRegionMove fails a plan whose `cluster_type` names a
+// region other than the one the resource resolves to, when both are known.
+//
+// The platform's create refuses a cluster type from another region with
+// 422 "clusterType region ... does not match ... region", after the plan
+// approved it. Run at plan, on the region the scope has just resolved into
+// it, the same refusal names the way out before anything is sent. Skipped
+// whenever either value is unknown: a `cluster_type` a data source fills
+// during the apply can't be checked yet, and neither can a region that
+// isn't resolved.
+func refuseClusterTypeRegionMove(ctx context.Context, plan tfsdk.Plan, diags *diag.Diagnostics, kind string) {
+	var clusterType, region types.String
+	if plan.GetAttribute(ctx, path.Root("cluster_type"), &clusterType).HasError() ||
+		plan.GetAttribute(ctx, path.Root("region"), &region).HasError() {
+		return
+	}
+	if clusterType.IsNull() || clusterType.IsUnknown() || region.IsNull() || region.IsUnknown() {
+		return
+	}
+	p, _ := clusterTypeSentPath(clusterType.ValueString())
+	uriRegion, ok := clusterTypeURIRegion(p)
+	if !ok || uriRegion == region.ValueString() {
+		return
+	}
+	diags.AddAttributeError(path.Root("cluster_type"), "The cluster type is in another region",
+		fmt.Sprintf("`cluster_type` %q names the region %q, but this %s's region is %q. "+
+			"The platform refuses a cluster type from another region, so the create would fail "+
+			"after the plan approved it. Set `region` to %q, or use the `self_link` of the "+
+			"`%s` data source read in %q. The plan was refused, so nothing was sent.",
+			clusterType.ValueString(), uriRegion, kind, region.ValueString(), uriRegion,
+			ResourceName(clusterTypeDataSourceSuffix), region.ValueString()))
 }
 
 // refTypeAndVersion splits a reference into its ClusterType id and its version

@@ -91,6 +91,14 @@ func (clusterTypeVersionRef) ValidateString(_ context.Context, req validator.Str
 		return
 	}
 	ref := req.ConfigValue.ValueString()
+	// A reference whose form the platform refuses is the form validator's to
+	// report, on both resources, so a `/versions/` with nothing after it says
+	// that once instead of twice.
+	if p, parseable := clusterTypeSentPath(ref); parseable {
+		if _, ok := clusterTypeURIRegion(p); !ok {
+			return
+		}
+	}
 	// Read from the value as written, not as refPath tidies it, so that a
 	// version with anything around it, or a `versions` with none after it, is
 	// refused rather than quietly read as no version at all.

@@ -148,6 +148,7 @@ func (r *instanceGroupResource) Schema(ctx context.Context, _ resource.SchemaReq
 					knownGap("A tenant can't read the hardware or the image behind a ClusterType's machine types, "+
 						"so choosing a ClusterType for its hardware means writing one an operator named."),
 				PlanModifiers: []planmodifier.String{clusterTypeRefReplacement()},
+				Validators:    []validator.String{clusterTypeRefForm{}},
 			},
 			"cluster_type_resolved": schema.StringAttribute{
 				Computed: true,
@@ -315,6 +316,9 @@ func (r *instanceGroupResource) ModifyPlan(ctx context.Context, req resource.Mod
 	if resp.Diagnostics.HasError() {
 		return
 	}
+	// After the scope resolves the region, so a cluster type from another
+	// region is refused here rather than by the create.
+	refuseClusterTypeRegionMove(ctx, resp.Plan, &resp.Diagnostics, "instance group")
 	checkConfiguredKeys(ctx, req, &resp.Diagnostics)
 	planNoUsersWhenLeftOut(ctx, req, resp)
 
@@ -475,7 +479,7 @@ func (r *instanceGroupResource) Create(ctx context.Context, req resource.CreateR
 	}
 	body := k0rdent.InstanceGroupCreateRequest{
 		Id:          &key.id,
-		ClusterType: plan.ClusterType.ValueString(),
+		ClusterType: clusterTypeCreateRef(plan.ClusterType.ValueString()),
 		SshAccess:   sshAccess,
 	}
 	md, diags := plan.metadata().create(ctx)
