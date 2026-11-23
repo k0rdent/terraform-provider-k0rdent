@@ -39,6 +39,8 @@ const (
 	// webhookDeliveryPageSize is the contract's largest `limit`. A larger one
 	// is a 400, not a clamp.
 	webhookDeliveryPageSize = 200
+	// Three no-progress pages tolerate isolated duplicates while bounding a faulty read.
+	webhookDeliveriesNoProgressBudget = 3
 )
 
 func newWebhookDeliveriesDataSource() datasource.DataSource {
@@ -252,14 +254,18 @@ func (d *webhookDeliveriesDataSource) Read(ctx context.Context, req datasource.R
 // nothing is returned.
 //
 // The contract doesn't promise a page holds `limit` rows, so the bound is on
-// rows rather than pages: every page read has to add a delivery not already
-// read, or the read stops there. That also keeps once a delivery read twice,
-// which a keyset cursor the contract calls best-effort can hand back.
+// rows rather than pages. A keyset cursor the contract calls best-effort can
+// hand back a delivery already read, so rows are deduplicated. A repeated
+// cursor or three consecutive pages with no new rows stops the read early.
+// That early stop warns because later pages can still hold new deliveries.
 func (d *webhookDeliveriesDataSource) newest(ctx context.Context, id openapi_types.UUID, want int, diags *diag.Diagnostics) ([]k0rdent.WebhookDelivery, bool) {
 	const noun = "webhook deliveries"
 	var (
-		all    []k0rdent.WebhookDelivery
-		cursor *string
+		all        []k0rdent.WebhookDelivery
+		cursor     *string
+		ended      bool
+		seen       = map[string]bool{}
+		noProgress int
 	)
 	for len(all) < want {
 		size := min(webhookDeliveryPageSize, want-len(all))
@@ -273,17 +279,38 @@ func (d *webhookDeliveriesDataSource) newest(ctx context.Context, id openapi_typ
 			addListError(diags, noun, unreadPage(got.HTTPResponse, got.Body))
 			return nil, false
 		}
-		read := len(all)
+		before := len(all)
 		all = firstOfEach(append(all, got.JSON200.Deliveries...),
 			func(row k0rdent.WebhookDelivery) string { return row.Id.String() })
+		if len(all) == before {
+			noProgress++
+		} else {
+			noProgress = 0
+		}
 		next := got.JSON200.NextCursor
-		if len(all) == read || next == nil || *next == "" {
+		if next == nil || *next == "" {
+			ended = true
 			break
 		}
+		if seen[*next] || noProgress >= webhookDeliveriesNoProgressBudget {
+			break
+		}
+		seen[*next] = true
 		cursor = next
 	}
 	if len(all) > want {
 		all = all[:want]
+	}
+	if len(all) < want && !ended {
+		reason := "The platform repeated a cursor"
+		if noProgress >= webhookDeliveriesNoProgressBudget {
+			reason = fmt.Sprintf("The platform returned %d consecutive pages with no new deliveries", webhookDeliveriesNoProgressBudget)
+		}
+		diags.AddWarning(
+			"Webhook delivery history may be incomplete",
+			fmt.Sprintf("Read %d of the %d newest webhook deliveries requested. %s before the end of the "+
+				"history, so later deliveries may be missing. Run the read again to retry.", len(all), want, reason),
+		)
 	}
 	return all, true
 }

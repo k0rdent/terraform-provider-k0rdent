@@ -1,0 +1,3 @@
+```release-note:bug
+data-source/k0rdent_webhook_deliveries: Continue past repeated pages and warn when a repeated cursor or no progress shortens the read
+```
