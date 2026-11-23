@@ -252,14 +252,17 @@ func (d *webhookDeliveriesDataSource) Read(ctx context.Context, req datasource.R
 // nothing is returned.
 //
 // The contract doesn't promise a page holds `limit` rows, so the bound is on
-// rows rather than pages: every page read has to add a delivery not already
-// read, or the read stops there. That also keeps once a delivery read twice,
-// which a keyset cursor the contract calls best-effort can hand back.
+// rows rather than pages. A keyset cursor the contract calls best-effort can
+// hand back a delivery already read, so rows are deduplicated and only a
+// repeated cursor stops the read early. That early stop warns because later
+// pages can still hold new deliveries.
 func (d *webhookDeliveriesDataSource) newest(ctx context.Context, id openapi_types.UUID, want int, diags *diag.Diagnostics) ([]k0rdent.WebhookDelivery, bool) {
 	const noun = "webhook deliveries"
 	var (
 		all    []k0rdent.WebhookDelivery
 		cursor *string
+		ended  bool
+		seen   = map[string]bool{}
 	)
 	for len(all) < want {
 		size := min(webhookDeliveryPageSize, want-len(all))
@@ -273,17 +276,29 @@ func (d *webhookDeliveriesDataSource) newest(ctx context.Context, id openapi_typ
 			addListError(diags, noun, unreadPage(got.HTTPResponse, got.Body))
 			return nil, false
 		}
-		read := len(all)
 		all = firstOfEach(append(all, got.JSON200.Deliveries...),
 			func(row k0rdent.WebhookDelivery) string { return row.Id.String() })
 		next := got.JSON200.NextCursor
-		if len(all) == read || next == nil || *next == "" {
+		if next == nil || *next == "" {
+			ended = true
 			break
 		}
+		if seen[*next] {
+			break
+		}
+		seen[*next] = true
 		cursor = next
 	}
 	if len(all) > want {
 		all = all[:want]
+	}
+	if len(all) < want && !ended {
+		diags.AddWarning(
+			"Webhook delivery history may be incomplete",
+			fmt.Sprintf("Read %d of the %d newest webhook deliveries requested. The platform repeated a "+
+				"cursor before the end of the history, so later deliveries may be missing. Run the read "+
+				"again to retry.", len(all), want),
+		)
 	}
 	return all, true
 }

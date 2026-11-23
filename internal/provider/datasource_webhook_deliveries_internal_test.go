@@ -25,9 +25,17 @@ const maxDeliveryRequests = 10
 // deliveriesAPI serves one subscription and its delivery history, newest
 // first, at most page rows a page whatever `limit` asks for. It records the
 // `limit` and `cursor` of every delivery request.
+type deliveryPage struct {
+	deliveries []map[string]any
+	nextCursor string
+}
+
 type deliveriesAPI struct {
 	page       int
 	deliveries []map[string]any
+	// pages, when set, answers these pages in order instead of paging the
+	// delivery slice. It can repeat rows while advancing the cursor.
+	pages []deliveryPage
 	// repeat answers every page with the first one and a cursor, the way a
 	// server whose cursor doesn't advance would.
 	repeat bool
@@ -69,6 +77,20 @@ func (a *deliveriesAPI) serve(t *testing.T) *httptest.Server {
 		if requests > maxDeliveryRequests {
 			t.Errorf("delivery request %d: the read didn't stop", requests)
 			writeTestError(t, w, http.StatusInternalServerError, "too many requests")
+			return
+		}
+		if len(a.pages) > 0 {
+			if requests > len(a.pages) {
+				t.Errorf("delivery request %d: the read passed the scripted pages", requests)
+				writeTestError(t, w, http.StatusInternalServerError, "too many requests")
+				return
+			}
+			page := a.pages[requests-1]
+			body := map[string]any{"deliveries": page.deliveries}
+			if page.nextCursor != "" {
+				body["next_cursor"] = page.nextCursor
+			}
+			writeTestJSON(t, w, http.StatusOK, body)
 			return
 		}
 
@@ -165,8 +187,8 @@ func TestWebhookDeliveriesFollowTheCursorToTheLimit(t *testing.T) {
 	}
 }
 
-// A limit past the contract's largest page asks for 200 at a time, and a
-// history shorter than the limit ends where its cursor does.
+// A limit past the contract's largest page asks for 200 at a time. A history
+// shorter than the limit ends where its cursor does, without a warning.
 func TestWebhookDeliveriesPageAtTheContractsMaximum(t *testing.T) {
 	t.Parallel()
 	api := &deliveriesAPI{page: 200, deliveries: testDeliveries(450)}
@@ -179,6 +201,9 @@ func TestWebhookDeliveriesPageAtTheContractsMaximum(t *testing.T) {
 	}
 	if want := []int{200, 200, 200}; fmt.Sprint(api.limits) != fmt.Sprint(want) {
 		t.Errorf("asked for %v a page, want %v", api.limits, want)
+	}
+	if warnings := resp.Diagnostics.Warnings(); len(warnings) != 0 {
+		t.Errorf("a complete read of a short history warned: %v", warnings)
 	}
 }
 
@@ -200,9 +225,37 @@ func TestWebhookDeliveriesFilterOnStatusAmongTheNewest(t *testing.T) {
 	}
 }
 
-// A cursor that hands back what was already read ends the read rather than
-// looping, and a delivery read twice is kept once.
-func TestWebhookDeliveriesStopWhenAPageAddsNothing(t *testing.T) {
+// A repeated page with a new cursor doesn't end the read. Later pages still
+// contribute their new rows, each delivery appears once, and reaching the
+// limit raises no warning.
+func TestWebhookDeliveriesReadPastARepeatedPage(t *testing.T) {
+	t.Parallel()
+	deliveries := testDeliveries(4)
+	api := &deliveriesAPI{pages: []deliveryPage{
+		{deliveries: deliveries[0:2], nextCursor: "repeat"},
+		{deliveries: deliveries[0:2], nextCursor: "later"},
+		{deliveries: deliveries[2:4]},
+	}}
+	got, resp := readDeliveries(t, api, map[string]tftypes.Value{"limit": tftypes.NewValue(tftypes.Number, 4)})
+	if resp.Diagnostics.HasError() {
+		t.Fatalf("read: %v", resp.Diagnostics.Errors())
+	}
+	if ids := deliveryIDs(got); fmt.Sprint(ids) != fmt.Sprint([]any{
+		deliveries[0]["id"], deliveries[1]["id"], deliveries[2]["id"], deliveries[3]["id"],
+	}) {
+		t.Errorf("read %v after the repeated page, want every delivery once", ids)
+	}
+	if api.requests != 3 {
+		t.Errorf("read %d pages, want all 3", api.requests)
+	}
+	if warnings := resp.Diagnostics.Warnings(); len(warnings) != 0 {
+		t.Errorf("reaching the limit warned: %v", warnings)
+	}
+}
+
+// A cursor that repeats ends the read rather than looping. The delivery read
+// twice is kept once, and the short read warns that later rows may be missing.
+func TestWebhookDeliveriesStopWhenCursorRepeats(t *testing.T) {
 	t.Parallel()
 	api := &deliveriesAPI{page: 3, deliveries: testDeliveries(10), repeat: true}
 	got, resp := readDeliveries(t, api, nil)
@@ -211,6 +264,10 @@ func TestWebhookDeliveriesStopWhenAPageAddsNothing(t *testing.T) {
 	}
 	if len(got.Deliveries) != 3 || api.requests != 2 {
 		t.Errorf("read %d deliveries in %d requests, want 3 in 2", len(got.Deliveries), api.requests)
+	}
+	warnings := resp.Diagnostics.Warnings()
+	if len(warnings) != 1 || !strings.Contains(warnings[0].Detail(), "3 of the 50") {
+		t.Errorf("the repeated cursor didn't warn about the short read: %v", warnings)
 	}
 }
 
