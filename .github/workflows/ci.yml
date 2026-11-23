@@ -274,7 +274,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        tofu: ["1.12.12", "1.13.9"]
+        tofu: ["1.12.12", "1.13.10"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -414,7 +414,7 @@ jobs:
           terraform_wrapper: false
       - uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4  # v2.0.2
         with:
-          tofu_version: "1.13.9"
+          tofu_version: "1.13.10"
           tofu_wrapper: false
       - name: state from the previous release plans empty under this tree
         run: make upgrade-test

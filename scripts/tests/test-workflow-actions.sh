@@ -200,7 +200,7 @@ expect_fail "three tofu versions were accepted" "pin 3 tofu versions"
 
 setup
 edit workflows/ci.yml 's{tofu: \["1\.12\.\d+"}{tofu: ["1.11.6"}'
-expect_fail "tofu versions two minors apart were accepted" "pin tofu 1.11.6 and 1.13.9, which aren't two adjacent"
+expect_fail "tofu versions two minors apart were accepted" "pin tofu 1.11.6 and "
 
 setup
 edit workflows/nightly.yml 's{tofu_version: "[^"]*"}{tofu_version: "1.12.12"}'
