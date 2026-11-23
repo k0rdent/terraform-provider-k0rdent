@@ -46,6 +46,7 @@ Fastest first:
 | `make plan-quality` | Refresh-only plans find nothing, and plans stay within the unknown budget |
 | `make walkthrough-test` | The hardware walkthrough's directories work as the page says |
 | `make upgrade-test` | State from the previous release plans empty under this tree, but for accepted changes |
+| `make upgrade-test-real` | The same, against the kind stack or a confirmed landscape with hardware |
 | `make bench` | Plan, refresh and apply stay within the performance budget at 10 to 1,000 resources |
 
 CI also runs `make docs-check`, `make doc-commands`, `make client-check`,
@@ -263,6 +264,64 @@ entries go. A resource type no directory can create goes under
 changes from the default, so such a run reports every change from that
 release, accepted or not. Read it, don't gate on it.
 
+### `make upgrade-test-real`
+
+The same run against an endpoint that already exists, instead of the fake.
+The endpoint's host picks the landscape:
+
+- On this machine, the kind stack [`make real-api-stack`](#make-real-api-stack)
+  builds. Source the env file it writes and run:
+
+  ```sh
+  . .live/real-api-kind.env
+  make upgrade-test-real
+  ```
+
+  The run starts with `scripts/real-api-check.sh stack-check`, which vets
+  the stack's API version and refuses one holding what an earlier run left.
+  `REAL_API_FRESH=1 make real-api-stack` rebuilds it clean. The walkthroughs
+  run as the organization's service account, since `cluster-own-project`
+  needs `organizations-admin`. A kind stack answers a subnet's CIDR without
+  allocating it from a pool, so `full/`'s check that each subnet is inside
+  its pool is dropped, and `instance_group`, `file_store` and `vpc_peering`
+  go off, since the stack has no host and no storage service. Polls run at
+  200ms, as against the fake. The three resource types those switches leave
+  out are accepted under `not_covered` with `"landscape": "kind"` in
+  `ci/upgrade-accepted.json`.
+
+- Elsewhere, a landscape with hardware. It refuses to start unless
+  `UPGRADE_REAL_CONFIRM` names the endpoint's host, and unless the endpoint
+  is https:
+
+  ```sh
+  set -a; . ./hardware.env; set +a
+  UPGRADE_REAL_CONFIRM=api.example.com make upgrade-test-real
+  ```
+
+  The env file is the one `make real-api-check-hardware` reads, and
+  [`make real-api-check-hardware`](#make-real-api-check-hardware) documents
+  its variables. The run holds at most three servers, since it runs one
+  directory at a time and destroys each before the next starts: one cluster
+  with its workers and one host. `cluster-own-project` is left out, since
+  its project needs `organizations-admin`, which the landscape's service
+  account doesn't carry, and `full/`'s `webhook` and `own_project` switches
+  go off, for the same reasons the hardware check turns them off.
+  `REAL_API_CLUSTER_TYPE` names the cluster type to build and
+  `REAL_API_ADDRESS_POOL` the pool to take subnets from, since on a shared
+  landscape the first one `look/` lists may be someone else's. The two
+  resource types those switches leave out are accepted under `not_covered`
+  with `"landscape": "hardware"`.
+
+The findings rules, the accepted file and the coverage check are the fake
+run's, per landscape. An entry in `ci/upgrade-accepted.json` may name a
+landscape, and one without one applies to every landscape for `changes` and
+to the fake run for `not_covered`.
+
+A landscape's credential gets ten token mints a minute, so the run waits
+`UPGRADE_PACE` seconds, 7 by default, before each Terraform command that
+signs in. A run takes hours. `UPGRADE_KEEP=1`, `DIRS` and `PREVIOUS` work as
+in `make upgrade-test`.
+
 ### `make bench`
 
 Plan, refresh and apply at size, against a fresh fake with a delay added to
@@ -373,6 +432,15 @@ Each difference `fakedrift` finds is either fixed in the fake or listed in
 `ci/fake-drift-accepted.json` with a reason. A listed difference that no
 longer turns up fails the check too, so the list can't go stale.
 
+An entry may name a landscape, `kind` or `hardware`: the one whose real
+recording shows the difference. Without one it applies to every landscape.
+`fakedrift compare` takes the landscape it's judging, `-landscape kind` from
+`make real-api-check` and `-landscape hardware` from
+[`make real-api-check-hardware`](#make-real-api-check-hardware), and an entry
+for another landscape is neither matched nor stale: the kind record keeps
+the kind lines current and the hardware run the hardware ones, because a
+difference one landscape's recording shows is judged only where it shows.
+
 When every step passes, the check writes `ci/real-api/record.json`. Commit it
 with the change. The record holds two hashes:
 
@@ -479,7 +547,8 @@ A kind stack can't do everything the walkthroughs ask for, so some resources
 never meet the real API in `make real-api-check`. This runs them on a
 landscape with hardware: `look/`, then `full/` with the switches for what kind
 can't do turned on, against the fake and against the landscape, through the
-same recorder, then `fakedrift compare`. It creates real clusters and hosts.
+same recorder, then `fakedrift compare`. It creates real clusters and hosts,
+or with the cluster off, a real instance group alone.
 
 It refuses to start unless `REAL_API_CONFIRM` names the endpoint's host, and it
 refuses localhost, where `make real-api-check` runs. Before it creates
@@ -489,10 +558,19 @@ file stores on, a share type. A missing piece fails there, in seconds.
 
 | Build switch in `full/` | Here | Why |
 | --- | --- | --- |
+| `cluster` | On | Hardware, for the cluster's create, upgrade and destroy paths |
 | `network`, `security_group`, `vpc_security_groups` | On | Subnets allocated from a real pool, and groups on a real VPC |
 | `instance_group`, `vpc_peering` | On | Kind has no host for a group |
 | `file_store` | On | Kind runs no storage service |
 | `webhook`, `own_project` | Off | Kind covers both. A webhook to an address nobody serves gets turned off partway through a long run, and a project of its own needs `organizations-admin` |
+
+A landscape whose quota fits no cluster and group at once runs the group by
+itself: `REAL_API_BUILD_OFF="cluster vpc_peering"` leaves both out, and a
+peering needs the cluster's VPC, so the run refuses the cluster off without the
+peering. The preflight says which resources the run creates. After the apply and
+the empty re-plan, the run grows the group's worker pool by one and plans again,
+then destroys: on a quota of three servers that is the peak, two for the group
+and one more while it grows.
 
 A cluster with hosts can take two hours to create and as long to destroy. Each
 Terraform command prints a line when it starts, with its log file, and one when
@@ -508,8 +586,10 @@ and the command that removes it. Every name starts with the run's id,
 
 When every step passes, it writes `ci/real-api/hardware-record.json`: the
 landscape's label, the API version and where it came from, the code hash, the
-build switches and the resources covered. `scripts/real-api-check.sh
-verify-release` prints it. When it doesn't cover the release's code, or a
+build switches and the resources covered. A record names each run that wrote it
+and what that run covered, and runs on the same code merge, so a landscape run
+in pieces still covers it all together. `scripts/real-api-check.sh
+verify-release` prints the union. When it doesn't cover the release's code, or a
 resource kind can't run isn't in it, the release check says so plainly, such as
 `kind only, no hardware for: k0rdent_file_store`.
 
@@ -524,7 +604,7 @@ resource kind can't run isn't in it, the release check says so plainly, such as
 | `REAL_API_LANDSCAPE` | A label for the record, never a host name. Default `hardware` |
 | `REAL_API_ORGANIZATION` | The organization the quota checks read. Default: the first `look/` lists |
 | `REAL_API_ADDRESS_POOL` | A pool that isn't routable. Default: the first active one |
-| `REAL_API_BUILD_OFF` | Switches to turn off as well, such as `file_store` when the landscape's storage is down. The record lists what they leave uncovered |
+| `REAL_API_BUILD_OFF` | Switches to turn off as well, such as `file_store` when the landscape's storage is down, or `cluster vpc_peering` for a run of the instance group alone. The record lists what they leave uncovered |
 | `REAL_API_KEEP` | `1` leaves everything in place |
 
 ```sh

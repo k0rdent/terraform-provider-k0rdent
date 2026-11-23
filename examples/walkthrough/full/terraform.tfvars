@@ -13,9 +13,10 @@ allowed_cidrs       = []                      # where you connect from, such as 
 webhook_url         = ""                      # where cluster events go, such as https://hooks.example.com/k0rdent
 
 # Optional. Uncomment to change the default.
+# test_purpose           = ""                           # a scripted run fills it in, so what it leaves says it is a test
 # address_pool           = ""                           # a pool that isn't routable. Empty takes the first active one
 # subnets                = { nodes = 28, storage = 28 } # a subnet per purpose, and its prefix length
-# worker_counts          = { workers = 1 }              # nodes per worker pool. Left out, each starts at its floor
+# worker_counts          = { workers = 1 }              # hosts per worker pool, on the cluster and the hosts. Left out, each starts at its floor
 # cluster_type_version   = ""                           # a version id from the cluster_type output, to pin it
 # webhook_secret_version = 2                            # one more, with a new TF_VAR_webhook_secret, rotates the webhook's secret
 # quota_checks           = false                        # skip the organization and quota reads, for a credential scoped to a project
@@ -32,6 +33,7 @@ webhook_url         = ""                      # where cluster events go, such as
 # What to build. Turn on what your landscape supports, and off what it
 # doesn't. The scorecard output lists both.
 build = {
+  cluster             = true  # the cluster itself. Turn off to run the hosts and storage alone
   network             = true  # a network and a subnet per purpose. Needs an address pool that isn't routable
   security_group      = true  # a group on the cluster. Needs nodes on a nico-backed VPC
   vpc_security_groups = true  # the same group on every VPC this makes, before its default group. Needs security_group too

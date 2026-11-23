@@ -39,10 +39,38 @@
 #                         checked when every directory runs
 #   UPGRADE_KEEP=1        keep the run directory, to read the logs
 #   UPGRADE_INIT_TIMEOUT=90  seconds for each of an init's three tries
+#   UPGRADE_REAL=1        run against an endpoint that already exists, from
+#                         the environment, instead of starting the fake.
+#                         Its host picks the landscape: on this machine the
+#                         kind stack, whose env file make real-api-stack
+#                         writes and which scripts/real-api-check.sh
+#                         stack-check then vets; elsewhere a landscape with
+#                         hardware, which UPGRADE_REAL_CONFIRM has to name
+#                         and which has to be https. The findings rules, the
+#                         accepted file and the coverage check are the
+#                         fake's, per landscape
+#   UPGRADE_REAL_CONFIRM=api.example.com  the host UPGRADE_REAL=1 applies
+#                         against, off this machine, to confirm the
+#                         landscape
+#   UPGRADE_PACE=7        seconds before each Terraform command that signs
+#                         in, in a real run. A credential gets ten token
+#                         mints a minute on the real API. Default 7
+#
+# The hardware form is UPGRADE_REAL=1 against a confirmed landscape. It runs
+# the same directories, one at a time, destroying each before the next, so
+# the most it holds is one cluster with its workers and one host: three
+# servers. cluster-own-project is left out, since its project needs
+# organizations-admin, which the landscape's service account doesn't carry,
+# and full/'s webhook and own_project switches go off, the first because no
+# address serves it, the second for the same reason as cluster-own-project.
+# REAL_API_CLUSTER_TYPE names the cluster type to build and
+# REAL_API_ADDRESS_POOL the pool to take subnets from; both TESTING.md
+# documents for make real-api-check-hardware, whose env file serves here too.
 #
 # Requires: go, python3, ssh-keygen, curl, git with the release tags, and network
 # to registry.terraform.io, registry.opentofu.org and the GitHub release
-# assets they point at.
+# assets they point at. A real run needs the env file's variables in the
+# environment, and a kind run kubectl and jq too, for stack-check.
 
 set -euo pipefail
 
@@ -59,6 +87,13 @@ readonly ACCEPTED="$REPO/ci/upgrade-accepted.json"
 # Each init downloads, so each try gets this long, and an outage fails the
 # run in minutes rather than at the job's timeout.
 readonly INIT_TIMEOUT="${UPGRADE_INIT_TIMEOUT:-90}"
+# UPGRADE_REAL=1 runs against an endpoint that already exists instead of
+# the fake. LANDSCAPE names which endpoint kind of run this is: fake, the
+# default; kind, a kind stack on this machine; hardware, a landscape
+# elsewhere that UPGRADE_REAL_CONFIRM named. It picks the walkthrough
+# adjustments and which ci/upgrade-accepted.json entries the run reads.
+readonly REAL="${UPGRADE_REAL:-0}"
+LANDSCAPE=fake
 
 # Set by use_cli, the CLI every tf call runs.
 CLI=""
@@ -187,8 +222,79 @@ PY
   done < "$WORK/skipped"
 }
 
+# env_value <name> prints the value of ${ENV_PREFIX}<name>, or nothing.
+env_value() {
+  eval printf '%s' "\"\${${ENV_PREFIX}$1:-}\""
+}
+
+# pace waits before a Terraform command that signs in, in a real run: a
+# credential gets ten token mints a minute on the real API, and each such
+# command mints one. The fake has no such limit.
+pace() {
+  [[ "$REAL" != 1 ]] || sleep "${UPGRADE_PACE:-7}"
+}
+
+# check_real sets LANDSCAPE for a run against an endpoint that already
+# exists, and refuses what such a run can't undo once it built anything: a
+# missing endpoint or credential, an endpoint off this machine that
+# UPGRADE_REAL_CONFIRM doesn't name, an off-machine endpoint that isn't
+# https, and on a kind stack one at another API version or holding what an
+# earlier run left. The endpoint's host picks the landscape: on this machine
+# the kind stack, elsewhere a landscape with hardware.
+check_real() {
+  local endpoint host var
+  endpoint="$(env_value ENDPOINT)"
+  [ -n "$endpoint" ] || die "UPGRADE_REAL=1 needs ${ENV_PREFIX}ENDPOINT, the endpoint to apply against. The env file make real-api-stack writes sets it; TESTING.md lists what a landscape sets"
+  host="$(endpoint_host "$endpoint")"
+  case "$host" in
+    localhost | localhost:* | 127.0.0.1 | 127.0.0.1:* | \[::1\] | \[::1\]:*)
+      LANDSCAPE=kind
+      ;;
+    *)
+      LANDSCAPE=hardware
+      [ -n "${UPGRADE_REAL_CONFIRM:-}" ] || die "UPGRADE_REAL=1 against $host applies the walkthroughs on that landscape and destroys them again, for hours.
+
+   Confirm the landscape by naming its host:
+
+       UPGRADE_REAL_CONFIRM=$host make upgrade-test-real"
+      [ "$UPGRADE_REAL_CONFIRM" = "$host" ] \
+        || die "UPGRADE_REAL_CONFIRM is \"$UPGRADE_REAL_CONFIRM\", and ${ENV_PREFIX}ENDPOINT's host is \"$host\". They have to match"
+      endpoint_is_encrypted "$endpoint" \
+        || die "${ENV_PREFIX}ENDPOINT is $endpoint. Use https, or the credential and every request go to it in the clear"
+      ;;
+  esac
+  for var in REGION PROJECT; do
+    [ -n "$(env_value "$var")" ] \
+      || die "${ENV_PREFIX}$var is not set, which the walkthroughs build in. The env file make real-api-stack writes sets it; TESTING.md lists what a landscape sets"
+  done
+  if [ "$LANDSCAPE" = hardware ]; then
+    for var in CLIENT_ID CLIENT_SECRET; do
+      [ -n "$(env_value "$var")" ] \
+        || die "${ENV_PREFIX}$var is not set, which the previous release signs in with. TESTING.md lists what a landscape sets"
+    done
+    [ -n "${REAL_API_CLUSTER_TYPE:-}" ] \
+      || die "REAL_API_CLUSTER_TYPE is not set. It is a cluster type id in $(env_value REGION) with a worker pool and hardware free for a control plane, its workers and one host"
+  else
+    for var in REAL_API_ORG_CLIENT_ID REAL_API_ORG_CLIENT_SECRET; do
+      [ -n "$(eval printf '%s' "\"\${$var:-}\"")" ] \
+        || die "$var is not set. The env file make real-api-stack writes sets it"
+    done
+    # What real-api-check's own kind run checks before it touches the
+    # stack: the API version this tree tracks, and nothing left on it.
+    "$REPO/scripts/real-api-check.sh" stack-check \
+      || fail "the kind stack isn't ready to upgrade from. REAL_API_FRESH=1 make real-api-stack rebuilds it clean, and the env file it writes goes in this run's environment"
+    # The walkthroughs run as the organization's account, since
+    # cluster-own-project's project needs organizations-admin, as
+    # real-api-check's kind walkthroughs do.
+    # shellcheck disable=SC2154 # set by the env file, checked above
+    export "${ENV_PREFIX}CLIENT_ID=$REAL_API_ORG_CLIENT_ID" "${ENV_PREFIX}CLIENT_SECRET=$REAL_API_ORG_CLIENT_SECRET"
+  fi
+  note "landscape: $LANDSCAPE, endpoint $endpoint"
+}
+
 # check_accepted refuses an entry without a reason, so the file explains
-# itself.
+# itself. An entry may name a landscape: fake, kind or hardware. Without one
+# it applies to every landscape.
 check_accepted() {
   python3 - "$ACCEPTED" <<'PY' || fail "ci/upgrade-accepted.json is malformed"
 import json, sys
@@ -197,8 +303,13 @@ need = {"changes": ("from", "directory", "change", "reason"), "not_covered": ("t
 bad = ["unknown key %s" % k for k in f if k not in ("about", *need)]
 for section, fields in need.items():
     for e in f.get(section, []):
-        if set(e) != set(fields) or not all(isinstance(e[k], str) and e[k].strip() for k in fields):
-            bad.append("%s entry %s needs exactly %s, each non-empty" % (section, json.dumps(e), ", ".join(fields)))
+        if set(e) not in (set(fields), set(fields) | {"landscape"}) \
+                or not all(isinstance(e.get(k), str) and e[k].strip() for k in fields):
+            bad.append("%s entry %s needs exactly %s, each non-empty, and may name a landscape"
+                       % (section, json.dumps(e), ", ".join(fields)))
+        elif e.get("landscape") not in (None, "fake", "kind", "hardware"):
+            bad.append("%s entry %s names landscape %s, and the landscapes are fake, kind and hardware"
+                       % (section, json.dumps(e), e["landscape"]))
 for b in bad:
     print("   " + b)
 sys.exit(1 if bad else 0)
@@ -219,6 +330,7 @@ use_cli() {
 tf() {
   local dir="$1" rc="$2"
   shift 2
+  pace
   if ! ( cd "$dir" && TF_CLI_CONFIG_FILE="$rc" "$CLI" "$@" ) > "$dir/last.log" 2>&1; then
     cat "$dir/last.log" >&2
     return 1
@@ -308,7 +420,17 @@ pick_values() {
   ( cd "$dir" && TF_CLI_CONFIG_FILE="$WORK/registry.tfrc" "$CLI" output -json ) > "$dir/look.json" \
     || fail "look's output with $PREVIOUS failed"
   walkthrough_pick "$dir/look.json"
+  if [[ "$LANDSCAPE" == hardware ]]; then
+    # What the runner named, not what look/ listed first: on a shared
+    # landscape the first project or cluster type is someone else's.
+    region="$(env_value REGION)"
+    project="$(env_value PROJECT)"
+    cluster_type="$REAL_API_CLUSTER_TYPE"
+    # shellcheck disable=SC2034 # read by walkthrough_tfvars
+    filtered_type="$REAL_API_CLUSTER_TYPE"
+  fi
 
+  pace
   ( cd "$dir" && TF_CLI_CONFIG_FILE="$WORK/registry.tfrc" "$CLI" providers schema -json ) > "$dir/schema.json" \
     || fail "could not read the schema of $PREVIOUS"
   python3 - "$dir/schema.json" "/$NAMESPACE/$PROVIDER_NAME" > "$WORK/registered" <<'PY'
@@ -337,12 +459,14 @@ PY
 # judge <dir> <name>: findings from the candidate's plan and its show -json
 # of the old state, against the accepted list. Writes <dir>/matched. Exits 0
 # for nothing unaccepted, 3 for a finding, and anything else is a crash.
+# An entry without a landscape applies to every landscape; one with a
+# landscape to that run's alone.
 judge() {
-  python3 - "$1" "$ACCEPTED" "$PREVIOUS" "$2" <<'PY'
+  python3 - "$1" "$ACCEPTED" "$PREVIOUS" "$2" "$LANDSCAPE" <<'PY'
 import json, os, sys
-d, accepted_path, previous, name = sys.argv[1:]
+d, accepted_path, previous, name, landscape = sys.argv[1:]
 ok = {(a["directory"], a["change"]) for a in json.load(open(accepted_path)).get("changes", [])
-      if a["from"] == previous}
+      if a["from"] == previous and a.get("landscape", "") in ("", landscape)}
 
 def changed(c):
     b, a = c.get("before") or {}, c.get("after") or {}
@@ -419,17 +543,47 @@ run_dir() {
 
   # 0.1.0 writes every pool the platform creates into an instance group's
   # node_pool, so its create fails on a ClusterType with a pool full/ doesn't
-  # name. The fake's gpu-single has one pool, which full/ names.
-  if [[ "$name" == full-everything && "$PREVIOUS" =~ ^0\.1\.0(-rc\.[0-9]+)?$ ]]; then
+  # name. The fake's gpu-single has one pool, which full/ names. A real
+  # endpoint lists the pools it creates, so it doesn't trip this.
+  if [[ "$name" == full-everything && "$PREVIOUS" =~ ^0\.1\.0(-rc\.[0-9]+)?$ && "$LANDSCAPE" == fake ]]; then
     grep -v '^cluster_type ' "$dir/terraform.tfvars" > "$dir/terraform.tfvars.new"
     echo 'cluster_type = "gpu-single"' >> "$dir/terraform.tfvars.new"
     mv "$dir/terraform.tfvars.new" "$dir/terraform.tfvars"
+  fi
+
+  # A kind stack answers a subnet's CIDR without allocating it from the
+  # pool, so full/'s check that each subnet is inside its pool can't pass
+  # there. The subnet still lands in state, so it still counts as coverage.
+  if [[ "$LANDSCAPE" == kind && ( "$name" == full || "$name" == full-everything ) ]]; then
+    walkthrough_drop_subnet_pool_check "$dir/main.tf" \
+      || fail "$CLI $name: could not drop full/'s subnet pool check, which a kind stack can't pass"
+  fi
+  # What the landscape can't serve, off. Kind has no server for an instance
+  # group's host and no storage service, so those go off; vpc_peering peers
+  # with the group's VPC, so it goes too. On hardware no address serves
+  # full/'s webhook, and a project of its own needs organizations-admin,
+  # which the landscape's service account doesn't carry.
+  if [[ "$name" == full-everything || ( "$name" == full && "$LANDSCAPE" == hardware ) ]]; then
+    case "$LANDSCAPE" in
+      kind) walkthrough_build_off "$dir/terraform.tfvars" instance_group file_store vpc_peering \
+              || fail "$CLI $name: could not turn off what a kind stack can't serve" ;;
+      hardware) walkthrough_build_off "$dir/terraform.tfvars" webhook own_project \
+                || fail "$CLI $name: could not turn off what a landscape won't serve" ;;
+    esac
+  fi
+  # The pool full/'s network takes its subnets from, when the landscape
+  # needs one named. Left out, the first active pool that isn't routable
+  # serves, which on a shared landscape may be someone else's.
+  if [[ "$LANDSCAPE" == hardware && -n "${REAL_API_ADDRESS_POOL:-}" \
+    && ( "$name" == full || "$name" == full-everything ) ]]; then
+    echo "address_pool = \"$REAL_API_ADDRESS_POOL\"" >> "$dir/terraform.tfvars"
   fi
 
   init_previous "$dir"
   tf "$dir" "$WORK/registry.tfrc" apply -auto-approve -input=false -no-color || fail "$CLI $name: apply with $PREVIOUS failed"
   # -detailed-exitcode is 0 for drift with no change, so the drift is read
   # from the plan's JSON.
+  pace
   ( cd "$dir" && TF_CLI_CONFIG_FILE="$WORK/registry.tfrc" "$CLI" plan -detailed-exitcode -input=false -no-color -out=baseline.plan ) > "$dir/baseline.log" 2>&1 || status=$?
   if [[ "$status" != 0 ]]; then
     cat "$dir/baseline.log" >&2
@@ -455,6 +609,7 @@ run_dir() {
 
   status=0
   : > "$dir/plan.err"
+  pace
   ( cd "$dir" && TF_CLI_CONFIG_FILE="$WORK/terraform.rc" "$CLI" plan -detailed-exitcode -input=false -no-color -out=upgrade.plan ) > "$dir/upgrade.log" 2>&1 || status=$?
   plan_status="$status"
   if [[ "$status" == 0 || "$status" == 2 ]]; then
@@ -492,15 +647,18 @@ run_dir() {
 
 # check_stale fails on an accepted change that can't match: one for this
 # PREVIOUS, in a directory that ran, that nothing matched, and in a run from
-# the default PREVIOUS, one for any other release.
+# the default PREVIOUS, one for any other release. Entries for another
+# landscape don't count, since that run can't match them.
 check_stale() {
-  python3 - "$ACCEPTED" "$PREVIOUS" "$DEFAULT_PREVIOUS" "$WORK/matched-all" "${DIRS[*]}" <<'PY'
+  python3 - "$ACCEPTED" "$PREVIOUS" "$DEFAULT_PREVIOUS" "$WORK/matched-all" "${DIRS[*]}" "$LANDSCAPE" <<'PY'
 import json, sys
-acc, prev, default, matched, dirs = json.load(open(sys.argv[1])), sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5].split()
+acc, prev, default, matched, dirs, landscape = json.load(open(sys.argv[1])), *sys.argv[2:]
 seen = {tuple(l.split("\t", 1)) for l in open(matched).read().splitlines() if "\t" in l}
 stale = 0
 for a in acc.get("changes", []):
-    if a["from"] == prev and a["directory"] in dirs and (a["directory"], a["change"]) not in seen:
+    if a.get("landscape", "") not in ("", landscape):
+        continue
+    if a["from"] == prev and a["directory"] in dirs.split() and (a["directory"], a["change"]) not in seen:
         print("   stale accepted change: %s %s, from %s, matched nothing" % (a["directory"], a["change"], prev))
         stale = 1
     elif a["from"] != prev and prev == default:
@@ -511,12 +669,15 @@ PY
 }
 
 # check_coverage fails on a type the previous release registers that no
-# directory's state held, unless not_covered lists it, and on a not_covered
-# entry for a type that was covered.
+# directory's state held, unless not_covered lists it for this landscape,
+# and on a not_covered entry for a type that was covered. An entry without a
+# landscape is the fake run's; the kind and hardware runs leave types the
+# fake covers, so theirs name their landscape.
 check_coverage() {
-  python3 - "$ACCEPTED" "$WORK/registered" "$WORK/covered" <<'PY'
+  python3 - "$ACCEPTED" "$WORK/registered" "$WORK/covered" "$LANDSCAPE" <<'PY'
 import json, sys
-acc = {e["type"]: e["reason"] for e in json.load(open(sys.argv[1])).get("not_covered", [])}
+acc = {e["type"]: e["reason"] for e in json.load(open(sys.argv[1])).get("not_covered", [])
+       if e.get("landscape", "") in ("", sys.argv[4])}
 registered = set(open(sys.argv[2]).read().split())
 covered = set(open(sys.argv[3]).read().split())
 bad = 0
@@ -555,6 +716,9 @@ main() {
   fi
 
   check_accepted
+  if [[ "$REAL" == 1 ]]; then
+    check_real
+  fi
   fetch_served
   default_previous
   PREVIOUS="${PREVIOUS:-$DEFAULT_PREVIOUS}"
@@ -573,14 +737,25 @@ main() {
   PREV_EXAMPLES="$WORK/previous/examples/walkthrough"
 
   # The directories come from the previous release, so a new one is run
-  # without a change here.
+  # without a change here. On hardware cluster-own-project is left out: its
+  # project needs organizations-admin, which the landscape's service
+  # account doesn't carry, so the run would fail on the credential the
+  # landscape gives.
   read -r -a ALL_DIRS <<< "$(walkthrough_dirs "$PREV_EXAMPLES" | tr '\n' ' ')"
+  if [[ "$LANDSCAPE" == hardware ]]; then
+    local keep d
+    keep=()
+    for d in "${ALL_DIRS[@]}"; do
+      [[ "$d" == cluster-own-project ]] || keep+=("$d")
+    done
+    ALL_DIRS=("${keep[@]}")
+  fi
   [[ "${#ALL_DIRS[@]}" -gt 0 ]] || fail "v$PREVIOUS's examples/walkthrough has no directory the fake can apply"
   read -r -a DIRS <<< "${DIRS-${ALL_DIRS[*]}}"
   [[ "${#DIRS[@]}" -gt 0 ]] || fail "DIRS is empty. Leave it unset for every directory: ${ALL_DIRS[*]}"
   for d in "${DIRS[@]}"; do
     [[ " ${ALL_DIRS[*]} " == *" $d "* ]] \
-      || fail "DIRS names $d, which isn't a directory in v$PREVIOUS's examples/walkthrough that the fake can apply. Those are: ${ALL_DIRS[*]}"
+      || fail "DIRS names $d, which isn't a directory in v$PREVIOUS's examples/walkthrough that this run applies. Those are: ${ALL_DIRS[*]}"
   done
   : > "$WORK/matched-all"
   : > "$WORK/covered"
@@ -588,7 +763,19 @@ main() {
   step "Build the candidate from this tree"
   build_provider_mirror "$WORK" "$CANDIDATE"
   printf 'provider_installation {\n  direct {}\n}\n' > "$WORK/registry.tfrc"
-  start_fake
+  if [[ "$REAL" == 1 ]]; then
+    # The endpoint and the credential are already in the environment, from
+    # the env file. On kind the provider skips the 1s poll floor on a
+    # loopback endpoint, so the run polls as fast as against the fake; on
+    # hardware the default applies, since a real cluster takes its time.
+    if [[ "$LANDSCAPE" == kind ]]; then
+      export "${ENV_PREFIX}POLL_INTERVAL=200ms"
+    fi
+    walkthrough_secrets "$WORK"
+    good "running against the $LANDSCAPE endpoint, from ${PREVIOUS} to this tree"
+  else
+    start_fake
+  fi
 
   read -r first_cli _ <<< "$CLIS"
   [[ -n "$first_cli" ]] || fail "CLIS is empty. Leave it unset for terraform and tofu"
@@ -625,7 +812,7 @@ main() {
 
   step "Results, $PREVIOUS to this tree"
   printf '   %s\n' "${RESULTS[@]}"
-  note "wall clock: ${SECONDS}s"
+  note "landscape: $LANDSCAPE, wall clock: ${SECONDS}s"
   [[ "$FAILED" == 0 ]] || fail "see the results above: a finding from $PREVIOUS that ci/upgrade-accepted.json doesn't list, a stale entry there, a resource type no directory covers, or a judge that failed"
   printf '\n%sState from %s plans empty under this tree, but for accepted changes.%s\n' "$GREEN" "$PREVIOUS" "$R"
 }

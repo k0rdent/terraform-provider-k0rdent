@@ -64,9 +64,13 @@ func TestAFailedUpgradeLeavesItsEventsInTheLog(t *testing.T) {
 		t.Errorf("the log ran on: %v %q", lines, cursor)
 	}
 
-	// Unfiltered, the operation's own start line comes first, and the
-	// create's lines are out of scope.
-	if lines, _ = eventPage(t, s, ""); len(lines) != 3 || lines[0]["level"] != "info" {
+	// Unfiltered, the operation's own start line comes first, then one line
+	// per stage it planned, each naming its stage (as the prod landscape's
+	// log does), then the warning and the error. The create's lines are out
+	// of scope.
+	if lines, _ = eventPage(t, s, ""); len(lines) != 7 || lines[0]["level"] != "info" ||
+		lines[1]["stage"] != "preparing-version" || lines[4]["stage"] != "rolling-workers" ||
+		lines[5]["level"] != "warn" || lines[6]["level"] != "error" {
 		t.Errorf("unfiltered: %v", lines)
 	}
 }

@@ -12,12 +12,15 @@
 //	    value, so no token, key or name lands in FILE. It prints its URL on
 //	    the first line of stdout once it's listening.
 //
-//	fakedrift compare -spec openapi.yaml -fake FILE -real FILE [-accepted FILE]
+//	fakedrift compare -spec openapi.yaml -fake FILE -real FILE -landscape KIND
+//	               [-accepted FILE]
 //	    groups both recordings by operation (method, the spec's path template,
 //	    status) and, for every operation both recorded, lists the fields only
 //	    one side answered and the fields whose types differ. A line of the
 //	    accepted file (JSON, see acceptedDiff) excuses one difference. Exit 1
-//	    while any difference is unexcused.
+//	    while any difference is unexcused. The landscape says which run's real
+//	    recording it judges, kind or hardware, and an accepted line for the
+//	    other landscape is neither matched nor stale.
 //
 // A field only one side answered can be data, not drift: an optional field the
 // fake's fixtures never set. The accepted file says which, with a reason, so
@@ -216,19 +219,29 @@ func sorted(set map[string]bool) []string {
 // acceptedDiff excuses one difference: the operation, the field's path, and
 // which side alone answers it ("fake", "real") or "type" for a type that
 // differs. A field ending in "*" excuses every field under that prefix, for a
-// subtree the fake leaves out on purpose. Reason says why it's data rather
+// subtree the fake leaves out on purpose. Landscape, when set, is the one run
+// whose real recording shows the difference, kind or hardware; a line without
+// one applies to every landscape. Reason says why it's data rather
 // than drift. A line that excuses nothing fails the compare, so the file can't
 // keep excuses for differences that are gone.
 type acceptedDiff struct {
 	Operation string `json:"operation"`
 	Field     string `json:"field"`
 	Side      string `json:"side"`
+	Landscape string `json:"landscape,omitempty"`
 	Reason    string `json:"reason"`
 	used      bool
 }
 
-func (a *acceptedDiff) excuses(op string, d difference) bool {
-	if a.Operation != op || a.Side != d.side {
+// appliesTo says whether the entry is judged in landscape, the one whose real
+// recording compare was pointed at: an entry without a landscape applies to
+// every one, and an entry for another landscape is neither matched nor stale.
+func (a *acceptedDiff) appliesTo(landscape string) bool {
+	return a.Landscape == "" || a.Landscape == landscape
+}
+
+func (a *acceptedDiff) excuses(op string, d difference, landscape string) bool {
+	if !a.appliesTo(landscape) || a.Operation != op || a.Side != d.side {
 		return false
 	}
 	if prefix, ok := strings.CutSuffix(a.Field, "*"); ok {
@@ -243,12 +256,18 @@ func compare(args []string, w io.Writer) (bool, error) {
 	fakeFile := fs.String("fake", "", "the fake's recording")
 	realFile := fs.String("real", "", "the real API's recording")
 	acceptedFile := fs.String("accepted", "", "the differences accepted as data, not drift")
+	landscape := fs.String("landscape", "", "the landscape the real recording came from, kind or hardware: an accepted line for another landscape is neither matched nor stale")
 	partial := fs.Bool("partial", false, "the recordings cover only some operations, so list the accepted lines they didn't show instead of failing on them")
 	if err := fs.Parse(args); err != nil {
 		return false, err
 	}
 	if *spec == "" || *fakeFile == "" || *realFile == "" {
 		return false, fmt.Errorf("compare needs -spec, -fake and -real")
+	}
+	switch *landscape {
+	case "", "kind", "hardware":
+	default:
+		return false, fmt.Errorf("compare's -landscape is %q, want kind or hardware", *landscape)
 	}
 	templates, err := pathTemplates(*spec)
 	if err != nil {
@@ -275,11 +294,19 @@ func compare(args []string, w io.Writer) (bool, error) {
 			if a.Reason == "" {
 				return false, fmt.Errorf("%s: %s %s has no reason", *acceptedFile, a.Operation, a.Field)
 			}
+			switch a.Landscape {
+			case "", "kind", "hardware":
+			default:
+				return false, fmt.Errorf("%s: %s %s names landscape %q, and the landscapes are kind and hardware", *acceptedFile, a.Operation, a.Field, a.Landscape)
+			}
+			if a.Landscape != "" && *landscape == "" {
+				return false, fmt.Errorf("%s: %s %s is for the %s landscape, so compare needs -landscape kind or hardware to judge it", *acceptedFile, a.Operation, a.Field, a.Landscape)
+			}
 		}
 	}
 	excusedBy := func(op string, d difference) bool {
 		for i := range accepted {
-			if accepted[i].excuses(op, d) {
+			if accepted[i].excuses(op, d, *landscape) {
 				accepted[i].used = true
 				return true
 			}
@@ -321,6 +348,8 @@ func compare(args []string, w io.Writer) (bool, error) {
 	for _, a := range accepted {
 		switch {
 		case a.used:
+		case !a.appliesTo(*landscape):
+			// The other landscape's run keeps this line current.
 		case *partial:
 			unseen++
 			fmt.Fprintf(w, "not seen in this partial run: %s %s (%s)\n", a.Operation, a.Field, a.Side)
