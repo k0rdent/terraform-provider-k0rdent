@@ -534,6 +534,97 @@ resource %q "b" {
 	}
 }
 
+// A literal VPC id can be read before its owner during a destroy retry. The
+// checked-in examples must name the recovery command when that read fails.
+func TestAccADestroyRetryAfterLiteralVPCReadNamesRecovery(t *testing.T) { //nolint:paralleltest // it interrupts a destroy through the real CLI
+	if runtime.GOOS == "windows" {
+		skipTest(t, "the CLI sequence runs on unix")
+	}
+	examples := []struct {
+		name, path, literal string
+	}{
+		{name: "vpc", path: fmt.Sprintf("examples/data-sources/%s/data-source.tf", vpcType), literal: "vpc-training"},
+		{name: "security-group", path: fmt.Sprintf("examples/data-sources/%s/data-source.tf", securityGroupType), literal: "training-vpc"},
+	}
+	for _, tc := range nullVPCOwners {
+		for _, example := range examples {
+			t.Run(tc.ownerType+"/"+example.name, func(t *testing.T) {
+				owner := tc
+				owner.name = strings.Replace(tc.name, "-retry", "-literal-"+example.name, 1)
+				owner.ownerPath = strings.Replace(tc.ownerPath, tc.name, owner.name, 1)
+				t.Cleanup(func() {
+					if status, _, err := readFakeStore(owner.ownerPath); err == nil && status == http.StatusOK {
+						code, _, err := callFake(http.MethodDelete, owner.ownerPath)
+						if err != nil || (code != http.StatusNoContent && code != http.StatusConflict) {
+							t.Errorf("cleanup delete answered %d: %v", code, err)
+							return
+						}
+						awaitFakeGone(t, owner.ownerPath)
+					}
+				})
+
+				body, err := os.ReadFile(filepath.Join("..", "..", filepath.FromSlash(example.path))) //nolint:gosec // A checked-in example.
+				if err != nil {
+					t.Fatal(err)
+				}
+				extra := strings.ReplaceAll(string(body), `"`+example.literal+`"`, fmt.Sprintf("%q", "vpc-"+owner.name))
+				if example.name == "security-group" {
+					extra = strings.Replace(extra, `"shared-ingress"`, securityGroupType+".shared.id", 1)
+					extra = fmt.Sprintf(`
+resource %q "shared" {
+  id = "%s-shared"
+  ingress {
+    action                 = "permit"
+    protocol               = "tcp"
+    source_prefix          = "203.0.113.0/24"
+    destination_prefix     = "0.0.0.0/0"
+    destination_port_range = "6443"
+  }
+}
+`, securityGroupType, owner.name) + extra
+				}
+				if strings.Contains(extra, example.literal) || strings.Contains(extra, `"shared-ingress"`) {
+					t.Fatal("example substitution failed")
+				}
+
+				c := newCLIRun(t)
+				ownerConfig := slowObject(owner.ownerType, owner.name, deletesSlowly, `delete = "2m"`)
+				c.write(ownerConfig)
+				if out, ok := c.run("apply", "-auto-approve"); !ok {
+					t.Fatalf("applying the owner failed:\n%s", out)
+				}
+				c.write(ownerConfig + extra)
+				if out, ok := c.run("apply", "-auto-approve"); !ok {
+					t.Fatalf("applying the checked-in example failed:\n%s", out)
+				}
+				if out, ok := c.run("plan", "-detailed-exitcode"); !ok {
+					t.Fatalf("healthy plan failed:\n%s", out)
+				} else {
+					mustSay(t, "healthy plan", out, "No changes.")
+				}
+
+				interruptOwnerDestroy(t, c, owner.ownerPath)
+				dropFakeVPC(t, owner.name)
+				planned, ok := c.run("plan")
+				if ok {
+					t.Fatalf("a plain plan after the interrupt passed:\n%s", planned)
+				}
+				mustSay(t, "the failed plan after the interrupt", planned,
+					"No such VPC", "`terraform destroy -refresh=false`")
+
+				destroyed, ok := c.run("destroy", "-refresh=false", "-auto-approve")
+				if !ok {
+					t.Fatalf("destroy without refresh failed:\n%s", destroyed)
+				}
+				mustSay(t, "destroy without refresh", destroyed, "Destroy complete!")
+				if listed, ok := c.run("state", "list"); !ok || strings.TrimSpace(listed) != "" {
+					t.Fatalf("state isn't empty after destroy without refresh:\n%s", listed)
+				}
+			})
+		}
+	}
+}
+
 // A failed first teardown releases the same networking values as a delete in
 // flight and finishes.
 func TestAccAFailedDestroyRetryAfterTheOwnedVPCIsGone(t *testing.T) {

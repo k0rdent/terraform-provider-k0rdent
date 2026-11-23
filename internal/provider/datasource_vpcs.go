@@ -327,7 +327,9 @@ func (d *vpcDataSource) Read(ctx context.Context, req datasource.ReadRequest, re
 			"No such VPC",
 			fmt.Sprintf("No VPC named %q in project %q of region %q. A VPC comes with a "+
 				"cluster or an instance group, so the owning resource may not have been "+
-				"applied yet.", id, target.project, target.region),
+				"applied yet. If a destroy of the cluster or instance group that owns the VPC "+
+				"was interrupted, `terraform destroy -refresh=false` finishes the teardown.",
+				id, target.project, target.region),
 		)
 		return
 	}
