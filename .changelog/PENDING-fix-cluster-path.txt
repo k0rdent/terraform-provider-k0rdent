@@ -1,0 +1,7 @@
+```release-note:bug
+provider: Share a failed access-token mint with the callers already waiting for it, so a rate-limit refusal doesn't make every queued caller mint again
+```
+
+```release-note:bug
+data-source/k0rdent_cluster_types: Send `includeDeprecated=true` and `includeUnavailable=true` for hidden ClusterTypes so API 1.3 and API 1.4 return them, and omit both for the default list
+```

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"regexp"
 	"sort"
 	"strings"
@@ -318,33 +319,75 @@ func TestAStateTheListTakesReachesThePlatform(t *testing.T) {
 	}
 }
 
-// The platform hides deprecated types unless asked, so `status = "deprecated"`
-// on its own would always come back empty.
-func TestAskingForDeprecatedClusterTypesAsksThePlatformForThem(t *testing.T) {
+// API 1.3 and API 1.4 need different parameters for hidden ClusterTypes.
+// Omitting both and asking for false are the same default.
+func TestClusterTypeListSendsBothIncludeParameters(t *testing.T) {
 	t.Parallel()
 
-	var query atomic.Value
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		query.Store(r.URL.RawQuery)
-		writeTestJSON(t, w, http.StatusOK, map[string]any{"clusterTypes": []any{
-			map[string]any{"id": "old", "displayName": "Old", "status": "deprecated"},
-			map[string]any{"id": "new", "displayName": "New", "status": "available"},
-		}})
-	}))
-	t.Cleanup(server.Close)
+	for _, tc := range []struct {
+		name, status, include, wantIDs string
+		setFalse                       bool
+	}{
+		{name: "default", wantIDs: "new"},
+		{name: "explicit false", setFalse: true, wantIDs: "new"},
+		{name: "explicit true", include: "true", wantIDs: "draft,new,old"},
+		{name: "draft status", status: "draft", include: "true", wantIDs: "draft"},
+		{name: "deprecated status", status: "deprecated", include: "true", wantIDs: "old"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var query atomic.Value
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				q := r.URL.Query()
+				query.Store(q)
+				rows := []any{map[string]any{"id": "new", "displayName": "New", "status": "available"}}
+				if q.Get("includeUnavailable") == "true" || q.Get("includeDeprecated") == "true" {
+					rows = []any{
+						map[string]any{"id": "old", "displayName": "Old", "status": "deprecated"},
+						map[string]any{"id": "draft", "displayName": "Draft", "status": "draft"},
+						rows[0],
+					}
+				}
+				writeTestJSON(t, w, http.StatusOK, map[string]any{"clusterTypes": rows})
+			}))
+			t.Cleanup(server.Close)
 
-	resp := readTestDataSource(t, &clusterTypesDataSource{meta: testClusterMeta(t, server.URL, time.Minute)},
-		map[string]tftypes.Value{"status": str("deprecated")})
-	if resp.Diagnostics.HasError() {
-		t.Fatalf("read: %v", resp.Diagnostics.Errors())
-	}
-	if q := fmt.Sprint(query.Load()); !strings.Contains(q, "includeDeprecated=true") {
-		t.Errorf("the request %q doesn't ask for deprecated types", q)
-	}
-	var got clusterTypesModel
-	resp.Diagnostics.Append(resp.State.Get(context.Background(), &got)...)
-	if len(got.ClusterTypes) != 1 || got.ClusterTypes[0].ID.ValueString() != "old" {
-		t.Errorf("kept %v, want only old", got.ClusterTypes)
+			set := map[string]tftypes.Value{}
+			if tc.status != "" {
+				set["status"] = str(tc.status)
+			}
+			if tc.setFalse {
+				set["include_deprecated"] = tftypes.NewValue(tftypes.Bool, false)
+			}
+			if tc.include == "true" && tc.status == "" {
+				set["include_deprecated"] = tftypes.NewValue(tftypes.Bool, true)
+			}
+			resp := readTestDataSource(t, &clusterTypesDataSource{meta: testClusterMeta(t, server.URL, time.Minute)}, set)
+			if resp.Diagnostics.HasError() {
+				t.Fatalf("read: %v", resp.Diagnostics.Errors())
+			}
+			q, ok := query.Load().(url.Values)
+			if !ok {
+				t.Fatal("the server recorded no query")
+			}
+			for _, name := range []string{"includeDeprecated", "includeUnavailable"} {
+				if got := q.Get(name); got != tc.include {
+					t.Errorf("%s = %q, want %q in %v", name, got, tc.include, q)
+				}
+				if got, want := q.Has(name), tc.include == "true"; got != want {
+					t.Errorf("%s present = %t, want %t in %v", name, got, want, q)
+				}
+			}
+			var got clusterTypesModel
+			resp.Diagnostics.Append(resp.State.Get(context.Background(), &got)...)
+			ids := make([]string, 0, len(got.ClusterTypes))
+			for _, entry := range got.ClusterTypes {
+				ids = append(ids, entry.ID.ValueString())
+			}
+			if strings.Join(ids, ",") != tc.wantIDs {
+				t.Errorf("kept %v, want %s", ids, tc.wantIDs)
+			}
+		})
 	}
 }
 
