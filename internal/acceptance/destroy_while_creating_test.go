@@ -73,6 +73,7 @@ resource %[4]q "slow" {
 resource %[7]q "slow" {
   id           = %[8]q
   display_name = %[3]q
+%[14]s
   depends_on   = [%[13]s.test, %[6]s.test]
 }
 
@@ -84,7 +85,7 @@ resource %[9]q "slow" {
   depends_on   = [%[13]s.test, %[6]s.test]
 }
 `, networkType, network, createsSlowly, subnetType, subnet, networkType, securityGroupType, group,
-		peeringType, peering, owner, remote, clusterType))
+		peeringType, peering, owner, remote, clusterType, oneEgressRule))
 
 	destroyed := false
 	t.Cleanup(func() {

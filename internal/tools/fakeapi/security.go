@@ -311,13 +311,10 @@ func (s *state) listSecurityGroupAttachments(w http.ResponseWriter, r *http.Requ
 	attachmentList.serve(w, r, items)
 }
 
-// noRulesMessage is the 422 for a group with no rule in either list. The
-// fabric refuses such a group, so it would settle `failed` and whatever is
-// bound to it would wait on it forever.
-//
-// ASSUMPTION: the k0rdent API change that adds it is open, not merged. The
-// message is the one its description gives. A VPC's default group is made
-// without passing through validateRules, as upstream says it is.
+// noRulesMessage is API 1.4's 422 for a group with no rule in either list.
+// Earlier API versions accept one, then the fabric refuses it and the group
+// settles `failed`. A VPC's default group is made without passing through
+// validateRules.
 const noRulesMessage = "rules: at least one ingress or egress rule is required; " +
 	"a security group with no rules cannot be applied"
 

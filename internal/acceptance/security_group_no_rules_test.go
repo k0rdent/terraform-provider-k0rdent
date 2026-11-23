@@ -23,8 +23,9 @@ const madeBeforeRulesRequired = "fake-made-before-rules-required"
 //  3. with no blocks, `terraform plan` plans no change and warns
 //  4. `terraform destroy` deletes it, and state is empty
 func TestAccASecurityGroupWithNoRulesInStateIsWarnedAndDestroyed(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
-		t.Skip("the CLI sequence runs on unix")
+		skipTest(t, "the CLI sequence runs on unix")
 	}
 	const name = "acc-no-rules-kept"
 	path := "/v1/regions/us-texas-1/projects/demo/networking/security-groups/" + name
@@ -75,8 +76,9 @@ func TestAccASecurityGroupWithNoRulesInStateIsWarnedAndDestroyed(t *testing.T) {
 // stops on the same error, and the error names the way past it:
 // `terraform destroy -refresh=false`, which deletes it. Through the real CLI.
 func TestAccAChangeOrReplacementOfASecurityGroupWithNoRulesIsRefused(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
-		t.Skip("the CLI sequence runs on unix")
+		skipTest(t, "the CLI sequence runs on unix")
 	}
 	for _, tc := range []struct {
 		name, markers, state, extra, provider, says string

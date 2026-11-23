@@ -150,6 +150,7 @@ resource %q "test" {
 // A create with no rules is a 422 upstream. The plan refuses it first, whether
 // the blocks are left out or a `dynamic` block's list is empty.
 func TestAccSecurityGroupRefusesACreateWithNoRules(t *testing.T) {
+	t.Parallel()
 	for name, body := range map[string]string{
 		"no blocks": ``,
 		"an empty dynamic block": `
@@ -185,6 +186,7 @@ resource %q "test" {
 // removes a group's last rule fails at plan. The group keeps its rule, and the
 // last step puts the block back so the test's own destroy plans no change.
 func TestAccSecurityGroupRefusesAChangeThatRemovesTheLastRule(t *testing.T) {
+	t.Parallel()
 	withRule := fmt.Sprintf(`
 resource %q "test" {
   id = "acc-last-rule"
@@ -197,7 +199,7 @@ resource %q "test" {
 		CheckDestroy:             checkGone(securityGroupType, securityGroupPath),
 		Steps: []resource.TestStep{
 			{Config: withRule},
-			{Config: without, ExpectError: regexpNoRules},
+			{Config: without, PlanOnly: true, ExpectError: regexpNoRules},
 			{
 				Config: withRule,
 				Check:  resource.TestCheckResourceAttr(securityGroupAddr, "rule_count", "1"),
@@ -209,6 +211,7 @@ resource %q "test" {
 // One rule in either list is enough: each direction alone creates the group
 // and plans no change after it.
 func TestAccSecurityGroupWithRulesInOneDirection(t *testing.T) {
+	t.Parallel()
 	for direction, rule := range map[string]string{
 		"ingress": strings.Replace(oneEgressRule, "egress", "ingress", 1),
 		"egress":  oneEgressRule,
