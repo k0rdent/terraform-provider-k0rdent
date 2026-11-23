@@ -219,7 +219,7 @@ var relatedPages = map[string][]relatedLink{
 
 	"ephemeral-resources/cluster_kubeconfig": {
 		{"resources/kubernetes_cluster", "manages the cluster the kubeconfig reaches."},
-		{"data-sources/cluster_kubeconfig", "reads the kubeconfig's metadata, which is safe to keep in state."},
+		{"data-sources/cluster_kubeconfig", "is deprecated. It stops working when the platform moves to API 1.4 and is removed in v1.0.0."},
 	},
 }
 

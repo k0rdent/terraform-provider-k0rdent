@@ -81,17 +81,7 @@ resource "k0rdent_kubernetes_cluster" "demo" {
 }
 
 # ---------------------------------------------------------------------------
-# 3. Read a kubeconfig
-# ---------------------------------------------------------------------------
-# Metadata only. The kubeconfig itself comes from the ephemeral resource of
-# the same name, which is never saved to state.
-
-data "k0rdent_cluster_kubeconfig" "demo" {
-  cluster_id = k0rdent_kubernetes_cluster.demo.id
-}
-
-# ---------------------------------------------------------------------------
-# 4. An instance group: hosts without a control plane
+# 3. An instance group: hosts without a control plane
 # ---------------------------------------------------------------------------
 
 resource "k0rdent_instance_group" "demo" {
@@ -186,16 +176,6 @@ output "cluster_type_round_trip" {
   value = {
     written  = k0rdent_kubernetes_cluster.demo.cluster_type
     returned = k0rdent_kubernetes_cluster.demo.cluster_type_resolved
-  }
-}
-
-output "kubeconfig" {
-  description = "Metadata for the cluster's existing kubeconfig. The body is not downloaded."
-  value = {
-    id         = data.k0rdent_cluster_kubeconfig.demo.id
-    status     = data.k0rdent_cluster_kubeconfig.demo.status
-    issued_for = data.k0rdent_cluster_kubeconfig.demo.issued_for
-    available  = data.k0rdent_cluster_kubeconfig.demo.available
   }
 }
 
