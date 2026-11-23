@@ -83,5 +83,5 @@ resource/k0rdent_vpc_security_groups: Fix a plan after an interrupted destroy, o
 ```
 
 ```release-note:bug
-data-source/k0rdent_vpc: Fix the documented default security group read and walkthrough preconditions failing a plain `terraform destroy` retry or `terraform plan` after an interrupt released the VPC. The held-read warning now names `terraform destroy -refresh=false` for expressions that can't use its values
+data-source/k0rdent_vpc: Fix a VPC released by an interrupted destroy failing the next plan with "No such VPC". The read now returns `id`, `region`, `project`, `self_link` and an empty `security_groups` list, with a warning that names `terraform destroy -refresh=false` for any expression that can't use those values. A null `state` marks this read. The full walkthrough's security group precondition now passes on it, and a configuration copied from an earlier walkthrough needs the same edit
 ```

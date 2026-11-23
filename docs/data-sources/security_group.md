@@ -41,17 +41,14 @@ data "k0rdent_vpc" "training" {
 }
 
 data "k0rdent_security_group" "training_default" {
-  # A held read during teardown has no groups. Skip this read then, since one()
-  # would be null and this data source requires an id.
-  count = length(data.k0rdent_vpc.training.security_groups) == 1 ? 1 : 0
-  id    = one(data.k0rdent_vpc.training.security_groups)
+  id = one(data.k0rdent_vpc.training.security_groups)
 }
 
 # What it allows, one line per rule, in the order they're matched.
 output "training_default_rules" {
   value = concat(
-    [for r in flatten(data.k0rdent_security_group.training_default[*].ingress) : "in:  ${r.action} ${r.protocol} ${r.source_prefix} to ${r.destination_prefix}"],
-    [for r in flatten(data.k0rdent_security_group.training_default[*].egress) : "out: ${r.action} ${r.protocol} ${r.source_prefix} to ${r.destination_prefix}"],
+    [for r in data.k0rdent_security_group.training_default.ingress : "in:  ${r.action} ${r.protocol} ${r.source_prefix} to ${r.destination_prefix}"],
+    [for r in data.k0rdent_security_group.training_default.egress : "out: ${r.action} ${r.protocol} ${r.source_prefix} to ${r.destination_prefix}"],
   )
 }
 

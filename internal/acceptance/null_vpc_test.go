@@ -335,11 +335,19 @@ data %q "also_missing" {
 	}
 }
 
-// assertHeldVPCPlan requires a plain plan and pins every value its held read
-// returns, so a placeholder can't turn into another value unnoticed.
-func assertHeldVPCPlan(t *testing.T, c *cliRun, owner nullVPCOwner) {
+// assertHeldVPCPlan pins every value a successful plan's held read returns.
+// A required argument can instead stop the plan after its recovery warning.
+func assertHeldVPCPlan(t *testing.T, c *cliRun, owner nullVPCOwner, planError string) {
 	t.Helper()
 	planned, ok := c.run("plan", "-out=held.tfplan")
+	if planError != "" {
+		if ok {
+			t.Fatalf("a plain plan after the interrupt passed, want %s:\n%s", planError, planned)
+		}
+		mustSay(t, "the failed plan after the interrupt", planned, "VPC released by its owner",
+			"`terraform destroy -refresh=false`", planError)
+		return
+	}
 	if !ok {
 		t.Fatalf("a plain plan after the interrupt failed:\n%s", planned)
 	}
@@ -372,7 +380,7 @@ func assertHeldVPCPlan(t *testing.T, c *cliRun, owner nullVPCOwner) {
 		}
 	}
 	if values == nil {
-		t.Fatalf("the held VPC isn't in the planned values:\n%s", shown)
+		t.Fatalf("the held VPC isn't in the prior state:\n%s", shown)
 	}
 	want := map[string]string{
 		"id":              string(mustJSON(t, "vpc-"+owner.name)),
@@ -398,8 +406,46 @@ func assertHeldVPCPlan(t *testing.T, c *cliRun, owner nullVPCOwner) {
 	}
 }
 
+// A default security group read whose id comes from its owner applies with
+// the owner, then applies again when the owner changes.
+func TestAccADefaultSecurityGroupReadAppliesWithOwnerChanges(t *testing.T) {
+	t.Parallel()
+	name := "acc-nullvpc-one-fresh-apply"
+	c := newCLIRun(t)
+	ownerConfig := slowObject(clusterType, name, "live", `create = "2m"`)
+	config := ownerConfig + fmt.Sprintf(`
+data %q "owned" {
+  id = %s.test.vpc
+}
+data %q "default" {
+  id = one(data.%s.owned.security_groups)
+}
+output "default_ingress" {
+  value = data.%s.default.ingress
+}
+`, vpcType, clusterType, securityGroupType, vpcType, securityGroupType)
+	c.write(config)
+	t.Cleanup(func() {
+		c.write(ownerConfig)
+		if out, ok := c.run("destroy", "-auto-approve"); !ok {
+			t.Errorf("cleanup destroy failed:\n%s", out)
+		}
+	})
+	if out, ok := c.run("apply", "-auto-approve"); !ok {
+		t.Fatalf("fresh apply failed:\n%s", out)
+	}
+	updated := strings.Replace(config, "node_count = 2", "node_count = 3", 1)
+	if updated == config {
+		t.Fatal("the owner change didn't replace node_count")
+	}
+	c.write(updated)
+	if out, ok := c.run("apply", "-auto-approve"); !ok {
+		t.Fatalf("apply after an owner change failed:\n%s", out)
+	}
+}
+
 // The documented reads of a held VPC must also finish a destroy. Each case
-// applies its configuration before the interrupt, so the retry evaluates it.
+// applies the owner and documented read together before the interrupt.
 func TestAccADestroyRetryAfterTheOwnedVPCIsGoneDocumentedReads(t *testing.T) { //nolint:paralleltest // it interrupts a destroy through the real CLI
 	if runtime.GOOS == "windows" {
 		skipTest(t, "the CLI sequence runs on unix")
@@ -431,14 +477,13 @@ output "attached_groups" {
 				case "one":
 					extra = fmt.Sprintf(`
 data %q "default" {
-  count = length(data.%s.owned.security_groups) == 1 ? 1 : 0
-  id    = one(data.%s.owned.security_groups)
+  id = one(data.%s.owned.security_groups)
 }
 
 output "default_ingress" {
-  value = flatten(data.%s.default[*].ingress)
+  value = data.%s.default.ingress
 }
-`, securityGroupType, vpcType, vpcType, securityGroupType)
+`, securityGroupType, vpcType, securityGroupType)
 				case "walkthrough-precondition":
 					extra = fmt.Sprintf(`
 data %q "all" {
@@ -469,8 +514,14 @@ resource %q "b" {
 				}
 
 				c := nullVPCDeletingOwner(t, owner, extra)
-				assertHeldVPCPlan(t, c, owner)
-				destroyed, ok := c.run("destroy", "-auto-approve")
+				planError := ""
+				destroyArgs := []string{"destroy", "-auto-approve"}
+				if repro == "one" {
+					planError = "Missing Configuration for Required Attribute"
+					destroyArgs = []string{"destroy", "-refresh=false", "-auto-approve"}
+				}
+				assertHeldVPCPlan(t, c, owner, planError)
+				destroyed, ok := c.run(destroyArgs...)
 				if !ok {
 					t.Fatalf("the destroy retry using %s failed:\n%s", repro, destroyed)
 				}
@@ -682,15 +733,9 @@ func nullVPCDeletingOwner(t *testing.T, owner nullVPCOwner, extraConfig string) 
 
 	c := newCLIRun(t)
 	config := nullVPCDestroyConfig(owner.ownerType, owner.name)
-	c.write(config)
+	c.write(config + extraConfig)
 	if out, ok := c.run("apply", "-auto-approve"); !ok {
-		t.Fatalf("apply failed:\n%s", out)
-	}
-	if extraConfig != "" {
-		c.write(config + extraConfig)
-		if out, ok := c.run("apply", "-auto-approve"); !ok {
-			t.Fatalf("applying the documented read failed:\n%s", out)
-		}
+		t.Fatalf("applying the owner and documented read failed:\n%s", out)
 	}
 	if out, ok := c.run("plan", "-detailed-exitcode"); !ok {
 		t.Fatalf("healthy plan failed:\n%s", out)
