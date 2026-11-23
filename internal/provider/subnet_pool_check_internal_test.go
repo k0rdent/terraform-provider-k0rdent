@@ -43,6 +43,9 @@ func (a *poolAPI) meta(t *testing.T) *Meta {
 				return
 			}
 			writeJSON(w, pool)
+		case strings.Contains(r.URL.Path, "/subnets/"):
+			// The plan to create reads the id first, and finds none.
+			writeTestError(t, w, http.StatusNotFound, "no such subnet")
 		default:
 			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
 			w.WriteHeader(http.StatusNotFound)

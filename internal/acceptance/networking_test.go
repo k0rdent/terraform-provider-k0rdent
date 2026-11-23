@@ -278,8 +278,9 @@ import {
 }
 
 // An import has no configured value to keep, so the read records what the
-// platform reports. For a value the platform does not echo as written, that
-// must not plan a replacement of the real object.
+// platform reports. `vlan_id = "auto"` comes back as the allocated id, which
+// satisfies it, so the import plans no change at all, not a replacement or an
+// update.
 func TestAccNetworkImportDoesNotReplace(t *testing.T) {
 	t.Parallel()
 	const name = "acc-adopt-evpn"
@@ -293,11 +294,17 @@ func TestAccNetworkImportDoesNotReplace(t *testing.T) {
 			{
 				Config: adopted,
 				ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{
-					plancheck.ExpectResourceAction(networkAddr, plancheck.ResourceActionUpdate),
+					plancheck.ExpectResourceAction(networkAddr, plancheck.ResourceActionNoop),
 				}},
-				Check: resource.TestCheckResourceAttr(networkAddr, "evpn.vlan_id", "auto"),
+				Check: resource.TestCheckResourceAttr(networkAddr, "evpn.vlan_id", "4001"),
 			},
 			{Config: evpnConfig(name, "a"), PlanOnly: true},
+			// A named id other than the allocated one is still a replacement.
+			{
+				Config:      strings.Replace(evpnConfig(name, "a"), `vlan_id      = "auto"`, `vlan_id      = "4002"`, 1),
+				PlanOnly:    true,
+				ExpectError: regexp.MustCompile("Changing `evpn` would replace this network"),
+			},
 		},
 	})
 }
@@ -409,6 +416,46 @@ func TestAccSubnetImportDoesNotReplace(t *testing.T) {
 				ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{
 					plancheck.ExpectResourceAction(subnetAddr, plancheck.ResourceActionUpdate),
 				}},
+			},
+			{Config: config, PlanOnly: true},
+		},
+	})
+}
+
+// A subnet imported while it's still `creating` plans an update that waits
+// for it. Once that apply has seen it settle, the next plan is empty.
+func TestAccSubnetImportedWhileCreatingPlansCleanAfterApply(t *testing.T) {
+	t.Parallel()
+	const network, name = "acc-import-creating-sub-net", "acc-import-creating-sub"
+	config := strings.Replace(clusterLocalSubnetConfig(network, name),
+		`id               = "`+name+`"`,
+		"id               = \""+name+"\"\n  display_name     = \""+createsSlowly+"\"", 1)
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: protoV6,
+		CheckDestroy: resource.ComposeAggregateTestCheckFunc(
+			checkGone(subnetType, subnetPath),
+			checkGone(networkType, networkPath),
+		),
+		Steps: []resource.TestStep{
+			{Config: evpnConfig(network, "acceptance")},
+			{
+				PreConfig: func() {
+					if err := postFake("/v1/regions/us-texas-1/projects/demo/networking/networks/"+network+"/subnets",
+						fmt.Sprintf(`{"id":%q,"addressPool":"/v1/regions/us-texas-1/networking/address-pools/cluster-local","prefixLength":24,"allocateGateway":true,"excludeRanges":["10.0.0.10-10.0.0.20"],"displayName":%q}`,
+							name, createsSlowly)); err != nil {
+						t.Fatal(err)
+					}
+				},
+				Config: config + fmt.Sprintf(`
+import {
+  to = %s
+  id = "us-texas-1/demo/%s/%s"
+}
+`, subnetAddr, network, name),
+				ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{
+					plancheck.ExpectResourceAction(subnetAddr, plancheck.ResourceActionUpdate),
+				}},
+				Check: resource.TestCheckResourceAttr(subnetAddr, "state", "active"),
 			},
 			{Config: config, PlanOnly: true},
 		},
@@ -916,4 +963,53 @@ func TestAccNetworkFabricFromAVariableStillRefusesTwo(t *testing.T) {
 			ExpectError: regexp.MustCompile(`A network has one fabric, not several`),
 		}},
 	})
+}
+
+// A network imported while it's still `creating` plans an update that waits
+// for it. Once that apply has seen it settle, the next plan is empty.
+func TestAccNetworkImportedWhileCreatingPlansCleanAfterApply(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct{ name, body, fabric string }{
+		{"acc-import-creating-evpn", `"type":"evpn","evpn":{"type":"l3vpn"},"vlan":{"id":"4001"}`,
+			`evpn = { service_type = "l3vpn", vlan_id = "4001" }`},
+		{"acc-import-creating-auto", `"type":"evpn","evpn":{"type":"l3vpn"},"vlan":{"id":"auto"}`,
+			`evpn = { service_type = "l3vpn", vlan_id = "auto" }`},
+		{"acc-import-creating-ib", `"type":"infiniband","infiniband":{"partition":"training"}`,
+			`infiniband = { partition = "training" }`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			config := fmt.Sprintf(`
+resource %q "test" {
+  id = %q
+  %s
+}
+`, networkType, tc.name, tc.fabric)
+			resource.Test(t, resource.TestCase{
+				ProtoV6ProviderFactories: protoV6,
+				CheckDestroy:             checkGone(networkType, networkPath),
+				Steps: []resource.TestStep{
+					{
+						PreConfig: func() {
+							if err := postFake("/v1/regions/us-texas-1/projects/demo/networking/networks",
+								`{"id":"`+tc.name+`",`+tc.body+`}`); err != nil {
+								t.Fatal(err)
+							}
+						},
+						Config: config + fmt.Sprintf(`
+import {
+  to = %s
+  id = "us-texas-1/demo/%s"
+}
+`, networkAddr, tc.name),
+						ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{
+							plancheck.ExpectResourceAction(networkAddr, plancheck.ResourceActionUpdate),
+						}},
+						Check: resource.TestCheckResourceAttr(networkAddr, "state", "active"),
+					},
+					{Config: config, PlanOnly: true},
+				},
+			})
+		})
+	}
 }

@@ -82,8 +82,8 @@ changes nothing on the platform:
 - **A cluster's `node_pool`**, when you name only some pools. The import
   adopts every pool. Naming every pool, or leaving `node_pool` out, plans
   clean.
-- **A network's `vlan_id = "auto"`**, or an InfiniBand network's requested
-  `pkey`. The import records the allocated value.
+- **An InfiniBand network's requested `pkey`.** The import records the
+  allocated value.
 - **A subnet's `allocate_gateway`** on a pool that isn't routable.
 - **A `cluster_type` pinned to the newest available version.** The import
   records the unversioned reference (the cluster type's `self_link`) when the

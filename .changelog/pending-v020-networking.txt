@@ -1,0 +1,24 @@
+```release-note:bug
+resource/k0rdent_vpc_security_groups: Fix `security_groups = []` on a VPC with no default security group failing only at apply with a 409. The plan now refuses it when the VPC is known
+```
+```release-note:bug
+resource/k0rdent_network: Fix the plan after importing a network with `vlan_id = "auto"` showing an in-place update to `"auto"`. It now plans no change
+```
+```release-note:bug
+resource/k0rdent_network: Fix a network imported while still `creating` staying `creating` in state after its first apply, and the plan after it not being empty, when that apply also recorded a value such as an InfiniBand `pkey`
+```
+```release-note:bug
+resource/k0rdent_network: Fix `terraform apply -replace` of a network the platform made for a cluster removing it from state and then failing. The plan now refuses it, and refuses a create of such a network's `id`, with the import to run
+```
+```release-note:bug
+resource/k0rdent_subnet: Fix `terraform apply -replace` of a subnet the platform made for a cluster removing it from state and then failing. The plan now refuses it, and refuses a create of such a subnet's `id`, with the import to run
+```
+```release-note:bug
+resource/k0rdent_security_group: Fix `terraform apply -replace` of a security group the platform owns removing it from state and then failing. The plan now refuses it, and refuses a create of such a group's `id`, with the import to run
+```
+```release-note:bug
+resource/k0rdent_subnet: Fix a subnet imported while still `creating` staying `creating` in state after its first apply when that apply also recorded `allocate_gateway`
+```
+```release-note:bug
+resource/k0rdent_vpc_peering: Fix a VPC peering imported while still `creating` staying `creating` in state after its first apply when that apply also recorded an equivalent `remote_vpc` spelling
+```

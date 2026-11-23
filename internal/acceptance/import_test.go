@@ -288,9 +288,8 @@ resource %q "test" {
 		networkType: func() importCase {
 			const name = "acc-import-fabric"
 			return importCase{
-				// A VLAN id named outright. `vlan_id = "auto"` is a value
-				// only the configuration knows, and has its own test and
-				// line in the guide.
+				// A VLAN id named outright. `vlan_id = "auto"` imports as
+				// the allocated id, and has its own test.
 				config: strings.Replace(evpnConfig(name, "acceptance"),
 					`vlan_id      = "auto"`, `vlan_id      = "4001"`, 1),
 				resourceType: networkType,

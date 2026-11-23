@@ -87,7 +87,6 @@ k0rdent_security_group timeouts.update update
 k0rdent_subnet allow_replace import
 k0rdent_subnet cluster_id import
 k0rdent_subnet description import
-k0rdent_subnet display_name import
 k0rdent_subnet timeouts.create import
 k0rdent_subnet timeouts.delete import
 k0rdent_subnet timeouts.delete update
