@@ -39,6 +39,8 @@ type deliveriesAPI struct {
 	// repeat answers every page with the first one and a cursor, the way a
 	// server whose cursor doesn't advance would.
 	repeat bool
+	// freshCursors gives every response a cursor the read hasn't seen.
+	freshCursors bool
 	// overfill answers a full page whatever `limit` asks for.
 	overfill bool
 
@@ -107,7 +109,9 @@ func (a *deliveriesAPI) serve(t *testing.T) *httptest.Server {
 		}
 		end := min(start+size, len(a.deliveries))
 		body := map[string]any{"deliveries": a.deliveries[start:end]}
-		if end < len(a.deliveries) {
+		if a.freshCursors {
+			body["next_cursor"] = strconv.Itoa(requests)
+		} else if end < len(a.deliveries) {
 			body["next_cursor"] = strconv.Itoa(end)
 		}
 		writeTestJSON(t, w, http.StatusOK, body)
@@ -250,6 +254,41 @@ func TestWebhookDeliveriesReadPastARepeatedPage(t *testing.T) {
 	}
 	if warnings := resp.Diagnostics.Warnings(); len(warnings) != 0 {
 		t.Errorf("reaching the limit warned: %v", warnings)
+	}
+}
+
+// Empty pages with fresh cursors can't keep a read making requests forever.
+func TestWebhookDeliveriesStopAfterEmptyPagesWithFreshCursors(t *testing.T) {
+	t.Parallel()
+	api := &deliveriesAPI{page: 1, repeat: true, freshCursors: true}
+	got, resp := readDeliveries(t, api, nil)
+	if resp.Diagnostics.HasError() {
+		t.Errorf("read: %v", resp.Diagnostics.Errors())
+	}
+	if len(got.Deliveries) != 0 || api.requests != 3 {
+		t.Errorf("read %d deliveries in %d requests, want none in 3", len(got.Deliveries), api.requests)
+	}
+	warnings := resp.Diagnostics.Warnings()
+	if len(warnings) != 1 || !strings.Contains(warnings[0].Detail(), "no new deliveries") {
+		t.Errorf("empty pages with fresh cursors didn't warn about the short read: %v", warnings)
+	}
+}
+
+// Duplicate-only pages with fresh cursors stop after three pages add nothing.
+// The rows already read stay in the result, and the short read warns.
+func TestWebhookDeliveriesStopAfterDuplicatePagesWithFreshCursors(t *testing.T) {
+	t.Parallel()
+	api := &deliveriesAPI{page: 2, deliveries: testDeliveries(2), repeat: true, freshCursors: true}
+	got, resp := readDeliveries(t, api, nil)
+	if resp.Diagnostics.HasError() {
+		t.Errorf("read: %v", resp.Diagnostics.Errors())
+	}
+	if len(got.Deliveries) != 2 || api.requests != 4 {
+		t.Errorf("read %d deliveries in %d requests, want 2 in 4", len(got.Deliveries), api.requests)
+	}
+	warnings := resp.Diagnostics.Warnings()
+	if len(warnings) != 1 || !strings.Contains(warnings[0].Detail(), "no new deliveries") {
+		t.Errorf("duplicate pages with fresh cursors didn't warn about the short read: %v", warnings)
 	}
 }
 
