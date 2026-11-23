@@ -177,12 +177,13 @@ func (c fakeConsumer) kind() string {
 }
 
 type fakeConsumerStatus struct {
-	ref       string
-	addresses []string
-	state     string
-	target    string // where this entry settles once it has been read enough times
-	reason    string // FileStoreConsumerStateReason token, on a settled failure
-	reads     int
+	ref         string
+	addresses   []string
+	state       string
+	target      string // where this entry settles once it has been read enough times
+	reason      string // FileStoreConsumerStateReason token, on a settled failure
+	reads       int
+	repairAfter time.Time
 	// narrowed is a group grant whose selector names one interface by its
 	// hardware identifier, so its addresses are that interface's and not one
 	// per member.
@@ -725,40 +726,55 @@ func (o *objects) resolveGroupConsumer(entry fakeConsumer, status *fakeConsumerS
 	}
 
 	narrowed := entry.Network.MacAddress != nil || entry.Network.GUID != nil
-	if nameCarries(group.displayName, apiV131) || !narrowed {
-		members := o.consumerInstancesOf(group)
-		if !nameCarries(group.displayName, apiV131) {
-			for i := range members {
-				members[i].lifecycle = ""
+	if !nameCarries(group.displayName, apiV131) {
+		// API v1.3.0 keeps its original resolution, including Ethernet addresses
+		// for an unnarrowed InfiniBand grant.
+		if narrowed {
+			addresses, ok := o.narrowedAddresses(group, *entry.Network)
+			if !ok {
+				return "the selector on " + entry.Ref + " matches no interface on any member of the group"
 			}
+			status.addresses, status.narrowed = addresses, true
+			return ""
 		}
-		addresses, refusal := selectConsumerAddresses(members, *entry.Network)
-		if refusal != "" {
-			return refusal
+		octet := len(entry.Ref)%200 + 10
+		for i := 1; i <= members; i++ {
+			status.addresses = append(status.addresses, fmt.Sprintf("10.80.%d.%d", octet, i))
 		}
-		if len(addresses) == 0 {
-			return "no member of instance group " + entry.Ref + " carries a grantable IPv4 address yet"
-		}
-		status.addresses = addresses
-		status.narrowed = narrowed
 		if strings.Contains(entry.Ref, consumerUngrantableMarker) {
 			status.target, status.reason = "failed", "GROUP_NO_LONGER_GRANTABLE"
 		}
 		return ""
 	}
 
-	// A selector narrowed by a MAC address or a GUID grants only the interface
-	// it names, and one that names no interface in the group is a 422.
-	if entry.Network.MacAddress != nil || entry.Network.GUID != nil {
-		addresses, ok := o.narrowedAddresses(group, *entry.Network)
-		if !ok {
-			return "the selector on " + entry.Ref + " matches no interface on any member of the group"
-		}
-		status.addresses, status.narrowed = addresses, true
-		return ""
+	addresses, refusal := selectConsumerAddresses(o.consumerInstancesOf(group), *entry.Network)
+	if refusal != "" {
+		return refusal
 	}
-
+	if len(addresses) == 0 {
+		return "no member of instance group " + entry.Ref + " carries a grantable IPv4 address yet"
+	}
+	status.addresses = addresses
+	status.narrowed = narrowed
+	if strings.Contains(entry.Ref, consumerUngrantableMarker) {
+		status.target, status.reason = "failed", "GROUP_NO_LONGER_GRANTABLE"
+	}
 	return ""
+}
+
+const defaultFileStoreDriftDelay = 2 * time.Second
+
+// delayGroupGrantRepair leaves the old active grant visible until the next
+// drift sweep, as a scale does when nothing publishes the membership change.
+func (s *state) delayGroupGrantRepair(o *objects, groupID string) {
+	repairAfter := time.Now().Add(s.fileStoreDriftDelay)
+	for _, fs := range o.fileStores {
+		for _, cs := range fs.statuses {
+			if cs.ref == groupID && cs.state == "active" && !cs.narrowed {
+				cs.repairAfter = repairAfter
+			}
+		}
+	}
 }
 
 // sweepGroupGrants compares each settled group grant with the group's current
@@ -769,17 +785,28 @@ func (o *objects) sweepGroupGrants(fs *fakeFileStore) {
 	}
 	for _, cs := range fs.statuses {
 		group, ok := o.groups[at{id: cs.ref}]
-		if !ok || cs.state != "active" || cs.narrowed {
+		if !ok || cs.state != "active" || cs.narrowed || time.Now().Before(cs.repairAfter) {
 			continue
 		}
+		cs.repairAfter = time.Time{}
 		members := 0
 		for _, size := range group.pools {
 			members += int(size)
 		}
 		var currentAddresses []string
 		if nameCarries(group.displayName, apiV131) {
+			var consumer *fakeConsumer
+			for i := range fs.consumers {
+				if fs.consumers[i].Ref == cs.ref {
+					consumer = &fs.consumers[i]
+					break
+				}
+			}
+			if consumer == nil || consumer.Network == nil {
+				continue
+			}
 			var refusal string
-			currentAddresses, refusal = selectConsumerAddresses(o.consumerInstancesOf(group), fakeConsumerNetwork{Type: "ethernet"})
+			currentAddresses, refusal = selectConsumerAddresses(o.consumerInstancesOf(group), *consumer.Network)
 			if refusal != "" {
 				cs.state, cs.target, cs.reason, cs.reads = "failed", "failed", "GROUP_MEMBERSHIP_DRIFTED", 0
 				continue

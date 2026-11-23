@@ -157,6 +157,8 @@ func main() {
 	addr := flag.String("addr", "127.0.0.1:0", "listen address; port 0 picks a free one")
 	secretsFile := flag.String("secrets-file", "", "write this run's credentials here, 0600; must not exist yet")
 	latency := flag.Duration("latency", 0, "hold every API request this long before answering it, as a real stack's round trip would")
+	fileStoreDriftDelay := flag.Duration("file-store-drift-delay", defaultFileStoreDriftDelay,
+		"leave a scaled group's old grant visible this long before the drift repair starts")
 	flag.Parse()
 
 	// Loopback only. This process mints tokens and serves whatever a run made.
@@ -200,6 +202,7 @@ func main() {
 		}()
 	}
 	s := newState()
+	s.fileStoreDriftDelay = *fileStoreDriftDelay
 	api, apiErr := startClusterAPI()
 	if apiErr != nil {
 		log.Fatalf("fakeapi: start the cluster API: %v", apiErr)
@@ -517,6 +520,8 @@ type state struct {
 
 	// Serves expiring kubeconfigs (clusterapi.go). Nil turns them off.
 	clusterAPI *clusterAPI
+
+	fileStoreDriftDelay time.Duration
 }
 
 // scope is where a project-owned object lives: the region and the project its
@@ -566,7 +571,8 @@ func newState() *state {
 		p.uid = global.newUID("project", p.id)
 		global.projects[at{id: p.id}] = &p
 	}
-	s := &state{scopes: map[scope]*objects{{}: global}, organizations: seededOrganizations()}
+	s := &state{scopes: map[scope]*objects{{}: global}, organizations: seededOrganizations(),
+		fileStoreDriftDelay: defaultFileStoreDriftDelay}
 	seedLeftoverCluster(s)
 	return s
 }
@@ -2565,7 +2571,8 @@ func (s *state) scaleInstanceGroup(w http.ResponseWriter, r *http.Request) {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	g, _, ok := instanceGroupKind.find(w, r, s.in(r))
+	o := s.in(r)
+	g, _, ok := instanceGroupKind.find(w, r, o)
 	if !ok {
 		return
 	}
@@ -2677,6 +2684,7 @@ func (s *state) scaleInstanceGroup(w http.ResponseWriter, r *http.Request) {
 		g.pools[pool] = grows[pool]
 		g.provisioning = append(g.provisioning, pool)
 	}
+	s.delayGroupGrantRepair(o, id)
 	g.progressed = true
 	if nameCarries(g.displayName, apiV131) {
 		g.reservationPhase = "acquiring"

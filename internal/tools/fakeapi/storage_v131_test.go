@@ -89,13 +89,12 @@ func TestAPI131MemberGrantEligibility(t *testing.T) {
 
 func TestAPI131ScaleUpGrantUsesAddressesAlreadyPresent(t *testing.T) {
 	for _, tc := range []struct {
-		name        string
-		marker      string
-		want        int
-		wantOld     bool
-		wantRefusal bool
+		name    string
+		marker  string
+		want    int
+		wantOld bool
 	}{
-		{name: "API v1.3.0 refuses a member without an interface", wantOld: true, wantRefusal: true},
+		{name: "API v1.3.0 keeps its original mid-scale resolution", wantOld: true, want: 2},
 		{name: "API v1.3.1 grants only addressed members", marker: apiV131, want: 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -124,12 +123,6 @@ func TestAPI131ScaleUpGrantUsesAddressesAlreadyPresent(t *testing.T) {
 			consumers, statuses, refusal := o.resolveConsumers([]fakeConsumer{{
 				Ref: "g", Type: &kind, Network: &fakeConsumerNetwork{Type: "ethernet"},
 			}})
-			if tc.wantRefusal {
-				if refusal == "" {
-					t.Fatalf("resolveConsumers addresses = %v, want a member-interface refusal", statuses[0].addresses)
-				}
-				return
-			}
 			if refusal != "" {
 				t.Fatalf("resolveConsumers: %s", refusal)
 			}
