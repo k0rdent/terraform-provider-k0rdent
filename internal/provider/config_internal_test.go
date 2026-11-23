@@ -347,7 +347,10 @@ func TestTheProviderRestatesNoAPIPath(t *testing.T) {
 		t.Fatalf("glob: %v", err)
 	}
 	// Only the constants defined for the purpose may spell a path out.
-	allowed := []string{"regionsOperation =", "exampleClusterTypeRef ="}
+	allowed := []string{
+		"regionsOperation =", "exampleClusterTypeRef =",
+		"clusterTypeRefFormText =", "clusterTypeRefRegionsPrefix =",
+	}
 
 	scanned := 0
 	for _, file := range files {
