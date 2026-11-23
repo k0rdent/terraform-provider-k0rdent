@@ -37,9 +37,11 @@ provider "k0rdent" {
 
 locals {
   # The cluster keeps this name, so nodes/ finds it as <prefix>-walkthrough.
-  name         = "${var.prefix}-walkthrough"
-  display_name = "${var.prefix} walkthrough"
-  description  = "${var.environment} walkthrough for ${var.prefix}, from examples/walkthrough/full. Safe to delete."
+  name = "${var.prefix}-walkthrough"
+  # A scripted run, not a person, says so in what it names itself, so what a
+  # killed run leaves behind reads as safe to delete.
+  display_name = var.test_purpose != "" ? "${var.prefix} ${var.test_purpose}" : "${var.prefix} walkthrough"
+  description  = var.test_purpose != "" ? "${var.test_purpose} for ${var.prefix}, safe to delete if left over." : "${var.environment} walkthrough for ${var.prefix}, from examples/walkthrough/full. Safe to delete."
 
   tags = {
     app         = "walkthrough"
@@ -369,6 +371,8 @@ locals {
 }
 
 resource "k0rdent_kubernetes_cluster" "this" {
+  count = var.build.cluster ? 1 : 0
+
   id           = local.name
   project      = local.project
   cluster_type = local.cluster_type_ref
@@ -438,15 +442,16 @@ resource "k0rdent_kubernetes_cluster" "this" {
 
 locals {
   # Every VPC this makes, by what made it: the cluster's, and the instance
-  # group's if it's on. A VPC can't be created on its own.
+  # group's if it's on. A VPC can't be created on its own. With build.cluster
+  # off, only the ones the instance group makes are here.
   owners = merge(
-    {
+    var.build.cluster ? {
       cluster = {
         kind = "cluster"
-        id   = k0rdent_kubernetes_cluster.this.id
-        vpc  = k0rdent_kubernetes_cluster.this.vpc
+        id   = k0rdent_kubernetes_cluster.this[0].id
+        vpc  = k0rdent_kubernetes_cluster.this[0].vpc
       }
-    },
+    } : {},
     var.build.instance_group ? {
       hosts = {
         kind = "instance_group"
@@ -491,8 +496,8 @@ locals {
 resource "k0rdent_vpc_security_groups" "this" {
   for_each = var.build.vpc_security_groups ? local.owners : {}
 
-  vpc             = each.value.vpc
-  project         = local.project
+  vpc     = each.value.vpc
+  project = local.project
   # Two entries, so a first plan shows ours first even before the default's id
   # is known. The precondition below stops anything but one default.
   security_groups = [k0rdent_security_group.this[0].id, try(one(local.vpc_default_group[each.key]), null)]
@@ -585,14 +590,26 @@ resource "k0rdent_instance_group" "this" {
   display_name = "${local.display_name} hosts"
   description  = local.description
 
+  # worker_counts sizes the pool here too, so a run with no cluster can grow
+  # the group. Left out, the pool starts at the smallest count the cluster
+  # type allows, at least one host.
   node_pool = {
     (local.worker_pools[0].id) = {
-      size = max(1, coalesce(local.worker_pools[0].node_count_min, 0))
+      size = max(1, local.worker_counts[local.worker_pools[0].id])
     }
   }
 
   ssh_access         = local.ssh_access
   ssh_public_keys_wo = local.ssh_keys
+
+  lifecycle {
+    # Fail the plan if there's no pool to put a host in. The cluster's own
+    # check is gone with build.cluster = false.
+    precondition {
+      condition     = length(local.worker_pools) > 0
+      error_message = "Cluster type ${var.cluster_type} has no worker pool to put hosts in."
+    }
+  }
 
   timeouts {
     create = "3h"
@@ -734,7 +751,7 @@ data "k0rdent_tenant_quota" "this" {
 # for a new display name, they're read at plan time.
 resource "terraform_data" "made" {
   input = {
-    cluster        = k0rdent_kubernetes_cluster.this.self_link
+    cluster        = var.build.cluster ? k0rdent_kubernetes_cluster.this[0].self_link : null
     hosts          = k0rdent_instance_group.this[*].self_link
     network        = [for n in k0rdent_network.this : { link = n.self_link, tags = n.tags_all }]
     security_group = [for g in k0rdent_security_group.this : { link = g.self_link, tags = g.tags_all, rules = g.rule_count }]
@@ -744,6 +761,8 @@ resource "terraform_data" "made" {
 
 # The cluster as the platform reports it, for its API address.
 data "k0rdent_kubernetes_cluster" "this" {
+  count = var.build.cluster ? 1 : 0
+
   id      = local.name
   project = local.project
 
@@ -753,6 +772,8 @@ data "k0rdent_kubernetes_cluster" "this" {
 # Whether the cluster has a kubeconfig yet. Only the record, not the
 # kubeconfig. nodes/ uses the kubeconfig itself.
 data "k0rdent_cluster_kubeconfig" "this" {
+  count = var.build.cluster ? 1 : 0
+
   cluster_id = local.name
   project    = local.project
 

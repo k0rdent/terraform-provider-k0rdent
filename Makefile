@@ -232,6 +232,18 @@ walkthrough-api-test: ## Follow docs/walkthrough-api.md against the fake, from t
 upgrade-test: ## State from the previous release plans empty under this tree, but for ci/upgrade-accepted.json, under terraform and tofu
 	./ci/upgrade-against-fake.sh
 
+# The same run against an endpoint that already exists: the kind stack make
+# real-api-stack writes the env file for, or a landscape with hardware that
+# UPGRADE_REAL_CONFIRM names. Refuses an endpoint off this machine without
+# the confirm.
+.PHONY: upgrade-test-real
+upgrade-test-real: ## The same, against the kind stack's env file or a confirmed landscape
+	UPGRADE_REAL=1 ./ci/upgrade-against-fake.sh
+
+.PHONY: upgrade-against-fake-test
+upgrade-against-fake-test: ## Prove the upgrade check's refusals and landscapes, with the CLIs stood in for
+	./scripts/tests/test-upgrade-against-fake.sh
+
 .PHONY: doctor
 doctor: ## Check this machine can run the tests, before anything long fails halfway
 	./scripts/doctor.sh

@@ -369,13 +369,14 @@ The `build` block in `terraform.tfvars` turns each part on or off:
 
 | Switch | Default | What it makes | What it needs |
 | --- | --- | --- | --- |
+| `cluster` | on | The cluster itself | A cluster type with a worker pool, and hardware for its control plane and workers. Turn it off to run the hosts and storage alone |
 | `network` | on | A network and a subnet per purpose | An address pool that isn't routable |
 | `security_group` | on | A group on the cluster | A cluster type whose nodes sit on a `nico` VPC |
 | `vpc_security_groups` | on | The same group on every VPC this makes, before the VPC's default group | `security_group` |
 | `webhook` | on | A subscription to cluster events | `webhook_url` and the secret |
 | `instance_group` | off | Bare hosts with your users on them: at least one in the cluster type's first worker pool, and each other pool at its default size | A free host for each of them, so two on a type with a one-node control-plane pool |
 | `file_store` | off | 100 GiB of shared storage the host can mount | A share type in the region |
-| `vpc_peering` | off | The cluster's VPC peered with the host's | `instance_group` |
+| `vpc_peering` | off | The cluster's VPC peered with the host's | `instance_group` and `cluster` |
 | `own_project` | off | A new project, deleted last | `organization`, and `organizations-admin` on it |
 
 - `terraform output scorecard` shows a line for each: what it made, or the

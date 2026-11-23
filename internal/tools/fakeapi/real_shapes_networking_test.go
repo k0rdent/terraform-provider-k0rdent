@@ -117,3 +117,103 @@ func TestASecurityGroupAnswersItsUIDAndStatusReason(t *testing.T) {
 		}
 	}
 }
+
+// The seeded landscape holds the rows an earlier cluster's workflow left, and
+// look/ reads them first (run rapi-hw-039727): the network and subnet the
+// workflow materialized, an InfiniBand one beside them with no attributes, as
+// the schema's own entry, and the VPC's default group. Each carries what the
+// platform owns it by, which a kind stack, starting empty, never answers.
+func TestTheSeededLeftoverClusterRowsCarryWhatTheWorkflowMade(t *testing.T) {
+	s := newState()
+	const region, project = "us-texas-1", "demo"
+	const leftover = "ml-platform-01"
+	_, list := in(t, s.listNetworks, http.MethodGet, region, project, nil, "")
+	var net, ib map[string]any
+	for _, row := range listOf(t, list["networks"]) {
+		switch object(t, row)["id"] {
+		case "vpc-" + leftover + "-net":
+			net = object(t, row)
+		case "vpc-" + leftover + "-ib":
+			ib = object(t, row)
+		}
+	}
+	if net == nil || ib == nil {
+		t.Fatalf("the leftover rows are missing from %v", list["networks"])
+	}
+	for key, want := range map[string]string{
+		"clusterId": leftover, "vpc": ufoCRName("vpc-" + leftover), "schemaEntryId": "cluster-net",
+	} {
+		if net[key] != want {
+			t.Errorf("leftover network %s = %v, want %q", key, net[key], want)
+		}
+	}
+	sub := object(t, listOf(t, net["subnets"])[0])
+	if sub["clusterId"] != leftover || sub["schemaEntryId"] != "cluster-subnet" {
+		t.Errorf("leftover subnet = %v, want the cluster id and its schema entry", sub)
+	}
+	fabric, ok := ib["infiniband"].(map[string]any)
+	if ib["type"] != "infiniband" || !ok || len(fabric) != 0 {
+		t.Errorf("leftover infiniband = %v %v, want an empty object", ib["type"], ib["infiniband"])
+	}
+	if ib["clusterId"] != leftover || ib["vpc"] != ufoCRName("vpc-"+leftover) || ib["schemaEntryId"] != "cluster-ib" {
+		t.Errorf("leftover infiniband network = %v", ib)
+	}
+
+	_, got := in(t, s.getNetwork, http.MethodGet, region, project, map[string]string{"id": "vpc-" + leftover + "-net"}, "")
+	if got["clusterId"] != leftover || got["vpc"] != ufoCRName("vpc-"+leftover) {
+		t.Errorf("leftover network by id = %v", got)
+	}
+	_, subnet := in(t, s.getSubnet, http.MethodGet, region, project,
+		map[string]string{"networkId": "vpc-" + leftover + "-net", "id": "vpc-" + leftover + "-net-sub"}, "")
+	if subnet["clusterId"] != leftover || subnet["schemaEntryId"] != "cluster-subnet" {
+		t.Errorf("leftover subnet by id = %v", subnet)
+	}
+
+	_, vpc := in(t, s.getVPC, http.MethodGet, region, project, map[string]string{"id": "vpc-" + leftover}, "")
+	if vpc["ownerKind"] != "cluster" || vpc["ownerId"] == nil || vpc["ownerId"] == "" {
+		t.Errorf("leftover vpc = %v, want the cluster's ownership", vpc)
+	}
+
+	_, groups := in(t, s.listSecurityGroups, http.MethodGet, region, project, nil, "")
+	rows := listOf(t, groups["securityGroups"])
+	if len(rows) != 1 {
+		t.Fatalf("the seeded project holds %d security groups, want the default one", len(rows))
+	}
+	g := object(t, rows[0])
+	if g["ownerKind"] != "vpc" || g["ownerId"] == nil || g["ownerId"] == "" {
+		t.Errorf("default group = %v, want the VPC's ownership", g)
+	}
+	id, ok := g["id"].(string)
+	if !ok {
+		t.Fatalf("default group id = %v, want a string", g["id"])
+	}
+	_, byID := in(t, s.getSecurityGroup, http.MethodGet, region, project, map[string]string{"id": id}, "")
+	if byID["ownerKind"] != "vpc" || byID["ownerId"] != g["ownerId"] {
+		t.Errorf("default group by id = %v, want the VPC's ownership", byID)
+	}
+}
+
+// The catalog documents its three named pools, as a landscape's admin has
+// (run rapi-hw-039727 answered a description on 2 of 11 pools), and look/
+// reads those three first. The generated ones carry none, so the difference
+// between a documented and an undocumented pool stays visible.
+func TestTheNamedAddressPoolsAnswerDescriptions(t *testing.T) {
+	s := newState()
+	_, list := in(t, s.listAddressPools, http.MethodGet, "us-texas-1", "demo", nil, "")
+	// The list's default page is small; its first row is the named pool
+	// look/ reads first.
+	rows := listOf(t, list["addressPools"])
+	if len(rows) == 0 || object(t, rows[0])["description"] == nil {
+		t.Errorf("the first listed pool answers no description: %v", rows)
+	}
+	for _, id := range []string{"tenant", "cluster-local", "vip"} {
+		_, pool := in(t, s.getAddressPool, http.MethodGet, "us-texas-1", "demo", map[string]string{"id": id}, "")
+		if pool["description"] == nil || pool["description"] == "" {
+			t.Errorf("pool %s answers no description: %v", id, pool)
+		}
+	}
+	_, filler := in(t, s.getAddressPool, http.MethodGet, "us-texas-1", "demo", map[string]string{"id": "filler-000"}, "")
+	if _, ok := filler["description"]; ok {
+		t.Errorf("a filler pool answers a description: %v", filler)
+	}
+}

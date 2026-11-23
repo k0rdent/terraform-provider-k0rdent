@@ -73,6 +73,8 @@ jobs:
         run: make live-kept-vars-test
       - name: the helpers the scripts share
         run: make script-lib-test
+      - name: the upgrade check's landscapes and refusals
+        run: make upgrade-against-fake-test
       # shellcheck comes with the ubuntu-latest image.
       - name: shellcheck the scripts
         run: make shellcheck

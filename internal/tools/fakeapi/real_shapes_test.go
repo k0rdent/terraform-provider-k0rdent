@@ -12,7 +12,11 @@ import (
 
 // The real Cluster answers `health` with every optional field present, null
 // when unset, and withholds the verdict with a reason while the cluster is
-// created or deleted.
+// created or deleted. Once the cluster settles the health writer has observed
+// it, so `state` is `healthy` and `observedAt` carries the observation's
+// timestamp: the prod landscape runs a writer (run rapi-hw-039727 answered a
+// timestamp on 1024 of 1037 reads) and a kind stack runs none, so its record
+// accepts observedAt as a type difference.
 func TestAClustersHealthCarriesTheRealShape(t *testing.T) {
 	s := newState()
 	body := `{"id":"c","clusterType":"` + inferenceRef + `/versions/` + inferenceV2 + `"}`
@@ -29,6 +33,9 @@ func TestAClustersHealthCarriesTheRealShape(t *testing.T) {
 	if health["state"] != "unknown" || health["reason"] != "health assessment is withheld while the cluster is being created" {
 		t.Errorf("health on create = %v, want unknown with the creating reason", health)
 	}
+	if health["observedAt"] != nil {
+		t.Errorf("health on create observedAt = %v, want null before any observation", health["observedAt"])
+	}
 
 	for i := 0; i < settleAfter+1; i++ {
 		_, _ = read(t, s)
@@ -41,6 +48,9 @@ func TestAClustersHealthCarriesTheRealShape(t *testing.T) {
 	if r, ok := health["reason"]; !ok || r != nil {
 		t.Errorf("health once active = %v, want reason null", health)
 	}
+	if health["state"] != "healthy" || health["observedAt"] != fixedTime {
+		t.Errorf("health once active = %v, want healthy with the observation's timestamp", health)
+	}
 
 	if code, out := call(t, s.deleteCluster, http.MethodDelete, "c", ""); code != http.StatusNoContent {
 		t.Fatalf("delete: %d %v", code, out)
@@ -51,10 +61,13 @@ func TestAClustersHealthCarriesTheRealShape(t *testing.T) {
 	}
 }
 
-// Every Cluster answer names its cluster type, the create's 201 included, and
-// an operation in flight carries no message of its own: the operation's
-// message is the cluster's stateMessage.
-func TestACreatedClusterNamesItsTypeAndItsOperationHasNoMessage(t *testing.T) {
+// Every Cluster answer names its cluster type, the create's 201 included. An
+// operation in flight carries the workflow's message as its own and as the
+// cluster's stateMessage, from the first read that sees it (run rapi-hw-039727:
+// stateMessage on 615 of 1045 reads, always in flight), and neither once it
+// has settled. The 201 itself carries neither: the recording of a mutating
+// answer never showed one.
+func TestACreatedClusterNamesItsTypeAndItsOperationCarriesTheWorkflowMessage(t *testing.T) {
 	s := newState()
 	body := `{"id":"c","clusterType":"` + inferenceRef + `/versions/` + inferenceV2 + `"}`
 	_, created := call(t, s.createCluster, http.MethodPost, "", body)
@@ -64,10 +77,26 @@ func TestACreatedClusterNamesItsTypeAndItsOperationHasNoMessage(t *testing.T) {
 	if _, ok := object(t, created["operation"])["message"]; ok {
 		t.Errorf("operation on create = %v, want no message", created["operation"])
 	}
-	for i := 0; i < settleAfter+1; i++ {
+	if _, ok := created["stateMessage"]; ok {
+		t.Errorf("create answer carries a stateMessage: %v", created["stateMessage"])
+	}
+	_, inFlight := read(t, s)
+	if got := inFlight["stateMessage"]; got != "provisioning the cluster" {
+		t.Errorf("stateMessage in flight = %v, want the workflow's note", got)
+	}
+	if op := object(t, inFlight["operation"]); op["message"] != "provisioning the cluster" {
+		t.Errorf("operation message in flight = %v, want the same note", op["message"])
+	}
+	for i := 0; i < settleAfter; i++ {
 		_, _ = read(t, s)
 	}
 	_, active := read(t, s)
+	if active["state"] != "active" {
+		t.Fatalf("state = %v, want active", active["state"])
+	}
+	if _, ok := active["stateMessage"]; ok {
+		t.Errorf("stateMessage once active = %v, want none", active["stateMessage"])
+	}
 	if op := object(t, active["operation"]); op["status"] != "succeeded" || op["message"] != nil {
 		t.Errorf("operation once active = %v, want succeeded with no message", op)
 	}
