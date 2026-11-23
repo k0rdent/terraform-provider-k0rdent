@@ -534,8 +534,8 @@ resource %q "b" {
 	}
 }
 
-// A literal VPC id can be read before its owner during a destroy retry. The
-// checked-in examples must name the recovery command when that read fails.
+// A literal VPC id can be read before or after its owner during a destroy
+// retry. The direct error and the owner-first held read must both name recovery.
 func TestAccADestroyRetryAfterLiteralVPCReadNamesRecovery(t *testing.T) { //nolint:paralleltest // it interrupts a destroy through the real CLI
 	if runtime.GOOS == "windows" {
 		skipTest(t, "the CLI sequence runs on unix")
@@ -605,12 +605,11 @@ resource %q "shared" {
 
 				interruptOwnerDestroy(t, c, owner.ownerPath)
 				dropFakeVPC(t, owner.name)
-				planned, ok := c.run("plan")
-				if ok {
-					t.Fatalf("a plain plan after the interrupt passed:\n%s", planned)
+				planned, _ := c.run("plan")
+				mustSay(t, "the plan after the interrupt", planned, "`terraform destroy -refresh=false`")
+				if !strings.Contains(planned, "No such VPC") {
+					mustSay(t, "the owner-first plan after the interrupt", planned, "VPC released by its owner")
 				}
-				mustSay(t, "the failed plan after the interrupt", planned,
-					"No such VPC", "`terraform destroy -refresh=false`")
 
 				destroyed, ok := c.run("destroy", "-refresh=false", "-auto-approve")
 				if !ok {
