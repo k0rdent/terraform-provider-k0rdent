@@ -1,0 +1,9 @@
+```release-note:bug
+resource/k0rdent_kubernetes_cluster: Stop waiting at once on a cluster a cancel left `failed`, instead of after the 2m provisional window
+```
+```release-note:bug
+resource/k0rdent_kubernetes_cluster: Wait for a cluster still being created when an apply sends it nothing, such as the first apply after an import that names only some node pools
+```
+```release-note:bug
+resource/k0rdent_kubernetes_cluster: Wait for a failed cluster when an update changes only provider settings, as the plan promised
+```
