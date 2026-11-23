@@ -56,15 +56,6 @@
     "full": {
       "plan": "examples/walkthrough/full with terraform.tfvars as shipped, first plan",
       "resources": {
-        "data.k0rdent_cluster_kubeconfig": {
-          "count": 4,
-          "unknown": {
-            "available": "read during the apply, because it waits for terraform_data.made, which this plan creates",
-            "id": "read during the apply, because it waits for terraform_data.made, which this plan creates",
-            "issued_for": "read during the apply, because it waits for terraform_data.made, which this plan creates",
-            "status": "read during the apply, because it waits for terraform_data.made, which this plan creates"
-          }
-        },
         "data.k0rdent_effective_security_groups": {
           "count": 2,
           "unknown": {
@@ -271,15 +262,6 @@
     "full-everything": {
       "plan": "examples/walkthrough/full with every build switch on, first plan",
       "resources": {
-        "data.k0rdent_cluster_kubeconfig": {
-          "count": 4,
-          "unknown": {
-            "available": "read during the apply, because it waits for terraform_data.made, which this plan creates",
-            "id": "read during the apply, because it waits for terraform_data.made, which this plan creates",
-            "issued_for": "read during the apply, because it waits for terraform_data.made, which this plan creates",
-            "status": "read during the apply, because it waits for terraform_data.made, which this plan creates"
-          }
-        },
         "data.k0rdent_effective_security_groups": {
           "count": 4,
           "unknown": {
