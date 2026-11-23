@@ -239,9 +239,11 @@ func (r *securityGroupResource) Schema(ctx context.Context, _ resource.SchemaReq
 			"tags": schema.MapAttribute{
 				Optional:    true,
 				ElementType: types.StringType,
-				MarkdownDescription: "User-defined labels. The contract types tag values as freeform " +
-					"JSON; this schema accepts strings, because a Terraform map has one element " +
-					"type and a string is the only one every value round-trips through.",
+				MarkdownDescription: "User-defined labels. Terraform owns the map's string tags, and the next " +
+					"apply removes a string tag set another way. A non-string tag is left alone with a warning. " +
+					"The contract types tag values as freeform JSON. This schema accepts strings because a " +
+					"Terraform map has one element type and a string is the only one every value round-trips " +
+					"through.",
 				Validators: []validator.Map{reservedTagKey{}},
 			},
 			tagsAllAttribute: tagsAllSchemaAttribute(""),

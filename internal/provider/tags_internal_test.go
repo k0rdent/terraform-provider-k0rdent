@@ -22,6 +22,34 @@ import (
 	"github.com/k0rdent/terraform-provider-k0rdent/internal/k0rdent"
 )
 
+func TestTaggedResourcesDocumentMapOwnership(t *testing.T) {
+	t.Parallel()
+
+	for name, tc := range map[string]struct {
+		resource resource.Resource
+		want     string
+	}{
+		"cluster":        {&clusterResource{}, "the next apply removes a tag set another way"},
+		"network":        {&networkResource{}, "the next apply removes a tag set another way"},
+		"security group": {&securityGroupResource{}, "the next apply removes a string tag set another way"},
+		"VPC peering":    {&vpcPeeringResource{}, "applying that change replaces the peering"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var resp resource.SchemaResponse
+			tc.resource.Schema(context.Background(), resource.SchemaRequest{}, &resp)
+			attr, ok := resp.Schema.Attributes["tags"].(schema.MapAttribute)
+			if !ok {
+				t.Fatal("tags isn't a map attribute")
+			}
+			for _, want := range []string{"Terraform owns", tc.want} {
+				if !strings.Contains(attr.MarkdownDescription, want) {
+					t.Errorf("tags description %q doesn't contain %q", attr.MarkdownDescription, want)
+				}
+			}
+		})
+	}
+}
+
 // tagMap is a known map of strings, or a null one for nil.
 func tagMap(t *testing.T, m map[string]string) types.Map {
 	t.Helper()

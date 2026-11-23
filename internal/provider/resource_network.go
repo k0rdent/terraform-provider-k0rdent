@@ -169,9 +169,10 @@ func (r *networkResource) Schema(ctx context.Context, _ resource.SchemaRequest, 
 			"tags": schema.MapAttribute{
 				Optional:    true,
 				ElementType: types.StringType,
-				MarkdownDescription: "User-defined labels. The platform keeps its own `systemTags` " +
-					"separately and they are not exposed here, so nothing the platform writes can " +
-					"collide with a tag set in configuration.",
+				MarkdownDescription: "User-defined labels. Terraform owns the whole map, and the next apply " +
+					"removes a tag set another way. The platform keeps its own `systemTags` separately and " +
+					"they are not exposed here, so nothing the platform writes can collide with a tag set " +
+					"in configuration.",
 				Validators: []validator.Map{reservedTagKey{}},
 			},
 			tagsAllAttribute: tagsAllSchemaAttribute(""),

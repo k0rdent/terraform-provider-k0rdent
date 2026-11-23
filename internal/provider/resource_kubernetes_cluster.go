@@ -271,10 +271,11 @@ func (r *clusterResource) Schema(ctx context.Context, _ resource.SchemaRequest, 
 				MarkdownDescription: "Free-form description. Mutable.",
 			},
 			"tags": schema.MapAttribute{
-				Optional:            true,
-				ElementType:         types.StringType,
-				MarkdownDescription: "User-defined labels. Mutable.",
-				Validators:          []validator.Map{reservedTagKey{}},
+				Optional:    true,
+				ElementType: types.StringType,
+				MarkdownDescription: "User-defined labels. Terraform owns the whole map, and the next apply " +
+					"removes a tag set another way. Mutable.",
+				Validators: []validator.Map{reservedTagKey{}},
 			},
 			tagsAllAttribute: tagsAllSchemaAttribute(""),
 			// Optional+Computed, and the drift cost is real and accepted: a pool
