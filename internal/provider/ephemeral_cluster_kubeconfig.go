@@ -47,8 +47,8 @@ func (e *clusterKubeconfigEphemeral) Metadata(_ context.Context, _ ephemeral.Met
 // A kubeconfig is a credential, and everything a data source or resource returns
 // is written to state in plain text. `Sensitive: true` hides it from the console,
 // not from the file. An ephemeral resource is the only surface that never
-// persists, so this is where the credential itself belongs; the data source next
-// to it stays for reading metadata.
+// persists, so this is where the credential itself belongs. The deprecated data
+// source reads metadata until v1.0.0.
 //
 // There is no Renew. Terraform's renewal extends a lease on the value it already
 // handed out, and RenewResponse carries no new result, so a fresh token could

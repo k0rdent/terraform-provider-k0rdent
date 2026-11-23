@@ -81,7 +81,8 @@ project. The [import guide](import.md) shows the narrowest role for it.
 - No credential, certificate or kubeconfig is saved in Terraform state.
 - The `k0rdent_cluster_kubeconfig` ephemeral resource returns the kubeconfig
   for the length of the run only.
-- The `k0rdent_cluster_kubeconfig` data source returns metadata only, never
-  the kubeconfig itself.
+- Readiness comes from `state` on the `k0rdent_kubernetes_cluster` resource or
+  data source. The deprecated `k0rdent_cluster_kubeconfig` data source is
+  removed in v1.0.0.
 - The provider writes no files of its own and doesn't log headers or request
   bodies.

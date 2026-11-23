@@ -409,7 +409,7 @@ run_full() {
   output_is "$name" scorecard "$scorecard"
 
   # What the platform reported back, as the scorecard says it.
-  output_is "$name" scorecard 'v["quota"] == "within every limit" and v["kubeconfig"].startswith("active,") and v["tags landed"] == "network yes, security group yes"'
+  output_is "$name" scorecard 'v["quota"] == "within every limit" and v["tags landed"] == "network yes, security group yes"'
   output_is "$name" scorecard 'v["security group on the cluster"].endswith("rules: 19 sent, 19 on the platform") and v["webhook"].endswith(", active, subscriptions to this URL: 1")'
 
   output_is "$name" cluster 'v["state"] == "active" and v["ssh_users"] == ["ops"]'

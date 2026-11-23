@@ -10,6 +10,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-framework/action"
 	aschema "github.com/hashicorp/terraform-plugin-framework/action/schema"
+	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/list"
 	lschema "github.com/hashicorp/terraform-plugin-framework/list/schema"
 	fwprovider "github.com/hashicorp/terraform-plugin-framework/provider"
@@ -29,6 +30,19 @@ func TestEveryDeprecationNamesTheVersionItIsRemovedIn(t *testing.T) {
 	_, gaps := Deprecations(context.Background(), ReleasedMajor(changelog))
 	if len(gaps) > 0 {
 		t.Fatalf("%d deprecation(s) that don't follow the policy:\n%s", len(gaps), strings.Join(gaps, "\n"))
+	}
+}
+
+func TestClusterKubeconfigDataSourceDeprecation(t *testing.T) {
+	d := newClusterKubeconfigDataSource()
+	var resp datasource.SchemaResponse
+	d.Schema(context.Background(), datasource.SchemaRequest{}, &resp)
+
+	want := "The platform is removing kubeconfig records, so this data source is removed in v1.0.0. " +
+		"Use the `" + ResourceName(kubeconfigDataSourceSuffix) + "` ephemeral resource's `raw` attribute for the kubeconfig. " +
+		"For readiness, use `state` on the `" + ResourceName(clusterResourceSuffix) + "` resource or data source."
+	if got := resp.Schema.DeprecationMessage; got != want {
+		t.Errorf("deprecation message = %q, want %q", got, want)
 	}
 }
 

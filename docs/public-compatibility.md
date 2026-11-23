@@ -23,6 +23,23 @@ When the platform removes an operation or field, the provider can't keep it
 working. That goes under BREAKING CHANGES in the next release, with a
 migration here.
 
+## Current deprecations
+
+### Kubeconfig metadata
+
+The platform is removing kubeconfig records, so the
+`k0rdent_cluster_kubeconfig` data source is removed in v1.0.0. It keeps
+working and warns wherever it's used until then.
+
+- Use `raw` on the `k0rdent_cluster_kubeconfig` ephemeral resource for the
+  kubeconfig.
+- Use `state` on the `k0rdent_kubernetes_cluster` resource or data source for
+  readiness. `active` means settled and usable.
+
+There are no replacements for the data source's `id`, `issued_for`, `status`
+or `available` attributes because the platform is removing the underlying
+records.
+
 ## State upgrades
 
 When a new version changes how a resource is stored in state, the provider

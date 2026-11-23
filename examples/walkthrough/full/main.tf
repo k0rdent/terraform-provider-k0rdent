@@ -769,17 +769,6 @@ data "k0rdent_kubernetes_cluster" "this" {
   depends_on = [terraform_data.made]
 }
 
-# Whether the cluster has a kubeconfig yet. Only the record, not the
-# kubeconfig. nodes/ uses the kubeconfig itself.
-data "k0rdent_cluster_kubeconfig" "this" {
-  count = var.build.cluster ? 1 : 0
-
-  cluster_id = local.name
-  project    = local.project
-
-  depends_on = [terraform_data.made]
-}
-
 # The project's VPCs. The cluster output checks this made ones are listed.
 data "k0rdent_vpcs" "all" {
   project = local.project
