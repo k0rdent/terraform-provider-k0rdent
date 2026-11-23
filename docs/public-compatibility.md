@@ -27,14 +27,14 @@ migration here.
 
 ### Kubeconfig metadata
 
-The platform is removing kubeconfig records, so the
-`k0rdent_cluster_kubeconfig` data source is removed in v1.0.0. It keeps
-working and warns wherever it's used until then.
+The `k0rdent_cluster_kubeconfig` data source stops working when the platform
+moves to API 1.4, which removes kubeconfig records. It's removed from the
+provider in v1.0.0.
 
-- Use `raw` on the `k0rdent_cluster_kubeconfig` ephemeral resource for the
-  kubeconfig.
-- Use `state` on the `k0rdent_kubernetes_cluster` resource or data source for
-  readiness. `active` means settled and usable.
+- Move to `raw` on the `k0rdent_cluster_kubeconfig` ephemeral resource now for
+  the kubeconfig.
+- For readiness, use `state` on the `k0rdent_kubernetes_cluster` resource or
+  data source. `active` means settled and usable.
 
 There are no replacements for the data source's `id`, `issued_for`, `status`
 or `available` attributes because the platform is removing the underlying

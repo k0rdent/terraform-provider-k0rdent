@@ -61,12 +61,13 @@ func (d *clusterKubeconfigDataSource) Metadata(_ context.Context, _ datasource.M
 // the ephemeral resource of the same name, which never persists.
 func (d *clusterKubeconfigDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		DeprecationMessage: "The platform is removing kubeconfig records, so this data source is removed in v1.0.0. " +
-			"Use the `" + ResourceName(kubeconfigDataSourceSuffix) + "` ephemeral resource's `raw` attribute for the kubeconfig. " +
-			"For readiness, use `state` on the `" + ResourceName(clusterResourceSuffix) + "` resource or data source.",
-		MarkdownDescription: "**Deprecated:** The platform is removing kubeconfig records, so this data source " +
-			"is removed in v1.0.0. Use the `" + ResourceName(kubeconfigDataSourceSuffix) + "` ephemeral resource's `raw` attribute " +
-			"for the kubeconfig and `state` on the `" + ResourceName(clusterResourceSuffix) + "` resource or data source for readiness.\n\n" +
+		DeprecationMessage: "This data source stops working when the platform moves to API 1.4, which removes kubeconfig records. " +
+			"It's removed in v1.0.0. Move to the `" + ResourceName(kubeconfigDataSourceSuffix) + "` ephemeral resource's `raw` attribute " +
+			"for the kubeconfig now. For readiness, use `state` on the `" + ResourceName(clusterResourceSuffix) + "` resource or data source.",
+		MarkdownDescription: "**Deprecated:** This data source stops working when the platform moves to API 1.4, which removes " +
+			"kubeconfig records. It's removed in v1.0.0. Move to the `" + ResourceName(kubeconfigDataSourceSuffix) + "` ephemeral resource's " +
+			"`raw` attribute for the kubeconfig now. For readiness, use `state` on the `" + ResourceName(clusterResourceSuffix) + "` " +
+			"resource or data source.\n\n" +
 			"Facts about a cluster's kubeconfig: which one, and whether it is " +
 			"usable. For the kubeconfig itself use the ephemeral resource of the same name.\n\n" +
 			"The platform issues a cluster's kubeconfig shortly after the cluster becomes active. " +

@@ -38,9 +38,9 @@ func TestClusterKubeconfigDataSourceDeprecation(t *testing.T) {
 	var resp datasource.SchemaResponse
 	d.Schema(context.Background(), datasource.SchemaRequest{}, &resp)
 
-	want := "The platform is removing kubeconfig records, so this data source is removed in v1.0.0. " +
-		"Use the `" + ResourceName(kubeconfigDataSourceSuffix) + "` ephemeral resource's `raw` attribute for the kubeconfig. " +
-		"For readiness, use `state` on the `" + ResourceName(clusterResourceSuffix) + "` resource or data source."
+	want := "This data source stops working when the platform moves to API 1.4, which removes kubeconfig records. " +
+		"It's removed in v1.0.0. Move to the `" + ResourceName(kubeconfigDataSourceSuffix) + "` ephemeral resource's `raw` attribute " +
+		"for the kubeconfig now. For readiness, use `state` on the `" + ResourceName(clusterResourceSuffix) + "` resource or data source."
 	if got := resp.Schema.DeprecationMessage; got != want {
 		t.Errorf("deprecation message = %q, want %q", got, want)
 	}

@@ -381,7 +381,7 @@ The `build` block in `terraform.tfvars` turns each part on or off:
 
 - `terraform output scorecard` shows a line for each: what it made, or the
   switch that turns it on. It also shows what the platform reports back, such
-  as quota, the kubeconfig and webhook deliveries.
+  as quota and webhook deliveries.
 - `nodes/` works with this cluster too, since it's also
   `<prefix>-walkthrough`.
 - On the `nico` fabric, traffic that no rule permits is denied, in both

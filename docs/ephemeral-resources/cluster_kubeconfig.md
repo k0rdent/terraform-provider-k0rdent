@@ -161,4 +161,4 @@ ephemeral "k0rdent_cluster_kubeconfig" "example" {
 ## Related
 
 - [`k0rdent_kubernetes_cluster`](../resources/kubernetes_cluster.md) resource: manages the cluster the kubeconfig reaches.
-- [`k0rdent_cluster_kubeconfig`](../data-sources/cluster_kubeconfig.md) data source: is deprecated and removed in v1.0.0 with the platform's kubeconfig records.
+- [`k0rdent_cluster_kubeconfig`](../data-sources/cluster_kubeconfig.md) data source: is deprecated. It stops working when the platform moves to API 1.4 and is removed in v1.0.0.

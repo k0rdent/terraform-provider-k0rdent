@@ -3,7 +3,7 @@
 page_title: "k0rdent_cluster_kubeconfig Data Source - k0rdent"
 subcategory: ""
 description: |-
-  Deprecated: The platform is removing kubeconfig records, so this data source is removed in v1.0.0. Use the k0rdent_cluster_kubeconfig ephemeral resource's raw attribute for the kubeconfig and state on the k0rdent_kubernetes_cluster resource or data source for readiness.
+  Deprecated: This data source stops working when the platform moves to API 1.4, which removes kubeconfig records. It's removed in v1.0.0. Move to the k0rdent_cluster_kubeconfig ephemeral resource's raw attribute for the kubeconfig now. For readiness, use state on the k0rdent_kubernetes_cluster resource or data source.
   Facts about a cluster's kubeconfig: which one, and whether it is usable. For the kubeconfig itself use the ephemeral resource of the same name.
   The platform issues a cluster's kubeconfig shortly after the cluster becomes active. On an active cluster this waits up to two minutes for that, within the provider's operation_timeout. On a cluster still creating or updating, or failed, it fails at once rather than hold a plan for the length of a provisioning.
   For a cluster created in the same apply, cluster_id = <cluster>.id is enough: the reference makes this depend on the cluster, and Terraform holds the read until the cluster's create has applied. A depends_on on the cluster does the same for a cluster named some other way.
@@ -11,7 +11,7 @@ description: |-
 
 # k0rdent_cluster_kubeconfig (Data Source)
 
-**Deprecated:** The platform is removing kubeconfig records, so this data source is removed in v1.0.0. Use the `k0rdent_cluster_kubeconfig` ephemeral resource's `raw` attribute for the kubeconfig and `state` on the `k0rdent_kubernetes_cluster` resource or data source for readiness.
+**Deprecated:** This data source stops working when the platform moves to API 1.4, which removes kubeconfig records. It's removed in v1.0.0. Move to the `k0rdent_cluster_kubeconfig` ephemeral resource's `raw` attribute for the kubeconfig now. For readiness, use `state` on the `k0rdent_kubernetes_cluster` resource or data source.
 
 Facts about a cluster's kubeconfig: which one, and whether it is usable. For the kubeconfig itself use the ephemeral resource of the same name.
 
@@ -22,10 +22,10 @@ For a cluster created in the same apply, `cluster_id = <cluster>.id` is enough: 
 ## Example Usage
 
 ```terraform
-# Deprecated. The platform is removing kubeconfig records, so this data source
-# is removed in v1.0.0. Existing configurations can keep using it until then.
-# For new configurations, use the ephemeral resource's raw attribute for the
-# kubeconfig and the cluster's state attribute for readiness.
+# Deprecated. This data source stops working when the platform moves to API 1.4,
+# which removes kubeconfig records. It's removed in v1.0.0. Move to the
+# ephemeral resource's raw attribute for the kubeconfig now. For readiness, use
+# the cluster's state attribute.
 data "k0rdent_cluster_kubeconfig" "training" {
   cluster_id = k0rdent_kubernetes_cluster.training.id
 }
