@@ -410,10 +410,9 @@ type cluster struct {
 	// listClusterSshAccess and never changed after.
 	sshAccess []sshUser
 
-	// released says a delete started, which releases the node pools and the
-	// SSH users. A teardown that fails leaves them gone: on a dev.4 landscape
-	// a cluster left `failed` that way answered no node pools and
-	// `[]` for its SSH users.
+	// released says a delete started, which releases the SSH users. A
+	// teardown that fails leaves them gone. The node pools stay until the
+	// delete settles `deleted` (API v1.3.0).
 	released bool
 	// teardownLost says a teardownFails cluster already failed its one
 	// teardown.
@@ -1858,16 +1857,9 @@ func (c *cluster) complete() {
 func (s *state) clusterBody(region string, c *cluster, read bool) map[string]any {
 	pools := make([]any, 0, len(c.pools))
 	total := 0
-	held := c.pools
-	if c.released {
-		// The platform soft-deletes the pools as it starts the delete, and
-		// dev.4 answered `"nodePools":[]` and `"nodeCount":0` from then on
-		// (live-shapes-dev4.txt, section E).
-		held = nil
-	}
 	// In id order, so two reads of one cluster agree.
-	for _, id := range sortedMapKeys(held) {
-		count := held[id]
+	for _, id := range sortedMapKeys(c.pools) {
+		count := c.pools[id]
 		pool := map[string]any{
 			"id":                    id,
 			"clusterTypeNodePoolId": id,
@@ -2331,8 +2323,9 @@ func groupFailsTeardown(g *instanceGroup) bool {
 }
 
 // clusterFailsTeardown is the cluster's teardown outcome: a cluster named
-// teardownFails fails its first teardown and settles `failed`, with what the
-// delete released still gone. The next DELETE succeeds.
+// teardownFails fails its first teardown and settles `failed`, with the SSH
+// users the delete released still gone and its node pools kept. The next
+// DELETE succeeds.
 func clusterFailsTeardown(c *cluster) bool {
 	if !nameCarries(c.displayName, teardownFails) || c.teardownLost {
 		return false

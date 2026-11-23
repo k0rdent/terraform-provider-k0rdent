@@ -14,8 +14,10 @@ import (
 // Some kinds stop reporting part of what their create sent once a delete
 // starts. The platform releases it in the same transaction that moves the
 // resource to `deleting`, so every read after that answers it empty: a
-// group's SSH users, and a cluster's node pools with `"nodeCount":0`. A teardown that fails settles the
-// resource `failed` with them still gone, since nothing puts them back.
+// group's SSH users and a cluster's. A teardown that fails settles the
+// resource `failed` with them still gone, since nothing puts them back. A
+// cluster's node pools stay until the delete settles `deleted` (API v1.3.0),
+// so they aren't held here.
 //
 // Written into state, that empty answer is a difference from the
 // configuration. On an immutable attribute it's a replacement the guard

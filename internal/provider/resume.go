@@ -192,9 +192,15 @@ type resumable[M any] struct {
 // the same way, and one that's still `failed` after the provisional window is
 // an error that says how to replace it.
 func (p resumable[M]) resume(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) bool {
+	return onlyResume(req.Plan.Raw, req.State.Raw) && p.finish(ctx, req, resp)
+}
+
+// finish is resume for an update that sent the platform nothing, whatever
+// else its plan changed.
+func (p resumable[M]) finish(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) bool {
 	was := priorState(ctx, req.State)
 	failed := p.waitsOutFailed && was == failedState && lastFailed(ctx, req.Private).waits()
-	if (was != creatingState && !failed) || !onlyResume(req.Plan.Raw, req.State.Raw) {
+	if was != creatingState && !failed {
 		return false
 	}
 	ctx, cancel := withTimeout(ctx, p.timeout, p.fallback, &resp.Diagnostics)

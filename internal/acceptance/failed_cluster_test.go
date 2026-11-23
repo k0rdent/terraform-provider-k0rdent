@@ -293,3 +293,108 @@ func creatingOutside(t *testing.T, name, markers string, reads int) {
 	}
 	checkFakeStateNow(t, name, "creating")
 }
+
+// A cluster imported `failed`, under a configuration that names only some of
+// its pools, is waited on by the apply, as the plan's warning says, though
+// the apply sends nothing for the pools it leaves out. It's still `failed`
+// after the window, so the apply fails and deletes nothing.
+func TestAccANarrowedPoolOnAFailedClusterWaitsAsThePlanSays(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS == "windows" {
+		skipTest(t, "the CLI sequence runs on unix")
+	}
+	const name = "acc-failed-narrowed-pools"
+	c := newCLIRun(t)
+	addr := clusterType + ".test"
+	t.Cleanup(func() { removeFromFake(t, name) })
+	failedOutside(t, name, createFails)
+	c.write(fmt.Sprintf(`
+resource %q "test" {
+  id           = %q
+  cluster_type = %q
+  display_name = %q
+  node_pool = {
+    "gpu-workers" = { node_count = 2 }
+  }
+}
+`, clusterType, name, clusterTypeRef, createFails))
+	if out, ok := c.run("import", addr, name); !ok {
+		t.Fatalf("the import failed:\n%s", out)
+	}
+	out, ok := c.run("apply", "-auto-approve")
+	if ok {
+		t.Fatalf("the apply passed on a cluster that stays failed:\n%s", out)
+	}
+	mustSay(t, "the apply", out, "`terraform apply` waits up to", "The cluster is still failed",
+		"Nothing was deleted")
+	checkFakeStateNow(t, name, "failed")
+}
+
+// An update whose only change is provider-side, such as `cluster_type` pinned
+// to the version the cluster is already bound to, sends the platform nothing.
+// On a `failed` cluster the plan's warning promises the apply waits for it to
+// to `active` on its own. The apply waits as a resume does, under the
+// create's timeout: the fake never brings this one back, so after the
+// provisional window the apply fails and deletes nothing. A changed
+// `on_destroy_busy` still records its value and doesn't wait, which is how a
+// destroy is told to stop waiting.
+func TestAccProviderSettingsOnlyOnAFailedClusterWaitsAsThePlanSays(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS == "windows" {
+		skipTest(t, "the CLI sequence runs on unix")
+	}
+	const name = "acc-failed-provider-settings"
+	c := newCLIRun(t)
+	addr := clusterType + ".test"
+	t.Cleanup(func() { removeFromFake(t, name) })
+	failedOutside(t, name, createFails)
+	c.write(fmt.Sprintf(`
+resource %q "test" {
+  id           = %q
+  cluster_type = %q
+  display_name = %q
+  node_pool = {
+    "control-plane" = { node_count = 1 }
+    "gpu-workers"   = { node_count = 2 }
+  }
+  timeouts {
+    update = "2s"
+  }
+}
+`, clusterType, name, clusterTypeRef+"/versions/33333333-3333-3333-3333-333333333333", createFails))
+	if out, ok := c.run("import", addr, name); !ok {
+		t.Fatalf("the import failed:\n%s", out)
+	}
+	out, ok := c.run("apply", "-auto-approve")
+	if ok {
+		t.Fatalf("the apply passed on a cluster that stays failed:\n%s", out)
+	}
+	mustSay(t, "the apply", out, "`terraform apply` waits up to", "The cluster is still failed",
+		"Nothing was deleted", "waits up to 2s")
+	checkFakeStateNow(t, name, "failed")
+
+	// The way out of a wait: changing `on_destroy_busy` alone records the
+	// value and returns without waiting, as the destroy advice says.
+	c.write(fmt.Sprintf(`
+resource %q "test" {
+  id           = %q
+  cluster_type = %q
+  display_name = %q
+  on_destroy_busy = "cancel"
+  node_pool = {
+    "control-plane" = { node_count = 1 }
+    "gpu-workers"   = { node_count = 2 }
+  }
+  timeouts {
+    update = "2s"
+  }
+}
+`, clusterType, name, clusterTypeRef+"/versions/33333333-3333-3333-3333-333333333333", createFails))
+	out, ok = c.run("apply", "-auto-approve")
+	if !ok {
+		t.Fatalf("the apply that changes on_destroy_busy failed:\n%s", out)
+	}
+	mustSay(t, "the apply", out, "Modifications complete after 0s")
+	shown, _ := c.run("state", "show", addr)
+	mustSay(t, "state", shown, `state = "failed"`, `on_destroy_busy = "cancel"`)
+}
