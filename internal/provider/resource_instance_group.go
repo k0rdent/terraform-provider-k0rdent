@@ -676,6 +676,12 @@ func (r *instanceGroupResource) Update(ctx context.Context, req resource.UpdateR
 			return
 		}
 	}
+	if scaled {
+		if err := r.waitForConsumerGrants(ctx, target, id); err != nil {
+			addWaitError(&resp.Diagnostics, "The file-store grants did not settle after the instance group grew", err)
+			return
+		}
+	}
 
 	next, found, diags, err := settledRead(ctx, plan.State, instanceGroupStates.settle,
 		func(ctx context.Context) (instanceGroupModel, bool, diag.Diagnostics) {
@@ -1178,6 +1184,70 @@ func instanceGroupStateFrom(ctx context.Context, g k0rdent.InstanceGroup, prior 
 
 func (r *instanceGroupResource) waitForSettled(ctx context.Context, target clusterTarget, id, what string) error {
 	return instanceGroupStates.awaitSettled(ctx, r.meta.Wait, what, r.reader(target, id))
+}
+
+// waitForConsumerGrants lets the platform finish extending grants to the new hosts.
+func (r *instanceGroupResource) waitForConsumerGrants(ctx context.Context, target clusterTarget, id string) error {
+	return waitFor(ctx, r.meta.Wait, "the instance group's file-store grants to settle",
+		func(ctx context.Context) (bool, error) {
+			var diags diag.Diagnostics
+			stores, ok := listFileStores(ctx, r.meta, target, &diags)
+			if !ok {
+				if errs := diags.Errors(); len(errs) > 0 {
+					return false, fmt.Errorf("%s: %s", errs[0].Summary(), errs[0].Detail())
+				}
+				return false, errors.New("could not list file stores")
+			}
+			for _, store := range stores {
+				if !storeNamesGroup(store, id) {
+					continue
+				}
+				got, err := r.meta.Client.GetFileStoreWithResponse(ctx, target.region, target.project, store.Id)
+				if err != nil {
+					return false, err
+				}
+				if got.JSON200 == nil {
+					return false, k0rdent.CheckResponse(got.HTTPResponse, got.Body)
+				}
+				if !groupGrantsSettled([]k0rdent.FileStore{*got.JSON200}, id) {
+					return false, nil
+				}
+			}
+			return true, nil
+		})
+}
+
+func storeNamesGroup(store k0rdent.FileStore, groupID string) bool {
+	if store.ConsumerStatus != nil {
+		for _, status := range *store.ConsumerStatus {
+			if deref(status.Ref) == groupID {
+				return true
+			}
+		}
+	}
+	if store.Consumers != nil {
+		for _, consumer := range *store.Consumers {
+			if consumer.Ref == groupID {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func groupGrantsSettled(stores []k0rdent.FileStore, groupID string) bool {
+	for _, store := range stores {
+		if store.ConsumerStatus == nil {
+			continue
+		}
+		for _, status := range *store.ConsumerStatus {
+			if deref(status.Ref) == groupID &&
+				stateString(status.State) == string(k0rdent.FileStoreConsumerStatusStateCreating) {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // reader reads the instance group for a wait.

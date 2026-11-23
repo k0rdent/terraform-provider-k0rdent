@@ -490,6 +490,31 @@ func TestInstanceGroupDeleteStopsOnAnUnknownState(t *testing.T) {
 	}
 }
 
+// Only a grant naming the scaled group holds the update. A failed grant needs
+// a consumer resend, so waiting for it to become active would time out.
+func TestGroupGrantsSettledWaitsOnlyForTheScaledGroup(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		body string
+		want bool
+	}{
+		{name: "repair in progress", body: `{"consumerStatus":[{"ref":"g1","state":"creating"}]}`, want: false},
+		{name: "repair finished", body: `{"consumerStatus":[{"ref":"g1","state":"active"}]}`, want: true},
+		{name: "failed repair needs a resend", body: `{"consumerStatus":[{"ref":"g1","state":"failed"}]}`, want: true},
+		{name: "another group is repairing", body: `{"consumerStatus":[{"ref":"g2","state":"creating"}]}`, want: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var store k0rdent.FileStore
+			if err := json.Unmarshal([]byte(tc.body), &store); err != nil {
+				t.Fatal(err)
+			}
+			if got := groupGrantsSettled([]k0rdent.FileStore{store}, "g1"); got != tc.want {
+				t.Errorf("groupGrantsSettled() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
 // When the plan couldn't read the group, the apply sizes an added pool. An id
 // the group doesn't have is refused there as the plan refuses it, not sent as
 // a scale the platform answers with a 422.
