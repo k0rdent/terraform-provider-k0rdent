@@ -16,7 +16,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
-	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
 	"github.com/k0rdent/terraform-provider-k0rdent/internal/k0rdent"
@@ -354,7 +353,7 @@ func (r *securityGroupResource) ModifyPlan(ctx context.Context, req resource.Mod
 	// update waits for it to come back.
 	planResume(ctx, req, resp)
 	planSettledState(ctx, securityGroupStates.settle, req, resp)
-	planNeedsARule(ctx, r.meta, req, resp)
+	planNeedsARule(ctx, req, resp)
 }
 
 // noRulesFix is what every diagnostic about a group with no rules ends with.
@@ -381,7 +380,7 @@ func addNoRulesCreateError(diags *diag.Diagnostics) {
 
 // planNeedsARule refuses a create or a configuration change that would leave
 // the group with no rules. It warns when only the platform's state causes the
-// refusal: an unchanged group with no rules, or its tainted replacement.
+// refusal: an unchanged group with no rules.
 //
 // API 1.4 answers 422 to a create with no rules and to a PATCH whose `rules`
 // has both lists empty. API 1.3 accepts either request, and the fabric can then
@@ -394,13 +393,12 @@ func addNoRulesCreateError(diags *diag.Diagnostics) {
 // unknown anywhere makes it a change. A destroy has no plan and is left alone.
 //
 // Terraform plans a tainted replacement with null prior state, as it does a
-// new create. A read of the configured id tells an existing empty group from
-// a new create. That replacement warns here and refuses in Create before it
-// sends a request. An unchanged destroy of one never refuses.
+// new create. No rules in configuration make that create invalid too, so the
+// configuration causes its refusal. An unchanged destroy never refuses.
 //
 // A list a `dynamic` block builds from a value not known yet is unknown, and
 // so is its length, so nothing is said until both lists are known.
-func planNeedsARule(ctx context.Context, meta *Meta, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
+func planNeedsARule(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
 	if req.Plan.Raw.IsNull() || resp.Diagnostics.HasError() {
 		return
 	}
@@ -422,14 +420,7 @@ func planNeedsARule(ctx context.Context, meta *Meta, req resource.ModifyPlanRequ
 		return
 	}
 
-	// The only request is the configured-id read for a create-shaped plan.
 	switch {
-	case req.State.Raw.IsNull() && replacementHasNoRules(ctx, meta, resp.Plan):
-		resp.Diagnostics.AddWarning(
-			"This security group has no rules",
-			"The group has no `ingress` and no `egress` block. Its tainted replacement can't be "+
-				"applied with no rules. "+noRulesFix,
-		)
 	case req.State.Raw.IsNull():
 		addNoRulesCreateError(&resp.Diagnostics)
 	case resp.Plan.Raw.Equal(req.State.Raw):
@@ -444,22 +435,6 @@ func planNeedsARule(ctx context.Context, meta *Meta, req resource.ModifyPlanRequ
 			noRulesChangeDetail+noRulesFix+noRulesDestroy,
 		)
 	}
-}
-
-// replacementHasNoRules reports whether the configured id already names an
-// empty group. Terraform hides prior state for a tainted replacement, so the
-// platform read is what distinguishes it from a new create.
-func replacementHasNoRules(ctx context.Context, meta *Meta, plan tfsdk.Plan) bool {
-	if meta == nil || meta.Client == nil {
-		return false
-	}
-	target, id, ok := plannedTarget(ctx, meta, plan)
-	if !ok {
-		return false
-	}
-	got, err := meta.Client.GetSecurityGroupWithResponse(ctx, target.region, target.project, id)
-	return err == nil && got.JSON200 != nil &&
-		len(got.JSON200.Rules.Ingress)+len(got.JSON200.Rules.Egress) == 0
 }
 
 func (r *securityGroupResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {

@@ -93,7 +93,7 @@ func TestSecurityGroupNeedsARuleOnCreateOrChange(t *testing.T) {
 		"a create with one egress rule":   {value(empty, oneRule, nil), null, value(empty, oneRule, nil), silent},
 		"a create with ingress unknown":   {value(unknown, empty, nil), null, value(unknown, empty, nil), silent},
 		"a create with egress unknown":    {value(nil, unknown, nil), null, value(nil, unknown, nil), silent},
-		"a tainted replacement with none": {value(empty, empty, nil), null, value(empty, empty, nil), warned},
+		"a tainted replacement with none": {value(empty, empty, nil), null, value(empty, empty, nil), refused},
 		"a change to a group with none":   {value(empty, empty, renamed), value(empty, empty, nil), value(empty, empty, renamed), refused},
 		"a change that empties the rules": {value(empty, empty, nil), value(empty, oneRule, nil), value(empty, empty, nil), refused},
 		"a change to a group with a rule": {value(empty, oneRule, renamed), value(empty, oneRule, nil), value(empty, oneRule, renamed), silent},
@@ -107,19 +107,8 @@ func TestSecurityGroupNeedsARuleOnCreateOrChange(t *testing.T) {
 				State:  tfsdk.State{Raw: tt.state, Schema: s.Schema},
 				Plan:   tfsdk.Plan{Raw: tt.plan, Schema: s.Schema},
 			}
-			r := &securityGroupResource{}
-			if name == "a tainted replacement with none" {
-				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-					w.Header().Set("Content-Type", "application/json")
-					if _, err := w.Write([]byte(`{"id":"g","rules":{"ingress":[],"egress":[]}}`)); err != nil {
-						t.Error(err)
-					}
-				}))
-				defer server.Close()
-				r.meta = testClusterMeta(t, server.URL, time.Minute)
-			}
 			resp := resource.ModifyPlanResponse{Plan: tfsdk.Plan{Raw: tt.plan, Schema: s.Schema}}
-			planNeedsARule(context.Background(), r.meta, req, &resp)
+			planNeedsARule(context.Background(), req, &resp)
 
 			got := silent
 			for _, d := range resp.Diagnostics {
@@ -128,10 +117,14 @@ func TestSecurityGroupNeedsARuleOnCreateOrChange(t *testing.T) {
 					if d.Severity() != diag.SeverityError {
 						t.Errorf("refusal severity = %v, want error", d.Severity())
 					}
-					for _, want := range []string{"API 1.4", "HTTP 422", "API 1.3", "accepts the request"} {
+					for _, want := range []string{"API 1.4", "HTTP 422", "API 1.3", "accepts the request",
+						"Add an `ingress` or `egress` block", "`terraform destroy -refresh=false`"} {
 						if !strings.Contains(d.Detail(), want) {
 							t.Errorf("refusal detail doesn't say %q: %s", want, d.Detail())
 						}
+					}
+					if tt.state.IsNull() && !strings.Contains(d.Detail(), "API 1.4 refuses a create") {
+						t.Errorf("create-shaped plan used the wrong refusal detail: %s", d.Detail())
 					}
 					got = refused
 				case "This security group has no rules":

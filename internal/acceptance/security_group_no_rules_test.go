@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"runtime"
 	"strings"
 	"testing"
@@ -132,80 +133,68 @@ func TestAccAChangeOrReplacementOfASecurityGroupWithNoRulesIsRefused(t *testing.
 	}
 }
 
-// Tainting doesn't change configuration. A tainted replacement of a group
-// whose platform state has no rules warns at plan and refuses in Create at
-// apply. Every destroy form finishes. Through the real CLI.
-func TestReviewTaintedRulelessGroupObeysPlanAndDestroyRules(t *testing.T) {
+// Tainting changes what Terraform will do, not what the platform holds. No
+// rules in configuration make the replacement's create invalid for either id
+// form. Through the real CLI, plan refuses, destroy without refresh deletes,
+// and adding a rule lets the replacement apply.
+func TestAccTaintedRulelessGroupRefusalComesFromConfiguration(t *testing.T) {
 	t.Parallel()
 	if runtime.GOOS == "windows" {
 		skipTest(t, "the CLI sequence runs on unix")
 	}
 
-	t.Run("plan", func(t *testing.T) {
-		c, _ := taintedRulelessGroup(t, "acc-no-rules-tainted-plan")
-		out, code := c.runCode("plan", "-detailed-exitcode")
-		if code != 2 {
-			t.Fatalf("plan of an unchanged tainted group exited %d, want 2:\n%s", code, out)
-		}
-		mustSay(t, "the plan", out, "Warning: This security group has no rules",
-			"Add an `ingress` or `egress` block")
-	})
+	for _, tc := range []struct {
+		name, slug   string
+		configuredID bool
+	}{
+		{"configured id", "configured", true},
+		{"generated id", "generated", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Run("plan refused", func(t *testing.T) {
+				c, _ := taintedRulelessGroup(t, "acc-no-rules-"+tc.slug+"-tainted-plan", tc.configuredID)
+				out, code := c.runCode("plan", "-detailed-exitcode")
+				if code != 1 {
+					t.Fatalf("plan of a tainted group with no rules exited %d, want 1:\n%s", code, out)
+				}
+				mustSay(t, "the plan", out, "Error: A security group needs at least one rule",
+					"Add an `ingress` or `egress` block", "`terraform destroy -refresh=false`")
+			})
 
-	t.Run("apply", func(t *testing.T) {
-		c, _ := taintedRulelessGroup(t, "acc-no-rules-tainted-apply")
-		out, ok := c.run("plan", "-out=replacement.tfplan")
-		if !ok {
-			t.Fatalf("saving the tainted replacement plan failed:\n%s", out)
-		}
-		mustSay(t, "the saved plan", out, "Warning: This security group has no rules")
-		out, ok = c.run("apply", "replacement.tfplan")
-		if ok {
-			t.Fatalf("applying the tainted replacement passed:\n%s", out)
-		}
-		mustSay(t, "the apply", out, "Error: A security group needs at least one rule",
-			"API 1.3 accepts the request", "Add an `ingress` or `egress` block")
-	})
+			t.Run("destroy without refresh", func(t *testing.T) {
+				c, path := taintedRulelessGroup(t, "acc-no-rules-"+tc.slug+"-tainted-no-refresh", tc.configuredID)
+				out, ok := c.run("destroy", "-auto-approve", "-refresh=false")
+				if !ok {
+					t.Fatalf("terraform destroy -refresh=false failed:\n%s", out)
+				}
+				mustSay(t, "the destroy", out, "1 destroyed")
+				assertGroupDestroyed(t, c, path)
+			})
 
-	t.Run("destroy", func(t *testing.T) {
-		c, path := taintedRulelessGroup(t, "acc-no-rules-tainted-destroy")
-		out, ok := c.run("destroy", "-auto-approve")
-		if !ok {
-			t.Fatalf("destroy of an unchanged tainted group failed:\n%s", out)
-		}
-		mustSay(t, "the destroy", out, "1 destroyed")
-		assertGroupDestroyed(t, c, path)
-	})
-
-	t.Run("destroy without refresh", func(t *testing.T) {
-		c, path := taintedRulelessGroup(t, "acc-no-rules-tainted-no-refresh")
-		out, ok := c.run("destroy", "-auto-approve", "-refresh=false")
-		if !ok {
-			t.Fatalf("terraform destroy -refresh=false failed:\n%s", out)
-		}
-		mustSay(t, "the destroy", out, "1 destroyed")
-		assertGroupDestroyed(t, c, path)
-	})
-
-	t.Run("saved destroy plan", func(t *testing.T) {
-		c, path := taintedRulelessGroup(t, "acc-no-rules-tainted-saved-destroy")
-		out, ok := c.run("plan", "-destroy", "-out=destroy.tfplan")
-		if !ok {
-			t.Fatalf("saving the destroy plan failed:\n%s", out)
-		}
-		out, ok = c.run("apply", "destroy.tfplan")
-		if !ok {
-			t.Fatalf("applying the saved destroy plan failed:\n%s", out)
-		}
-		mustSay(t, "the saved destroy", out, "1 destroyed")
-		assertGroupDestroyed(t, c, path)
-	})
+			t.Run("rule allows replacement", func(t *testing.T) {
+				name := "acc-no-rules-" + tc.slug + "-tainted-replacement"
+				c, _ := taintedRulelessGroup(t, name, tc.configuredID)
+				c.write(noRulesGroupConfig(name, madeBeforeRulesRequired, oneEgressRule, tc.configuredID))
+				out, code := c.runCode("plan", "-detailed-exitcode")
+				if code != 2 {
+					t.Fatalf("plan after adding a rule exited %d, want 2:\n%s", code, out)
+				}
+				mustSay(t, "the replacement plan", out, "must be replaced",
+					"Plan: 1 to add, 0 to change, 1 to destroy.")
+				out, ok := c.run("apply", "-auto-approve")
+				if !ok {
+					t.Fatalf("replacement after adding a rule failed:\n%s", out)
+				}
+				mustSay(t, "the replacement", out, "1 added, 0 changed, 1 destroyed")
+			})
+		})
+	}
 }
 
-func taintedRulelessGroup(t *testing.T, name string) (*cliRun, string) {
+func taintedRulelessGroup(t *testing.T, name string, configuredID bool) (*cliRun, string) {
 	t.Helper()
-	path := "/v1/regions/us-texas-1/projects/demo/networking/security-groups/" + name
 	c := newCLIRun(t)
-	c.write(noRulesGroup(name, madeBeforeRulesRequired, oneEgressRule))
+	c.write(noRulesGroupConfig(name, madeBeforeRulesRequired, oneEgressRule, configuredID))
 	if out, ok := c.run("apply", "-auto-approve"); !ok {
 		t.Fatalf("the create with a rule failed:\n%s", out)
 	}
@@ -214,9 +203,22 @@ func taintedRulelessGroup(t *testing.T, name string) (*cliRun, string) {
 			t.Errorf("cleanup destroy failed:\n%s", out)
 		}
 	})
+	id := name
+	if !configuredID {
+		shown, ok := c.run("state", "show", securityGroupType+".test")
+		if !ok {
+			t.Fatalf("showing the generated id failed:\n%s", shown)
+		}
+		match := regexp.MustCompile(`(?m)^\s+id\s+=\s+"([^"]+)"`).FindStringSubmatch(shown)
+		if match == nil {
+			t.Fatalf("state has no generated id:\n%s", shown)
+		}
+		id = match[1]
+	}
+	path := "/v1/regions/us-texas-1/projects/demo/networking/security-groups/" + id
 	emptyRulesPastTerraform(t, path)
 	awaitFakeState(t, path, "active")
-	c.write(noRulesGroup(name, madeBeforeRulesRequired, ""))
+	c.write(noRulesGroupConfig(name, madeBeforeRulesRequired, "", configuredID))
 	if out, ok := c.run("taint", securityGroupType+".test"); !ok {
 		t.Fatalf("tainting the group failed:\n%s", out)
 	}
@@ -234,13 +236,20 @@ func assertGroupDestroyed(t *testing.T, c *cliRun, path string) {
 }
 
 func noRulesGroup(name, displayName, rules string) string {
+	return noRulesGroupConfig(name, displayName, rules, true)
+}
+
+func noRulesGroupConfig(name, displayName, rules string, configuredID bool) string {
+	id := ""
+	if configuredID {
+		id = fmt.Sprintf("  id           = %q\n", name)
+	}
 	return fmt.Sprintf(`
 resource %q "test" {
-  id           = %q
-  display_name = %q
+%s  display_name = %q
 %s
 }
-`, securityGroupType, name, displayName, rules)
+`, securityGroupType, id, displayName, rules)
 }
 
 // emptyRulesPastTerraform sends the fake a PATCH with both rule lists empty.

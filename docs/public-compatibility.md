@@ -111,12 +111,10 @@ it.
   list is enough.
 - To stop using it, remove it from what it's bound to, then remove its
   resource block and apply, which deletes it.
-- With a configured `id`, a tainted replacement of an unchanged group with no
-  rules warns at plan and fails in `Create` at apply. Plain
-  `terraform destroy`, `terraform destroy -refresh=false`, and a saved destroy
-  plan all delete it.
-- Terraform hides the old id when a generated-id group is tainted, so that
-  replacement is still refused at plan. Run `terraform destroy -refresh=false`.
+- A tainted replacement with no rules in configuration is refused at plan for
+  either a configured or generated `id`. The configuration causes the refusal
+  because it makes the replacement's create invalid. Add an `ingress` or
+  `egress` block, or run `terraform destroy -refresh=false` to delete the group.
 - If a configuration change with no rules stops the destroy's refresh plan,
   remove the block and apply, or run `terraform destroy -refresh=false`.
 
