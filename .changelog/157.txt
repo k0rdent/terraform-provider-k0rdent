@@ -1,0 +1,3 @@
+```release-note:bug
+provider: When a token request fails while other operations are waiting on it, they now share that failure instead of each sending its own request, which could run into the platform's limit of 10 token requests a minute
+```

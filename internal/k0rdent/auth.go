@@ -76,6 +76,13 @@ func NewAPIKeyCredential(apiKey string, narrowing *ScopeNarrowing) Credential {
 	})
 }
 
+// tokenAttempt is one in-flight mint and the result shared with its waiters.
+type tokenAttempt struct {
+	ownerErr error
+	done     chan struct{}
+	err      error
+}
+
 // tokenCache holds one access token and hands it to every caller, minting at
 // most once per expiry window however many goroutines ask at once.
 //
@@ -97,15 +104,10 @@ type tokenCache struct {
 	skew  time.Duration
 	clock func() time.Time
 
-	// gate serialises minting. A channel rather than a sync.Mutex so a
-	// caller waiting behind someone else's mint still honours its context:
-	// a cancelled Terraform run should stop waiting, not block until an
-	// unrelated HTTP call returns.
-	gate chan struct{}
-
 	mu          sync.RWMutex
 	accessToken string
 	refreshAt   time.Time
+	attempt     *tokenAttempt
 }
 
 func newTokenCache(cred Credential, skew time.Duration, mint func(context.Context, MintTokenJSONBody) (*TokenResponse, error)) *tokenCache {
@@ -114,38 +116,84 @@ func newTokenCache(cred Credential, skew time.Duration, mint func(context.Contex
 		cred:  cred,
 		skew:  skew,
 		clock: time.Now,
-		gate:  make(chan struct{}, 1),
 	}
 }
 
-// token returns a cached access token, minting one if none is usable.
+// get returns a cached access token, minting one if none is usable. Callers
+// waiting on the same attempt share its result. A live waiter retries only when
+// that attempt's owner context has ended.
 func (c *tokenCache) get(ctx context.Context) (string, error) {
-	if tok, ok := c.cached(); ok {
-		return tok, nil
-	}
+	for {
+		if tok, ok := c.cached(); ok {
+			return tok, nil
+		}
 
-	select {
-	case c.gate <- struct{}{}:
-		defer func() { <-c.gate }()
-	case <-ctx.Done():
-		return "", ctx.Err()
-	}
+		c.mu.Lock()
+		if c.accessToken != "" && c.clock().Before(c.refreshAt) {
+			tok := c.accessToken
+			c.mu.Unlock()
+			return tok, nil
+		}
+		if attempt := c.attempt; attempt != nil {
+			c.mu.Unlock()
+			select {
+			case <-attempt.done:
+				if err := ctx.Err(); err != nil {
+					return "", err
+				}
+				if attempt.ownerErr != nil {
+					continue
+				}
+				if attempt.err != nil {
+					return "", attempt.err
+				}
+				continue
+			case <-ctx.Done():
+				return "", ctx.Err()
+			}
+		}
+		attempt := &tokenAttempt{done: make(chan struct{})}
+		c.attempt = attempt
+		c.mu.Unlock()
 
-	// Someone else may have minted while this call waited for the gate.
-	if tok, ok := c.cached(); ok {
-		return tok, nil
-	}
+		var token string
+		var refreshAt time.Time
+		var err error
+		defer func() {
+			recovered := recover()
+			c.mu.Lock()
+			if recovered != nil {
+				err = fmt.Errorf("%w: mint panicked: %v", ErrTokenMint, recovered)
+			} else if err == nil {
+				c.accessToken = token
+				c.refreshAt = refreshAt
+			}
+			attempt.err = err
+			attempt.ownerErr = ctx.Err()
+			c.attempt = nil
+			close(attempt.done)
+			c.mu.Unlock()
+			if recovered != nil {
+				panic(recovered)
+			}
+		}()
 
+		token, refreshAt, err = c.mintFresh(ctx)
+		return token, err
+	}
+}
+
+func (c *tokenCache) mintFresh(ctx context.Context) (string, time.Time, error) {
 	body, err := c.cred.Grant()
 	if err != nil {
-		return "", fmt.Errorf("%w: build token grant: %w", ErrTokenMint, err)
+		return "", time.Time{}, fmt.Errorf("%w: build token grant: %w", ErrTokenMint, err)
 	}
 	resp, err := c.mint(ctx, body)
 	if err != nil {
-		return "", fmt.Errorf("%w: %w", ErrTokenMint, err)
+		return "", time.Time{}, fmt.Errorf("%w: %w", ErrTokenMint, err)
 	}
 	if resp.AccessToken == "" {
-		return "", fmt.Errorf("%w: token endpoint returned no access_token", ErrTokenMint)
+		return "", time.Time{}, fmt.Errorf("%w: token endpoint returned no access_token", ErrTokenMint)
 	}
 
 	// Read expires_in rather than assuming 900: it is stamped on the
@@ -153,18 +201,12 @@ func (c *tokenCache) get(ctx context.Context) (string, error) {
 	// The contract requires it and calls it the lifetime in seconds, so zero
 	// or less is either a dead token or a missing field decoded as 0.
 	if resp.ExpiresIn <= 0 {
-		return "", fmt.Errorf("%w: token endpoint returned expires_in %d, want a positive lifetime in seconds",
+		return "", time.Time{}, fmt.Errorf("%w: token endpoint returned expires_in %d, want a positive lifetime in seconds",
 			ErrTokenMint, resp.ExpiresIn)
 	}
 	lifetime := time.Duration(resp.ExpiresIn) * time.Second
 	skew := min(c.skew, lifetime/2)
-
-	c.mu.Lock()
-	c.accessToken = resp.AccessToken
-	c.refreshAt = c.clock().Add(lifetime - skew)
-	c.mu.Unlock()
-
-	return resp.AccessToken, nil
+	return resp.AccessToken, c.clock().Add(lifetime - skew), nil
 }
 
 func (c *tokenCache) cached() (string, bool) {
