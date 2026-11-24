@@ -137,11 +137,14 @@ func TestReviewGrantWaitIgnoresDeletedStore(t *testing.T) {
 }
 
 func TestReviewGrantWaitTimeoutNamesStore(t *testing.T) {
-	server, _ := grantWaitServer(t, 2,
+	server, reads := grantWaitServer(t, 2,
 		grantWaitResponse{body: reviewGrantStore("creating", "", "10.80.11.1")})
-	err := reviewGrantWait(t, server, 60*time.Millisecond)
+	err := reviewGrantWait(t, server, time.Second)
 	if err == nil {
 		t.Fatal("wait succeeded, want a timeout")
+	}
+	if reads.Load() == 0 {
+		t.Fatal("the wait timed out before reading the store")
 	}
 	for _, want := range []string{"fs1", "g1", "Read file store"} {
 		if !strings.Contains(err.Error(), want) {

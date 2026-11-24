@@ -306,6 +306,32 @@ func TestInstanceGroupStateFromSurvivesAnAllNilGroup(t *testing.T) {
 	}
 }
 
+func TestInstanceGroupStateFromDefaultsFileStoreGrantWait(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name  string
+		prior types.Bool
+		want  types.Bool
+	}{
+		{name: "null", prior: types.BoolNull(), want: types.BoolValue(false)},
+		{name: "unknown", prior: types.BoolUnknown(), want: types.BoolValue(false)},
+		{name: "enabled", prior: types.BoolValue(true), want: types.BoolValue(true)},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got, diags := instanceGroupStateFrom(context.Background(),
+				k0rdent.InstanceGroup{Id: "hosts", ClusterType: testHeadRef},
+				instanceGroupModel{WaitForFileStoreGrants: test.prior})
+			if diags.HasError() {
+				t.Fatalf("mapping produced errors: %v", diags.Errors())
+			}
+			if !got.WaitForFileStoreGrants.Equal(test.want) {
+				t.Errorf("wait_for_file_store_grants = %v, want %v", got.WaitForFileStoreGrants, test.want)
+			}
+		})
+	}
+}
+
 // waitFor is the only place in the provider that loops, and D4 puts it here
 // rather than in the client. Three properties are worth pinning: it probes
 // before sleeping, it stops on the first error, and a timeout says the operation

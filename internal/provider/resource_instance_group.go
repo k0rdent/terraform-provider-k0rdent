@@ -1130,6 +1130,11 @@ func instanceGroupStateFrom(ctx context.Context, g k0rdent.InstanceGroup, prior 
 	var diags diag.Diagnostics
 
 	md := prior.metadata().read(metadataAnswer{DisplayName: g.DisplayName, Description: g.Description})
+	waitForGrants := prior.WaitForFileStoreGrants
+	if waitForGrants.IsNull() || waitForGrants.IsUnknown() {
+		waitForGrants = types.BoolValue(false)
+	}
+
 	out := instanceGroupModel{
 
 		ID:                     types.StringValue(g.Id),
@@ -1141,7 +1146,7 @@ func instanceGroupStateFrom(ctx context.Context, g k0rdent.InstanceGroup, prior 
 		SelfLink:               stringOrNull(g.SelfLink),
 		UID:                    uidValue(g.Uid),
 		ClusterTypeResolved:    types.StringValue(g.ClusterType),
-		WaitForFileStoreGrants: prior.WaitForFileStoreGrants,
+		WaitForFileStoreGrants: waitForGrants,
 		State:                  types.StringNull(),
 		// Write-only: never held in state.
 		SSHPublicKeysWO: types.MapNull(types.ListType{ElemType: types.StringType}),
@@ -1225,7 +1230,6 @@ func (r *instanceGroupResource) waitForConsumerGrants(ctx context.Context, targe
 	pendingStore, pendingState := "", ""
 	err = waitFor(ctx, r.meta.Wait, "the instance group's file-store grants to settle",
 		func(ctx context.Context) (bool, error) {
-			pendingStore, pendingState = "", ""
 			var diags diag.Diagnostics
 			stores, ok := listFileStores(ctx, r.meta, target, &diags)
 			if !ok {

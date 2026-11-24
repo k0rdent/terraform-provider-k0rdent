@@ -52,9 +52,10 @@ plan says `# forced replacement`, but not why.
 
 After a group grows, its file-store grants settle on the platform's own repair
 timer. That can take up to the platform's drift interval, 5 minutes by default.
-A plan in that window shows the grant settling if the configuration reads its
-status. Set `wait_for_file_store_grants = true` on the instance group to make
-the apply wait for the grants.
+By default, the apply waits only for the group's scale. A plan before the repair
+shows the grant settling if the configuration reads its status. Set
+`wait_for_file_store_grants = true` on the instance group to make the apply wait
+for the grants.
 
 ### 7. A file store's capacity isn't a hard limit
 

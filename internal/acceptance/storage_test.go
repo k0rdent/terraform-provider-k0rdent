@@ -536,7 +536,7 @@ func TestAccFileStoreRepairedGroupPlansNothing(t *testing.T) {
 		ProtoV6ProviderFactories: protoV6,
 		CheckDestroy:             checkGone(fileStoreType, fileStorePath),
 		Steps: []resource.TestStep{
-			{Config: groupStoreConfigWithWait("acc-repaired", group, 2, true, "")},
+			{Config: groupStoreConfig("acc-repaired", group, 2)},
 			{Config: groupStoreConfigWithWait("acc-repaired", group, 3, true, "")},
 			{
 				Config: groupStoreConfigWithWait("acc-repaired", group, 3, true, ""),
