@@ -156,8 +156,10 @@ Set the configuration back to what's applied, or run
 `terraform destroy -refresh=false`, which destroys from state as it is.
 
 A changed `cluster_type` that isn't a valid ClusterType reference also refuses
-the plan. Its only way out is restoring a valid reference.
-`terraform destroy -refresh=false` doesn't bypass configuration validation.
+the plan. Restore a valid reference or remove the resource block before running
+`terraform destroy -refresh=false`, which doesn't bypass configuration
+validation. `terraform state rm` also removes the cluster from state, but
+leaves it running on the platform.
 
 A cluster's `cluster_type` version change is made in place, so its refusal
 waits for the apply and doesn't stop a destroy.
