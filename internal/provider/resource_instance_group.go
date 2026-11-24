@@ -381,11 +381,7 @@ func (r *instanceGroupResource) planAddedPools(ctx context.Context, req resource
 	for _, id := range added {
 		current, ok := held[id]
 		if !ok {
-			resp.Diagnostics.AddAttributeError(path.Root("node_pool").AtMapKey(id),
-				fmt.Sprintf("Instance group %q has no pool %q", state.ID.ValueString(), id),
-				fmt.Sprintf("The platform reports the pools %s on this group, so it has nothing to scale "+
-					"under this id. Pool ids come from the bound ClusterType version. Fix the id in "+
-					"`node_pool`, or remove it.", quoteEach(sortedKeys(held))))
+			addNoPoolError(&resp.Diagnostics, state.ID.ValueString(), id, held)
 			continue
 		}
 		if size, known := poolSize(planned.Elements()[id]); known && size < current {
@@ -393,6 +389,14 @@ func (r *instanceGroupResource) planAddedPools(ctx context.Context, req resource
 			return
 		}
 	}
+}
+
+func addNoPoolError(diags *diag.Diagnostics, group, pool string, held map[string]int64) {
+	diags.AddAttributeError(path.Root("node_pool").AtMapKey(pool),
+		fmt.Sprintf("Instance group %q has no pool %q", group, pool),
+		fmt.Sprintf("The platform reports the pools %s on this group, so it has nothing to scale "+
+			"under this id. Pool ids come from the bound ClusterType version. Fix the id in "+
+			"`node_pool`, or remove it.", quoteEach(sortedKeys(held))))
 }
 
 func quoteEach(ids []string) string {
@@ -729,7 +733,11 @@ func (r *instanceGroupResource) scaleUp(ctx context.Context, target clusterTarge
 			return false, diags
 		}
 		for _, poolID := range added {
-			current := held[poolID]
+			current, ok := held[poolID]
+			if !ok {
+				addNoPoolError(&diags, id, poolID, held)
+				return false, diags
+			}
 			if want[poolID] < current {
 				diags.AddAttributeError(path.Root("node_pool").AtMapKey(poolID),
 					fmt.Sprintf("Pool %q holds more hosts than configured", poolID),

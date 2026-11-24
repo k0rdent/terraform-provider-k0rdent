@@ -1445,13 +1445,27 @@ func (r *fileStoreResource) detachConsumers(ctx context.Context, target clusterT
 	// Capacity goes in the body unchanged because the contract requires at
 	// least one updatable field and an etag-only body is a 400. No etag: on the
 	// way to a delete there is nothing left to protect, and a stale one would
-	// only turn an approved destroy into a 409.
-	detached, err := r.meta.Client.UpdateFileStoreWithResponse(ctx, target.region, target.project, id,
-		k0rdent.FileStoreUpdateRequest{
-			CapacityGiB: &capacity,
-			Consumers:   &[]k0rdent.Consumer{},
-		})
+	// only turn an approved destroy into a 409. It's refused for the same
+	// causes as an update, so it's sent again the same way (see sendUpdate).
+	busy := newBusyRetry("updateFileStore", r.meta.Wait, dependsOn(fmt.Sprintf("the file store %q", id),
+		r.reader(target, id), fileStoreStates.state, string(k0rdent.FileStoreStateCreating)))
+	var detached *k0rdent.UpdateFileStoreResponse
+	var err error
+	waitErr := busy.sendUntilSettled(ctx, func(ctx context.Context) (*http.Response, []byte, error) {
+		detached, err = r.meta.Client.UpdateFileStoreWithResponse(ctx, target.region, target.project, id,
+			k0rdent.FileStoreUpdateRequest{
+				CapacityGiB: &capacity,
+				Consumers:   &[]k0rdent.Consumer{},
+			})
+		if err != nil {
+			return nil, nil, err
+		}
+		return detached.HTTPResponse, detached.Body, nil
+	})
 	switch {
+	case waitErr != nil:
+		busy.report(diags, "detach the file store's consumers before deleting it", detached.HTTPResponse, detached.Body, waitErr)
+		return false
 	case err != nil:
 		addAPIError(diags, "detach the file store's consumers before deleting it", nil, nil, err)
 		return false

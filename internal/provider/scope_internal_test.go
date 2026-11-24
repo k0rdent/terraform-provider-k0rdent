@@ -7,6 +7,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-go/tftypes"
@@ -165,58 +166,41 @@ func TestScopeModifierResolvesAndReplaces(t *testing.T) {
 	}
 }
 
-// An import that names a scope the provider is not configured for survives only
-// if the resource block repeats it. Silence here is a destroyed cluster on the
-// next plan.
-func TestImportingIntoAnotherScopeWarns(t *testing.T) {
+// An import records the scope it names, or the provider's for the bare id
+// form, and says nothing. It can't see the resource block, so it can't tell
+// whether the block sets the scope. The plan can, and warns when it doesn't
+// (TestAPlanThatMovesAnImportSaysToRepeatTheScope).
+func TestAnImportRecordsItsScopeWithoutAWarning(t *testing.T) {
 	t.Parallel()
 
 	meta := &Meta{Region: "us-texas-1", Project: "cp-production"}
 
 	for _, tc := range []struct {
-		name            string
-		region, project string
-		wantWarning     bool
-		wantContains    []string
+		name                    string
+		region, project         string
+		wantRegion, wantProject string
 	}{
-		{name: "the provider's own scope needs nothing", region: "us-texas-1", project: "cp-production"},
-		{name: "the bare id form needs nothing"},
-		{
-			name:         "another region",
-			region:       "eu-west-1",
-			project:      "cp-production",
-			wantWarning:  true,
-			wantContains: []string{`region  = "eu-west-1"`},
-		},
-		{
-			name:         "another region and project",
-			region:       "eu-west-1",
-			project:      "cp-example",
-			wantWarning:  true,
-			wantContains: []string{`region  = "eu-west-1"`, `project = "cp-example"`},
-		},
+		{name: "the provider's own scope", region: "us-texas-1", project: "cp-production",
+			wantRegion: "us-texas-1", wantProject: "cp-production"},
+		{name: "the bare id form", wantRegion: "us-texas-1", wantProject: "cp-production"},
+		{name: "another region and project", region: "eu-west-1", project: "cp-example",
+			wantRegion: "eu-west-1", wantProject: "cp-example"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			// Driven through setImportedScope, not the helper, so deleting the
-			// call fails this test rather than leaving it green.
 			var diags diag.Diagnostics
 			state := testClusterState(t, "my-cluster", "")
 			setImportedScope(context.Background(), meta, tc.region, tc.project, &state, &diags)
+			if len(diags) != 0 {
+				t.Fatalf("the import said %v, want nothing", diags)
+			}
+			var region, project types.String
+			diags.Append(state.GetAttribute(context.Background(), path.Root("region"), &region)...)
+			diags.Append(state.GetAttribute(context.Background(), path.Root("project"), &project)...)
 			if diags.HasError() {
-				t.Fatalf("import produced errors: %v", diags.Errors())
+				t.Fatal(diags)
 			}
-
-			if got := diags.WarningsCount(); (got > 0) != tc.wantWarning {
-				t.Fatalf("warnings = %d, want warning: %v", got, tc.wantWarning)
-			}
-			if !tc.wantWarning {
-				return
-			}
-			detail := diags.Warnings()[0].Detail()
-			for _, want := range tc.wantContains {
-				if !strings.Contains(detail, want) {
-					t.Errorf("warning does not tell the user to add %s:\n%s", want, detail)
-				}
+			if region.ValueString() != tc.wantRegion || project.ValueString() != tc.wantProject {
+				t.Errorf("state holds %v/%v, want %s/%s", region, project, tc.wantRegion, tc.wantProject)
 			}
 		})
 	}

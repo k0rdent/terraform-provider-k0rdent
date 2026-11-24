@@ -52,6 +52,11 @@ const consumerUngrantableMarker = "fake-ungrantable"
 // staying `active`, which the contract says a waiter must treat as terminal.
 const expansionFailsMarker = "fake-expansion-fails"
 
+// A store whose display name carries this refuses its first update with the
+// CONFLICT_IN_USE the contract gives while a capacity change is still settling
+// its quota accounting, and takes the same update sent again.
+const updateSettlingMarker = "fake-update-settling"
+
 // storageError writes the same envelope as apiError with the failure class in
 // `details[].reason` rather than at the top level. Every 409 and 422 the storage
 // operations document puts it there, the client reads both places, and a fake
@@ -209,6 +214,8 @@ type fakeFileStore struct {
 	// refusedBusy says an update was refused while the store was `creating`.
 	// See busyUntilRefused.
 	refusedBusy bool
+	// refusedSettling says an update was refused for updateSettlingMarker.
+	refusedSettling bool
 }
 
 // advanceFileStore moves a store a step through its transient state, as
@@ -473,6 +480,12 @@ func (s *state) updateFileStore(w http.ResponseWriter, r *http.Request) {
 		fs.refusedBusy = fs.refusedBusy || fs.state == "creating"
 		storageError(w, http.StatusConflict, "CONFLICT_IN_USE",
 			"the store is "+fs.state+" and does not accept updates")
+		return
+	}
+	if nameCarries(fs.displayName, updateSettlingMarker) && !fs.refusedSettling {
+		fs.refusedSettling = true
+		storageError(w, http.StatusConflict, "CONFLICT_IN_USE",
+			"a previous capacity change is still settling its quota accounting; retry shortly")
 		return
 	}
 	// The etag rides in the body, not in an If-Match header. Modelled as the
