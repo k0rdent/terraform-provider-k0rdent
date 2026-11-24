@@ -364,6 +364,23 @@ func freeformTags(strs *map[string]string) *map[string]any {
 	return &out
 }
 
+// freeformTagsWithCurrent carries values the string schema can't represent
+// through a replacement-style PATCH. Configured strings win a key collision.
+func freeformTagsWithCurrent(strs *map[string]string, current map[string]any) *map[string]any {
+	if strs == nil {
+		return nil
+	}
+	unreadable := tagAnswerOfRequired(current).unreadable
+	out := make(map[string]any, len(*strs)+len(unreadable))
+	for k, v := range unreadable {
+		out[k] = v
+	}
+	for k, s := range *strs {
+		out[k] = s
+	}
+	return &out
+}
+
 // presentMap is a collection v1.3.0-dev.4 requires on every read, as the
 // pointer the readers here were written for. Before dev.4 the contract let
 // the platform leave tags out, and a reader took the nil that left as null,

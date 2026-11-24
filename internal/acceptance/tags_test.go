@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
@@ -83,6 +84,33 @@ func checkPlatformTags(addr string, pathOf func(map[string]string) string, want 
 	}
 }
 
+func checkPlatformTagValues(addr string, pathOf func(map[string]string) string, want map[string]any) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		rs, ok := s.RootModule().Resources[addr]
+		if !ok {
+			return fmt.Errorf("%s is not in state", addr)
+		}
+		code, body, err := readFake(pathOf(rs.Primary.Attributes))
+		if err != nil {
+			return err
+		}
+		if code != http.StatusOK {
+			return fmt.Errorf("reading %s from the fake answered %d", addr, code)
+		}
+		var got struct {
+			Tags map[string]any `json:"tags"`
+		}
+		if err := json.Unmarshal(body, &got); err != nil {
+			return err
+		}
+		delete(got.Tags, createTokenKey)
+		if !reflect.DeepEqual(got.Tags, want) {
+			return fmt.Errorf("%s: the platform holds %#v, want %#v", addr, got.Tags, want)
+		}
+		return nil
+	}
+}
+
 // patchFake sends a PATCH the provider didn't, as another client would.
 func patchFake(path, body string) error {
 	token, err := mintFakeToken()
@@ -117,6 +145,39 @@ func patchFake(path, body string) error {
 // default planning nothing afterwards (AWS's perpetual-diff pitfall). The
 // testing framework plans again after every apply and fails on any change, so
 // each step also proves its own result is stable.
+func TestAccReviewSecurityGroupNonStringTagSurvivesTagsApply(t *testing.T) {
+	t.Parallel()
+	const name = "acc-review-non-string-tag"
+	path := "/v1/regions/us-texas-1/projects/demo/networking/security-groups/" + name
+	base := securityGroupConfig(name, false)
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: protoV6,
+		CheckDestroy:             checkGone(securityGroupType, securityGroupPath),
+		Steps: []resource.TestStep{
+			{Config: base},
+			{
+				PreConfig: func() {
+					if err := patchFake(path, `{"tags":{"team":"ml","number":7,"object":{"keep":true}}}`); err != nil {
+						t.Fatal(err)
+					}
+				},
+				Config:   base,
+				PlanOnly: true,
+				Check: checkPlatformTagValues(securityGroupAddr, securityGroupPath, map[string]any{
+					"team": "ml", "number": float64(7), "object": map[string]any{"keep": true},
+				}),
+			},
+			{
+				Config: strings.Replace(base, `team = "ml"`, `team = "platform"`, 1),
+				Check: checkPlatformTagValues(securityGroupAddr, securityGroupPath, map[string]any{
+					"team": "platform", "number": float64(7), "object": map[string]any{"keep": true},
+				}),
+			},
+		},
+	})
+}
+
 func TestAccDefaultTags(t *testing.T) {
 	t.Parallel()
 	const name = "acc-default-tags"

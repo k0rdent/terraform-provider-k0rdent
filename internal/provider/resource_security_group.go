@@ -542,6 +542,18 @@ func (r *securityGroupResource) Update(ctx context.Context, req resource.UpdateR
 // waits for it to be applied. It reports whether that worked.
 func (r *securityGroupResource) sendUpdate(ctx context.Context, target clusterTarget, id string, md metadataFields,
 	rules k0rdent.SecurityGroupRules, diags *diag.Diagnostics) bool {
+	current, readErr := r.meta.Client.GetSecurityGroupWithResponse(ctx, target.region, target.project, id)
+	if readErr != nil || current.JSON200 == nil {
+		var respBody []byte
+		var httpResp *http.Response
+		if current != nil {
+			respBody, httpResp = current.Body, current.HTTPResponse
+		}
+		addAPIError(diags, "read the security group before updating it", httpResp, respBody, readErr)
+		return false
+	}
+	tags := freeformTagsWithCurrent(md.Tags, current.JSON200.Tags)
+
 	// A group still applying an earlier change refuses this one, which a run
 	// whose wait timed out leaves behind. The PATCH carries the whole desired
 	// state, so sending it again once the group settles asks for the same.
@@ -555,7 +567,7 @@ func (r *securityGroupResource) sendUpdate(ctx context.Context, target clusterTa
 			k0rdent.SecurityGroupUpdateRequest{
 				DisplayName: md.DisplayName,
 				Description: md.Description,
-				Tags:        freeformTags(md.Tags),
+				Tags:        tags,
 				Rules:       &rules,
 			})
 		if err != nil {

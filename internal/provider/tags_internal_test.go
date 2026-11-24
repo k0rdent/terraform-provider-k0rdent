@@ -2,13 +2,17 @@ package provider
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	fwprovider "github.com/hashicorp/terraform-plugin-framework/provider"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -746,6 +750,57 @@ func ingressValue(t *testing.T, s resource.SchemaResponse) tftypes.Value {
 		values[name] = str(v)
 	}
 	return tftypes.NewValue(list, []tftypes.Value{tftypes.NewValue(rule, values)})
+}
+
+func TestFreeformTagsWithCurrentKeepsUnreadableValues(t *testing.T) {
+	configured := map[string]string{"team": "platform"}
+	current := map[string]any{
+		"team": "external", "number": float64(7), "object": map[string]any{"keep": true},
+		createTokenTag(): float64(99),
+	}
+	want := map[string]any{
+		"team": "platform", "number": float64(7), "object": map[string]any{"keep": true},
+	}
+	if got := freeformTagsWithCurrent(&configured, current); !reflect.DeepEqual(got, &want) {
+		t.Errorf("tags = %#v, want %#v", got, &want)
+	}
+	if got := freeformTagsWithCurrent(nil, current); got != nil {
+		t.Errorf("an omitted tags field became %#v, want nil", got)
+	}
+}
+
+func TestSecurityGroupUpdateReadFailureDoesNotPatch(t *testing.T) {
+	for _, transportFailure := range []bool{false, true} {
+		var patches atomic.Int64
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodPatch {
+				patches.Add(1)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			if _, err := w.Write([]byte(`{"error":{"code":500,"message":"read failed"}}`)); err != nil {
+				t.Errorf("write the fake read failure: %v", err)
+			}
+		}))
+		if transportFailure {
+			server.Close()
+		} else {
+			t.Cleanup(server.Close)
+		}
+
+		r := securityGroupResource{meta: testClusterMeta(t, server.URL, time.Second)}
+		var diags diag.Diagnostics
+		if r.sendUpdate(context.Background(), clusterTarget{region: "r", project: "p"}, "g",
+			metadataFields{}, k0rdent.SecurityGroupRules{}, &diags) {
+			t.Error("update succeeded after its read failed")
+		}
+		if !diags.HasError() || diags.Errors()[0].Summary() != "Could not read the security group before updating it" {
+			t.Errorf("diagnostics = %v, want the read failure", diags)
+		}
+		if got := patches.Load(); got != 0 {
+			t.Errorf("PATCH requests = %d after the read failed, want none", got)
+		}
+	}
 }
 
 // Every shape the contract answers tags in, read every way the provider
