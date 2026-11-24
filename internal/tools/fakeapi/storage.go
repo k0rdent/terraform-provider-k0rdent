@@ -785,10 +785,9 @@ func (o *objects) sweepGroupGrants(fs *fakeFileStore) {
 	}
 	for _, cs := range fs.statuses {
 		group, ok := o.groups[at{id: cs.ref}]
-		if !ok || cs.state != "active" || cs.narrowed || time.Now().Before(cs.repairAfter) {
+		if !ok || cs.state != "active" || cs.narrowed {
 			continue
 		}
-		cs.repairAfter = time.Time{}
 		members := 0
 		for _, size := range group.pools {
 			members += int(size)
@@ -821,6 +820,10 @@ func (o *objects) sweepGroupGrants(fs *fakeFileStore) {
 			cs.state, cs.target, cs.reason, cs.reads = "failed", "failed", "GROUP_MEMBERSHIP_DRIFTED", 0
 			continue
 		}
+		if time.Now().Before(cs.repairAfter) {
+			continue
+		}
+		cs.repairAfter = time.Time{}
 		// Repaired on the platform's own initiative: `creating` with no reason
 		// while it is under way.
 		octet := len(cs.ref)%200 + 10
