@@ -204,6 +204,463 @@ func TestTokenCache_ConcurrentCallersMintOnce(t *testing.T) {
 	}
 }
 
+func TestTokenCache_ConcurrentCallersShareAFailedMint(t *testing.T) {
+	var mints atomic.Int64
+	firstStarted := make(chan struct{})
+	releaseFirst := make(chan struct{})
+	mintErr := errors.New("rate limited")
+	var failing atomic.Bool
+	failing.Store(true)
+	cache := newTokenCache(
+		NewServiceAccountCredential("id", "secret", nil), DefaultRefreshSkew,
+		func(context.Context, MintTokenJSONBody) (*TokenResponse, error) {
+			if mints.Add(1) == 1 {
+				close(firstStarted)
+				<-releaseFirst
+			}
+			if failing.Load() {
+				return nil, mintErr
+			}
+			return &TokenResponse{AccessToken: "fresh-token", ExpiresIn: 900}, nil
+		})
+
+	ownerResult := make(chan error, 1)
+	go func() {
+		_, err := cache.get(context.Background())
+		ownerResult <- err
+	}()
+	<-firstStarted
+
+	waiterJoined := make(chan struct{}, 2)
+	waiterResults := make(chan error, 2)
+	for range 2 {
+		waiterCtx := &observedContext{Context: context.Background(), doneCalled: waiterJoined}
+		go func() {
+			_, err := cache.get(waiterCtx)
+			waiterResults <- err
+		}()
+	}
+	for range 2 {
+		awaitWaiterSelect(t, waiterJoined)
+	}
+	close(releaseFirst)
+
+	if err := <-ownerResult; !errors.Is(err, mintErr) {
+		t.Errorf("owner error = %v, want %v", err, mintErr)
+	}
+	for range 2 {
+		if err := <-waiterResults; !errors.Is(err, mintErr) {
+			t.Errorf("waiter error = %v, want the shared %v", err, mintErr)
+		}
+	}
+	if got := mints.Load(); got != 1 {
+		t.Errorf("mints = %d, want 1 shared failure", got)
+	}
+
+	failing.Store(false)
+	token, err := cache.get(context.Background())
+	if err != nil || token != "fresh-token" {
+		t.Errorf("next get = %q, %v, want a fresh successful mint", token, err)
+	}
+	if got := mints.Load(); got != 2 {
+		t.Errorf("mints = %d after the next call, want 2", got)
+	}
+}
+
+type tokenResult struct {
+	token string
+	err   error
+}
+
+func TestTokenCache_MintPanicReleasesWaiters(t *testing.T) {
+	var mints atomic.Int64
+	firstStarted := make(chan struct{})
+	releaseFirst := make(chan struct{})
+	cache := newTokenCache(
+		NewServiceAccountCredential("id", "secret", nil), DefaultRefreshSkew,
+		func(context.Context, MintTokenJSONBody) (*TokenResponse, error) {
+			if mints.Add(1) == 1 {
+				close(firstStarted)
+				<-releaseFirst
+				panic("mint exploded")
+			}
+			return &TokenResponse{AccessToken: "fresh-token", ExpiresIn: 900}, nil
+		})
+
+	ownerPanic := make(chan any, 1)
+	go func() {
+		defer func() { ownerPanic <- recover() }()
+		_, _ = cache.get(context.Background())
+	}()
+	<-firstStarted
+
+	waiterCtx := &pausedContext{
+		Context:     context.Background(),
+		done:        make(chan struct{}),
+		doneCalled:  make(chan struct{}),
+		releaseDone: make(chan struct{}),
+	}
+	waiterResult := make(chan tokenResult, 1)
+	go func() {
+		token, err := cache.get(waiterCtx)
+		waiterResult <- tokenResult{token: token, err: err}
+	}()
+	<-waiterCtx.doneCalled
+	close(releaseFirst)
+	close(waiterCtx.releaseDone)
+
+	select {
+	case got := <-ownerPanic:
+		if got != "mint exploded" {
+			t.Errorf("recovered panic = %v, want mint exploded", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("owner did not re-panic")
+	}
+	select {
+	case got := <-waiterResult:
+		if !errors.Is(got.err, ErrTokenMint) {
+			t.Errorf("waiter get = %q, %v, want an ErrTokenMint for the panic", got.token, got.err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("waiter remained blocked after the attempt owner panicked")
+	}
+
+	token, err := cache.get(context.Background())
+	if err != nil || token != "fresh-token" {
+		t.Errorf("get after panic = %q, %v, want a fresh successful mint", token, err)
+	}
+	if got := mints.Load(); got != 2 {
+		t.Errorf("mints = %d after recovery, want 2", got)
+	}
+}
+
+func TestTokenCache_LateOwnerCancellationKeepsSharedFailure(t *testing.T) {
+	var mints atomic.Int64
+	firstStarted := make(chan struct{})
+	releaseFirst := make(chan struct{})
+	mintErr := errors.New("rate limited")
+	cache := newTokenCache(
+		NewServiceAccountCredential("id", "secret", nil), DefaultRefreshSkew,
+		func(context.Context, MintTokenJSONBody) (*TokenResponse, error) {
+			if mints.Add(1) == 1 {
+				close(firstStarted)
+				<-releaseFirst
+				return nil, mintErr
+			}
+			return &TokenResponse{AccessToken: "token-2", ExpiresIn: 900}, nil
+		})
+
+	ownerCtx, cancelOwner := context.WithCancel(context.Background())
+	ownerResult := make(chan error, 1)
+	go func() {
+		_, err := cache.get(ownerCtx)
+		ownerResult <- err
+	}()
+	<-firstStarted
+
+	waiterCtx := &pausedContext{
+		Context:     context.Background(),
+		done:        make(chan struct{}),
+		doneCalled:  make(chan struct{}),
+		releaseDone: make(chan struct{}),
+	}
+	waiterResult := make(chan tokenResult, 1)
+	go func() {
+		token, err := cache.get(waiterCtx)
+		waiterResult <- tokenResult{token: token, err: err}
+	}()
+	<-waiterCtx.doneCalled
+	close(releaseFirst)
+	if err := <-ownerResult; !errors.Is(err, mintErr) {
+		t.Fatalf("owner error = %v, want %v", err, mintErr)
+	}
+	cancelOwner()
+	close(waiterCtx.releaseDone)
+
+	got := <-waiterResult
+	if got.token != "" || !errors.Is(got.err, mintErr) {
+		t.Errorf("waiter get = %q, %v, want the completed attempt's failure", got.token, got.err)
+	}
+	if got := mints.Load(); got != 1 {
+		t.Errorf("mints = %d, want 1 completed failure", got)
+	}
+}
+
+func TestTokenCache_WaiterRefreshesAnExpiredSharedToken(t *testing.T) {
+	var mints atomic.Int64
+	now := time.Now()
+	firstStarted := make(chan struct{})
+	releaseFirst := make(chan struct{})
+	cache := newTokenCache(
+		NewServiceAccountCredential("id", "secret", nil), 20*time.Second,
+		func(context.Context, MintTokenJSONBody) (*TokenResponse, error) {
+			n := mints.Add(1)
+			if n == 1 {
+				close(firstStarted)
+				<-releaseFirst
+			}
+			return &TokenResponse{AccessToken: "token-" + string(rune('0'+n)), ExpiresIn: 40}, nil
+		})
+	cache.clock = func() time.Time { return now }
+
+	ownerResult := make(chan tokenResult, 1)
+	go func() {
+		token, err := cache.get(context.Background())
+		ownerResult <- tokenResult{token: token, err: err}
+	}()
+	<-firstStarted
+
+	waiterCtx := &pausedContext{
+		Context:     context.Background(),
+		done:        make(chan struct{}),
+		doneCalled:  make(chan struct{}),
+		releaseDone: make(chan struct{}),
+	}
+	waiterResult := make(chan tokenResult, 1)
+	go func() {
+		token, err := cache.get(waiterCtx)
+		waiterResult <- tokenResult{token: token, err: err}
+	}()
+	<-waiterCtx.doneCalled
+	close(releaseFirst)
+	if got := <-ownerResult; got.err != nil || got.token != "token-1" {
+		t.Fatalf("owner get = %q, %v, want token-1", got.token, got.err)
+	}
+	now = now.Add(21 * time.Second)
+	close(waiterCtx.releaseDone)
+
+	got := <-waiterResult
+	if got.err != nil || got.token != "token-2" {
+		t.Errorf("waiter get = %q, %v, want token-2 from a fresh mint", got.token, got.err)
+	}
+	if got := mints.Load(); got != 2 {
+		t.Errorf("mints = %d, want 2 after the first token reached refresh time", got)
+	}
+}
+
+func awaitFreshMint(t *testing.T, started <-chan struct{}) {
+	t.Helper()
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for a fresh mint")
+	}
+}
+
+func awaitWaiterSelect(t *testing.T, joined <-chan struct{}) {
+	t.Helper()
+	select {
+	case <-joined:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for a waiter to reach its select")
+	}
+}
+
+func TestTokenCache_CancelledOwnerWaitersShareFreshMint(t *testing.T) {
+	var mints atomic.Int64
+	firstStarted := make(chan struct{})
+	freshStarted := make(chan struct{})
+	releaseFresh := make(chan struct{})
+	cache := newTokenCache(
+		NewServiceAccountCredential("id", "secret", nil), DefaultRefreshSkew,
+		func(ctx context.Context, _ MintTokenJSONBody) (*TokenResponse, error) {
+			switch mints.Add(1) {
+			case 1:
+				close(firstStarted)
+				<-ctx.Done()
+				return nil, ctx.Err()
+			case 2:
+				close(freshStarted)
+				<-releaseFresh
+			}
+			return &TokenResponse{AccessToken: "fresh-token", ExpiresIn: 900}, nil
+		})
+
+	ownerCtx, cancelOwner := context.WithCancel(context.Background())
+	ownerResult := make(chan error, 1)
+	go func() {
+		_, err := cache.get(ownerCtx)
+		ownerResult <- err
+	}()
+	<-firstStarted
+
+	waiterJoined := make(chan struct{}, 1)
+	waiterResults := make(chan tokenResult, 2)
+	firstWaiterCtx := &observedContext{Context: context.Background(), doneCalled: waiterJoined}
+	go func() {
+		token, err := cache.get(firstWaiterCtx)
+		waiterResults <- tokenResult{token: token, err: err}
+	}()
+	awaitWaiterSelect(t, waiterJoined)
+	cancelOwner()
+	if err := <-ownerResult; !errors.Is(err, context.Canceled) {
+		t.Fatalf("owner error = %v, want context.Canceled", err)
+	}
+
+	awaitFreshMint(t, freshStarted)
+	secondWaiterCtx := &observedContext{Context: context.Background(), doneCalled: waiterJoined}
+	go func() {
+		token, err := cache.get(secondWaiterCtx)
+		waiterResults <- tokenResult{token: token, err: err}
+	}()
+	awaitWaiterSelect(t, waiterJoined)
+	close(releaseFresh)
+	for range 2 {
+		got := <-waiterResults
+		if got.err != nil || got.token != "fresh-token" {
+			t.Errorf("waiter get = %q, %v, want fresh-token", got.token, got.err)
+		}
+	}
+	if got := mints.Load(); got != 2 {
+		t.Errorf("mints = %d, want the cancelled attempt and one shared fresh mint", got)
+	}
+}
+
+func TestTokenCache_LiveOwnerCancellationIsShared(t *testing.T) {
+	var mints atomic.Int64
+	firstStarted := make(chan struct{})
+	freshStarted := make(chan struct{})
+	releaseFresh := make(chan struct{})
+	cache := newTokenCache(
+		NewServiceAccountCredential("id", "secret", nil), DefaultRefreshSkew,
+		func(ctx context.Context, _ MintTokenJSONBody) (*TokenResponse, error) {
+			switch mints.Add(1) {
+			case 1:
+				close(firstStarted)
+				<-ctx.Done()
+				return nil, ctx.Err()
+			case 2:
+				close(freshStarted)
+				<-releaseFresh
+			}
+			return nil, context.Canceled
+		})
+
+	ownerCtx, cancelOwner := context.WithCancel(context.Background())
+	ownerResult := make(chan error, 1)
+	go func() {
+		_, err := cache.get(ownerCtx)
+		ownerResult <- err
+	}()
+	<-firstStarted
+
+	waiterJoined := make(chan struct{}, 1)
+	waiterResults := make(chan error, 2)
+	firstWaiterCtx := &observedContext{Context: context.Background(), doneCalled: waiterJoined}
+	go func() {
+		_, err := cache.get(firstWaiterCtx)
+		waiterResults <- err
+	}()
+	awaitWaiterSelect(t, waiterJoined)
+	cancelOwner()
+	if err := <-ownerResult; !errors.Is(err, context.Canceled) {
+		t.Fatalf("owner error = %v, want context.Canceled", err)
+	}
+
+	awaitFreshMint(t, freshStarted)
+	secondWaiterCtx := &observedContext{Context: context.Background(), doneCalled: waiterJoined}
+	go func() {
+		_, err := cache.get(secondWaiterCtx)
+		waiterResults <- err
+	}()
+	awaitWaiterSelect(t, waiterJoined)
+	close(releaseFresh)
+	for range 2 {
+		if err := <-waiterResults; !errors.Is(err, context.Canceled) {
+			t.Errorf("waiter error = %v, want the shared context.Canceled", err)
+		}
+	}
+	if got := mints.Load(); got != 2 {
+		t.Errorf("mints = %d, want the cancelled attempt and one shared fresh failure", got)
+	}
+}
+
+type observedContext struct {
+	context.Context
+	doneCalled chan<- struct{}
+}
+
+func (c *observedContext) Done() <-chan struct{} {
+	c.doneCalled <- struct{}{}
+	return c.Context.Done()
+}
+
+type pausedContext struct {
+	context.Context
+	done        chan struct{}
+	doneCalled  chan struct{}
+	releaseDone chan struct{}
+}
+
+func (c *pausedContext) Done() <-chan struct{} {
+	close(c.doneCalled)
+	<-c.releaseDone
+	return c.done
+}
+
+func (c *pausedContext) Err() error {
+	select {
+	case <-c.done:
+		return context.Canceled
+	default:
+		return nil
+	}
+}
+
+func TestTokenCache_CancelledWaiterGetsItsOwnError(t *testing.T) {
+	const iterations = 100
+	leaderErr := errors.New("leader failed")
+	wrong := 0
+	for range iterations {
+		firstStarted := make(chan struct{})
+		releaseFirst := make(chan struct{})
+		var mints atomic.Int64
+		cache := newTokenCache(
+			NewServiceAccountCredential("id", "secret", nil), DefaultRefreshSkew,
+			func(context.Context, MintTokenJSONBody) (*TokenResponse, error) {
+				if mints.Add(1) == 1 {
+					close(firstStarted)
+					<-releaseFirst
+				}
+				return nil, leaderErr
+			})
+
+		ownerResult := make(chan error, 1)
+		go func() {
+			_, err := cache.get(context.Background())
+			ownerResult <- err
+		}()
+		<-firstStarted
+
+		waiterCtx := &pausedContext{
+			Context:     context.Background(),
+			done:        make(chan struct{}),
+			doneCalled:  make(chan struct{}),
+			releaseDone: make(chan struct{}),
+		}
+		waiterResult := make(chan error, 1)
+		go func() {
+			_, err := cache.get(waiterCtx)
+			waiterResult <- err
+		}()
+		<-waiterCtx.doneCalled
+		close(releaseFirst)
+		if err := <-ownerResult; !errors.Is(err, leaderErr) {
+			t.Fatalf("owner error = %v, want %v", err, leaderErr)
+		}
+		close(waiterCtx.done)
+		close(waiterCtx.releaseDone)
+
+		if err := <-waiterResult; err != context.Canceled {
+			wrong++
+		}
+	}
+	if wrong != 0 {
+		t.Errorf("%d of %d cancelled waiters received the leader's error", wrong, iterations)
+	}
+}
+
 func TestTokenCache_ReusesTokenAcrossSequentialCalls(t *testing.T) {
 	f := &fakeAPI{}
 	srv := f.server(t)
