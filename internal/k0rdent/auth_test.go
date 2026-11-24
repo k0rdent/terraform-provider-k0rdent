@@ -553,6 +553,77 @@ func TestAuthTransport_MintFailureIsErrTokenMint(t *testing.T) {
 	}
 }
 
+func TestReviewLiveWaiterDoesNotInheritLeaderCancellation(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		ctx      func() (context.Context, context.CancelFunc)
+		deadline bool
+		want     error
+	}{
+		{name: "cancelled", ctx: func() (context.Context, context.CancelFunc) {
+			return context.WithCancel(context.Background())
+		}, want: context.Canceled},
+		{name: "deadline", ctx: func() (context.Context, context.CancelFunc) {
+			return context.WithTimeout(context.Background(), 100*time.Millisecond)
+		}, deadline: true, want: context.DeadlineExceeded},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var mints atomic.Int64
+			firstStarted := make(chan struct{})
+			cache := newTokenCache(
+				NewServiceAccountCredential("id", "secret", nil), DefaultRefreshSkew,
+				func(ctx context.Context, _ MintTokenJSONBody) (*TokenResponse, error) {
+					if mints.Add(1) == 1 {
+						close(firstStarted)
+						<-ctx.Done()
+						return nil, ctx.Err()
+					}
+					return &TokenResponse{AccessToken: "fresh-token", ExpiresIn: 900}, nil
+				})
+
+			leaderCtx, stopLeader := tc.ctx()
+			defer stopLeader()
+			leaderResult := make(chan error, 1)
+			go func() {
+				_, err := cache.get(leaderCtx)
+				leaderResult <- err
+			}()
+			<-firstStarted
+
+			waiterStarted := make(chan struct{})
+			type result struct {
+				token string
+				err   error
+			}
+			waiterResult := make(chan result, 1)
+			go func() {
+				close(waiterStarted)
+				token, err := cache.get(context.Background())
+				waiterResult <- result{token: token, err: err}
+			}()
+			<-waiterStarted
+			// Let the waiter join the first attempt before its owner stops.
+			time.Sleep(20 * time.Millisecond)
+			if tc.deadline {
+				<-leaderCtx.Done()
+			} else {
+				stopLeader()
+			}
+
+			if err := <-leaderResult; !errors.Is(err, tc.want) {
+				t.Errorf("leader error = %v, want %v", err, tc.want)
+			}
+			got := <-waiterResult
+			if got.err != nil || got.token != "fresh-token" {
+				t.Errorf("live waiter got token %q, error %v, want a fresh successful mint", got.token, got.err)
+			}
+			if got := mints.Load(); got != 2 {
+				t.Errorf("mints = %d, want the cancelled attempt and one fresh attempt", got)
+			}
+		})
+	}
+}
+
 func TestAuthTransport_HonoursContextWhileWaitingForAMint(t *testing.T) {
 	cache := newTokenCache(
 		NewServiceAccountCredential("id", "secret", nil),

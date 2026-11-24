@@ -2,6 +2,7 @@ package k0rdent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -120,44 +121,51 @@ func newTokenCache(cred Credential, skew time.Duration, mint func(context.Contex
 
 // token returns a cached access token, minting one if none is usable. Every
 // caller already waiting on an attempt gets its result, including its failure.
-// The attempt is then cleared, so the next call can retry a failed mint.
+// The attempt is then cleared, so the next call can retry a failed mint. A live
+// waiter also retries when the attempt's owner cancelled that attempt.
 func (c *tokenCache) get(ctx context.Context) (string, error) {
-	if tok, ok := c.cached(); ok {
-		return tok, nil
-	}
-
-	c.mu.Lock()
-	if c.accessToken != "" && c.clock().Before(c.refreshAt) {
-		tok := c.accessToken
-		c.mu.Unlock()
-		return tok, nil
-	}
-	if attempt := c.attempt; attempt != nil {
-		c.mu.Unlock()
-		select {
-		case <-attempt.done:
-			return attempt.token, attempt.err
-		case <-ctx.Done():
-			return "", ctx.Err()
+	for {
+		if tok, ok := c.cached(); ok {
+			return tok, nil
 		}
+
+		c.mu.Lock()
+		if c.accessToken != "" && c.clock().Before(c.refreshAt) {
+			tok := c.accessToken
+			c.mu.Unlock()
+			return tok, nil
+		}
+		if attempt := c.attempt; attempt != nil {
+			c.mu.Unlock()
+			select {
+			case <-attempt.done:
+				if ctx.Err() == nil && (errors.Is(attempt.err, context.Canceled) ||
+					errors.Is(attempt.err, context.DeadlineExceeded)) {
+					continue
+				}
+				return attempt.token, attempt.err
+			case <-ctx.Done():
+				return "", ctx.Err()
+			}
+		}
+		attempt := &tokenAttempt{done: make(chan struct{})}
+		c.attempt = attempt
+		c.mu.Unlock()
+
+		token, refreshAt, err := c.mintFresh(ctx)
+
+		c.mu.Lock()
+		if err == nil {
+			c.accessToken = token
+			c.refreshAt = refreshAt
+		}
+		attempt.token, attempt.err = token, err
+		c.attempt = nil
+		close(attempt.done)
+		c.mu.Unlock()
+
+		return token, err
 	}
-	attempt := &tokenAttempt{done: make(chan struct{})}
-	c.attempt = attempt
-	c.mu.Unlock()
-
-	token, refreshAt, err := c.mintFresh(ctx)
-
-	c.mu.Lock()
-	if err == nil {
-		c.accessToken = token
-		c.refreshAt = refreshAt
-	}
-	attempt.token, attempt.err = token, err
-	c.attempt = nil
-	close(attempt.done)
-	c.mu.Unlock()
-
-	return token, err
 }
 
 func (c *tokenCache) mintFresh(ctx context.Context) (string, time.Time, error) {
