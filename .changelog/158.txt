@@ -1,0 +1,3 @@
+```release-note:enhancement
+resource/k0rdent_instance_group: Add `wait_for_file_store_grants`, which waits after a scale-up until each file-store grant naming the group covers every member, and saves the group's new size if the wait times out
+```
