@@ -145,9 +145,9 @@ func patchFake(path, body string) error {
 // default planning nothing afterwards (AWS's perpetual-diff pitfall). The
 // testing framework plans again after every apply and fails on any change, so
 // each step also proves its own result is stable.
-func TestAccReviewSecurityGroupNonStringTagSurvivesTagsApply(t *testing.T) {
+func TestAccSecurityGroupNonStringTagSurvivesTagsApply(t *testing.T) {
 	t.Parallel()
-	const name = "acc-review-non-string-tag"
+	const name = "acc-non-string-tag"
 	path := "/v1/regions/us-texas-1/projects/demo/networking/security-groups/" + name
 	base := securityGroupConfig(name, false)
 

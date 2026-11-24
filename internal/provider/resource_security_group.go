@@ -1,7 +1,9 @@
 package provider
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"reflect"
@@ -240,7 +242,10 @@ func (r *securityGroupResource) Schema(ctx context.Context, _ resource.SchemaReq
 				Optional:    true,
 				ElementType: types.StringType,
 				MarkdownDescription: "User-defined labels. Terraform owns the map's string tags, and the next " +
-					"apply removes a string tag set another way. A non-string tag is left alone with a warning. " +
+					"apply removes a string tag set another way. Reads warn about non-string tags. Non-string " +
+					"values present at the pre-update read are carried into the replacement, and clearing " +
+					"configured tags keeps them. A concurrent write between the read and the update can be lost " +
+					"because the platform's update replaces the whole map. " +
 					"The contract types tag values as freeform JSON. This schema accepts strings because a " +
 					"Terraform map has one element type and a string is the only one every value round-trips " +
 					"through.",
@@ -552,7 +557,16 @@ func (r *securityGroupResource) sendUpdate(ctx context.Context, target clusterTa
 		addAPIError(diags, "read the security group before updating it", httpResp, respBody, readErr)
 		return false
 	}
-	tags := freeformTagsWithCurrent(md.Tags, current.JSON200.Tags)
+	var currentTags struct {
+		Tags map[string]any `json:"tags"`
+	}
+	decoder := json.NewDecoder(bytes.NewReader(current.Body))
+	decoder.UseNumber()
+	if err := decoder.Decode(&currentTags); err != nil {
+		addAPIError(diags, "decode the security group read before updating it", current.HTTPResponse, current.Body, err)
+		return false
+	}
+	tags := freeformTagsWithCurrent(md.Tags, currentTags.Tags)
 
 	// A group still applying an earlier change refuses this one, which a run
 	// whose wait timed out leaves behind. The PATCH carries the whole desired
