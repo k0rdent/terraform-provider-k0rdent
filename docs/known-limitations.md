@@ -150,11 +150,14 @@ so a refusal at apply would come after the delete.
   for a cluster, when this state doesn't hold it
 - A changed cluster whose platform object has no provider create token, when
   its replacement doesn't set `allow_replace = true`
-- A changed `cluster_type` that isn't a valid ClusterType reference
 - A changed `cluster_type` that names another region
 
 Set the configuration back to what's applied, or run
 `terraform destroy -refresh=false`, which destroys from state as it is.
+
+A changed `cluster_type` that isn't a valid ClusterType reference also refuses
+the plan. Its only way out is restoring a valid reference.
+`terraform destroy -refresh=false` doesn't bypass configuration validation.
 
 A cluster's `cluster_type` version change is made in place, so its refusal
 waits for the apply and doesn't stop a destroy.

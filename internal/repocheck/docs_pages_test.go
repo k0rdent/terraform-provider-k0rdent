@@ -241,6 +241,30 @@ func TestADocumentedRetryTheProviderDoesntMakeFails(t *testing.T) {
 	}
 }
 
+func TestInvalidClusterTypeRecoveryIsDocumented(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join(repoRoot(t), "docs", "known-limitations.md")) //nolint:gosec // a path inside this repository
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, section, found := strings.Cut(string(raw), "## A refused plan stops `terraform destroy` too")
+	if !found {
+		t.Fatal("the refused-plan section is missing")
+	}
+	if end := strings.Index(section, "\n## "); end >= 0 {
+		section = section[:end]
+	}
+	plain := strings.Join(strings.Fields(section), " ")
+	for _, want := range []string{
+		"A changed `cluster_type` that isn't a valid ClusterType reference also refuses the plan. " +
+			"Its only way out is restoring a valid reference.",
+		"`terraform destroy -refresh=false` doesn't bypass configuration validation.",
+	} {
+		if !strings.Contains(plain, want) {
+			t.Errorf("the invalid cluster_type recovery doesn't say %q", want)
+		}
+	}
+}
+
 // The real files.
 func TestTheRepositorysClientAndRetriesAreDocumented(t *testing.T) {
 	root := repoRoot(t)
