@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-func reviewStatus(t *testing.T, store map[string]any) map[string]any {
+func fileStoreConsumerStatus(t *testing.T, store map[string]any) map[string]any {
 	t.Helper()
 	statuses, ok := store["consumerStatus"].([]any)
 	if !ok || len(statuses) != 1 {
@@ -20,11 +20,11 @@ func reviewStatus(t *testing.T, store map[string]any) map[string]any {
 	return status
 }
 
-func reviewAddresses(t *testing.T, store map[string]any) []string {
+func fileStoreResolvedAddresses(t *testing.T, store map[string]any) []string {
 	t.Helper()
-	values, ok := reviewStatus(t, store)["resolvedAddresses"].([]any)
+	values, ok := fileStoreConsumerStatus(t, store)["resolvedAddresses"].([]any)
 	if !ok {
-		t.Fatalf("resolvedAddresses = %v, want a list", reviewStatus(t, store)["resolvedAddresses"])
+		t.Fatalf("resolvedAddresses = %v, want a list", fileStoreConsumerStatus(t, store)["resolvedAddresses"])
 	}
 	addresses := make([]string, 0, len(values))
 	for _, value := range values {
@@ -37,7 +37,7 @@ func reviewAddresses(t *testing.T, store map[string]any) []string {
 	return addresses
 }
 
-func TestReviewUnmarkedMidScaleResolveKeepsBaseBehavior(t *testing.T) {
+func TestMidScaleResolveBeforeV131KeepsBaseAddresses(t *testing.T) {
 	s := newState()
 	body := `{"id":"g","clusterType":"/v1/regions/r/compute/cluster-types/cpu-general","nodePools":[{"nodePool":"workers","size":1}]}`
 	if code, out := in(t, s.createInstanceGroup, http.MethodPost, "r", "p", nil, body); code != http.StatusCreated {
@@ -68,7 +68,7 @@ func TestReviewUnmarkedMidScaleResolveKeepsBaseBehavior(t *testing.T) {
 	}
 }
 
-func TestReviewV131InfiniBandRepairKeepsFabric(t *testing.T) {
+func TestV131InfiniBandRepairKeepsFabric(t *testing.T) {
 	s := newState()
 	body := `{"id":"g","clusterType":"/v1/regions/r/compute/cluster-types/cpu-general",` +
 		`"nodePools":[{"nodePool":"workers","size":1}],"displayName":"` + apiV131 + `"}`
@@ -95,10 +95,10 @@ func TestReviewV131InfiniBandRepairKeepsFabric(t *testing.T) {
 	}
 
 	_, before := in(t, s.getFileStore, http.MethodGet, "r", "p", fs, "")
-	if got := reviewStatus(t, before)["state"]; got != "active" {
+	if got := fileStoreConsumerStatus(t, before)["state"]; got != "active" {
 		t.Fatalf("state before the drift interval = %v, want active with the old grant", got)
 	}
-	if got, want := reviewAddresses(t, before), []string{"10.81.11.1"}; !reflect.DeepEqual(got, want) {
+	if got, want := fileStoreResolvedAddresses(t, before), []string{"10.81.11.1"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("addresses before the drift interval = %v, want %v", got, want)
 	}
 
@@ -107,10 +107,10 @@ func TestReviewV131InfiniBandRepairKeepsFabric(t *testing.T) {
 	for range settleAfter + 4 {
 		_, repaired = in(t, s.getFileStore, http.MethodGet, "r", "p", fs, "")
 	}
-	if got := reviewStatus(t, repaired)["state"]; got != "active" {
+	if got := fileStoreConsumerStatus(t, repaired)["state"]; got != "active" {
 		t.Fatalf("repaired state = %v, want active", got)
 	}
-	if got, want := reviewAddresses(t, repaired), []string{"10.81.11.1", "10.81.11.2"}; !reflect.DeepEqual(got, want) {
+	if got, want := fileStoreResolvedAddresses(t, repaired), []string{"10.81.11.1", "10.81.11.2"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("repaired addresses = %v, want InfiniBand addresses %v", got, want)
 	}
 }

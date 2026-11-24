@@ -46,7 +46,7 @@ func grantWaitServer(t *testing.T, memberCount int, responses ...grantWaitRespon
 	return server, &storeReads
 }
 
-func reviewGrantWait(t *testing.T, server *httptest.Server, timeout time.Duration) error {
+func runConsumerGrantWait(t *testing.T, server *httptest.Server, timeout time.Duration) error {
 	t.Helper()
 	meta := testClusterMeta(t, server.URL, timeout)
 	meta.Wait.Interval = 5 * time.Millisecond
@@ -54,11 +54,11 @@ func reviewGrantWait(t *testing.T, server *httptest.Server, timeout time.Duratio
 	return r.waitForConsumerGrants(context.Background(), clusterTarget{region: "test", project: "test"}, "g1")
 }
 
-func reviewGrantStore(state, reason string, addresses ...string) string {
-	return reviewGrantStoreOnStore("active", state, reason, addresses...)
+func consumerGrantStore(state, reason string, addresses ...string) string {
+	return consumerGrantStoreOnStore("active", state, reason, addresses...)
 }
 
-func reviewGrantStoreOnStore(storeState, grantState, reason string, addresses ...string) string {
+func consumerGrantStoreOnStore(storeState, grantState, reason string, addresses ...string) string {
 	body := fmt.Sprintf(`{"id":"fs1","state":%q,"consumers":[{"ref":"g1","type":"instanceGroup","network":{"type":"ethernet"}}],`+
 		`"consumerStatus":[{"ref":"g1","state":%q,"resolvedAddresses":[`, storeState, grantState)
 	for i, address := range addresses {
@@ -74,13 +74,13 @@ func reviewGrantStoreOnStore(storeState, grantState, reason string, addresses ..
 	return body + `}]}`
 }
 
-func TestReviewGrantWaitObservesDelayedRepair(t *testing.T) {
+func TestInstanceGroupGrantWaitObservesDelayedRepair(t *testing.T) {
 	server, reads := grantWaitServer(t, 2,
-		grantWaitResponse{body: reviewGrantStore("active", "", "10.80.11.1")},
-		grantWaitResponse{body: reviewGrantStore("creating", "")},
-		grantWaitResponse{body: reviewGrantStore("active", "", "192.0.2.10", "192.0.2.20")},
+		grantWaitResponse{body: consumerGrantStore("active", "", "10.80.11.1")},
+		grantWaitResponse{body: consumerGrantStore("creating", "")},
+		grantWaitResponse{body: consumerGrantStore("active", "", "192.0.2.10", "192.0.2.20")},
 	)
-	if err := reviewGrantWait(t, server, time.Second); err != nil {
+	if err := runConsumerGrantWait(t, server, time.Second); err != nil {
 		t.Fatalf("wait: %v", err)
 	}
 	if got := reads.Load(); got != 3 {
@@ -88,10 +88,10 @@ func TestReviewGrantWaitObservesDelayedRepair(t *testing.T) {
 	}
 }
 
-func TestReviewGrantWaitReturnsWhenNoRepairIsNeeded(t *testing.T) {
+func TestInstanceGroupGrantWaitReturnsWhenNoRepairIsNeeded(t *testing.T) {
 	server, reads := grantWaitServer(t, 2,
-		grantWaitResponse{body: reviewGrantStore("active", "", "192.0.2.10", "192.0.2.20")})
-	if err := reviewGrantWait(t, server, time.Second); err != nil {
+		grantWaitResponse{body: consumerGrantStore("active", "", "192.0.2.10", "192.0.2.20")})
+	if err := runConsumerGrantWait(t, server, time.Second); err != nil {
 		t.Fatalf("wait: %v", err)
 	}
 	if got := reads.Load(); got != 1 {
@@ -99,7 +99,7 @@ func TestReviewGrantWaitReturnsWhenNoRepairIsNeeded(t *testing.T) {
 	}
 }
 
-func TestReviewGrantWaitStopsOnVerdict(t *testing.T) {
+func TestInstanceGroupGrantWaitStopsOnVerdict(t *testing.T) {
 	for _, reason := range []string{
 		"NETWORK_MATCHED_NO_INTERFACE",
 		"GROUP_NO_LONGER_GRANTABLE",
@@ -108,8 +108,8 @@ func TestReviewGrantWaitStopsOnVerdict(t *testing.T) {
 	} {
 		t.Run(reason, func(t *testing.T) {
 			server, reads := grantWaitServer(t, 2,
-				grantWaitResponse{body: reviewGrantStore("creating", reason, "10.80.11.1")})
-			if err := reviewGrantWait(t, server, 80*time.Millisecond); err != nil {
+				grantWaitResponse{body: consumerGrantStore("creating", reason, "10.80.11.1")})
+			if err := runConsumerGrantWait(t, server, 80*time.Millisecond); err != nil {
 				t.Fatalf("wait: %v", err)
 			}
 			if got := reads.Load(); got != 1 {
@@ -119,10 +119,10 @@ func TestReviewGrantWaitStopsOnVerdict(t *testing.T) {
 	}
 }
 
-func TestReviewGrantWaitStopsOnFailedGrant(t *testing.T) {
+func TestInstanceGroupGrantWaitStopsOnFailedGrant(t *testing.T) {
 	server, reads := grantWaitServer(t, 2,
-		grantWaitResponse{body: reviewGrantStore("failed", "GROUP_MEMBERSHIP_DRIFTED", "10.80.11.1")})
-	if err := reviewGrantWait(t, server, time.Second); err != nil {
+		grantWaitResponse{body: consumerGrantStore("failed", "GROUP_MEMBERSHIP_DRIFTED", "10.80.11.1")})
+	if err := runConsumerGrantWait(t, server, time.Second); err != nil {
 		t.Fatalf("wait: %v", err)
 	}
 	if got := reads.Load(); got != 1 {
@@ -130,20 +130,20 @@ func TestReviewGrantWaitStopsOnFailedGrant(t *testing.T) {
 	}
 }
 
-func TestReviewGrantWaitIgnoresDeletedStore(t *testing.T) {
+func TestInstanceGroupGrantWaitIgnoresDeletedStore(t *testing.T) {
 	server, _ := grantWaitServer(t, 2, grantWaitResponse{
 		status: http.StatusNotFound,
 		body:   `{"error":{"code":404,"message":"file store fs1 not found","requestId":"req-gone"}}`,
 	})
-	if err := reviewGrantWait(t, server, time.Second); err != nil {
+	if err := runConsumerGrantWait(t, server, time.Second); err != nil {
 		t.Fatalf("a store deleted between list and read holds the scaled group: %v", err)
 	}
 }
 
-func TestReviewGrantWaitSkipsStoreBeingDeleted(t *testing.T) {
+func TestInstanceGroupGrantWaitSkipsStoreBeingDeleted(t *testing.T) {
 	server, reads := grantWaitServer(t, 2,
-		grantWaitResponse{body: reviewGrantStoreOnStore("deleting", "active", "", "192.0.2.10")})
-	if err := reviewGrantWait(t, server, 80*time.Millisecond); err != nil {
+		grantWaitResponse{body: consumerGrantStoreOnStore("deleting", "active", "", "192.0.2.10")})
+	if err := runConsumerGrantWait(t, server, 80*time.Millisecond); err != nil {
 		t.Fatalf("a store being deleted holds the scaled group: %v", err)
 	}
 	if got := reads.Load(); got != 1 {
@@ -151,12 +151,12 @@ func TestReviewGrantWaitSkipsStoreBeingDeleted(t *testing.T) {
 	}
 }
 
-func TestReviewGrantWaitStopsOnGoingAwayGrant(t *testing.T) {
+func TestInstanceGroupGrantWaitStopsOnGoingAwayGrant(t *testing.T) {
 	for _, state := range []string{"deleting"} {
 		t.Run(state, func(t *testing.T) {
 			server, reads := grantWaitServer(t, 2,
-				grantWaitResponse{body: reviewGrantStore(state, "", "192.0.2.10")})
-			if err := reviewGrantWait(t, server, 80*time.Millisecond); err != nil {
+				grantWaitResponse{body: consumerGrantStore(state, "", "192.0.2.10")})
+			if err := runConsumerGrantWait(t, server, 80*time.Millisecond); err != nil {
 				t.Fatalf("a grant going away holds the scaled group: %v", err)
 			}
 			if got := reads.Load(); got != 1 {
@@ -166,10 +166,10 @@ func TestReviewGrantWaitStopsOnGoingAwayGrant(t *testing.T) {
 	}
 }
 
-func TestReviewGrantWaitTimeoutNamesStore(t *testing.T) {
+func TestInstanceGroupGrantWaitTimeoutNamesStore(t *testing.T) {
 	server, reads := grantWaitServer(t, 2,
-		grantWaitResponse{body: reviewGrantStore("creating", "", "10.80.11.1")})
-	err := reviewGrantWait(t, server, time.Second)
+		grantWaitResponse{body: consumerGrantStore("creating", "", "10.80.11.1")})
+	err := runConsumerGrantWait(t, server, time.Second)
 	if err == nil {
 		t.Fatal("wait succeeded, want a timeout")
 	}
