@@ -48,12 +48,12 @@ var relatedPages = map[string][]relatedLink{
 		{"data-sources/cluster_types", "lists the ClusterTypes whose `self_link` `cluster_type` takes."},
 		{"data-sources/cluster_type", "reads one ClusterType, whose `self_link` `cluster_type` takes."},
 		{"data-sources/instances", "lists the hosts the group holds."},
-		{"resources/file_store", "mounts storage on every host in the group."},
+		{"resources/file_store", "lets the group's hosts mount storage."},
 		{"data-sources/effective_security_groups", "reports what actually filters the group's interfaces."},
 	},
 	"resources/file_store": {
 		{"data-sources/share_types", "lists the classes `share_type` takes."},
-		{"resources/instance_group", "a consumer that grants every host in the group."},
+		{"resources/instance_group", "a consumer that grants the group's hosts."},
 		{"data-sources/instances", "reads the addresses a narrower grant names."},
 	},
 	"resources/network": {

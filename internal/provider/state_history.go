@@ -206,6 +206,7 @@ var stateHistories = map[string]stateHistory{
 				"ssh_public_keys_wo":             `["map",["list","string"]]`,
 				"ssh_access.ssh_public_key_refs": `["list","string"]`,
 				"uid":                            `"string"`,
+				"wait_for_file_store_grants":     `"bool"`,
 			},
 		}},
 		formerNames: []formerName{preReleaseName(instanceGroupResourceSuffix)},

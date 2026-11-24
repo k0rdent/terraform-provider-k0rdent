@@ -157,6 +157,8 @@ func main() {
 	addr := flag.String("addr", "127.0.0.1:0", "listen address; port 0 picks a free one")
 	secretsFile := flag.String("secrets-file", "", "write this run's credentials here, 0600; must not exist yet")
 	latency := flag.Duration("latency", 0, "hold every API request this long before answering it, as a real stack's round trip would")
+	fileStoreDriftDelay := flag.Duration("file-store-drift-delay", defaultFileStoreDriftDelay,
+		"leave a scaled group's old grant visible this long before the drift repair starts")
 	flag.Parse()
 
 	// Loopback only. This process mints tokens and serves whatever a run made.
@@ -200,6 +202,7 @@ func main() {
 		}()
 	}
 	s := newState()
+	s.fileStoreDriftDelay = *fileStoreDriftDelay
 	api, apiErr := startClusterAPI()
 	if apiErr != nil {
 		log.Fatalf("fakeapi: start the cluster API: %v", apiErr)
@@ -488,14 +491,17 @@ type instanceGroup struct {
 	// createFailed is whether the group is `failed` because its create was,
 	// which is the failure it answers the detail of.
 	createFailed bool
-	opSeq        int    // operations started, which names each execution
-	execution    string // the current or last operation's execution id
-	state        string
-	reads        int
-	refusals     int  // scales refused by a transient marker since the last admitted one
-	cancelled    bool // deleted while creating
-	released     bool // a delete started, so the SSH users are gone
-	teardownLost bool // a teardownFails group has already failed its one teardown
+	// reservationPhase models API v1.3.1's create rollback while the group is
+	// still creating. Empty on API v1.3.0 and once the group settles.
+	reservationPhase string
+	opSeq            int    // operations started, which names each execution
+	execution        string // the current or last operation's execution id
+	state            string
+	reads            int
+	refusals         int  // scales refused by a transient marker since the last admitted one
+	cancelled        bool // deleted while creating
+	released         bool // a delete started, so the SSH users are gone
+	teardownLost     bool // a teardownFails group has already failed its one teardown
 }
 
 type state struct {
@@ -514,6 +520,8 @@ type state struct {
 
 	// Serves expiring kubeconfigs (clusterapi.go). Nil turns them off.
 	clusterAPI *clusterAPI
+
+	fileStoreDriftDelay time.Duration
 }
 
 // scope is where a project-owned object lives: the region and the project its
@@ -563,7 +571,8 @@ func newState() *state {
 		p.uid = global.newUID("project", p.id)
 		global.projects[at{id: p.id}] = &p
 	}
-	s := &state{scopes: map[scope]*objects{{}: global}, organizations: seededOrganizations()}
+	s := &state{scopes: map[scope]*objects{{}: global}, organizations: seededOrganizations(),
+		fileStoreDriftDelay: defaultFileStoreDriftDelay}
 	seedLeftoverCluster(s)
 	return s
 }
@@ -2303,6 +2312,9 @@ func (s *state) createInstanceGroup(w http.ResponseWriter, r *http.Request) {
 	for _, size := range pools {
 		g.progressed = g.progressed || size > 0
 	}
+	if nameCarries(g.displayName, apiV131) {
+		g.reservationPhase = "acquiring"
+	}
 	g.run()
 	instanceGroupKind.put(o, "", id, g)
 	o.vpcForOwner("instance_group", id, g.uid)
@@ -2344,10 +2356,21 @@ func advanceGroup(_ *objects, g *instanceGroup) bool {
 	case g.cancelled:
 		g.state = "failed"
 	case g.state == "creating" && nameCarries(g.displayName, createsForever):
+	case g.state == "creating" && nameCarries(g.displayName, createFails) && nameCarries(g.displayName, apiV131):
+		switch g.reservationPhase {
+		case "releasing":
+			g.reservationPhase = "released"
+		case "released":
+			g.state, g.createFailed = "failed", true
+			g.reservationPhase = ""
+		default:
+			g.reservationPhase = "releasing"
+		}
 	case g.state == "creating" && nameCarries(g.displayName, createFails):
 		g.state, g.createFailed = "failed", true
 	default:
 		g.state = "active"
+		g.reservationPhase = ""
 		g.provision()
 	}
 	return false
@@ -2444,6 +2467,9 @@ const (
 	// The first scaleRefusalsBeforeAdmit scales answer the reason-less 409 of
 	// quota accounting still settling, and then the same request is admitted.
 	scaleSettling = "fake-scale-settling"
+	// The group takes API v1.3.1's member-grant and reservation-rollback
+	// behavior. Without it the group keeps v1.3.0's behavior.
+	apiV131 = "fake-api-v1.3.1"
 	// The group's scale refusals take API v1.4's shape: every 409 names its
 	// reason at the top level as well as on details[], and quota accounting
 	// still settling is CONFLICT_STATE. Without it they take v1.3's, which the
@@ -2545,7 +2571,8 @@ func (s *state) scaleInstanceGroup(w http.ResponseWriter, r *http.Request) {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	g, _, ok := instanceGroupKind.find(w, r, s.in(r))
+	o := s.in(r)
+	g, _, ok := instanceGroupKind.find(w, r, o)
 	if !ok {
 		return
 	}
@@ -2657,7 +2684,11 @@ func (s *state) scaleInstanceGroup(w http.ResponseWriter, r *http.Request) {
 		g.pools[pool] = grows[pool]
 		g.provisioning = append(g.provisioning, pool)
 	}
+	s.delayGroupGrantRepair(o, id)
 	g.progressed = true
+	if nameCarries(g.displayName, apiV131) {
+		g.reservationPhase = "acquiring"
+	}
 	g.run()
 	g.state = "updating"
 	g.reads = 0
@@ -2718,6 +2749,9 @@ func (s *state) groupBody(region string, g *instanceGroup) map[string]any {
 		if held, ok := g.held[id]; ok {
 			pool["readyCount"], pool["notReadyCount"] = held, 0
 		}
+		if (g.state == "creating" || g.state == "updating") && g.reservationPhase != "" {
+			pool["reservationPhase"] = g.reservationPhase
+		}
 		pools = append(pools, pool)
 	}
 	body := map[string]any{
@@ -2752,6 +2786,10 @@ func (s *state) groupBody(region string, g *instanceGroup) map[string]any {
 		const message = "the operation could not be completed: not enough capacity is available"
 		body["stateMessage"], body["statusReason"] = message, message
 		body["stateReason"] = "INSUFFICIENT_CAPACITY"
+	}
+	if g.state == "creating" && (g.reservationPhase == "releasing" || g.reservationPhase == "released") {
+		const message = "provisioning failed; releasing the node pools that had not started provisioning"
+		body["stateMessage"], body["statusReason"] = message, message
 	}
 	// "Present while state is `creating`, `updating`, or `deleting`, and
 	// while state is `failed` when an execution was attempted; absent when

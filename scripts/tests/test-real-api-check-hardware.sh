@@ -274,9 +274,7 @@ json.dump({"landscape": "stand-in", "api_version": "v1.3.0-rc.5", "api_version_s
            "runs": [{"id": "rapi-hw-earlier", "ran": "2026-11-01T00:00:00Z", "covered": ["k0rdent_kubernetes_cluster"]}],
            "ran": "2026-11-01T00:00:00Z"},
           open(os.environ["RECORD"], "w"))'
-  # file_store stays off: growing a group re-grants a file store to the new
-  # host asynchronously, so the grow replan isn't empty yet (open item I154).
-  export REAL_API_BUILD_OFF="cluster vpc_peering file_store"
+  export REAL_API_BUILD_OFF="cluster vpc_peering"
   ( hardware "$out" ) &
   check_pid=$!
   wait_for "$out" "real/full-everything-apply passed"
@@ -288,7 +286,7 @@ json.dump({"landscape": "stand-in", "api_version": "v1.3.0-rc.5", "api_version_s
       real/look-destroy "fake drift" record; do
     grep -qE "^PASS +$step( |$)" "$run/results.txt" || { cat "$run/results.txt" >&2; fail "no PASS line for $step"; }
   done
-  has "$out" "this run creates: k0rdent_instance_group k0rdent_network k0rdent_security_group k0rdent_subnet k0rdent_vpc_security_groups"
+  has "$out" "this run creates: k0rdent_file_store k0rdent_instance_group k0rdent_network k0rdent_security_group k0rdent_subnet k0rdent_vpc_security_groups"
   has "$out" "no cluster: the instance group runs alone, and grows by one host before the destroy"
   for side in fake real; do
     has "$run/$side/full-everything-apply.log" "k0rdent_instance_group.this\[0\]: Creation complete"

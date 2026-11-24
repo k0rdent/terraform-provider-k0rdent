@@ -53,7 +53,7 @@ resource "k0rdent_file_store" "datasets" {
   }
 }
 
-# A store every host in an instance group mounts, keyed by the group's id.
+# A store the hosts in an instance group mount, keyed by the group's id.
 # `network` says which fabric's addresses to grant.
 resource "k0rdent_file_store" "checkpoints" {
   id           = "training-checkpoints"
@@ -105,9 +105,9 @@ output "checkpoint_grants" {
 
 An empty or absent map is a store mountable by nobody, which is the intended default.
 
-Entries are resolved before the store is accepted, so an instance group that is still provisioning fails the whole create rather than producing a store with a partial export policy. Grant progress is in `consumer_status`.
+Entries are resolved before the store is accepted. An `instanceGroup` entry fails the whole create when it resolves to no address. On API v1.3.1 it also fails when a member outside the states below has no address where `network` selects one. On API v1.3.0 this per-member failure applies to every member unless `network` names one interface. A host still being provisioned may have none yet. From API v1.3.1 a member whose `state` on the `k0rdent_instances` data source is `not_provisioned`, `provisioning`, `deprovisioning` or `degraded` isn't required to have an address. It contributes any IPv4 address it already has on the interfaces `network` selects, and a missing address doesn't refuse the entry. Other member states keep the per-member checks. A `deleting` member is left out. Grant progress and the addresses it resolved to are in `consumer_status`, whose `state` says whether they are enforced yet.
 
-An `instanceGroup` entry is resolved to addresses when it is sent, and the platform resolves it again by itself when the group's membership moves. When that repair is off or does not stick, `consumer_status` reports `GROUP_MEMBERSHIP_DRIFTED` and the next plan proposes sending the entry again. If the platform refuses that, the rest of the change is applied and plans stop proposing the re-send until its report changes. A group reported as `GROUP_NO_LONGER_GRANTABLE` is gone or now names a different group. Until its entry is removed, the plan warns, and an apply that changes the store in place fails without changing it. A replacement forced with `-replace` or `replace_triggered_by` deletes the store and creates the new one with the entry, so remove the entry first.
+An `instanceGroup` entry is resolved to addresses when it is sent, and the platform resolves it again by itself when the group no longer matches what the entry resolved to. When that repair is off or does not stick, `consumer_status` reports `GROUP_MEMBERSHIP_DRIFTED` and the next plan proposes sending the entry again. If the platform refuses that, the rest of the change is applied and plans stop proposing the re-send until its report changes. A group reported as `GROUP_NO_LONGER_GRANTABLE` is gone or now names a different group. Until its entry is removed, the plan warns, and an apply that changes the store in place fails without changing it. A replacement forced with `-replace` or `replace_triggered_by` deletes the store and creates the new one with the entry, so remove the entry first.
 
 A key taken from another resource's attribute that is not known until apply hides the whole map from the plan. Set the instance group's `id` in configuration so a reviewer can see who is granted access. **Constraints:** Map must contain at most 64 elements. (see [below for nested schema](#nestedatt--consumers))
 - `description` (String) Free-form text describing it, for people to read.
@@ -123,7 +123,7 @@ A key taken from another resource's attribute that is not known until apply hide
 
 `active` means the grant is enforced on the backing storage, not merely recorded, so this is what says whether a host can mount.
 
-**A `failed` entry is not necessarily an outage.** `GROUP_MEMBERSHIP_DRIFTED` is reported as `failed` while the grant still covers the machines it was written against: the group's membership moved and the platform's own repair did not happen or did not stick. An entry being repaired reads `creating` with no reason. Alert on `state == "failed" && state_reason != "GROUP_MEMBERSHIP_DRIFTED"`. (see [below for nested schema](#nestedatt--consumer_status))
+**A `failed` entry is not necessarily an outage.** `GROUP_MEMBERSHIP_DRIFTED` is reported as `failed` while the grant still covers the machines it was written against: the group no longer matches what the entry resolved to and the platform's own repair did not happen or did not stick. An entry being repaired reads `creating` with no reason. Alert on `state == "failed" && state_reason != "GROUP_MEMBERSHIP_DRIFTED"`. (see [below for nested schema](#nestedatt--consumer_status))
 - `etag` (String) The store's current revision. Sent back on every update so that a concurrent edit is refused rather than clobbered. A destroy does not send it.
 - `export_locations` (Attributes List) Where the store can be mounted from, sorted by `server` and then `path`. To mount, use `preferred_export_location`. (see [below for nested schema](#nestedatt--export_locations))
 - `preferred_export_location` (Attributes) The location a tenant host should mount: the one the platform marks preferred and not operator-only. Null until the store is active. The mount source is `<server>:<path>`. (see [below for nested schema](#nestedatt--preferred_export_location))
@@ -140,7 +140,7 @@ Optional:
 - `network` (Attributes) Which of a resolved member's interfaces supplies the address to grant. Required on an `instanceGroup` entry and refused on an `ipAddress` entry, where `ref` already is the address.
 
 The operator names the fabric; the platform never infers it, because a member machine sits on several at once. (see [below for nested schema](#nestedatt--consumers--network))
-- `type` (String) `ipAddress` to grant one address directly, or `instanceGroup` to grant every member of a group on the interface `network` selects. Defaults to `ipAddress`. Defaults to `ipAddress`. **Constraints:** Value must be one of: ["ipAddress" "instanceGroup"].
+- `type` (String) `ipAddress` to grant one address directly, or `instanceGroup` to grant the addresses a group's members have on the interfaces `network` selects. Defaults to `ipAddress`. **Constraints:** Value must be one of: ["ipAddress" "instanceGroup"].
 
 <a id="nestedatt--consumers--network"></a>
 ### Nested Schema for `consumers.network`
@@ -228,7 +228,7 @@ resource "k0rdent_file_store" "example" {
 - [`k0rdent_file_store`](../data-sources/file_store.md) data source: reads one this configuration doesn't manage.
 - [`k0rdent_file_store`](../list-resources/file_store.md) list resource: finds every one, for `terraform query` to adopt.
 - [`k0rdent_share_types`](../data-sources/share_types.md) data source: lists the classes `share_type` takes.
-- [`k0rdent_instance_group`](../resources/instance_group.md) resource: a consumer that grants every host in the group.
+- [`k0rdent_instance_group`](../resources/instance_group.md) resource: a consumer that grants the group's hosts.
 - [`k0rdent_instances`](../data-sources/instances.md) data source: reads the addresses a narrower grant names.
 
 ## Import

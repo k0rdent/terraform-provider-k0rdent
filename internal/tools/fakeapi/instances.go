@@ -41,14 +41,27 @@ type fakeInstance struct {
 	mac, guid     string
 	ethernet, ibA string
 	deleted       bool // the record of an instance whose group was deleted
+	lifecycle     string
+	noInterfaces  bool
+	noIPv4        bool
 	// powerError is the host's lastPowerActionError, "" for none.
 	powerError string
 }
 
 // instancesOf derives the hosts a group holds now. The caller holds s.mu.
 func (o *objects) instancesOf(g *instanceGroup) []fakeInstance {
-	pools := make([]string, 0, len(g.held))
-	for p := range g.held {
+	return o.instancesAt(g, g.held, false)
+}
+
+// consumerInstancesOf includes members whose group's desired size already
+// names them but whose hosts are still in flight.
+func (o *objects) consumerInstancesOf(g *instanceGroup) []fakeInstance {
+	return o.instancesAt(g, g.pools, true)
+}
+
+func (o *objects) instancesAt(g *instanceGroup, counts map[string]int32, includeInFlight bool) []fakeInstance {
+	pools := make([]string, 0, len(counts))
+	for p := range counts {
 		pools = append(pools, p)
 	}
 	sort.Strings(pools)
@@ -59,7 +72,7 @@ func (o *objects) instancesOf(g *instanceGroup) []fakeInstance {
 	var out []fakeInstance
 	member := 0
 	for _, pool := range pools {
-		for i := range int(g.held[pool]) {
+		for i := range int(counts[pool]) {
 			member++
 			uid := uidFor(o.scope, "instance", fmt.Sprintf("%s/%s/%d", g.id, pool, i))
 			tail := uid[len(uid)-12:]
@@ -75,6 +88,13 @@ func (o *objects) instancesOf(g *instanceGroup) []fakeInstance {
 				ibA:      fmt.Sprintf("10.81.%d.%d", octet, member),
 			})
 			last := &out[len(out)-1]
+			if includeInFlight && int32(i) >= g.held[pool] {
+				last.lifecycle = "notProvisioned"
+				if slices.Contains(g.provisioning, pool) {
+					last.lifecycle = "provisioning"
+				}
+				last.noInterfaces = true
+			}
 			if _, sent := o.power[last.id]; sent && g.displayName != nil && strings.Contains(*g.displayName, powerFails) {
 				last.powerError = powerFailure
 			}
@@ -120,28 +140,39 @@ func (in fakeInstance) state() string {
 	if in.deleted {
 		return "deleted"
 	}
+	if in.lifecycle != "" {
+		return in.lifecycle
+	}
 	return instanceState
 }
 
 func (in fakeInstance) body(region, project string) map[string]any {
 	slug := fmt.Sprintf("srv-%s-%s-%d", in.group.id, in.pool, in.member)
+	ethernetAddresses, ibAddresses := []any{in.ethernet}, []any{in.ibA}
+	if in.noIPv4 {
+		ethernetAddresses = []any{"fd00::" + strconv.Itoa(in.member)}
+		ibAddresses = []any{"fd00::" + strconv.Itoa(in.member)}
+	}
+	networkConfiguration := []any{}
+	if !in.noInterfaces {
+		networkConfiguration = append(networkConfiguration,
+			map[string]any{"type": "ethernet", "macAddress": in.mac, "ipAddresses": ethernetAddresses},
+			map[string]any{"type": "infiniband", "guid": in.guid, "ipAddresses": ibAddresses})
+	}
 	out := map[string]any{
-		"id":                in.id,
-		"uid":               in.uid,
-		"instanceGroupId":   in.group.id,
-		"instanceGroupUuid": in.group.uid,
-		"nodePool":          in.pool,
-		"serverSlug":        slug,
-		"hostname":          slug,
-		"state":             in.state(),
-		"health":            map[string]any{"state": "healthy"},
-		"createdAt":         fixedTime,
-		"selfLink":          "/v1/regions/" + region + "/projects/" + project + "/compute/instances/" + in.id,
-		"inventory":         map[string]any{},
-		"networkConfiguration": []any{
-			map[string]any{"type": "ethernet", "macAddress": in.mac, "ipAddresses": []any{in.ethernet}},
-			map[string]any{"type": "infiniband", "guid": in.guid, "ipAddresses": []any{in.ibA}},
-		},
+		"id":                   in.id,
+		"uid":                  in.uid,
+		"instanceGroupId":      in.group.id,
+		"instanceGroupUuid":    in.group.uid,
+		"nodePool":             in.pool,
+		"serverSlug":           slug,
+		"hostname":             slug,
+		"state":                in.state(),
+		"health":               map[string]any{"state": "healthy"},
+		"createdAt":            fixedTime,
+		"selfLink":             "/v1/regions/" + region + "/projects/" + project + "/compute/instances/" + in.id,
+		"inventory":            map[string]any{},
+		"networkConfiguration": networkConfiguration,
 	}
 	if in.deleted {
 		out["deletedAt"] = fixedTime
@@ -227,6 +258,89 @@ func (o *objects) narrowedAddresses(g *instanceGroup, n fakeConsumerNetwork) ([]
 		}
 	}
 	return out, len(out) > 0
+}
+
+type memberGrantClass int
+
+const (
+	memberGrantRequired memberGrantClass = iota
+	memberGrantBestEffort
+	memberGrantExcluded
+)
+
+// API v1.3.1 judges only members meant to be serving. An in-flight or
+// degraded member contributes an address it already has, and a leaving member
+// contributes none.
+func grantClassForState(state string) memberGrantClass {
+	switch state {
+	case "provisioning", "notProvisioned", "deprovisioning", "degraded":
+		return memberGrantBestEffort
+	case "deleting", "deleted":
+		return memberGrantExcluded
+	default:
+		return memberGrantRequired
+	}
+}
+
+func consumerAddress(member fakeInstance, network fakeConsumerNetwork, narrowed bool) (bool, string) {
+	if member.noInterfaces {
+		return false, ""
+	}
+	matched, address := false, ""
+	switch network.Type {
+	case "ethernet":
+		matched = !narrowed || (network.MacAddress != nil && strings.EqualFold(*network.MacAddress, member.mac))
+		address = member.ethernet
+	case "infiniband":
+		matched = !narrowed || (network.GUID != nil && strings.EqualFold(*network.GUID, member.guid))
+		address = member.ibA
+	}
+	if member.noIPv4 {
+		address = ""
+	}
+	return matched, address
+}
+
+func narrowedSelectionFails(matchedAny, allRequired bool, members []fakeInstance, narrowed bool) bool {
+	return narrowed && !matchedAny && len(members) > 0 && allRequired
+}
+
+func selectConsumerAddresses(members []fakeInstance, network fakeConsumerNetwork) ([]string, string) {
+	narrowed := network.MacAddress != nil || network.GUID != nil
+	allRequired := true
+	matchedAny := false
+	seen := map[string]bool{}
+	addresses := []string{}
+
+	for _, member := range members {
+		class := grantClassForState(member.state())
+		if class != memberGrantRequired {
+			allRequired = false
+		}
+		if class == memberGrantExcluded {
+			continue
+		}
+
+		matched, address := consumerAddress(member, network, narrowed)
+		if matched {
+			matchedAny = true
+			if address == "" && class == memberGrantRequired {
+				return nil, "member " + member.id + " has no grantable IPv4 address on the selected network"
+			}
+			if address != "" && !seen[address] {
+				seen[address] = true
+				addresses = append(addresses, address)
+			}
+			continue
+		}
+		if !narrowed && class == memberGrantRequired {
+			return nil, "member " + member.id + " has no interface on the selected network"
+		}
+	}
+	if narrowedSelectionFails(matchedAny, allRequired, members, narrowed) {
+		return nil, "the selector matches no interface on any required member of the group"
+	}
+	return addresses, ""
 }
 
 // What the fake follows from executeInstancePowerAction's contract, because

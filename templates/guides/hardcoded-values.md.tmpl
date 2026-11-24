@@ -89,7 +89,7 @@ out and read the `type` of each event your endpoint receives.
   group can narrow the address to one interface, by `mac_address` (Ethernet)
   or `guid` (InfiniBand). Read them from `network_interfaces` on
   `k0rdent_instances` or `k0rdent_instance`. Or leave both out:
-  `network.type` alone grants every member's interfaces on that fabric.
+  `network.type` alone grants the members' addresses on that fabric.
 
 ## Values no attribute takes
 

@@ -190,7 +190,7 @@ func TestAnUngrantableGroupIsRefusedOneWay(t *testing.T) {
 	detail := func(ref string) string {
 		return `The platform reports that the instance group "` + ref + `" is being deleted, or that ` +
 			`its id now names a different group than the one the grant came from. Sending the entry ` +
-			`again would grant whatever machines the id names now, so nothing is sent. Remove the ` +
+			`again would resolve whatever group the id names now, so nothing is sent. Remove the ` +
 			`entry, or point it at the group that should hold the access.`
 	}
 	v := grantVerdicts{ungrantable: []string{"evaluators", "retired"}}
@@ -216,8 +216,8 @@ func TestAnUngrantableGroupIsRefusedOneWay(t *testing.T) {
 	}
 }
 
-// A drifted grant is still enforced, so it reads as a membership change. Any
-// other failed grant is one this consumer cannot mount.
+// A drifted grant is still enforced, so its warning is distinct from other
+// failures. Any other failed grant is one this consumer cannot mount.
 func TestFailureWarningsTellDriftFromAFailedGrant(t *testing.T) {
 	diags := grantReport{
 		"trainers": drifted("10.0.1.7"),
@@ -230,7 +230,7 @@ func TestFailureWarningsTellDriftFromAFailedGrant(t *testing.T) {
 	if w := diags.Warnings()[0]; !strings.Contains(w.Summary(), "did not settle") || !strings.Contains(w.Detail(), "10.0.2.3") {
 		t.Errorf("first warning %q / %q", w.Summary(), w.Detail())
 	}
-	if w := diags.Warnings()[1]; !strings.Contains(w.Summary(), "changed membership") || !strings.Contains(w.Detail(), "trainers") {
+	if w := diags.Warnings()[1]; !strings.Contains(w.Summary(), "no longer matches its grant") || !strings.Contains(w.Detail(), "trainers") {
 		t.Errorf("second warning %q / %q", w.Summary(), w.Detail())
 	}
 }

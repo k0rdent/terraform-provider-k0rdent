@@ -161,12 +161,13 @@ var inputClasses = map[attrRef]inputClass{
 	{"resource", "file_store", "consumers.network"}:      free,
 	{"resource", "file_store", "consumers.network.type"}: free,
 	// Listed on the page until the instances data source carried them.
-	{"resource", "file_store", "consumers.network.mac_address"}: readAt("instances", "instances.network_interfaces.mac_address"),
-	{"resource", "file_store", "consumers.network.guid"}:        readAt("instances", "instances.network_interfaces.guid"),
-	{"resource", "instance_group", "node_pool.size"}:            free,
-	{"resource", "kubernetes_cluster", "node_pool.node_count"}:  free,
-	{"resource", "kubernetes_cluster", "security_groups"}:       read("security_groups"),
-	{"resource", "kubernetes_cluster", "storage_ceiling_gib"}:   free,
+	{"resource", "file_store", "consumers.network.mac_address"}:  readAt("instances", "instances.network_interfaces.mac_address"),
+	{"resource", "file_store", "consumers.network.guid"}:         readAt("instances", "instances.network_interfaces.guid"),
+	{"resource", "instance_group", "node_pool.size"}:             free,
+	{"resource", "instance_group", "wait_for_file_store_grants"}: free,
+	{"resource", "kubernetes_cluster", "node_pool.node_count"}:   free,
+	{"resource", "kubernetes_cluster", "security_groups"}:        read("security_groups"),
+	{"resource", "kubernetes_cluster", "storage_ceiling_gib"}:    free,
 	// The regions that hold a project, which the contract asks a client to
 	// offer rather than every regional one.
 	{"resource", "project", "region"}:                         readAt("regions", "project_region_ids"),
