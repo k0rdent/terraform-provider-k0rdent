@@ -182,7 +182,8 @@ func (r *securityGroupResource) Schema(ctx context.Context, _ resource.SchemaReq
 			"Rules are evaluated first-match in list order, and ingress and egress are " +
 			"independent. A group needs at least one rule, in either list: a plan to create " +
 			"a group with none, or to change a group that has none, fails. One already in state " +
-			"with none plans with a warning and can be destroyed. Only a VPC on the `nico` fabric backend can carry security groups.\n\n" +
+			"with none plans with a warning and can be destroyed.\n\n" +
+			"Only a VPC on the `nico` fabric backend can carry security groups.\n\n" +
 			"The platform adds no rules to a group. On the `nico` fabric, traffic that no rule " +
 			"permits is denied, in both directions. Rules the operator sets for the site are " +
 			"checked before the group's, so a site permit or deny wins over the group. Replies to " +
