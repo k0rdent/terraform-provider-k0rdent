@@ -1252,6 +1252,10 @@ func (r *instanceGroupResource) waitForConsumerGrants(ctx context.Context, targe
 				if got.JSON200 == nil {
 					return false, k0rdent.CheckResponse(got.HTTPResponse, got.Body)
 				}
+				// FileStore.yaml defines deleting as the only store or grant state that means the grant is going away.
+				if stateString(got.JSON200.State) == string(k0rdent.FileStoreStateDeleting) {
+					continue
+				}
 				settled, state := consumerGrantSettled(*got.JSON200, id, memberCount)
 				if !settled {
 					pendingStore, pendingState = store.Id, state
@@ -1310,7 +1314,9 @@ func consumerGrantSettled(store k0rdent.FileStore, groupID string, memberCount i
 		if status.StateReason != nil {
 			reason = string(*status.StateReason)
 		}
-		if state == string(k0rdent.FileStoreConsumerStatusStateFailed) || grantVerdictStopsWait(reason) {
+		if state == string(k0rdent.FileStoreConsumerStatusStateFailed) ||
+			state == string(k0rdent.FileStoreConsumerStatusStateDeleting) ||
+			grantVerdictStopsWait(reason) {
 			return true, ""
 		}
 		if state == string(k0rdent.FileStoreConsumerStatusStateActive) &&

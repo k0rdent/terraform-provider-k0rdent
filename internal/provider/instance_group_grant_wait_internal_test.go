@@ -55,8 +55,12 @@ func reviewGrantWait(t *testing.T, server *httptest.Server, timeout time.Duratio
 }
 
 func reviewGrantStore(state, reason string, addresses ...string) string {
-	body := fmt.Sprintf(`{"id":"fs1","consumers":[{"ref":"g1","type":"instanceGroup","network":{"type":"ethernet"}}],`+
-		`"consumerStatus":[{"ref":"g1","state":%q,"resolvedAddresses":[`, state)
+	return reviewGrantStoreOnStore("active", state, reason, addresses...)
+}
+
+func reviewGrantStoreOnStore(storeState, grantState, reason string, addresses ...string) string {
+	body := fmt.Sprintf(`{"id":"fs1","state":%q,"consumers":[{"ref":"g1","type":"instanceGroup","network":{"type":"ethernet"}}],`+
+		`"consumerStatus":[{"ref":"g1","state":%q,"resolvedAddresses":[`, storeState, grantState)
 	for i, address := range addresses {
 		if i > 0 {
 			body += ","
@@ -133,6 +137,32 @@ func TestReviewGrantWaitIgnoresDeletedStore(t *testing.T) {
 	})
 	if err := reviewGrantWait(t, server, time.Second); err != nil {
 		t.Fatalf("a store deleted between list and read holds the scaled group: %v", err)
+	}
+}
+
+func TestReviewGrantWaitSkipsStoreBeingDeleted(t *testing.T) {
+	server, reads := grantWaitServer(t, 2,
+		grantWaitResponse{body: reviewGrantStoreOnStore("deleting", "active", "", "192.0.2.10")})
+	if err := reviewGrantWait(t, server, 80*time.Millisecond); err != nil {
+		t.Fatalf("a store being deleted holds the scaled group: %v", err)
+	}
+	if got := reads.Load(); got != 1 {
+		t.Fatalf("store reads = %d, want 1", got)
+	}
+}
+
+func TestReviewGrantWaitStopsOnGoingAwayGrant(t *testing.T) {
+	for _, state := range []string{"deleting"} {
+		t.Run(state, func(t *testing.T) {
+			server, reads := grantWaitServer(t, 2,
+				grantWaitResponse{body: reviewGrantStore(state, "", "192.0.2.10")})
+			if err := reviewGrantWait(t, server, 80*time.Millisecond); err != nil {
+				t.Fatalf("a grant going away holds the scaled group: %v", err)
+			}
+			if got := reads.Load(); got != 1 {
+				t.Fatalf("store reads = %d, want 1", got)
+			}
+		})
 	}
 }
 
