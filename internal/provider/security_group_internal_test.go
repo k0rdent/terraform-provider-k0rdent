@@ -2,9 +2,13 @@ package provider
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -89,6 +93,7 @@ func TestSecurityGroupNeedsARuleOnCreateOrChange(t *testing.T) {
 		"a create with one egress rule":   {value(empty, oneRule, nil), null, value(empty, oneRule, nil), silent},
 		"a create with ingress unknown":   {value(unknown, empty, nil), null, value(unknown, empty, nil), silent},
 		"a create with egress unknown":    {value(nil, unknown, nil), null, value(nil, unknown, nil), silent},
+		"a tainted replacement with none": {value(empty, empty, nil), null, value(empty, empty, nil), warned},
 		"a change to a group with none":   {value(empty, empty, renamed), value(empty, empty, nil), value(empty, empty, renamed), refused},
 		"a change that empties the rules": {value(empty, empty, nil), value(empty, oneRule, nil), value(empty, empty, nil), refused},
 		"a change to a group with a rule": {value(empty, oneRule, renamed), value(empty, oneRule, nil), value(empty, oneRule, renamed), silent},
@@ -102,15 +107,37 @@ func TestSecurityGroupNeedsARuleOnCreateOrChange(t *testing.T) {
 				State:  tfsdk.State{Raw: tt.state, Schema: s.Schema},
 				Plan:   tfsdk.Plan{Raw: tt.plan, Schema: s.Schema},
 			}
+			r := &securityGroupResource{}
+			if name == "a tainted replacement with none" {
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					w.Header().Set("Content-Type", "application/json")
+					if _, err := w.Write([]byte(`{"id":"g","rules":{"ingress":[],"egress":[]}}`)); err != nil {
+						t.Error(err)
+					}
+				}))
+				defer server.Close()
+				r.meta = testClusterMeta(t, server.URL, time.Minute)
+			}
 			resp := resource.ModifyPlanResponse{Plan: tfsdk.Plan{Raw: tt.plan, Schema: s.Schema}}
-			planNeedsARule(context.Background(), req, &resp)
+			planNeedsARule(context.Background(), r.meta, req, &resp)
 
 			got := silent
 			for _, d := range resp.Diagnostics {
 				switch d.Summary() {
 				case "A security group needs at least one rule":
+					if d.Severity() != diag.SeverityError {
+						t.Errorf("refusal severity = %v, want error", d.Severity())
+					}
+					for _, want := range []string{"API 1.4", "HTTP 422", "API 1.3", "accepts the request"} {
+						if !strings.Contains(d.Detail(), want) {
+							t.Errorf("refusal detail doesn't say %q: %s", want, d.Detail())
+						}
+					}
 					got = refused
 				case "This security group has no rules":
+					if d.Severity() != diag.SeverityWarning {
+						t.Errorf("warning severity = %v, want warning", d.Severity())
+					}
 					got = warned
 				default:
 					t.Errorf("unexpected diagnostic: %s: %s", d.Summary(), d.Detail())
@@ -123,6 +150,26 @@ func TestSecurityGroupNeedsARuleOnCreateOrChange(t *testing.T) {
 				t.Errorf("%s, want %s", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestSecurityGroupCreateRefusesNoRules(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		t.Error("Create sent a request for a group with no rules")
+		http.Error(w, "unexpected request", http.StatusInternalServerError)
+	}))
+	defer server.Close()
+	r := &securityGroupResource{meta: testClusterMeta(t, server.URL, time.Minute)}
+	raw, s := testValue(t, r, map[string]tftypes.Value{
+		"id": str("g"), "region": str("test"), "project": str("test"),
+	})
+	resp := resource.CreateResponse{State: tfsdk.State{Raw: tftypes.NewValue(raw.Type(), nil), Schema: s.Schema}}
+	r.Create(context.Background(), resource.CreateRequest{Plan: tfsdk.Plan{Raw: raw, Schema: s.Schema}}, &resp)
+	if !resp.Diagnostics.HasError() {
+		t.Fatal("Create accepted a group with no rules")
+	}
+	if got := resp.Diagnostics.Errors()[0].Summary(); got != "A security group needs at least one rule" {
+		t.Errorf("Create error = %q, want the no-rule refusal: %v", got, resp.Diagnostics)
 	}
 }
 

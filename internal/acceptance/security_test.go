@@ -147,7 +147,8 @@ resource %q "test" {
 	})
 }
 
-// A create with no rules is a 422 upstream. The plan refuses it first, whether
+// API 1.4 answers a create with no rules with 422. API 1.3 accepts it, and
+// the fabric can leave the group failed. The plan refuses it first, whether
 // the blocks are left out or a `dynamic` block's list is empty.
 func TestAccSecurityGroupRefusesACreateWithNoRules(t *testing.T) {
 	t.Parallel()
@@ -182,9 +183,10 @@ resource %q "test" {
 	}
 }
 
-// A PATCH that empties both lists is a 422 upstream too, so a change that
-// removes a group's last rule fails at plan. The group keeps its rule, and the
-// last step puts the block back so the test's own destroy plans no change.
+// API 1.4 answers a PATCH that empties both lists with 422. API 1.3 accepts
+// it, and the fabric can leave the group failed. A change that removes a
+// group's last rule fails at plan. The group keeps its rule, and the last step
+// puts the block back so the test's own destroy plans no change.
 func TestAccSecurityGroupRefusesAChangeThatRemovesTheLastRule(t *testing.T) {
 	t.Parallel()
 	withRule := fmt.Sprintf(`

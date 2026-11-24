@@ -60,12 +60,12 @@ func TestSubnetCreateKeepsScopeWhenTheWaitFails(t *testing.T) {
 
 func TestSecurityGroupCreateKeepsScopeWhenTheWaitFails(t *testing.T) {
 	server := failingCreate(t, map[string]any{
-		"id": "g1", "state": "failed", "rules": map[string]any{"ingress": []any{}, "egress": []any{}},
+		"id": "g1", "state": "failed", "rules": oneEgressRuleBody,
 	})
 	defer server.Close()
 	r := &securityGroupResource{meta: testClusterMeta(t, server.URL, time.Minute)}
 	assertCreateKeepsScope(t, r, map[string]tftypes.Value{
-		"id": str("g1"), "region": str("test"), "project": str("elsewhere"),
+		"id": str("g1"), "region": str("test"), "project": str("elsewhere"), "egress": oneEgressRule(t),
 	}, func(req resource.CreateRequest, resp *resource.CreateResponse) {
 		r.Create(context.Background(), req, resp)
 	})

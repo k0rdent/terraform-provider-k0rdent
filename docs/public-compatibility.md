@@ -99,9 +99,9 @@ interface.
 
 A plan to create a `k0rdent_security_group` with no `ingress` and no
 `egress` block, or to change one that has none, now fails with "A security
-group needs at least one rule". The platform refuses such a create or
-change, because the fabric can't apply a group with no rules, and a group
-left `failed` keeps whatever it's bound to waiting.
+group needs at least one rule". API 1.4 refuses such a create or change with
+HTTP 422. API 1.3 accepts the request, and the fabric can then leave the group
+`failed`, which keeps whatever it's bound to waiting.
 
 A group already in state with no rules and nothing to change plans with the
 warning "This security group has no rules", and `terraform destroy` deletes
@@ -111,10 +111,14 @@ it.
   list is enough.
 - To stop using it, remove it from what it's bound to, then remove its
   resource block and apply, which deletes it.
-- A destroy plans the configuration first, so a tainted group with no rules,
-  or one whose configuration also changes it, stops `terraform destroy` with
-  the same error. Remove the block and apply, or run
-  `terraform destroy -refresh=false`.
+- With a configured `id`, a tainted replacement of an unchanged group with no
+  rules warns at plan and fails in `Create` at apply. Plain
+  `terraform destroy`, `terraform destroy -refresh=false`, and a saved destroy
+  plan all delete it.
+- Terraform hides the old id when a generated-id group is tainted, so that
+  replacement is still refused at plan. Run `terraform destroy -refresh=false`.
+- If a configuration change with no rules stops the destroy's refresh plan,
+  remove the block and apply, or run `terraform destroy -refresh=false`.
 
 ### Projects locked to a region
 

@@ -148,6 +148,7 @@ var (
 		deletableWhile:  []string{"active", "failed"},
 		deletingAgainOK: true,
 		rows:            func(o *objects) table[*fakeSecurityGroup] { return o.groupsSec },
+		advance:         advanceSecurityGroup,
 		duplicate:       alreadyExists("security group", ""),
 	}
 

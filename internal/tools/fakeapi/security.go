@@ -311,27 +311,14 @@ func (s *state) listSecurityGroupAttachments(w http.ResponseWriter, r *http.Requ
 	attachmentList.serve(w, r, items)
 }
 
-// noRulesMessage is API 1.4's 422 for a group with no rule in either list.
-// Earlier API versions accept one, then the fabric refuses it and the group
-// settles `failed`. A VPC's default group is made without passing through
-// validateRules.
-const noRulesMessage = "rules: at least one ingress or egress rule is required; " +
-	"a security group with no rules cannot be applied"
-
-// madeBeforeRulesRequired is a display name marker for a group that may have
-// no rules, on a create and on a PATCH. It stands for a group made before the
-// API refused one, so a test can hold such a group in state and plan and
-// destroy it.
+// madeBeforeRulesRequired is a display name marker that keeps an active
+// group with no rules for legacy-state lifecycle tests. API 1.3 accepts an
+// empty create or PATCH for any other group, then the fabric leaves it failed.
 const madeBeforeRulesRequired = "fake-made-before-rules-required"
 
-// validateRules is the 422 the server answers, modelled so the provider's
-// plan-time check has something to be checked against. Create calls it
-// always, so an omitted `rules` is refused, and update only when the PATCH
-// carries `rules`, so a rename is not.
+// validateRules checks supplied rules and their count. API 1.3 doesn't refuse
+// an empty set. A VPC's default group is made without passing through here.
 func validateRules(g *fakeSecurityGroup) string {
-	if len(g.ingress)+len(g.egress) == 0 && !nameCarries(g.displayName, madeBeforeRulesRequired) {
-		return noRulesMessage
-	}
 	for _, list := range [][]fakeRule{g.ingress, g.egress} {
 		for _, rule := range list {
 			switch rule.Protocol {
@@ -354,6 +341,18 @@ func validateRules(g *fakeSecurityGroup) string {
 		return "a security group holds at most 256 rules"
 	}
 	return ""
+}
+
+// advanceSecurityGroup uses the existing fabric-failure path for an empty
+// group, unless the legacy marker asks the fixture to remain active.
+func advanceSecurityGroup(_ *objects, g *fakeSecurityGroup) bool {
+	displayName := g.displayName
+	if len(g.ingress)+len(g.egress) == 0 && !nameCarries(displayName, madeBeforeRulesRequired) {
+		failed := settlesFailed
+		displayName = &failed
+	}
+	settle(&g.state, &g.reads, displayName)
+	return false
 }
 
 // securityGroupJSON is a group as API v1.3.0-rc.5 answers it (the

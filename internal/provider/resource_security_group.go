@@ -16,6 +16,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
+	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
 	"github.com/k0rdent/terraform-provider-k0rdent/internal/k0rdent"
@@ -353,45 +354,53 @@ func (r *securityGroupResource) ModifyPlan(ctx context.Context, req resource.Mod
 	// update waits for it to come back.
 	planResume(ctx, req, resp)
 	planSettledState(ctx, securityGroupStates.settle, req, resp)
-	planNeedsARule(ctx, req, resp)
+	planNeedsARule(ctx, r.meta, req, resp)
 }
 
 // noRulesFix is what every diagnostic about a group with no rules ends with.
 const noRulesFix = "Add an `ingress` or `egress` block. To stop using a group, remove it from " +
 	"what it's bound to, then remove its resource block and apply, which deletes it."
 
-// noRulesDestroy follows noRulesFix in the errors. `terraform destroy` runs a
-// normal plan first, to refresh state. That plan replaces a tainted group, or
-// makes the change the configuration asks for, so the error stops the destroy
-// too. `-refresh=false` skips that plan.
+// noRulesDestroy follows noRulesFix in configuration-caused errors.
+// `terraform destroy` refreshes first, which can reproduce the configuration's
+// refused change. `-refresh=false` skips that refresh and deletes the group.
 const noRulesDestroy = " If this is `terraform destroy`, remove the block and apply instead, or run " +
 	"`terraform destroy -refresh=false`."
 
-// planNeedsARule refuses a create or a change that would leave the group with
-// no rules, and warns about a group already in state that has none.
+const noRulesCreateDetail = "This group has no `ingress` and no `egress` block. API 1.4 refuses a create " +
+	"with no rules with HTTP 422. API 1.3 accepts the request, and the fabric can then leave the group " +
+	"`failed`. "
+
+const noRulesChangeDetail = "This group has no `ingress` and no `egress` block. Every change to a group " +
+	"sends its rules, a change to `tags` alone included. API 1.4 refuses a change that leaves a group with " +
+	"no rules with HTTP 422. API 1.3 accepts the request, and the fabric can then leave the group `failed`. "
+
+func addNoRulesCreateError(diags *diag.Diagnostics) {
+	diags.AddError("A security group needs at least one rule", noRulesCreateDetail+noRulesFix+noRulesDestroy)
+}
+
+// planNeedsARule refuses a create or a configuration change that would leave
+// the group with no rules. It warns when only the platform's state causes the
+// refusal: an unchanged group with no rules, or its tainted replacement.
 //
-// The platform answers 422 to a create with no rules and to a PATCH whose
-// `rules` has both lists empty, because the fabric can't apply such a group:
-// it would settle `failed` and leave what it's bound to waiting on it. Every
-// update here sends `rules`, so any change to such a group is refused, one to
-// `tags` or `tags_all` alone included.
+// API 1.4 answers 422 to a create with no rules and to a PATCH whose `rules`
+// has both lists empty. API 1.3 accepts either request, and the fabric can then
+// leave the group `failed`. Every update here sends `rules`, so any change to
+// such a group is refused, one to `tags` or `tags_all` alone included.
 //
 // No change is told apart the way Terraform tells it: the planned state equal
 // to the prior state, which Terraform plans as a no-op and sends nothing for.
 // So this runs last, once every other step has written the plan, and an
-// unknown anywhere makes it a change. A group made before the platform refused
-// one plans no change, and gets a warning instead of an error, so it can stay
-// or be deleted. A destroy has no plan and is left alone.
+// unknown anywhere makes it a change. A destroy has no plan and is left alone.
 //
-// The plan `terraform destroy` runs first can't be told apart from any other.
-// A tainted group is planned as a create, with no prior state, and a generated
-// `id` is unknown there, so nothing in the plan says it's a replacement. So
-// the destroy of a tainted group with no rules, or of one whose configuration
-// also changes it, stops on the error, which names the two ways past it.
+// Terraform plans a tainted replacement with null prior state, as it does a
+// new create. A read of the configured id tells an existing empty group from
+// a new create. That replacement warns here and refuses in Create before it
+// sends a request. An unchanged destroy of one never refuses.
 //
 // A list a `dynamic` block builds from a value not known yet is unknown, and
 // so is its length, so nothing is said until both lists are known.
-func planNeedsARule(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
+func planNeedsARule(ctx context.Context, meta *Meta, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
 	if req.Plan.Raw.IsNull() || resp.Diagnostics.HasError() {
 		return
 	}
@@ -413,28 +422,44 @@ func planNeedsARule(ctx context.Context, req resource.ModifyPlanRequest, resp *r
 		return
 	}
 
-	// Local: planned from configuration and prior state, no request made.
+	// The only request is the configured-id read for a create-shaped plan.
 	switch {
-	case req.State.Raw.IsNull():
-		resp.Diagnostics.AddError(
-			"A security group needs at least one rule",
-			"This group has no `ingress` and no `egress` block, and the platform refuses to "+
-				"create a group with no rules. "+noRulesFix+noRulesDestroy,
+	case req.State.Raw.IsNull() && replacementHasNoRules(ctx, meta, resp.Plan):
+		resp.Diagnostics.AddWarning(
+			"This security group has no rules",
+			"The group has no `ingress` and no `egress` block. Its tainted replacement can't be "+
+				"applied with no rules. "+noRulesFix,
 		)
+	case req.State.Raw.IsNull():
+		addNoRulesCreateError(&resp.Diagnostics)
 	case resp.Plan.Raw.Equal(req.State.Raw):
 		resp.Diagnostics.AddWarning(
 			"This security group has no rules",
-			"The group has no `ingress` and no `egress` block. The platform can't apply a group "+
-				"with no rules, and refuses any change to it until it has one. "+noRulesFix,
+			"The group has no `ingress` and no `egress` block. API 1.3 accepts requests that leave "+
+				"it with no rules, and the fabric can then leave the group `failed`. "+noRulesFix,
 		)
 	default:
 		resp.Diagnostics.AddError(
 			"A security group needs at least one rule",
-			"This group has no `ingress` and no `egress` block. Every change to a group sends its "+
-				"rules, a change to `tags` alone included, and the platform refuses a change that "+
-				"leaves it with none. "+noRulesFix+noRulesDestroy,
+			noRulesChangeDetail+noRulesFix+noRulesDestroy,
 		)
 	}
+}
+
+// replacementHasNoRules reports whether the configured id already names an
+// empty group. Terraform hides prior state for a tainted replacement, so the
+// platform read is what distinguishes it from a new create.
+func replacementHasNoRules(ctx context.Context, meta *Meta, plan tfsdk.Plan) bool {
+	if meta == nil || meta.Client == nil {
+		return false
+	}
+	target, id, ok := plannedTarget(ctx, meta, plan)
+	if !ok {
+		return false
+	}
+	got, err := meta.Client.GetSecurityGroupWithResponse(ctx, target.region, target.project, id)
+	return err == nil && got.JSON200 != nil &&
+		len(got.JSON200.Rules.Ingress)+len(got.JSON200.Rules.Egress) == 0
 }
 
 func (r *securityGroupResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
@@ -466,6 +491,10 @@ func (r *securityGroupResource) Create(ctx context.Context, req resource.CreateR
 	}
 
 	rules := rulesRequest(plan)
+	if len(rules.Ingress)+len(rules.Egress) == 0 {
+		addNoRulesCreateError(&resp.Diagnostics)
+		return
+	}
 	body := k0rdent.SecurityGroupCreateRequest{
 		Id:          &key.id,
 		DisplayName: md.DisplayName,
@@ -844,8 +873,9 @@ var securityGroupStates = stateKind[k0rdent.SecurityGroup]{
 
 func rulesRequest(m securityGroupModel) k0rdent.SecurityGroupRules {
 	// Both lists are always present, never nil. An omitted `rules` leaves the
-	// group's rules alone, and an empty list clears that direction. Both empty
-	// is refused by the server and, before that, by planNeedsARule.
+	// group's rules alone, and an empty list clears that direction. API 1.3
+	// accepts both empty and the fabric can fail the group, so plan and Create
+	// refuse that configuration before a request.
 	out := k0rdent.SecurityGroupRules{
 		Ingress: make([]k0rdent.SecurityGroupRule, 0, len(m.Ingress)),
 		Egress:  make([]k0rdent.SecurityGroupRule, 0, len(m.Egress)),
