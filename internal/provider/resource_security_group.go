@@ -243,9 +243,9 @@ func (r *securityGroupResource) Schema(ctx context.Context, _ resource.SchemaReq
 				ElementType: types.StringType,
 				MarkdownDescription: "User-defined labels. Terraform owns the map's string tags, and the next " +
 					"apply removes a string tag set another way. Reads warn about non-string tags. Non-string " +
-					"values present at the pre-update read are carried into the replacement, and clearing " +
+					"values present at the pre-update read are carried into the outgoing tag map, and clearing " +
 					"configured tags keeps them. A concurrent write between the read and the update can be lost " +
-					"because the platform's update replaces the whole map. " +
+					"because the platform's update overwrites the whole map. " +
 					"The contract types tag values as freeform JSON. This schema accepts strings because a " +
 					"Terraform map has one element type and a string is the only one every value round-trips " +
 					"through.",
