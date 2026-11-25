@@ -589,11 +589,17 @@ def refused_version(run):
     run.env["TF_VAR_cluster_type"] = earlier
     run.env["TF_VAR_adopt_only"] = "true"
     start = len(run.rec.rows)
-    out, _ = run.plan("adopt")
-    require("forward-only" in out, "The earlier configured version didn't produce the downgrade warning.")
+    out, plan = run.plan("adopt")
+    require("keeps the platform value for `cluster_type`" in " ".join(out.replace("│", " ").split()),
+            "The adopt plan didn't warn that it kept the platform's cluster_type.")
+    managed = changes(plan)
+    require(len(managed) == 1 and managed[0]["change"]["actions"] == ["update"]
+            and managed[0]["change"]["after"]["cluster_type"].endswith(current),
+            "The adopt plan didn't retain the bound version in place.")
     run.apply("adopt")
     run.no_write(start)
     run.check_state(uid)
+    require(run.observe()["clusterType"].endswith(current), "The adopt apply changed the bound version.")
     run.destroy()
     run.creates(1)
 

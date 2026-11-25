@@ -467,6 +467,57 @@ func TestAccKubernetesClusterAdoptOnlyAlreadyManagedBeforeDestroy(t *testing.T) 
 	}
 }
 
+func TestAccAdoptOnlyKeepsAnEarlierPinOutOfTheDeleteFlow(t *testing.T) {
+	t.Parallel()
+	const name = "acc-adopt-only-earlier-pin"
+	c := newCLIRun(t)
+	c.addEnv("TF_VAR_cluster_id", name)
+	c.addEnv("TF_VAR_create_token", "adopt-earlier-pin-token")
+	path := clusterAPIPath(name)
+	t.Cleanup(func() { cancelAndRemoveFromFake(t, name) })
+	config := strings.Replace(adoptOnlyConfig(name), clusterTypeRef+`"`, clusterTypeV2+`"`, 1)
+	config = strings.Replace(config, "  timeouts {", "  storage_ceiling_gib = 100\n  timeouts {", 1)
+	writeFile(t, filepath.Join(c.dir, "main.tf"), config)
+	if out, ok := planAndApply(t, c, "create.tfplan"); !ok {
+		t.Fatalf("create failed:\n%s", out)
+	}
+	uid := fakeUID(t, path)
+	config = strings.Replace(config, clusterTypeV2, versionOne, 1)
+	config = strings.Replace(config, `display_name      = "acceptance"`, `display_name      = "ignored rename"`, 1)
+	config = strings.Replace(config, "node_count = 2", "node_count = 1", 1)
+	config = strings.Replace(config, "storage_ceiling_gib = 100", "storage_ceiling_gib = 50", 1)
+	writeFile(t, filepath.Join(c.dir, "main.tf"), config)
+	c.addEnv("TF_VAR_adopt_only", "true")
+	sentNothing := clusterWrites(t, path)
+	out, ok := c.run("plan", "-out=adopt.tfplan")
+	if !ok {
+		t.Fatalf("adopt plan failed:\n%s", out)
+	}
+	mustSay(t, "the adopt plan", out, "keeps the platform value for `cluster_type`",
+		"keeps the platform value for `display_name`", "keeps the platform value for `node_pool`",
+		"keeps the platform value for `storage_ceiling_gib`")
+	if out, ok = c.run("apply", "adopt.tfplan"); !ok {
+		t.Fatalf("adopt apply failed:\n%s", out)
+	}
+	if out, ok = c.run("show", "-no-color"); !ok || !strings.Contains(out, clusterTypeV2) ||
+		strings.Contains(out, versionOne) || strings.Contains(out, "ignored rename") {
+		t.Fatalf("adopt state does not hold the platform's values:\n%s", out)
+	}
+	if got := c.heldUID(clusterType + ".test"); got != uid {
+		t.Fatalf("adopt recorded UID %q, want %q", got, uid)
+	}
+	sentNothing("adopt plan and apply")
+	if out, ok = c.run("plan", "-destroy", "-out=destroy.tfplan"); !ok {
+		t.Fatalf("destroy plan failed:\n%s", out)
+	}
+	if out, ok = c.run("apply", "destroy.tfplan"); !ok {
+		t.Fatalf("destroy apply failed:\n%s", out)
+	}
+	if err := checkGoneAt(path)(nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestAccKubernetesClusterAdoptOnlyFalseStillCreates(t *testing.T) { //nolint:paralleltest // it counts creates shared fake serves
 	const name = "acc-adopt-only-normal-create"
 	c := newCLIRun(t)

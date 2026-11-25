@@ -22,7 +22,8 @@ func adoptOnlySchemaAttribute() schema.BoolAttribute {
 		MarkdownDescription: "Adopt an existing cluster by `create_token` without ever creating one. " +
 			"Requires a non-empty `create_token`. Use the `" + ResourceName(clusterDataSourceSuffix+"s") + "` lookup with import and " +
 			"resource `for_each`, as the recovery guide shows, so absence plans no managed instance. An exact " +
-			"match records the platform UID and waits for `creating` to settle without a create request. " +
+			"match records the platform UID without creating a cluster. The plan keeps the observed values " +
+			"and warns about configured changes, including a different `cluster_type` version. " +
 			"Missing or different provenance is refused. A later destroy uses the recorded UID, so a " +
 			"replacement under the same id is never adopted or deleted.",
 	}

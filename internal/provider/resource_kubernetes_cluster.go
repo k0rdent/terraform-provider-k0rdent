@@ -273,14 +273,17 @@ func (r *clusterResource) Schema(ctx context.Context, _ resource.SchemaRequest, 
 			},
 			"display_name": schema.StringAttribute{
 				Optional:            true,
+				Computed:            true,
 				MarkdownDescription: "Human-friendly name. Mutable.",
 			},
 			"description": schema.StringAttribute{
 				Optional:            true,
+				Computed:            true,
 				MarkdownDescription: "Free-form description. Mutable.",
 			},
 			"tags": schema.MapAttribute{
 				Optional:            true,
+				Computed:            true,
 				ElementType:         types.StringType,
 				MarkdownDescription: "User-defined labels. Mutable.",
 				Validators:          []validator.Map{reservedTagKey{}},
@@ -485,6 +488,15 @@ func (r *clusterResource) Configure(_ context.Context, req resource.ConfigureReq
 func (r *clusterResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
 	// Runs on every plan, create included: the resolved scope has to reach state.
 	modifyScopePlan(ctx, r.meta, req, resp)
+	if !resp.Plan.Raw.IsNull() && isAdoptOnly(ctx, req.Config) {
+		r.checkAdoptOnly(ctx, resp.Plan, req.State, req.Config, &resp.Diagnostics)
+		if !resp.Diagnostics.HasError() {
+			planNoUsersWhenLeftOut(ctx, req, resp)
+			planAdoptedCluster(ctx, req, resp)
+		}
+		return
+	}
+	planUnconfiguredClusterMetadata(ctx, req, resp)
 	// After the scope resolves the region, so a cluster type from another
 	// region is refused here rather than by the create.
 	refuseClusterTypeRegionMove(ctx, resp.Plan, &resp.Diagnostics, "cluster")
@@ -498,12 +510,6 @@ func (r *clusterResource) ModifyPlan(ctx context.Context, req resource.ModifyPla
 		return
 	}
 	checkConfiguredKeys(ctx, req, &resp.Diagnostics)
-	if !resp.Plan.Raw.IsNull() && !req.Config.Raw.IsNull() {
-		r.checkAdoptOnly(ctx, resp.Plan, req.State, req.Config, &resp.Diagnostics)
-		if resp.Diagnostics.HasError() {
-			return
-		}
-	}
 	planNoUsersWhenLeftOut(ctx, req, resp)
 	warnUnrecordedSSHAccess(ctx, req, resp)
 	replaceOnChangedKeys(ctx, req, resp)
