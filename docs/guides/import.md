@@ -316,9 +316,10 @@ guards the subsequent destroy, which can cancel a create that's still running.
 
 A run interrupted while the create waits, such as by a CI cancel or a job
 timeout, saves the cluster untainted when `create_token` is set. Terraform
-still ends that run with `execution halted`. The next apply, normal or
-adopt-only, waits for the same cluster. A row Terraform holds tainted, such as
-after a create the platform failed, is replaced instead: the adopt-only apply
+still ends that run with `execution halted`. The next normal apply waits for
+the same cluster. An adopt-only apply records it without waiting. A row
+Terraform holds tainted, such as after a create the platform failed, is
+replaced instead: the adopt-only apply
 deletes the cluster and then fails with no cluster to adopt. Its plan warns
 about this before the apply.
 
