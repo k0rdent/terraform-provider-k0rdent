@@ -555,10 +555,12 @@ func TestASecurityGroupCreateWaitsForTheOldOneToFinishDeleting(t *testing.T) {
 	f.refusals[groupsPath] = 1
 	f.reason[groupsPath] = "CONFLICT_DUPLICATE"
 	f.reads[groupPath] = []string{"deleting", "deleting", "deleting", gone}
-	f.extra[groupPath] = map[string]any{"rules": map[string]any{"ingress": []any{}, "egress": []any{}}}
+	f.extra[groupPath] = map[string]any{"rules": oneEgressRuleBody}
 
 	r := &securityGroupResource{meta: testClusterMeta(t, f.serve().URL, time.Minute)}
-	raw, s := testValue(t, r, map[string]tftypes.Value{"id": str("g1"), "region": str("test"), "project": str("test")})
+	raw, s := testValue(t, r, map[string]tftypes.Value{
+		"id": str("g1"), "region": str("test"), "project": str("test"), "egress": oneEgressRule(t),
+	})
 	resp := resource.CreateResponse{State: tfsdk.State{Raw: tftypes.NewValue(raw.Type(), nil), Schema: s.Schema}}
 	r.Create(context.Background(), resource.CreateRequest{Plan: tfsdk.Plan{Raw: raw, Schema: s.Schema}}, &resp)
 	if resp.Diagnostics.HasError() {
@@ -576,10 +578,12 @@ func TestASecurityGroupCreateOnALiveDuplicateIsRefused(t *testing.T) {
 	f.refusals[groupsPath] = 1
 	f.reason[groupsPath] = "CONFLICT_DUPLICATE"
 	f.reads[groupPath] = []string{"active"}
-	f.extra[groupPath] = map[string]any{"rules": map[string]any{"ingress": []any{}, "egress": []any{}}}
+	f.extra[groupPath] = map[string]any{"rules": oneEgressRuleBody}
 
 	r := &securityGroupResource{meta: testClusterMeta(t, f.serve().URL, time.Minute)}
-	raw, s := testValue(t, r, map[string]tftypes.Value{"id": str("g1"), "region": str("test"), "project": str("test")})
+	raw, s := testValue(t, r, map[string]tftypes.Value{
+		"id": str("g1"), "region": str("test"), "project": str("test"), "egress": oneEgressRule(t),
+	})
 	resp := resource.CreateResponse{State: tfsdk.State{Raw: tftypes.NewValue(raw.Type(), nil), Schema: s.Schema}}
 	r.Create(context.Background(), resource.CreateRequest{Plan: tfsdk.Plan{Raw: raw, Schema: s.Schema}}, &resp)
 	assertRefusedWithImport(t, resp.Diagnostics, "terraform import <address> test/test/g1")

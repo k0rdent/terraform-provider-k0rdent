@@ -95,6 +95,29 @@ interface.
 
 ## Migrations
 
+### A security group needs a rule
+
+A plan to create a `k0rdent_security_group` with no `ingress` and no
+`egress` block, or to change one that has none, now fails with "A security
+group needs at least one rule". API 1.4 refuses such a create or change with
+HTTP 422. API 1.3 accepts the request, and the fabric can then leave the group
+`failed`, which keeps whatever it's bound to waiting.
+
+A group already in state with no rules and nothing to change plans with the
+warning "This security group has no rules", and `terraform destroy` deletes
+it.
+
+- To keep the group, add an `ingress` or `egress` block. One rule in either
+  list is enough.
+- To stop using it, remove it from what it's bound to, then remove its
+  resource block and apply, which deletes it.
+- A tainted replacement with no rules in configuration is refused at plan for
+  either a configured or generated `id`. The configuration causes the refusal
+  because it makes the replacement's create invalid. Add an `ingress` or
+  `egress` block, or run `terraform destroy -refresh=false` to delete the group.
+- If a configuration change with no rules stops the destroy's refresh plan,
+  remove the block and apply, or run `terraform destroy -refresh=false`.
+
 ### Projects locked to a region
 
 Every project now belongs to one region, set when it's created.

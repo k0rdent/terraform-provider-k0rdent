@@ -180,7 +180,10 @@ func (r *securityGroupResource) Schema(ctx context.Context, _ resource.SchemaReq
 			"interfaces, not the Kubernetes API endpoint, and there is no allowlist for that " +
 			"endpoint on the public API today.\n\n" +
 			"Rules are evaluated first-match in list order, and ingress and egress are " +
-			"independent. Only a VPC on the `nico` fabric backend can carry security groups.\n\n" +
+			"independent. A group needs at least one rule, in either list: a plan to create " +
+			"a group with none, or to change a group that has none, fails. One already in state " +
+			"with none plans with a warning and can be destroyed.\n\n" +
+			"Only a VPC on the `nico` fabric backend can carry security groups.\n\n" +
 			"The platform adds no rules to a group. On the `nico` fabric, traffic that no rule " +
 			"permits is denied, in both directions. Rules the operator sets for the site are " +
 			"checked before the group's, so a site permit or deny wins over the group. Replies to " +
@@ -351,6 +354,88 @@ func (r *securityGroupResource) ModifyPlan(ctx context.Context, req resource.Mod
 	// update waits for it to come back.
 	planResume(ctx, req, resp)
 	planSettledState(ctx, securityGroupStates.settle, req, resp)
+	planNeedsARule(ctx, req, resp)
+}
+
+// noRulesFix is what every diagnostic about a group with no rules ends with.
+const noRulesFix = "Add an `ingress` or `egress` block. To stop using a group, remove it from " +
+	"what it's bound to, then remove its resource block and apply, which deletes it."
+
+// noRulesDestroy follows noRulesFix in configuration-caused errors.
+// `terraform destroy` refreshes first, which can reproduce the configuration's
+// refused change. `-refresh=false` skips that refresh and deletes the group.
+const noRulesDestroy = " If this is `terraform destroy`, remove the block and apply instead, or run " +
+	"`terraform destroy -refresh=false`."
+
+const noRulesCreateDetail = "This group has no `ingress` and no `egress` block. API 1.4 refuses a create " +
+	"with no rules with HTTP 422. API 1.3 accepts the request, and the fabric can then leave the group " +
+	"`failed`. "
+
+const noRulesChangeDetail = "This group has no `ingress` and no `egress` block. Every change to a group " +
+	"sends its rules, a change to `tags` alone included. API 1.4 refuses a change that leaves a group with " +
+	"no rules with HTTP 422. API 1.3 accepts the request, and the fabric can then leave the group `failed`. "
+
+func addNoRulesCreateError(diags *diag.Diagnostics) {
+	diags.AddError("A security group needs at least one rule", noRulesCreateDetail+noRulesFix+noRulesDestroy)
+}
+
+// planNeedsARule refuses a create or a configuration change that would leave
+// the group with no rules. It warns when only the platform's state causes the
+// refusal: an unchanged group with no rules.
+//
+// API 1.4 answers 422 to a create with no rules and to a PATCH whose `rules`
+// has both lists empty. API 1.3 accepts either request, and the fabric can then
+// leave the group `failed`. Every update here sends `rules`, so any change to
+// such a group is refused, one to `tags` or `tags_all` alone included.
+//
+// No change is told apart the way Terraform tells it: the planned state equal
+// to the prior state, which Terraform plans as a no-op and sends nothing for.
+// So this runs last, once every other step has written the plan, and an
+// unknown anywhere makes it a change. A destroy has no plan and is left alone.
+//
+// Terraform plans a tainted replacement with null prior state, as it does a
+// new create. No rules in configuration make that create invalid too, so the
+// configuration causes its refusal. An unchanged destroy never refuses.
+//
+// A list a `dynamic` block builds from a value not known yet is unknown, and
+// so is its length, so nothing is said until both lists are known.
+func planNeedsARule(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
+	if req.Plan.Raw.IsNull() || resp.Diagnostics.HasError() {
+		return
+	}
+	// The platform makes a VPC's default group, and refusePlatformOwned has
+	// already refused any change to it.
+	if _, owned := platformOwner(ctx, "owner_kind", string(k0rdent.SecurityGroupOwnerKindVpc), req.State); owned {
+		return
+	}
+	rules := 0
+	for _, direction := range []string{"ingress", "egress"} {
+		var list types.List
+		resp.Diagnostics.Append(req.Config.GetAttribute(ctx, path.Root(direction), &list)...)
+		if resp.Diagnostics.HasError() || list.IsUnknown() {
+			return
+		}
+		rules += len(list.Elements())
+	}
+	if rules > 0 {
+		return
+	}
+
+	switch {
+	case req.State.Raw.IsNull():
+		addNoRulesCreateError(&resp.Diagnostics)
+	case resp.Plan.Raw.Equal(req.State.Raw):
+		resp.Diagnostics.AddWarning(
+			"This security group has no rules",
+			"The group has no `ingress` and no `egress` block. API 1.3 accepts requests that leave "+
+				"it with no rules, and the fabric can then leave the group `failed`. "+noRulesFix,
+		)
+	default:
+		resp.Diagnostics.AddError(
+			"A security group needs at least one rule",
+			noRulesChangeDetail+noRulesFix+noRulesDestroy,
+		)
+	}
 }
 
 func (r *securityGroupResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
@@ -382,6 +467,10 @@ func (r *securityGroupResource) Create(ctx context.Context, req resource.CreateR
 	}
 
 	rules := rulesRequest(plan)
+	if len(rules.Ingress)+len(rules.Egress) == 0 {
+		addNoRulesCreateError(&resp.Diagnostics)
+		return
+	}
 	body := k0rdent.SecurityGroupCreateRequest{
 		Id:          &key.id,
 		DisplayName: md.DisplayName,
@@ -760,8 +849,9 @@ var securityGroupStates = stateKind[k0rdent.SecurityGroup]{
 
 func rulesRequest(m securityGroupModel) k0rdent.SecurityGroupRules {
 	// Both lists are always present, never nil. An omitted `rules` leaves the
-	// group's rules alone and empty lists clear them, and a configuration with
-	// no blocks means the second.
+	// group's rules alone, and an empty list clears that direction. API 1.3
+	// accepts both empty and the fabric can fail the group, so plan and Create
+	// refuse that configuration before a request.
 	out := k0rdent.SecurityGroupRules{
 		Ingress: make([]k0rdent.SecurityGroupRule, 0, len(m.Ingress)),
 		Egress:  make([]k0rdent.SecurityGroupRule, 0, len(m.Egress)),

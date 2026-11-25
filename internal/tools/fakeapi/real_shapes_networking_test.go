@@ -83,7 +83,7 @@ func TestASubnetAnswersItsIPVersionOnceAllocated(t *testing.T) {
 // the model has for it.
 func TestASecurityGroupAnswersItsUIDAndStatusReason(t *testing.T) {
 	s := newState()
-	_, created := in(t, s.createSecurityGroup, http.MethodPost, "r", "p", nil, `{"id":"g"}`)
+	_, created := in(t, s.createSecurityGroup, http.MethodPost, "r", "p", nil, `{`+oneRule+`,"id":"g"}`)
 	if created["uid"] == nil || created["uid"] == "" || created["createdAt"] == nil || created["updatedAt"] == nil {
 		t.Errorf("create: %v, want a uid and both timestamps", created)
 	}
@@ -103,7 +103,7 @@ func TestASecurityGroupAnswersItsUIDAndStatusReason(t *testing.T) {
 	}
 
 	failed := map[string]string{"id": "f"}
-	in(t, s.createSecurityGroup, http.MethodPost, "r", "p", nil, `{"id":"f","displayName":"`+settlesFailed+`"}`)
+	in(t, s.createSecurityGroup, http.MethodPost, "r", "p", nil, `{`+oneRule+`,"id":"f","displayName":"`+settlesFailed+`"}`)
 	var got map[string]any
 	for range settleAfter + 2 {
 		_, got = in(t, s.getSecurityGroup, http.MethodGet, "r", "p", failed, "")
