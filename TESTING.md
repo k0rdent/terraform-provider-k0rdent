@@ -224,6 +224,37 @@ Give every new path a reason, since an empty one fails. Run
 `make plan-quality`, then commit the file. If a count goes up, say why in the
 pull request.
 
+### `make pipeline-check`
+
+Use HashiCorp Terraform 1.15.5 to run the cluster recovery and delete flows
+from [the import guide](docs/guides/import.md) against a fresh fake:
+
+```sh
+make pipeline-check TF_BIN=/path/to/terraform
+make pipeline-check-test
+```
+
+Each cluster gets a separate locked HTTP state. The runner applies saved plans
+and retries a timed-out create with the same ephemeral token until the cluster
+is active or the wait window ends. The active postcondition doesn't apply to
+adopt-only runs. The provider can still time out waiting for a cluster that's
+creating. In the runner loss case, the backend releases the interrupted
+runner's lock after confirming it died.
+Terraform doesn't run an unlock command or change state by hand.
+
+The command prints the private directory for the evidence report, saved plans,
+CLI output and request logs. Use `PIPELINE_CASES="6 9"` to run selected cases.
+
+For a dedicated test landscape, set `PIPELINE_MODE=live`, the provider's
+`K0RDENT_*` settings, `REAL_API_CLUSTER_TYPE` to a type with at least two
+available versions, `PIPELINE_CONFIRM` to the endpoint host and port, and
+`PIPELINE_PREFIX` to a prefix for the run's cluster ids. Live mode creates and
+deletes clusters. Hold the stack's lock for a shared kind run. Set
+`PIPELINE_SHORT_TIMEOUT` for the timeout cases and `PIPELINE_CREATE_TIMEOUT`,
+`PIPELINE_WAIT_SECONDS` and `PIPELINE_NODE_POOL` when the landscape needs
+longer waits or different pool counts. The default live pool counts use the
+type's minimums. `PIPELINE_NODE_POOL` takes the resource's `node_pool` map as JSON.
+
 ### `make walkthrough-test` and `make walkthrough-api-test`
 
 Follow [docs/walkthrough-hardware.md](docs/walkthrough-hardware.md) and

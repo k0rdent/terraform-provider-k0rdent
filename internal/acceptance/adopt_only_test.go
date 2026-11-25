@@ -86,6 +86,12 @@ resource %[1]q "test" {
   timeouts {
     create = "10m"
   }
+  lifecycle {
+    postcondition {
+      condition     = var.adopt_only || self.state == "active"
+      error_message = "The cluster isn't active."
+    }
+  }
 }
 `, clusterType, clusterType+"s", clusterTypeRef)
 }
@@ -411,6 +417,53 @@ func TestAccKubernetesClusterAdoptOnlyRefusesReplacementCreatedAfterPlan(t *test
 	requireCreateCount(t, cancels, 0)
 	if got := fakeUID(t, path); got != replacementUID {
 		t.Fatalf("replacement uid changed from %s to %s", replacementUID, got)
+	}
+}
+
+func TestAccKubernetesClusterAdoptOnlyAlreadyManagedBeforeDestroy(t *testing.T) { //nolint:paralleltest // it counts creates shared fake serves
+	const name = "acc-adopt-only-managed"
+	c := newCLIRun(t)
+	c.addEnv("TF_VAR_cluster_id", name)
+	c.addEnv("TF_VAR_create_token", "already-managed-token")
+	c.addEnv("TF_VAR_adopt_only", "false")
+	writeFile(t, filepath.Join(c.dir, "main.tf"), adoptOnlyConfig(name))
+	path := clusterAPIPath(name)
+	t.Cleanup(func() { cancelAndRemoveFromFake(t, name) })
+	if out, ok := c.run("plan", "-out=create.tfplan"); !ok {
+		t.Fatalf("the create plan failed:\n%s", out)
+	}
+	if out, ok := c.run("apply", "create.tfplan"); !ok {
+		t.Fatalf("the create failed:\n%s", out)
+	}
+	uid := fakeUID(t, path)
+	addr := clusterType + ".test"
+	c.addEnv("TF_VAR_adopt_only", "true")
+	creates := &requestCounter{method: http.MethodPost, path: "/v1/regions/us-texas-1/projects/demo/compute/clusters"}
+	creates.start(t)()
+	sentNothing := clusterWrites(t, path)
+	out, ok := c.run("plan", "-out=adopt.tfplan")
+	if !ok {
+		t.Fatalf("the adopt plan failed:\n%s", out)
+	}
+	mustSay(t, "the adopt plan", out, "adopt_only", "0 to add, 1 to change, 0 to destroy")
+	if out, ok = c.run("apply", "adopt.tfplan"); !ok {
+		t.Fatalf("the adopt apply failed:\n%s", out)
+	}
+	sentNothing("adopt plan and apply")
+	requireCreateCount(t, creates, 0)
+	if got := c.heldUID(addr); got != uid {
+		t.Fatalf("the adopt apply recorded UID %q, want %q", got, uid)
+	}
+	if out, ok = c.run("plan", "-destroy", "-out=destroy.tfplan"); !ok {
+		t.Fatalf("the destroy plan failed:\n%s", out)
+	}
+	mustSay(t, "the destroy plan", out, "0 to add, 0 to change, 1 to destroy")
+	if out, ok = c.run("apply", "destroy.tfplan"); !ok {
+		t.Fatalf("the destroy apply failed:\n%s", out)
+	}
+	requireNoManagedResourceState(t, c)
+	if err := checkGoneAt(path)(nil); err != nil {
+		t.Fatal(err)
 	}
 }
 

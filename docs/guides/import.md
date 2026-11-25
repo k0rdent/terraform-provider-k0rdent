@@ -270,6 +270,24 @@ resource "k0rdent_kubernetes_cluster" "test" {
   timeouts {
     create = "10m"
   }
+  lifecycle {
+    postcondition {
+      condition     = var.adopt_only || self.state == "active"
+      error_message = "The cluster isn't active."
+    }
+  }
+}
+```
+
+The postcondition requires an active cluster during normal applies and lets
+the adopt apply run during teardown even when the cluster isn't active.
+
+If an existing configuration managed the cluster without `for_each`, add this `moved` block once, using the cluster id as the key:
+
+```hcl
+moved {
+  from = k0rdent_kubernetes_cluster.test
+  to   = k0rdent_kubernetes_cluster.test["ml-training"]
 }
 ```
 
