@@ -530,6 +530,8 @@ func (r *clusterResource) ModifyPlan(ctx context.Context, req resource.ModifyPla
 		window = r.meta.Wait.ProvisionalFailureWindow
 	}
 	planFailed(ctx, req, resp, window)
+	// A normal resume must not turn omitted metadata into a computed value.
+	planUnconfiguredClusterMetadata(ctx, req, resp)
 	// resp.Plan, not req.Plan: the scope has just been resolved into it.
 	if resp.Plan.Raw.Equal(req.State.Raw) {
 		return // no-op
