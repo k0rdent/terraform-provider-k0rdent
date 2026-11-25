@@ -11,7 +11,7 @@ resource/k0rdent_kubernetes_cluster: Add the write-only `create_token`. A create
 ```
 
 ```release-note:enhancement
-resource/k0rdent_kubernetes_cluster: Add `adopt_only`, which adopts a cluster by its `create_token` and never creates one, so a destroy can follow an interrupted create
+resource/k0rdent_kubernetes_cluster: Add `adopt_only`, which adopts a cluster by its `create_token` and never creates one. Its apply records the platform's current values without writing to the cluster or waiting for an operation, so a destroy can follow an interrupted create or a cluster still creating
 ```
 
 ```release-note:note
