@@ -1,0 +1,3 @@
+```release-note:bug
+resource/k0rdent_kubernetes_cluster: Make `adopt_only` retain platform values and record clusters without waiting for active operations before destroy
+```

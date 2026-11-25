@@ -138,8 +138,8 @@ func (e existing) warnAdopt(diags *diag.Diagnostics) {
 	diags.AddAttributeWarning(path.Root("id"),
 		fmt.Sprintf("Adopting the existing %s %q", e.kind, e.id),
 		redactDiagnosticText(fmt.Sprintf("The platform reports %s %q as `%s`, with the exact `create_token` "+
-			"this configuration supplied. If this state doesn't hold it, the apply records its UID, waits if it's "+
-			"still creating, and sends no create request. If this state holds it tainted, Terraform replaces it: "+
+			"this configuration supplied. If this state doesn't hold it, the apply records its UID and state "+
+			"without waiting and sends no create request. If this state holds it tainted, Terraform replaces it: "+
 			"the apply deletes it first, cancelling anything still being built, and then fails with no %s to "+
 			"adopt. To keep a tainted %s, run `terraform untaint <address>` before planning, replacing <address> "+
 			"with this resource's address, such as %s.example.",

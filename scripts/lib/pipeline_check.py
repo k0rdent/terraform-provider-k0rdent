@@ -694,7 +694,12 @@ def migrate_address(run):
 def delete_while_creating(run):
     row = timed_out_create(run, fake_display="fake-never-settles")
     require(row["state"] == "creating", "The cluster settled before the delete flow started.")
+    start = len(run.rec.rows)
     run.adopt()
+    run.check_state(row["uid"], "creating")
+    require(run.observe()["state"] == "creating", "The cluster settled before the destroy plan.")
+    require(not any(path == run.path + "/runtime/events" for _, path, _ in run.rec.rows[start:]),
+            "The adopt apply polled the create operation.")
     run.destroy()
     run.creates(1)
 

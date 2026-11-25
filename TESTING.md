@@ -237,8 +237,8 @@ make pipeline-check-test
 Each cluster gets a separate locked HTTP state. The runner applies saved plans
 and retries a timed-out create with the same ephemeral token until the cluster
 is active or the wait window ends. The active postcondition doesn't apply to
-adopt-only runs. The provider can still time out waiting for a cluster that's
-creating. In the runner loss case, the backend releases the interrupted
+adopt-only runs, which record a cluster without waiting for it to settle.
+In the runner loss case, the backend releases the interrupted
 runner's lock after confirming it died.
 Terraform doesn't run an unlock command or change state by hand.
 

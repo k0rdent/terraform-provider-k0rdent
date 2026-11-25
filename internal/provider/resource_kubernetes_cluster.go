@@ -679,12 +679,22 @@ func (r *clusterResource) Create(ctx context.Context, req resource.CreateRequest
 		// apply would cancel and delete the cluster, so an opt-in keeps it.
 		keepInterrupt: keep || key.durableToken,
 		wait: func(ctx context.Context, id string) error {
+			if plan.AdoptOnly.ValueBool() {
+				return nil
+			}
 			return r.waitForSettled(ctx, target, id, "the cluster to finish creating")
 		},
 		read: func(ctx context.Context, id string) (clusterModel, bool, diag.Diagnostics) {
 			m, found, diags := r.read(ctx, target, id, plan)
 			if !found || diags.HasError() {
 				return m, found, diags
+			}
+			if plan.AdoptOnly.ValueBool() {
+				if held, same := heldObject(ctx, resp.Private, m.uid); !same {
+					addAnotherObject(&diags, "cluster", id, held, m.uid)
+					diags.AddError("The cluster changed during adoption", "Plan again before adopting this cluster. Nothing was changed on the platform.")
+					return m, false, diags
+				}
 			}
 			// The platform registers the keys as credentials: read back the
 			// references it made, which state holds from here on.
@@ -778,13 +788,17 @@ func (r *clusterResource) Read(ctx context.Context, req resource.ReadRequest, re
 
 func (r *clusterResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
 	defer syncIdentity(ctx, r.meta, resp.Identity, &resp.Diagnostics, &resp.State)
-	if refuseUncheckedKeys(ctx, req.Private, &resp.Diagnostics) {
-		return
-	}
 	var plan, state clusterModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
+		return
+	}
+	if plan.AdoptOnly.ValueBool() {
+		resp.Diagnostics.Append(resp.State.Set(ctx, planOverPrior(plan, state))...)
+		return
+	}
+	if refuseUncheckedKeys(ctx, req.Private, &resp.Diagnostics) {
 		return
 	}
 	target, ok := resolveScope(r.meta, state.Region, state.Project, &resp.Diagnostics)

@@ -67,6 +67,27 @@ func TestTheAdoptPlanRefusesAnUnrepresentableNull(t *testing.T) {
 	containsAll(t, "null refusal", diagText(resp.Diagnostics), "The platform doesn't report `description`", "Omit `description` for the adopt apply")
 }
 
+func TestOnlyNormalPlansReplaceForADifferentClusterType(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	const oldRef = "/v1/regions/test/compute/cluster-types/original"
+	const newRef = "/v1/regions/test/compute/cluster-types/different"
+	for _, adopt := range []bool{false, true} {
+		prior := testClusterState(t, "c1", oldRef)
+		input := testClusterState(t, "c1", newRef)
+		if d := input.SetAttribute(ctx, path.Root(adoptOnlyAttribute), types.BoolValue(adopt)); d.HasError() {
+			t.Fatal(d)
+		}
+		req := planmodifier.StringRequest{Config: tfsdk.Config(input), State: prior, Plan: tfsdk.Plan(input),
+			ConfigValue: types.StringValue(newRef), StateValue: types.StringValue(oldRef), PlanValue: types.StringValue(newRef)}
+		resp := planmodifier.StringResponse{PlanValue: req.PlanValue}
+		clusterTypeVersionGuard().PlanModifyString(ctx, req, &resp)
+		if resp.Diagnostics.HasError() || resp.RequiresReplace == adopt {
+			t.Errorf("adopt_only = %v: requires replacement %v, diagnostics %v", adopt, resp.RequiresReplace, resp.Diagnostics)
+		}
+	}
+}
+
 func TestOnlyNormalPlansRefuseALowerStorageCeiling(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

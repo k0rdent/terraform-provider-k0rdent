@@ -305,13 +305,14 @@ terraform apply destroy.tfplan
 The lookup returns at most one cluster. No match means both `for_each` maps
 are empty, so the apply creates nothing and records no managed cluster. An
 exact match imports that cluster with its UID and sends no create request.
-The adopt plan keeps the observed values and names any configured differences
-in warnings. For example, pinning an earlier `cluster_type` version doesn't
+The adopt apply records the cluster's current state without changing it or
+waiting for its operation to settle. The plan keeps the observed values and
+names any configured differences in warnings. For example, pinning an earlier `cluster_type` version doesn't
 block the delete flow. If Terraform can't retain an unset platform value
 because the configuration sets that attribute, omit the attribute for the
-adopt apply. A same-named cluster with a missing or different token fails the plan after its
-import read but before a state write. UID guards the subsequent destroy. A cluster still
-creating is allowed to settle first, after which the same destroy applies.
+adopt apply. A same-named cluster with a missing or different token fails
+the plan after its import read and before a state write. The recorded UID
+guards the subsequent destroy, which can cancel a create that's still running.
 
 A run interrupted while the create waits, such as by a CI cancel or a job
 timeout, saves the cluster untainted when `create_token` is set. Terraform

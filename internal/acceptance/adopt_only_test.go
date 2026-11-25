@@ -195,11 +195,19 @@ func TestAccKubernetesClusterAdoptOnlyWithoutImportSendsNoCreate(t *testing.T) {
 		skipTest(t, "TF_ACC is not set")
 	}
 	const name, token = "acc-adopt-only-bare", "bare-adopt-token"
-	uid := seedAdoptCandidate(t, name, token)
+	path := clusterAPIPath(name)
+	t.Cleanup(func() { cancelAndRemoveFromFake(t, name) })
+	if err := postFake("/v1/regions/us-texas-1/projects/demo/compute/clusters", fmt.Sprintf(
+		`{"id":%q,"clusterType":%q,"displayName":%q,"nodePools":[{"id":"gpu-workers","nodeCount":2}],"tags":{"terraform-provider-k0rdent/create-token":%q}}`,
+		name, clusterTypeRef, neverSettles, token)); err != nil {
+		t.Fatal(err)
+	}
+	uid := fakeUID(t, path)
 	c := newCLIRun(t)
 	c.addEnv("TF_VAR_create_token", token)
 	config := strings.Replace(createTokenConfig(name, ""), "  create_token      = var.create_token", "  create_token      = var.create_token\n  adopt_only        = true", 1)
-	config = strings.Replace(config, `display_name      = "fake-creates-slowly"`, `display_name      = "acceptance"`, 1)
+	config = strings.Replace(config, `"fake-creates-slowly"`, `"`+neverSettles+`"`, 1)
+	config = strings.Replace(config, `"10m"`, `"1s"`, 1)
 	c.write(config)
 	creates := &requestCounter{method: http.MethodPost, path: "/v1/regions/us-texas-1/projects/demo/compute/clusters"}
 	creates.start(t)()
@@ -207,8 +215,8 @@ func TestAccKubernetesClusterAdoptOnlyWithoutImportSendsNoCreate(t *testing.T) {
 		t.Fatalf("bare adopt-only apply failed:\n%s", out)
 	}
 	requireCreateCount(t, creates, 0)
-	if got := c.cliInstance(clusterType + ".test"); got.Attributes.UID != uid {
-		t.Fatalf("adopted uid = %s, want %s", got.Attributes.UID, uid)
+	if got := c.cliInstance(clusterType + ".test"); got.Attributes.UID != uid || got.Attributes.State != "creating" || got.Status == "tainted" {
+		t.Fatalf("adopted state = %+v, want an untainted creating cluster at UID %s", got, uid)
 	}
 	if out, ok := c.run("destroy", "-auto-approve"); !ok {
 		t.Fatalf("destroy after bare adoption failed:\n%s", out)
@@ -513,6 +521,49 @@ func TestAccAdoptOnlyKeepsAnEarlierPinOutOfTheDeleteFlow(t *testing.T) {
 	if out, ok = c.run("apply", "destroy.tfplan"); !ok {
 		t.Fatalf("destroy apply failed:\n%s", out)
 	}
+	if err := checkGoneAt(path)(nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestAccAdoptOnlyRecordsACreatingClusterBeforeDestroy(t *testing.T) {
+	t.Parallel()
+	const name = "acc-adopt-only-still-creating"
+	c := newCLIRun(t)
+	c.addEnv("TF_VAR_cluster_id", name)
+	c.addEnv("TF_VAR_create_token", "adopt-busy-token")
+	path := clusterAPIPath(name)
+	t.Cleanup(func() { cancelAndRemoveFromFake(t, name) })
+	config := strings.Replace(adoptOnlyConfig(name), `"10m"`, `"1s"`, 1)
+	config = strings.Replace(config, `"acceptance"`, `"`+neverSettles+`"`, 1)
+	config = strings.Replace(config, "  timeouts {", "  on_create_timeout = \"keep\"\n  timeouts {", 1)
+	writeFile(t, filepath.Join(c.dir, "main.tf"), config)
+	out, ok := planAndApply(t, c, "create.tfplan")
+	if ok {
+		t.Fatalf("the fixture settled unexpectedly:\n%s", out)
+	}
+	mustSay(t, "the create", out, "The cluster isn't active", "is still being created")
+	uid := fakeUID(t, path)
+	c.addEnv("TF_VAR_adopt_only", "true")
+	sentNothing := clusterWrites(t, path)
+	if out, ok = c.run("plan", "-out=adopt.tfplan"); !ok {
+		t.Fatalf("adopt plan failed:\n%s", out)
+	}
+	if out, ok = c.run("apply", "adopt.tfplan"); !ok {
+		t.Fatalf("adopt apply failed:\n%s", out)
+	}
+	addr := clusterType + ".test"
+	if got := c.cliInstance(addr); got.Status == "tainted" || got.Attributes.State != "creating" || got.Attributes.UID != uid || c.heldUID(addr) != uid {
+		t.Fatalf("adopt state doesn't hold the untainted creating cluster %q: %+v", uid, got)
+	}
+	sentNothing("adopt plan and apply")
+	if out, ok = c.run("plan", "-destroy", "-out=destroy.tfplan"); !ok {
+		t.Fatalf("destroy plan failed:\n%s", out)
+	}
+	if out, ok = c.run("apply", "destroy.tfplan"); !ok {
+		t.Fatalf("destroy apply failed:\n%s", out)
+	}
+	mustSay(t, "the destroy", out, "Cancelled the cluster's in-flight operation to destroy it")
 	if err := checkGoneAt(path)(nil); err != nil {
 		t.Fatal(err)
 	}

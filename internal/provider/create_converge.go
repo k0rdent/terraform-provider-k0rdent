@@ -459,7 +459,7 @@ func (c convergingCreate) adopt(ctx context.Context) (createOutcome, createdAs, 
 	diags.AddWarning(
 		fmt.Sprintf("Adopting the existing %s", c.kind),
 		fmt.Sprintf("The platform's %s %q has the exact `create_token` this configuration supplied. "+
-			"No create request was sent. State records its UID, and the apply waits if it's still creating.",
+			"No create request was sent. The apply records its UID and state without waiting.",
 			c.kind, c.key.id))
 	return createDone, createdAs{id: c.key.id, uid: l.uid}, diags
 }
