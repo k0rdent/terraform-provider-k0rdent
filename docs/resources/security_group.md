@@ -8,7 +8,7 @@ description: |-
   Rules are evaluated first-match in list order, and ingress and egress are independent. Only a VPC on the nico fabric backend can carry security groups.
   The platform adds no rules to a group. On the nico fabric, traffic that no rule permits is denied, in both directions. Rules the operator sets for the site are checked before the group's, so a site permit or deny wins over the group. Replies to a connection a node opened through a stateful egress rule are let back in. A change can take up to a few minutes to reach the nodes, and the cluster's Kubernetes API address isn't filtered at all.
   Requires region and project on the provider.
-  What replaces it. Changing id, project or region cannot be done in place and replaces the security group. Everything else changes in place.
+  What replaces it. Changing id, project or region cannot be done in place and replaces the security group. A project is locked to one region, so a plan that changes region fails unless project changes with it, to a project in that region. Everything else changes in place.
 ---
 
 # k0rdent_security_group (Resource)
@@ -23,7 +23,7 @@ The platform adds no rules to a group. On the `nico` fabric, traffic that no rul
 
 Requires `region` and `project` on the provider.
 
-**What replaces it.** Changing `id`, `project` or `region` cannot be done in place and replaces the security group. Everything else changes in place.
+**What replaces it.** Changing `id`, `project` or `region` cannot be done in place and replaces the security group. A project is locked to one region, so a plan that changes `region` fails unless `project` changes with it, to a project in that region. Everything else changes in place.
 
 ## Example Usage
 
@@ -120,7 +120,7 @@ Rules are stateless, with one exception the platform applies on the `nico` fabri
 A group mid-teardown keeps its name: recreating one with the same `id` is refused with `409` until the old one has finished deleting. **Forces replacement**. **Constraints:** Must be lower-case letters, digits and hyphens, starting with a letter and not ending with a hyphen (`[a-z]([-a-z0-9]*[a-z0-9])?`), because it becomes a segment of a request URL. String length must be at most 63.
 - `ingress` (Block List) Rules filtering traffic arriving at the instance, in evaluation order. (see [below for nested schema](#nestedblock--ingress))
 - `project` (String) Project this resource belongs to. Defaults to the provider's `project`. It's part of the resource's API path, so a resource can't move between projects. **Forces replacement**. **Constraints:** Must be lower-case letters, digits and hyphens, starting with a letter and not ending with a hyphen (`[a-z]([-a-z0-9]*[a-z0-9])?`), because it becomes a segment of a request URL.
-- `region` (String) Region this resource lives in. Defaults to the provider's `region`. It's part of the resource's API path, so a resource can't move between regions. **Forces replacement**. **Constraints:** Must be lower-case letters, digits and hyphens, starting with a letter and not ending with a hyphen (`[a-z]([-a-z0-9]*[a-z0-9])?`), because it becomes a segment of a request URL.
+- `region` (String) Region this resource lives in. Defaults to the provider's `region`. It's part of the resource's API path, so a resource can't move between regions. **Can force replacement**: when `project` changes with it, to a project in the new region. A change to `region` alone is refused. **Constraints:** Must be lower-case letters, digits and hyphens, starting with a letter and not ending with a hyphen (`[a-z]([-a-z0-9]*[a-z0-9])?`), because it becomes a segment of a request URL.
 - `tags` (Map of String) User-defined labels. The contract types tag values as freeform JSON; this schema accepts strings, because a Terraform map has one element type and a string is the only one every value round-trips through. **Constraints:** The key `terraform-provider-k0rdent/create-token` is the provider's own.
 - `timeouts` (Block, Optional) How long each operation may take before it fails. Each operation left out defaults to the provider's `operation_timeout`, which is `2h` unless the provider block or `K0RDENT_OPERATION_TIMEOUT` sets it. (see [below for nested schema](#nestedblock--timeouts))
 

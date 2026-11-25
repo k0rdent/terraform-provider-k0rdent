@@ -205,6 +205,81 @@ func TestTheGuardAddsTheOptInAndSaysWhatItGuards(t *testing.T) {
 	}
 }
 
+// A resource in a project can't change region on its own: modifyScopePlan
+// refuses a region the project isn't in, allow_replace or not. A project has
+// no project attribute, and its region change does replace it.
+func TestTheParagraphSaysARegionChangeNeedsTheProjectToMove(t *testing.T) {
+	scoped := func(withProject bool) schema.Schema {
+		s := schema.Schema{Attributes: map[string]schema.Attribute{
+			"id":     schema.StringAttribute{Required: true},
+			"region": schema.StringAttribute{Optional: true},
+		}}
+		if withProject {
+			s.Attributes["project"] = schema.StringAttribute{Optional: true}
+		}
+		return s
+	}
+	const refused = "a plan that changes `region` fails unless `project` changes with it"
+	if got := replacementParagraph(scoped(true), stubTenantState); !strings.Contains(got, refused) ||
+		!strings.Contains(got, "`allow_replace = true` doesn't change that") {
+		t.Errorf("a project-scoped paragraph doesn't say a region change alone is refused:\n%s", got)
+	}
+	if got := replacementParagraph(scoped(true), tenantState{noun: "stub"}); !strings.Contains(got, refused) ||
+		strings.Contains(got, "allow_replace") {
+		t.Errorf("an unguarded paragraph should say the refusal without allow_replace:\n%s", got)
+	}
+	if got := replacementParagraph(scoped(false), stubTenantState); strings.Contains(got, refused) {
+		t.Errorf("a resource with no project says its region change is refused:\n%s", got)
+	}
+}
+
+// The region attribute's own line says the same: it replaces only with a
+// project change, and the gap check holds every resource to that.
+func TestTheRegionAttributeSaysAChangeAloneIsRefused(t *testing.T) {
+	const alone = "A change to `region` alone is refused"
+	for _, tc := range []struct {
+		name               string
+		project, guarded   bool
+		wantAlone, wantOpt bool
+	}{
+		{"guarded, in a project", true, true, true, true},
+		{"unguarded, in a project", true, false, true, false},
+		{"guarded, no project", false, true, false, false},
+	} {
+		s := schema.Schema{MarkdownDescription: "A stub.", Attributes: map[string]schema.Attribute{
+			"id":     schema.StringAttribute{Required: true, MarkdownDescription: "The id of the stub."},
+			"region": regionAttribute(),
+		}}
+		if tc.project {
+			s.Attributes["project"] = projectAttribute()
+		}
+		if tc.guarded {
+			s.Attributes[allowReplaceAttribute] = allowReplaceSchemaAttribute(stubTenantState)
+		}
+		documentResourceSchema(&s)
+		region := s.Attributes["region"].GetMarkdownDescription()
+		if got := strings.Contains(region, alone); got != tc.wantAlone {
+			t.Errorf("%s: says a region change alone is refused = %v:\n%s", tc.name, got, region)
+		}
+		if got := strings.Contains(region, "`allow_replace = true` or not"); got != tc.wantOpt {
+			t.Errorf("%s: names allow_replace in the refusal = %v:\n%s", tc.name, got, region)
+		}
+		if tc.project && !strings.Contains(s.Attributes["project"].GetMarkdownDescription(), forcesReplacementMarker) {
+			t.Errorf("%s: project no longer says it forces replacement", tc.name)
+		}
+	}
+	// The gap check wants that line on a region in a project.
+	m := reflect.ValueOf(map[string]schema.Attribute{"region": regionAttribute(), "project": projectAttribute()})
+	if scopeOf(m, "region", true) != regionInProject || scopeOf(m, "project", true) != scopeReplaces {
+		t.Fatal("region and project in one schema aren't told apart")
+	}
+	forces := schema.StringAttribute{MarkdownDescription: "Region this resource lives in. **Forces replacement**."}
+	gaps := attributeGaps(context.Background(), "stub.region", reflect.ValueOf(forces), regionInProject)
+	if !strings.Contains(strings.Join(gaps, "\n"), "can force replacement, and its description doesn't say so") {
+		t.Errorf("a region in a project documented as always replacing passes: %v", gaps)
+	}
+}
+
 func planStub(t *testing.T, r resource.Resource, s schema.Schema, prior, planned tftypes.Value) resource.ModifyPlanResponse {
 	t.Helper()
 	resp := resource.ModifyPlanResponse{Plan: tfsdk.Plan{Raw: planned, Schema: s}}

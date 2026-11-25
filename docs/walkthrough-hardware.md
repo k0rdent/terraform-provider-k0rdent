@@ -404,8 +404,8 @@ The `build` block in `terraform.tfvars` turns each part on or off:
   why `full/` adds a deny for each service from anywhere else, except the
   Kubernetes API port. A list
   without the default would replace it. The default's id is random, so
-  `full/` finds it by the name the platform gives it, `Default (<VPC id>)`,
-  and stops with an error if it can't.
+  `full/` finds it as the group in the VPC's own `security_groups` whose
+  `owner_kind` is `vpc`, and stops with an error if it can't.
 - A security group change can take a few minutes to reach the nodes.
 
 ## When something goes wrong

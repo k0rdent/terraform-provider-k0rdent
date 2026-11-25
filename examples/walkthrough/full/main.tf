@@ -471,21 +471,21 @@ data "k0rdent_vpc" "owned" {
 }
 
 # Each VPC's default group, which the platform makes with the VPC. Its id is
-# random, so it's found by the name the platform gives it, "Default (<VPC
-# id>)", and by owner_kind, which only the platform's groups carry. The VPC's
-# own security_groups can't be used: it lists the binding, which this
-# changes.
+# random, so it's found as the group in the VPC's own security_groups that
+# the platform owns: owner_kind is "vpc" only on the platform's groups. The
+# binding below keeps the default in that list, so later plans find it too.
 data "k0rdent_security_groups" "vpc_default" {
   for_each = var.build.vpc_security_groups ? local.owners : {}
 
-  project            = local.project
-  display_name_regex = "^Default \\(${each.value.vpc}\\)$"
+  project = local.project
+  # The VPC's region, from its read, so the list waits until the VPC exists.
+  region = data.k0rdent_vpc.owned[each.key].region
 }
 
 locals {
   vpc_default_group = {
     for owner, d in data.k0rdent_security_groups.vpc_default :
-    owner => [for g in d.security_groups : g.id if g.owner_kind == "vpc"]
+    owner => [for g in d.security_groups : g.id if g.owner_kind == "vpc" && contains(data.k0rdent_vpc.owned[owner].security_groups, g.id)]
   }
 }
 
@@ -512,7 +512,7 @@ resource "k0rdent_vpc_security_groups" "this" {
     # Fail rather than drop the default group from the VPC.
     precondition {
       condition     = data.k0rdent_vpc.owned[each.key].backend != "nico" || length(local.vpc_default_group[each.key]) == 1
-      error_message = "Found ${length(local.vpc_default_group[each.key])} default groups for the ${each.key} VPC, ${each.value.vpc}, not 1. Either the VPC has none, as from API v1.3.0-rc.4 a VPC with no subnet prefixes or more than 16 doesn't, or no single group with owner_kind = \"vpc\" is named \"Default (${each.value.vpc})\". Without one, this binding would replace the VPC's rules for traffic between its subnets, and on a VPC with none it couldn't be taken off again. Set build.vpc_security_groups = false, or check the VPC's groups with the k0rdent_security_groups data source."
+      error_message = "Found ${length(local.vpc_default_group[each.key])} default groups for the ${each.key} VPC, ${each.value.vpc}, not 1. Either the VPC has none, as from API v1.3.0-rc.4 a VPC with no subnet prefixes or more than 16 doesn't, or more than one group with owner_kind = \"vpc\" is in its security_groups. Without one, this binding would replace the VPC's rules for traffic between its subnets, and on a VPC with none it couldn't be taken off again. Set build.vpc_security_groups = false, or check the VPC's groups with the k0rdent_security_groups data source."
     }
   }
 }
@@ -643,10 +643,16 @@ data "k0rdent_share_type" "chosen" {
   count = var.build.file_store ? 1 : 0
 
   # file_store.share_type if set, else the first active one. try() gives ""
-  # when there's none, and the read then fails with a clear error.
+  # when there's none, and the precondition below stops the plan.
   id = var.file_store.share_type != "" ? var.file_store.share_type : try(data.k0rdent_share_types.active[0].ids[0], "")
 
   lifecycle {
+    # Fail the plan if there's no share type to use.
+    precondition {
+      condition     = var.file_store.share_type != "" || length(data.k0rdent_share_types.active[0].ids) > 0
+      error_message = "Region ${var.region} has no active share type, so no file store can be made. Set file_store.share_type to one, set build.file_store = false, or ask whoever runs the landscape for one."
+    }
+
     postcondition {
       condition     = self.state == "active"
       error_message = "Share type ${self.id} is ${coalesce(self.state, "in no state")}, and only an active one gives out storage."
@@ -658,7 +664,8 @@ data "k0rdent_share_type" "chosen" {
 resource "k0rdent_file_store" "this" {
   count = var.build.file_store ? 1 : 0
 
-  id           = local.name
+  # No id, so the provider generates one. A create interrupted with its
+  # request in flight is then kept in state, tainted, rather than left out.
   project      = local.project
   display_name = local.display_name
   description  = local.description
