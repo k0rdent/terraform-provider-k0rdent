@@ -149,17 +149,20 @@ func (d *clusterTypesDataSource) Read(ctx context.Context, req datasource.ReadRe
 		return
 	}
 	var params k0rdent.ListClusterTypesParams
-	if !data.IncludeDeprecated.IsNull() && !data.IncludeDeprecated.IsUnknown() {
-		v := data.IncludeDeprecated.ValueBool()
-		params.IncludeDeprecated = &v
-	}
+	includeHidden := !data.IncludeDeprecated.IsNull() && !data.IncludeDeprecated.IsUnknown() &&
+		data.IncludeDeprecated.ValueBool()
 	// The platform hides deprecated types unless asked, and one that lists
 	// each type at its latest `available` version hides every type without
-	// one, so a filter for any other status could come back empty. Those
-	// platforms take `includeDeprecated` as an alias of `includeUnavailable`.
-	if filter.state != "" && filter.state != string(k0rdent.ClusterTypeVersionStatusAvailable) {
+	// one, so a filter for any other status could come back empty. API 1.3
+	// reads includeDeprecated. API 1.4 reads includeUnavailable and accepts
+	// includeDeprecated as an alias until its 2027-01-26 sunset. Send both
+	// until the provider moves to API 1.4. False and omission use the default.
+	includeHidden = includeHidden || filter.state != "" && filter.state != string(k0rdent.ClusterTypeVersionStatusAvailable)
+	var requestEditors []k0rdent.RequestEditorFn
+	if includeHidden {
 		v := true
 		params.IncludeDeprecated = &v
+		requestEditors = append(requestEditors, includeUnavailable)
 	}
 
 	// Offset paging is the only way past the first page: a request without it
@@ -170,7 +173,7 @@ func (d *clusterTypesDataSource) Read(ctx context.Context, req datasource.ReadRe
 		func(ct k0rdent.ClusterTypeSummary) string { return deref(ct.Id) },
 		func(offset, limit int32) (page[k0rdent.ClusterTypeSummary], error) {
 			params.Offset, params.Limit = &offset, &limit
-			got, err := d.meta.Client.ListClusterTypesWithResponse(ctx, region, &params)
+			got, err := d.meta.Client.ListClusterTypesWithResponse(ctx, region, &params, requestEditors...)
 			if err != nil {
 				return page[k0rdent.ClusterTypeSummary]{}, err
 			}
@@ -407,9 +410,9 @@ func (d *clusterTypeDataSource) Read(ctx context.Context, req datasource.ReadReq
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
-// includeUnavailable asks getClusterType for a ClusterType with no `available`
-// version. From API 1.4 the read answers 404 for one without it, which would
-// fail every plan, destroy included. API 1.3 ignores the parameter.
+// includeUnavailable asks a ClusterType read for types with no `available`
+// version. From API 1.4 a singular read answers 404 for one without it, which
+// would fail every plan, destroy included. API 1.3 ignores the parameter.
 func includeUnavailable(_ context.Context, req *http.Request) error {
 	q := req.URL.Query()
 	q.Set("includeUnavailable", "true")

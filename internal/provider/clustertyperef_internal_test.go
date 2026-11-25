@@ -134,6 +134,32 @@ func TestClusterTypeRefEquivalent(t *testing.T) {
 	}
 }
 
+// The API v1.3.0 hardware run on 2026-11-20 returned these exact relative
+// forms. It produced no spelling that needs another normalization.
+func TestRecordedClusterTypeFormsCompareWithoutAChange(t *testing.T) {
+	t.Parallel()
+
+	const (
+		head   = "/v1/regions/global/compute/cluster-types/default-multirack-gb300"
+		pinned = head + "/versions/630c2ea5-90e2-471f-b5f2-be5c7f590734"
+	)
+	for _, tc := range []struct {
+		name, configured, returned string
+		want                       clusterTypeRefMatch
+	}{
+		{"head read back unchanged", head, head, refIdentical},
+		{"head resolved to the recorded version", head, pinned, refVersionResolved},
+		{"recorded version read back unchanged", pinned, pinned, refIdentical},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := clusterTypeRefEquivalent(tc.configured, tc.returned); got != tc.want {
+				t.Errorf("clusterTypeRefEquivalent(%q, %q) = %v, want %v",
+					tc.configured, tc.returned, got, tc.want)
+			}
+		})
+	}
+}
+
 // The relative path against `format: uri` is a *validation* hazard, not just a
 // comparison one: anything in this provider's path that insisted on an absolute
 // URI would reject the values the live API actually returns. Nothing does, and

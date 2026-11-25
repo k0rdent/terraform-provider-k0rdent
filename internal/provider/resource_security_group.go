@@ -1,7 +1,9 @@
 package provider
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"reflect"
@@ -239,9 +241,14 @@ func (r *securityGroupResource) Schema(ctx context.Context, _ resource.SchemaReq
 			"tags": schema.MapAttribute{
 				Optional:    true,
 				ElementType: types.StringType,
-				MarkdownDescription: "User-defined labels. The contract types tag values as freeform " +
-					"JSON; this schema accepts strings, because a Terraform map has one element " +
-					"type and a string is the only one every value round-trips through.",
+				MarkdownDescription: "User-defined labels. Terraform owns the map's string tags, and the next " +
+					"apply removes a string tag set another way. Reads warn about non-string tags. Non-string " +
+					"values present at the pre-update read are carried into the outgoing tag map, and clearing " +
+					"configured tags keeps them. A concurrent write between the read and the update can be lost " +
+					"because the platform's update overwrites the whole map. " +
+					"The contract types tag values as freeform JSON. This schema accepts strings because a " +
+					"Terraform map has one element type and a string is the only one every value round-trips " +
+					"through.",
 				Validators: []validator.Map{reservedTagKey{}},
 			},
 			tagsAllAttribute: tagsAllSchemaAttribute(""),
@@ -540,6 +547,27 @@ func (r *securityGroupResource) Update(ctx context.Context, req resource.UpdateR
 // waits for it to be applied. It reports whether that worked.
 func (r *securityGroupResource) sendUpdate(ctx context.Context, target clusterTarget, id string, md metadataFields,
 	rules k0rdent.SecurityGroupRules, diags *diag.Diagnostics) bool {
+	current, readErr := r.meta.Client.GetSecurityGroupWithResponse(ctx, target.region, target.project, id)
+	if readErr != nil || current.JSON200 == nil {
+		var respBody []byte
+		var httpResp *http.Response
+		if current != nil {
+			respBody, httpResp = current.Body, current.HTTPResponse
+		}
+		addAPIError(diags, "read the security group before updating it", httpResp, respBody, readErr)
+		return false
+	}
+	var currentTags struct {
+		Tags map[string]any `json:"tags"`
+	}
+	decoder := json.NewDecoder(bytes.NewReader(current.Body))
+	decoder.UseNumber()
+	if err := decoder.Decode(&currentTags); err != nil {
+		addAPIError(diags, "decode the security group read before updating it", current.HTTPResponse, current.Body, err)
+		return false
+	}
+	tags := freeformTagsWithCurrent(md.Tags, currentTags.Tags)
+
 	// A group still applying an earlier change refuses this one, which a run
 	// whose wait timed out leaves behind. The PATCH carries the whole desired
 	// state, so sending it again once the group settles asks for the same.
@@ -553,7 +581,7 @@ func (r *securityGroupResource) sendUpdate(ctx context.Context, target clusterTa
 			k0rdent.SecurityGroupUpdateRequest{
 				DisplayName: md.DisplayName,
 				Description: md.Description,
-				Tags:        freeformTags(md.Tags),
+				Tags:        tags,
 				Rules:       &rules,
 			})
 		if err != nil {

@@ -148,9 +148,18 @@ so a refusal at apply would come after the delete.
   no default security group
 - A network, subnet or security group whose `id` names one the platform made
   for a cluster, when this state doesn't hold it
+- A changed cluster whose platform object has no provider create token, when
+  its replacement doesn't set `allow_replace = true`
+- A changed `cluster_type` that names another region
 
 Set the configuration back to what's applied, or run
 `terraform destroy -refresh=false`, which destroys from state as it is.
+
+A changed `cluster_type` that isn't a valid ClusterType reference also refuses
+the plan. Restore a valid reference or remove the resource block before running
+`terraform destroy -refresh=false`, which doesn't bypass configuration
+validation. `terraform state rm` also removes the cluster from state, but
+leaves it running on the platform.
 
 A cluster's `cluster_type` version change is made in place, so its refusal
 waits for the apply and doesn't stop a destroy.

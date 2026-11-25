@@ -214,7 +214,7 @@ How to read a row:
 | `rule_count` | computed | n/a | `TestAccImport`, `TestAccQueryGeneratesConfigThatPlansClean` | n/a (computed only) |
 | `self_link` | computed | n/a | `TestAccImport`, `TestAccQueryGeneratesConfigThatPlansClean` | n/a (computed only) |
 | `state` | computed | n/a | `TestAccImport`, `TestAccQueryGeneratesConfigThatPlansClean` | n/a (computed only) |
-| `tags` | optional | in place | `TestAccImport` | `TestAccSecurityGroupClearsMetadata` |
+| `tags` | optional | in place | `TestAccImport` | `TestAccSecurityGroupClearsMetadata`, `TestAccSecurityGroupNonStringTagSurvivesTagsApply` |
 | `tags_all` | computed | n/a | `TestAccImport`, `TestAccQueryGeneratesConfigThatPlansClean` | n/a (computed only) |
 | `timeouts.create` | optional | in place | **gap** | **gap** |
 | `timeouts.delete` | optional | in place | **gap** | **gap** |

@@ -190,11 +190,12 @@ func (r *vpcPeeringResource) Schema(ctx context.Context, _ resource.SchemaReques
 				PlanModifiers:       replaceString,
 			},
 			"tags": schema.MapAttribute{
-				Optional:            true,
-				ElementType:         types.StringType,
-				MarkdownDescription: "User-defined labels, settable only at creation.",
-				PlanModifiers:       []planmodifier.Map{replaceTagsIfTheyChange(r.defaults)},
-				Validators:          []validator.Map{reservedTagKey{}},
+				Optional:    true,
+				ElementType: types.StringType,
+				MarkdownDescription: "User-defined labels, settable only at creation. Terraform owns the whole " +
+					"map. A tag set another way is drift, and applying that change replaces the peering.",
+				PlanModifiers: []planmodifier.Map{replaceTagsIfTheyChange(r.defaults)},
+				Validators:    []validator.Map{reservedTagKey{}},
 			},
 			tagsAllAttribute: tagsAllSchemaAttribute(" The API sets a peering's tags only at creation, " +
 				"so a change to the provider's `" + defaultTagsAttribute + "` reaches a new peering and leaves " +

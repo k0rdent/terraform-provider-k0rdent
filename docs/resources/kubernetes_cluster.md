@@ -153,7 +153,7 @@ A refresh reads the users the platform reports, so an import fills this in and a
 - `storage_ceiling_gib` (Number) Storage the cluster declares, in GiB. It's charged against the organization's and the project's `storage_gib` quota, and isn't enforced on the storage array. From 1 to 1048576.
 
 It can be raised in place and never lowered: a lower value is refused at plan time, since the platform refuses it too. Left out, the cluster keeps whatever ceiling it has, and removing it from configuration doesn't clear it. A raise is sent once the cluster is `active`, and one refused while the cluster or its quota accounting is settling is sent again after the cluster settles. A raise past a quota is refused with the amount that would be admitted. **Constraints:** Value must be between 1 and 1048576.
-- `tags` (Map of String) User-defined labels. Mutable. **Constraints:** The key `terraform-provider-k0rdent/create-token` is the provider's own.
+- `tags` (Map of String) User-defined labels. Terraform owns the whole map, and the next apply removes a tag set another way. Mutable. **Constraints:** The key `terraform-provider-k0rdent/create-token` is the provider's own.
 - `timeouts` (Block, Optional) How long each operation may take before it fails. Left out, `create` and `delete` default to `3h` and every other operation to the provider's `operation_timeout`, which is `2h` unless the provider block or `K0RDENT_OPERATION_TIMEOUT` sets it. (see [below for nested schema](#nestedblock--timeouts))
 
 ### Read-Only

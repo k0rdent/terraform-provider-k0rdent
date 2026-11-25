@@ -2,13 +2,19 @@ package provider
 
 import (
 	"context"
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	fwprovider "github.com/hashicorp/terraform-plugin-framework/provider"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -21,6 +27,34 @@ import (
 
 	"github.com/k0rdent/terraform-provider-k0rdent/internal/k0rdent"
 )
+
+func TestTaggedResourcesDocumentMapOwnership(t *testing.T) {
+	t.Parallel()
+
+	for name, tc := range map[string]struct {
+		resource resource.Resource
+		want     string
+	}{
+		"cluster":        {&clusterResource{}, "the next apply removes a tag set another way"},
+		"network":        {&networkResource{}, "the next apply removes a tag set another way"},
+		"security group": {&securityGroupResource{}, "the next apply removes a string tag set another way"},
+		"VPC peering":    {&vpcPeeringResource{}, "applying that change replaces the peering"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var resp resource.SchemaResponse
+			tc.resource.Schema(context.Background(), resource.SchemaRequest{}, &resp)
+			attr, ok := resp.Schema.Attributes["tags"].(schema.MapAttribute)
+			if !ok {
+				t.Fatal("tags isn't a map attribute")
+			}
+			for _, want := range []string{"Terraform owns", tc.want} {
+				if !strings.Contains(attr.MarkdownDescription, want) {
+					t.Errorf("tags description %q doesn't contain %q", attr.MarkdownDescription, want)
+				}
+			}
+		})
+	}
+}
 
 // tagMap is a known map of strings, or a null one for nil.
 func tagMap(t *testing.T, m map[string]string) types.Map {
@@ -718,6 +752,92 @@ func ingressValue(t *testing.T, s resource.SchemaResponse) tftypes.Value {
 		values[name] = str(v)
 	}
 	return tftypes.NewValue(list, []tftypes.Value{tftypes.NewValue(rule, values)})
+}
+
+func TestFreeformTagsWithCurrentKeepsUnreadableValues(t *testing.T) {
+	configured := map[string]string{"team": "platform"}
+	current := map[string]any{
+		"team": "external", "number": float64(7), "object": map[string]any{"keep": true},
+		createTokenTag(): float64(99),
+	}
+	want := map[string]any{
+		"team": "platform", "number": float64(7), "object": map[string]any{"keep": true},
+	}
+	if got := freeformTagsWithCurrent(&configured, current); !reflect.DeepEqual(got, &want) {
+		t.Errorf("tags = %#v, want %#v", got, &want)
+	}
+	if got := freeformTagsWithCurrent(nil, current); got != nil {
+		t.Errorf("an omitted tags field became %#v, want nil", got)
+	}
+}
+
+func TestSecurityGroupUpdatePreservesLargeJSONNumbers(t *testing.T) {
+	const answer = `{"id":"g","state":"active","tags":{"big":9007199254740993,"nested":{"values":[9007199254740993]},"team":"external"}}`
+	var patch []byte
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPatch {
+			var err error
+			patch, err = io.ReadAll(r.Body)
+			if err != nil {
+				t.Errorf("read PATCH: %v", err)
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if _, err := w.Write([]byte(answer)); err != nil {
+			t.Errorf("write security group: %v", err)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	configured := map[string]string{"team": "platform"}
+	r := securityGroupResource{meta: testClusterMeta(t, server.URL, time.Second)}
+	var diags diag.Diagnostics
+	if !r.sendUpdate(context.Background(), clusterTarget{region: "r", project: "p"}, "g",
+		metadataFields{Tags: &configured}, k0rdent.SecurityGroupRules{}, &diags) {
+		t.Fatalf("update failed: %v", diags)
+	}
+	var body map[string]json.RawMessage
+	if err := json.Unmarshal(patch, &body); err != nil {
+		t.Fatalf("decode PATCH %s: %v", patch, err)
+	}
+	const want = `{"big":9007199254740993,"nested":{"values":[9007199254740993]},"team":"platform"}`
+	if got := string(body["tags"]); got != want {
+		t.Errorf("outgoing tags = %s, want %s", got, want)
+	}
+}
+
+func TestSecurityGroupUpdateReadFailureDoesNotPatch(t *testing.T) {
+	for _, transportFailure := range []bool{false, true} {
+		var patches atomic.Int64
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodPatch {
+				patches.Add(1)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			if _, err := w.Write([]byte(`{"error":{"code":500,"message":"read failed"}}`)); err != nil {
+				t.Errorf("write the fake read failure: %v", err)
+			}
+		}))
+		if transportFailure {
+			server.Close()
+		} else {
+			t.Cleanup(server.Close)
+		}
+
+		r := securityGroupResource{meta: testClusterMeta(t, server.URL, time.Second)}
+		var diags diag.Diagnostics
+		if r.sendUpdate(context.Background(), clusterTarget{region: "r", project: "p"}, "g",
+			metadataFields{}, k0rdent.SecurityGroupRules{}, &diags) {
+			t.Error("update succeeded after its read failed")
+		}
+		if !diags.HasError() || diags.Errors()[0].Summary() != "Could not read the security group before updating it" {
+			t.Errorf("diagnostics = %v, want the read failure", diags)
+		}
+		if got := patches.Load(); got != 0 {
+			t.Errorf("PATCH requests = %d after the read failed, want none", got)
+		}
+	}
 }
 
 // Every shape the contract answers tags in, read every way the provider
