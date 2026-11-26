@@ -133,5 +133,6 @@ Read-Only:
 ## Related
 
 - [`k0rdent_kubernetes_cluster`](../resources/kubernetes_cluster.md) resource: manages one.
+- [`k0rdent_kubernetes_clusters`](../data-sources/kubernetes_clusters.md) data source: finds one by exact id, or none, for adopt-only recovery.
 - [`k0rdent_cluster_kubeconfig`](../ephemeral-resources/cluster_kubeconfig.md) ephemeral resource: fetches the credential for the cluster's API.
 - [`k0rdent_cluster_cancel_operation`](../actions/cluster_cancel_operation.md) action: cancels the operation `operation.execution_id` names.

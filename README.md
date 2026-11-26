@@ -9,8 +9,8 @@ stores, projects and webhooks.
   [Terraform Registry](https://registry.terraform.io/providers/k0rdent/k0rdent/latest)
   and the
   [OpenTofu Registry](https://search.opentofu.org/provider/k0rdent/k0rdent/latest)
-- Tested with the two newest minor versions of Terraform and of OpenTofu,
-  listed in the [support matrix](docs/support-matrix.md)
+- Tested with Terraform 1.15.5 and the two newest minor versions of Terraform
+  and OpenTofu, listed in the [support matrix](docs/support-matrix.md)
 - Not Terraform 1.16.0 to 1.16.4 ([why](docs/known-limitations.md#terraform-1160-to-1164))
 - Reference docs: [`docs/`](docs/index.md), the same pages both registries show
 

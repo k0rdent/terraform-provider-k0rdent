@@ -189,6 +189,9 @@ var stateHistories = map[string]stateHistory{
 			// fills them.
 			addedLater: map[string]string{
 				"on_failed":                      `"string"`,
+				"on_create_timeout":              `"string"`,
+				"create_token":                   `"string"`,
+				"adopt_only":                     `"bool"`,
 				"ssh_public_keys_wo":             `["map",["list","string"]]`,
 				"ssh_access.ssh_public_key_refs": `["list","string"]`,
 				"uid":                            `"string"`,

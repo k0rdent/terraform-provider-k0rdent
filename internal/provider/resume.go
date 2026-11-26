@@ -115,7 +115,8 @@ func planWaitOn(ctx context.Context, req resource.ModifyPlanRequest, resp *resou
 // is told to stop waiting (cluster_destroy_busy.go). `on_failed` is: setting
 // it back to `wait` on a `failed` cluster asks the apply to wait for it
 // (cluster_failed.go).
-var providerOnly = map[string]bool{"timeouts": true, allowReplaceAttribute: true, onFailedAttribute: true}
+var providerOnly = map[string]bool{"timeouts": true, allowReplaceAttribute: true, onFailedAttribute: true,
+	onCreateTimeoutAttribute: true}
 
 // onlyResume reports whether an update's plan changes nothing the platform
 // holds beyond what planResume marked unknown.
@@ -170,6 +171,9 @@ type resumable[M any] struct {
 	wait func(ctx context.Context) error
 	// read reads the settled object, reconciled against the plan.
 	read func(ctx context.Context) (M, bool, diag.Diagnostics)
+	// errorState preserves provider-only settings from the plan after a
+	// failed resume, without accepting unknown computed values.
+	errorState func(ctx context.Context, state *tfsdk.State) diag.Diagnostics
 	// waitsOutFailed is a kind whose `failed` the platform can still take
 	// back, and whose configuration doesn't keep it, so an object last read
 	// `failed` is waited on too (cluster_failed.go).
@@ -205,6 +209,11 @@ func (p resumable[M]) finish(ctx context.Context, req resource.UpdateRequest, re
 	}
 	ctx, cancel := withTimeout(ctx, p.timeout, p.fallback, &resp.Diagnostics)
 	defer cancel()
+	defer func() {
+		if resp.Diagnostics.HasError() && p.errorState != nil {
+			resp.Diagnostics.Append(p.errorState(ctx, &resp.State)...)
+		}
+	}()
 	if resp.Diagnostics.HasError() {
 		return true
 	}

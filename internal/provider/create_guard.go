@@ -59,6 +59,9 @@ type existing struct {
 	id, state          string
 	// tagged is false for a kind with no tags to carry a create token.
 	tagged bool
+	// ours is true when its create token equals the configured
+	// `create_token`, so an apply that doesn't hold it adopts it.
+	ours bool
 	// busyNote follows what applying does to one still being built, when
 	// the kind can be told to wait for it instead.
 	busyNote string
@@ -111,6 +114,61 @@ func (e existing) refuse(diags *diag.Diagnostics) {
 		e.kind, e.id, e.state, e.kind, e.resourceName, scopedImportID(e.target)(e.id), e.kind, e.kind)))
 }
 
+// refuseTokenMismatch refuses an untagged cluster when configuration supplied
+// a durable token, and names the values an interrupted run has to reuse.
+func (e existing) refuseTokenMismatch(diags *diag.Diagnostics) {
+	summary := fmt.Sprintf("%s named %q already exists with different provenance", aKind(e.kind), e.id)
+	if verb, busy := inFlight[e.state]; busy {
+		summary = fmt.Sprintf("The %s %q is still being %s with different provenance", e.kind, e.id, verb)
+	}
+	diags.AddAttributeError(path.Root("id"), summary, redactDiagnosticText(fmt.Sprintf(
+		"The platform reports %s %q as `%s`, and it carries no create token. This configuration supplied "+
+			"`create_token`, which must match exactly, so the provider won't adopt it. Nothing was recorded "+
+			"or deleted. If an interrupted run of this configuration created it, pass the same `create_token` "+
+			"that run used, with the same `id`, `region`, and `project`. If those values don't belong to "+
+			"that run, choose another `id`, or import the existing cluster deliberately with "+
+			"`terraform import <address> %s`. To replace it on purpose, set `allow_replace = true`.",
+		e.kind, e.id, e.state, scopedImportID(e.target)(e.id))))
+}
+
+// warnAdopt confirms the exact durable-token match before an apply records it.
+// The provider can't see taint, and a tainted row's replacement reaches it as
+// this same plan to create, so the text covers both.
+func (e existing) warnAdopt(diags *diag.Diagnostics) {
+	diags.AddAttributeWarning(path.Root("id"),
+		fmt.Sprintf("Adopting the existing %s %q", e.kind, e.id),
+		redactDiagnosticText(fmt.Sprintf("The platform reports %s %q as `%s`, with the exact `create_token` "+
+			"this configuration supplied. If this state doesn't hold it, the apply records its UID and state "+
+			"without waiting and sends no create request. If this state holds it tainted, Terraform replaces it: "+
+			"the apply deletes it first, cancelling anything still being built, and then fails with no %s to "+
+			"adopt. To keep a tainted %s, run `terraform untaint <address>` before planning, replacing <address> "+
+			"with this resource's address, such as %s.example.",
+			e.kind, e.id, e.state, e.kind, e.kind, e.resourceName)))
+}
+
+// refuseAdopt rejects absent or different provenance during adopt-only,
+// before anything can be created. held is true when the plan has prior
+// state, as an import block's plan does.
+func (e existing) refuseAdopt(diags *diag.Diagnostics, token string, held bool) {
+	provenance := "it carries no create token"
+	if token != "" {
+		provenance = "its create token differs"
+	}
+	imported := ""
+	if held {
+		imported = " This check ran after the import. A failed plan saves no managed row. A failed saved-plan " +
+			"apply leaves the imported row for the old UID in state. With that row present, the next plain plan " +
+			"leaves it in place and refuses the changed provenance, and `terraform destroy` refuses it too and " +
+			"sends no delete or cancel."
+	}
+	diags.AddAttributeError(path.Root("id"),
+		fmt.Sprintf("%s named %q has different provenance", aKind(e.kind), e.id),
+		redactDiagnosticText(fmt.Sprintf("The platform reports %s %q as `%s`, and %s. `adopt_only = true` "+
+			"requires an exact `create_token` match in the configured region and project, so it won't be "+
+			"adopted. No create or delete was sent.%s To finish an interrupted run of this configuration, pass "+
+			"the original `create_token`. Otherwise choose another `id`.", e.kind, e.id, e.state, provenance, imported)))
+}
+
 // warnReplacing passes a plan to create over an object the provider can
 // take for this configuration's, and says what applying it does. A tainted
 // object plans this way, and so does the plan a destroy refreshes with, which
@@ -130,6 +188,16 @@ func (e existing) warnReplacing(diags *diag.Diagnostics) {
 	origin := aKind(e.kind) + " has no tags to carry a create token, so it passes on its state alone."
 	if e.tagged {
 		origin = "It carries this provider's create token, so a Terraform apply made it."
+	}
+	if e.ours {
+		origin = "Its create token equals the `create_token` this configuration supplied."
+		notHeld = fmt.Sprintf("If this state doesn't hold it, as after a run killed before it saved state, the "+
+			"apply adopts it: the create finds it under the same token, records its UID and waits for it. "+
+			"Nothing is deleted. That's the usual case for a %s with this configuration's token.", e.kind)
+		if e.state == "failed" {
+			notHeld = "If this state doesn't hold it, the apply adopts it, then fails because it's `failed`, " +
+				"and Terraform keeps it tainted. Nothing is deleted."
+		}
 	}
 	if e.state == "failed" {
 		diags.AddAttributeWarning(path.Root("id"),
@@ -152,6 +220,13 @@ func (e existing) warnReplacing(diags *diag.Diagnostics) {
 			e.kind, e.id, verb)
 		does = fmt.Sprintf("applying this plan stops what the platform is still doing, deletes the %s, and "+
 			"creates it again.%s", e.kind, e.busyNote)
+		if e.ours {
+			summary = fmt.Sprintf("The %s %q is still being %s: applying this plan adopts it, or cancels it if "+
+				"this state holds it tainted", e.kind, e.id, verb)
+		}
+	} else if e.ours {
+		summary = fmt.Sprintf("The %s %q exists: applying this plan adopts it, or replaces it if this state "+
+			"holds it tainted", e.kind, e.id)
 	}
 	diags.AddAttributeWarning(path.Root("id"), summary, redactDiagnosticText(fmt.Sprintf(
 		"The platform reports %s %q as `%s`. %s If this state holds it tainted, as a create that stopped "+
@@ -177,14 +252,78 @@ func aKind(kind string) string {
 // the word a sentence uses for each.
 var inFlight = map[string]string{creatingState: "created", "updating": "updated"}
 
-// refuseExisting is createGuard for a cluster. One that carries this
-// provider's create token passes with a warning, in any state: a Terraform
-// apply made it, and when it's tainted, the plan to replace it is also the
-// plan a destroy refreshes with. One without a token was made some other way,
-// so the plan is refused: it isn't this configuration's to replace.
-func (r *clusterResource) refuseExisting(ctx context.Context, plan tfsdk.Plan, diags *diag.Diagnostics) {
+// checkAdoptOnly refuses absent configuration or wrong provenance on any
+// adopt plan, including the resource state refreshed by an import block.
+// state is the plan's prior state.
+func (r *clusterResource) checkAdoptOnly(ctx context.Context, plan tfsdk.Plan, state tfsdk.State, config tfsdk.Config, diags *diag.Diagnostics) {
+	var adoptOnly types.Bool
+	diags.Append(plan.GetAttribute(ctx, path.Root(adoptOnlyAttribute), &adoptOnly)...)
+	if diags.HasError() || !adoptOnly.ValueBool() {
+		return
+	}
+	configuredToken := types.StringNull()
+	diags.Append(config.GetAttribute(ctx, path.Root(createTokenAttribute), &configuredToken)...)
+	if diags.HasError() {
+		return
+	}
+	if configuredToken.IsNull() {
+		diags.AddAttributeError(path.Root(adoptOnlyAttribute), "Adopt-only requires a create token",
+			"Set a non-empty `create_token` to prove which interrupted create this configuration owns, or remove `adopt_only`. No lookup or create was sent.")
+		return
+	}
 	target, id, ok := plannedTarget(ctx, r.meta, plan)
 	if !ok || r.meta == nil || r.meta.Client == nil {
+		return
+	}
+	got, err := r.meta.Client.GetClusterWithResponse(ctx, target.region, target.project, id, nil)
+	if err != nil {
+		addAPIError(diags, "read the cluster before adopting it", nil, nil, err)
+		return
+	}
+	held := !state.Raw.IsNull()
+	if got.JSON200 == nil {
+		if held && isNotFound(got.HTTPResponse, got.Body) {
+			// A plan's refresh drops a row whose cluster is gone, so prior
+			// state over a 404 is a saved plan applied after the cluster went.
+			diags.AddAttributeError(path.Root("id"), fmt.Sprintf("The cluster %q is gone", id),
+				fmt.Sprintf("This plan adopts cluster %q, which state holds, but the platform now answers 404 for "+
+					"it. Nothing was recorded, created or deleted. Run `terraform plan` again: its refresh drops "+
+					"the row, and the lookup plans no managed cluster.", id))
+		}
+		return
+	}
+	token := createTokenOf(presentMap(got.JSON200.Tags))
+	if configuredToken.IsUnknown() || token == configuredToken.ValueString() {
+		return
+	}
+	found := existing{
+		kind: "cluster", resourceName: ResourceName(clusterResourceSuffix), target: target, id: id,
+		state: stateString(got.JSON200.State), tagged: true,
+	}
+	found.refuseAdopt(diags, token, held)
+}
+
+// refuseExisting is createGuard for a cluster. One that carries this
+// provider's create token warns for replacement handling: a Terraform apply
+// made it, and when it's tainted, the plan to replace it is also the plan a
+// destroy refreshes with. An untagged row matching a dropped object warns too.
+// Any other untagged row gets the durable-token mismatch refusal when
+// configuration supplies a token, or the ordinary ownership refusal otherwise.
+func (r *clusterResource) refuseExisting(ctx context.Context, plan tfsdk.Plan, config tfsdk.Config, diags *diag.Diagnostics) {
+	target, id, ok := plannedTarget(ctx, r.meta, plan)
+	if !ok || r.meta == nil || r.meta.Client == nil {
+		return
+	}
+	configuredToken := types.StringNull()
+	if !config.Raw.IsNull() {
+		diags.Append(config.GetAttribute(ctx, path.Root(createTokenAttribute), &configuredToken)...)
+	}
+	if diags.HasError() {
+		return
+	}
+	var adoptOnly types.Bool
+	diags.Append(plan.GetAttribute(ctx, path.Root(adoptOnlyAttribute), &adoptOnly)...)
+	if diags.HasError() {
 		return
 	}
 	got, err := r.meta.Client.GetClusterWithResponse(ctx, target.region, target.project, id, nil)
@@ -197,7 +336,7 @@ func (r *clusterResource) refuseExisting(ctx context.Context, plan tfsdk.Plan, d
 		return
 	}
 	state := stateString(got.JSON200.State)
-	token := createTokenOf(presentMap(got.JSON200.Tags)) != ""
+	token := createTokenOf(presentMap(got.JSON200.Tags))
 	if state == "deleting" || state == "deleted" {
 		return
 	}
@@ -207,12 +346,27 @@ func (r *clusterResource) refuseExisting(ctx context.Context, plan tfsdk.Plan, d
 		busyNote: " With `on_destroy_busy = \"wait\"`, it waits for the operation to finish instead of " +
 			"cancelling it.",
 	}
-	if token {
+	found.ours = token != "" && !configuredToken.IsNull() && !configuredToken.IsUnknown() &&
+		token == configuredToken.ValueString()
+	if adoptOnly.ValueBool() {
+		if found.ours {
+			found.warnAdopt(diags)
+		} else {
+			// The guard only runs on a plan with no prior state.
+			found.refuseAdopt(diags, token, false)
+		}
+		return
+	}
+	if token != "" {
 		found.warnReplacing(diags)
 		return
 	}
 	if got.JSON200.Uid != nil && wasDropped(id, got.JSON200.Uid.String()) {
 		found.warnDropped(diags)
+		return
+	}
+	if !configuredToken.IsNull() && !configuredToken.IsUnknown() {
+		found.refuseTokenMismatch(diags)
 		return
 	}
 	found.refuse(diags)
@@ -223,7 +377,7 @@ func (r *clusterResource) refuseExisting(ctx context.Context, plan tfsdk.Plan, d
 // warning: refusing one would block the destroy of a tainted group. A group
 // this state doesn't hold fails at apply instead, by the create's 409, and
 // nothing is deleted first.
-func (r *instanceGroupResource) refuseExisting(ctx context.Context, plan tfsdk.Plan, diags *diag.Diagnostics) {
+func (r *instanceGroupResource) refuseExisting(ctx context.Context, plan tfsdk.Plan, _ tfsdk.Config, diags *diag.Diagnostics) {
 	target, id, ok := plannedTarget(ctx, r.meta, plan)
 	if !ok || r.meta == nil || r.meta.Client == nil {
 		return

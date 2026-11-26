@@ -180,7 +180,7 @@ func (g *guardedResource) ModifyPlan(ctx context.Context, req resource.ModifyPla
 	guardReplacement(ctx, g.what, req, resp)
 	if c, ok := g.inner.(createGuard); ok && req.State.Raw.IsNull() && !resp.Plan.Raw.IsNull() &&
 		!resp.Diagnostics.HasError() && !replacementAllowed(ctx, req.Config) {
-		c.refuseExisting(ctx, resp.Plan, &resp.Diagnostics)
+		c.refuseExisting(ctx, resp.Plan, req.Config, &resp.Diagnostics)
 	}
 }
 
@@ -199,7 +199,7 @@ func (g *guardedResource) ModifyPlan(ctx context.Context, req resource.ModifyPla
 // how a deliberate replacement of a cluster made elsewhere gets through. See
 // resume.go.
 type createGuard interface {
-	refuseExisting(ctx context.Context, plan tfsdk.Plan, diags *diag.Diagnostics)
+	refuseExisting(ctx context.Context, plan tfsdk.Plan, config tfsdk.Config, diags *diag.Diagnostics)
 }
 
 func (g *guardedResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {

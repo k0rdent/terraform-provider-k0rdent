@@ -41,7 +41,7 @@ func TestAPlanTimeReadLogsNoEchoedSecret(t *testing.T) {
 	var out bytes.Buffer
 	ctx := tflogtest.RootLogger(context.Background(), &out)
 	var diags diag.Diagnostics
-	r.refuseExisting(ctx, tfsdk.Plan(st), &diags)
+	r.refuseExisting(ctx, tfsdk.Plan(st), tfsdk.Config(st), &diags)
 	if logged := out.String(); !strings.Contains(logged, "mint access token") || strings.Contains(logged, secret) {
 		t.Errorf("log: %s", logged)
 	}

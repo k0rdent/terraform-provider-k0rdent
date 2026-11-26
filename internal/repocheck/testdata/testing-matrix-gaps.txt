@@ -12,7 +12,6 @@ k0rdent_file_store consumers.network.guid update
 k0rdent_file_store consumers.network.mac_address import
 k0rdent_file_store consumers.network.mac_address update
 k0rdent_file_store consumers.network.type import
-k0rdent_file_store description import
 k0rdent_file_store description update
 k0rdent_file_store timeouts.create import
 k0rdent_file_store timeouts.create update
@@ -31,6 +30,8 @@ k0rdent_instance_group timeouts.delete update
 k0rdent_instance_group timeouts.update import
 k0rdent_instance_group timeouts.update update
 k0rdent_kubernetes_cluster allow_replace import
+k0rdent_kubernetes_cluster adopt_only import
+k0rdent_kubernetes_cluster create_token update
 k0rdent_kubernetes_cluster description import
 k0rdent_kubernetes_cluster on_destroy_busy import
 k0rdent_kubernetes_cluster on_failed import
@@ -39,7 +40,6 @@ k0rdent_kubernetes_cluster ssh_access.ssh_public_keys import
 k0rdent_kubernetes_cluster ssh_access.sudo update
 k0rdent_kubernetes_cluster storage_ceiling_gib import
 k0rdent_kubernetes_cluster tags import
-k0rdent_kubernetes_cluster timeouts.create import
 k0rdent_kubernetes_cluster timeouts.delete import
 k0rdent_kubernetes_cluster timeouts.update import
 k0rdent_network allow_replace import
@@ -48,10 +48,8 @@ k0rdent_network description import
 k0rdent_network evpn.dhcp_enabled update
 k0rdent_network evpn.dns_servers import
 k0rdent_network evpn.dns_servers update
-k0rdent_network infiniband import
 k0rdent_network infiniband.index0 update
 k0rdent_network infiniband.ip_over_ib update
-k0rdent_network infiniband.pkey import
 k0rdent_network nvlink import
 k0rdent_network nvlink.partition import
 k0rdent_network timeouts.create import
@@ -101,6 +99,3 @@ k0rdent_vpc_security_groups timeouts.delete import
 k0rdent_vpc_security_groups timeouts.delete update
 k0rdent_vpc_security_groups timeouts.update import
 k0rdent_vpc_security_groups timeouts.update update
-k0rdent_webhook_subscription previous_secret_expires_at import
-k0rdent_webhook_subscription rotated_at import
-k0rdent_webhook_subscription secret_wo_version import

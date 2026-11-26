@@ -64,7 +64,10 @@ func (neverLowered) Description(context.Context) string {
 
 func (n neverLowered) MarkdownDescription(ctx context.Context) string { return n.Description(ctx) }
 
-func (neverLowered) PlanModifyInt64(_ context.Context, req planmodifier.Int64Request, resp *planmodifier.Int64Response) {
+func (neverLowered) PlanModifyInt64(ctx context.Context, req planmodifier.Int64Request, resp *planmodifier.Int64Response) {
+	if isAdoptOnly(ctx, req.Config) {
+		return
+	}
 	from, to := req.StateValue, resp.PlanValue
 	if from.IsNull() || from.IsUnknown() || to.IsNull() || to.IsUnknown() || to.ValueInt64() >= from.ValueInt64() {
 		return

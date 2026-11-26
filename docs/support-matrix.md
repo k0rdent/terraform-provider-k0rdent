@@ -6,11 +6,11 @@ What this provider runs with, and what's not decided yet.
 
 | Provider | Terraform | OpenTofu |
 | --- | --- | --- |
-| 0.x | 1.16 and 1.17, not 1.16.0 to 1.16.4 | 1.12 and 1.13 |
+| 0.x | 1.15.5, 1.16 and 1.17, not 1.16.0 to 1.16.4 | 1.12 and 1.13 |
 
-- CI runs the acceptance suite on the newest patch of each of these minor
-  versions, the ones in the matrices in `.github/workflows/ci.yml`. Older
-  versions aren't tested.
+- CI runs the acceptance suite on the newest patch of each current minor
+  version, plus Terraform 1.15.5 as a pinned compatibility line. The matrices
+  are in `.github/workflows/ci.yml`. Other versions aren't tested.
 - Terraform 1.16.0 to 1.16.4 can empty the state file when an apply is
   interrupted. See [known limitations](known-limitations.md#terraform-1160-to-1164).
 - The nightly run tests Terraform and OpenTofu on the same configuration.
@@ -20,7 +20,7 @@ Some features need a minimum Terraform version, from its changelog:
 | Feature | Used by | Terraform |
 | --- | --- | --- |
 | Ephemeral resources | the cluster kubeconfig | [1.10](https://github.com/hashicorp/terraform/blob/v1.10/CHANGELOG.md) |
-| Write-only attributes | `ssh_public_keys_wo`, `secret_wo` | [1.11](https://github.com/hashicorp/terraform/blob/v1.11/CHANGELOG.md) |
+| Write-only attributes | `ssh_public_keys_wo`, `secret_wo`, `create_token` | [1.11](https://github.com/hashicorp/terraform/blob/v1.11/CHANGELOG.md) |
 | `import` blocks with `identity` | importing any resource by its parts | [1.12](https://github.com/hashicorp/terraform/blob/v1.12/CHANGELOG.md) |
 | Actions | `k0rdent_cluster_cancel_operation`, `k0rdent_instance_power` | [1.14](https://github.com/hashicorp/terraform/blob/v1.14/CHANGELOG.md) |
 | List resources and `terraform query` | finding resources to import | [1.14](https://github.com/hashicorp/terraform/blob/v1.14/CHANGELOG.md) |

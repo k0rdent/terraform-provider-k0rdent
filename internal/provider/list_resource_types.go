@@ -6,6 +6,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	listschema "github.com/hashicorp/terraform-plugin-framework/list/schema"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 
 	"github.com/k0rdent/terraform-provider-k0rdent/internal/k0rdent"
 )
@@ -36,8 +37,23 @@ func clusterListSpec() listSpec {
 	return listSpec{
 		suffix:      clusterResourceSuffix,
 		newResource: newClusterResource,
-		description: "Every cluster in a project. " + goingAwayNote,
-		attributes:  scopedAttributes(nil),
+		description: "Every cluster in a project, optionally narrowed to an exact id and create token. " + goingAwayNote,
+		attributes: scopedAttributes(map[string]listschema.Attribute{
+			"id": listschema.StringAttribute{
+				Optional:            true,
+				Validators:          []validator.String{urlSafeIdentifier{}},
+				MarkdownDescription: "Only return the cluster with this exact id. Omit to list every cluster in scope.",
+			},
+			"create_token": listschema.StringAttribute{
+				Optional:   true,
+				Validators: []validator.String{createTokenNonBlankValidator()},
+				MarkdownDescription: "Only return clusters whose `terraform-provider-k0rdent/create-token` tag " +
+					"exactly matches this value. Empty and whitespace-only values are refused. An empty result can " +
+					"mean the object is absent or the provenance " +
+					"doesn't match. Run the same query with only `id` to tell those cases apart. Don't match by " +
+					"tag alone: pair this with `id` so the result is the interrupted create this configuration owns.",
+			},
+		}),
 		find: func(ctx context.Context, meta *Meta, config listConfig, diags *diag.Diagnostics) []listedObject {
 			target, ok := listScope(meta, config, diags)
 			if !ok {
@@ -47,9 +63,13 @@ func clusterListSpec() listSpec {
 			if !ok {
 				return nil
 			}
+			wantedID, scoped := known(config.str("id", diags))
+			token, provenance := known(config.str("create_token", diags))
 			var out []listedObject
 			for _, c := range rows {
-				if c.Id == "" || goingAway(stateString(c.State)) {
+				candidateToken := createTokenOf(presentMap(c.Tags))
+				if c.Id == "" || goingAway(stateString(c.State)) || (scoped && c.Id != wantedID) ||
+					(provenance && (token == "" || candidateToken == "" || candidateToken != token)) {
 					continue
 				}
 				out = append(out, listedObject{scopedIdentity(target, "id", c.Id), displayName(c.DisplayName, c.Id)})

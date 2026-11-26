@@ -10,6 +10,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	dschema "github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	eschema "github.com/hashicorp/terraform-plugin-framework/ephemeral/schema"
+	lschema "github.com/hashicorp/terraform-plugin-framework/list/schema"
 	fwprovider "github.com/hashicorp/terraform-plugin-framework/provider"
 	pschema "github.com/hashicorp/terraform-plugin-framework/provider/schema"
 	rschema "github.com/hashicorp/terraform-plugin-framework/resource/schema"
@@ -156,6 +157,25 @@ func TestTheCredentialGateLetsOrdinaryAttributesThrough(t *testing.T) {
 	}}
 	if got := provider.CredentialViolations(provider.PersistedSurface, persisted); len(got) > 0 {
 		t.Errorf("ordinary attributes were refused: %q", got)
+	}
+}
+
+// The cluster list's provenance tag is the only token-named parameter that
+// passes. It's the value the API returns publicly in `tags`, not a credential.
+func TestOnlyClusterListCreateTokenProvenanceIsAllowed(t *testing.T) {
+	t.Parallel()
+	schema := lschema.Schema{Attributes: map[string]lschema.Attribute{
+		"create_token": lschema.StringAttribute{Optional: true},
+		"api_key":      lschema.StringAttribute{Optional: true},
+	}}
+	got := provider.ListResourceCredentialViolations(
+		provider.ResourceName("kubernetes_cluster"), schema)
+	if len(got) != 1 || !strings.HasPrefix(got[0], "api_key") {
+		t.Errorf("cluster list violations = %v, want only api_key", got)
+	}
+	got = provider.ListResourceCredentialViolations(provider.ResourceName("network"), schema)
+	if len(got) != 2 {
+		t.Errorf("another resource's violations = %v, want both token names", got)
 	}
 }
 

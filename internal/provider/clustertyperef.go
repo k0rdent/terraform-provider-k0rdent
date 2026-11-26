@@ -123,6 +123,9 @@ func clusterTypeVersionGuard() planmodifier.String {
 	const desc = "replaced only when the new reference names a different ClusterType, and " +
 		"another version of the same one is upgraded in place or refused"
 	return stringplanmodifier.RequiresReplaceIf(func(ctx context.Context, req planmodifier.StringRequest, resp *stringplanmodifier.RequiresReplaceIfFuncResponse) {
+		if isAdoptOnly(ctx, req.Config) {
+			return
+		}
 		clusterTypeRefRequiresReplace(ctx, req, resp)
 		if resp.RequiresReplace {
 			// The binding the platform reported, as planVersionChange and the

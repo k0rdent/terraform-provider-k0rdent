@@ -102,9 +102,10 @@ local run sees what CI sees.
 CI runs the acceptance suite under the two newest releases of Terraform and
 of OpenTofu: for each, the newest patch of the newest minor, and the newest
 patch of the minor before it. HashiCorp fixes only those two Terraform
-minors. The `testacc` job's matrix in `.github/workflows/ci.yml` holds the
-Terraform pair, and the `testacc-opentofu` job's matrix the OpenTofu pair.
-Every other job runs the newer one.
+minors. The Terraform matrix also pins 1.15.5 for a large deployment. The
+`testacc` job's matrix in `.github/workflows/ci.yml` holds the two current
+Terraform releases and that pinned line, and the `testacc-opentofu` job's
+matrix holds the OpenTofu pair. Every other job runs the newest release.
 
 - When either project ships a new patch or minor, the nightly's
   `make cli-releases-check` fails, and the nightly-failing issue says so.
@@ -114,9 +115,10 @@ Every other job runs the newer one.
   1.17's newest patch and 1.18.0.
 - A new minor also changes the versions in `docs/support-matrix.md` and
   `templates/guides/getting-started.md.tmpl`.
-- `scripts/check-workflow-actions.sh` refuses anything else: a third version,
-  two that aren't adjacent minors, a matrix check name that doesn't show its
-  version, or a job outside the matrix on the older release.
+- `scripts/check-workflow-actions.sh` holds the newest two entries to adjacent
+  minors, permits one older pinned Terraform line, and refuses any additional
+  version. It also requires a matrix check name that shows its version and a
+  job outside the matrix to use the newest release.
 
 ### The testing matrix
 
@@ -221,6 +223,37 @@ git diff ci/unknown-budget.json
 Give every new path a reason, since an empty one fails. Run
 `make plan-quality`, then commit the file. If a count goes up, say why in the
 pull request.
+
+### `make pipeline-check`
+
+Use HashiCorp Terraform 1.15.5 to run the cluster recovery and delete flows
+from [the import guide](docs/guides/import.md) against a fresh fake:
+
+```sh
+make pipeline-check TF_BIN=/path/to/terraform
+make pipeline-check-test
+```
+
+Each cluster gets a separate locked HTTP state. The runner applies saved plans
+and retries a timed-out create with the same ephemeral token until the cluster
+is active or the wait window ends. The active postcondition doesn't apply to
+adopt-only runs, which record a cluster without waiting for it to settle.
+In the runner loss case, the backend releases the interrupted
+runner's lock after confirming it died.
+Terraform doesn't run an unlock command or change state by hand.
+
+The command prints the private directory for the evidence report, saved plans,
+CLI output and request logs. Use `PIPELINE_CASES="6 9"` to run selected cases.
+
+For a dedicated test landscape, set `PIPELINE_MODE=live`, the provider's
+`K0RDENT_*` settings, `REAL_API_CLUSTER_TYPE` to a type with at least two
+available versions, `PIPELINE_CONFIRM` to the endpoint host and port, and
+`PIPELINE_PREFIX` to a prefix for the run's cluster ids. Live mode creates and
+deletes clusters. Hold the stack's lock for a shared kind run. Set
+`PIPELINE_SHORT_TIMEOUT` for the timeout cases and `PIPELINE_CREATE_TIMEOUT`,
+`PIPELINE_WAIT_SECONDS` and `PIPELINE_NODE_POOL` when the landscape needs
+longer waits or different pool counts. The default live pool counts use the
+type's minimums. `PIPELINE_NODE_POOL` takes the resource's `node_pool` map as JSON.
 
 ### `make walkthrough-test` and `make walkthrough-api-test`
 

@@ -33,9 +33,8 @@ func (t loggingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	resp, err := t.base.RoundTrip(req)
 	elapsed := time.Since(started).Round(time.Millisecond)
 	if err != nil {
-		// The error is the transport's own, not the platform's: a DNS failure,
-		// a refused connection, a TLS rejection. It carries no server-controlled
-		// text, so logging it whole is safe and it is usually the whole answer.
+		// Transport errors can wrap an upstream answer, so credential
+		// redaction applies.
 		tflog.Trace(ctx, "platform request failed before a response", map[string]any{
 			"method":   req.Method,
 			"path":     req.URL.Path,

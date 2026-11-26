@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 #
-# Fails when ci.yml's acceptance matrices aren't the two newest releases of
-# Terraform and of OpenTofu: for each, the newest patch of the newest minor
-# and of the minor before it. TESTING.md has the rule and how to move the
-# pins. It reads releases.hashicorp.com and get.opentofu.org, so the nightly
+# Fails when the two newest entries in ci.yml's acceptance matrices aren't
+# the two newest releases of Terraform and of OpenTofu: for each, the newest
+# patch of the newest minor and of the minor before it. TESTING.md has the
+# rule and how to move the pins, including a pinned compatibility line.
+# It reads releases.hashicorp.com and get.opentofu.org, so the nightly
 # runs it, not every pull request.
 #
 # Usage: scripts/check-cli-releases.sh [terraform-index.json tofu-index.json]
@@ -23,8 +24,9 @@ if [ $# -ne 0 ] && [ $# -ne 2 ]; then
   exit 2
 fi
 
-# check NAME KEY URL FILTER FILE compares ci.yml's `KEY: [...]` matrix with
-# the two newest releases in the index at URL, or in FILE when it's set.
+# check NAME KEY URL FILTER FILE compares the two newest entries in ci.yml's
+# `KEY: [...]` matrix with the two newest releases in the index at URL, or in
+# FILE when it's set. check-workflow-actions.sh bounds any older pinned lines.
 # FILTER is the jq that lists the index's version names.
 check() {
   local name="$1" key="$2" url="$3" filter="$4" file="$5" index want have
@@ -45,7 +47,7 @@ check() {
   [ -n "$want" ] || { report "no stable releases in $name's release index"; return; }
 
   have="$(sed -n "s/^[[:space:]]*$key:[[:space:]]*\[\(.*\)\].*/\1/p" "$ci" | head -1 |
-    tr -d "\"' " | tr ',' '\n' | sort -V | paste -sd' ' -)"
+    tr -d "\"' " | tr ',' '\n' | sort -V | tail -2 | paste -sd' ' -)"
   [ -n "$have" ] || { report "no $key: [...] matrix in $ci"; return; }
 
   if [ "$have" != "$want" ]; then

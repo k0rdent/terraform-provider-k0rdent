@@ -53,6 +53,10 @@ expect_pass "the two newest releases were refused"
 matrix '"1.16.10", "1.17.1"' '"1.12.12", "1.13.9"'
 terraform 1.16.9 1.16.10 1.17.1
 expect_pass "1.16.10 wasn't taken as newer than 1.16.9"
+
+# An older compatibility line stays pinned while the current pair moves.
+matrix '"1.15.5", "1.16.10", "1.17.1"' '"1.12.12", "1.13.9"'
+expect_pass "a pinned Terraform compatibility line was refused"
 matrix '"1.16.7", "1.17.1"' '"1.12.12", "1.13.9"'
 
 terraform 1.16.7 1.17.0 1.17.1 1.17.2

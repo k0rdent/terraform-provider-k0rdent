@@ -12,9 +12,9 @@
 #    vulncheck` that doesn't scan under it. govulncheck only reports standard
 #    library advisories for the Go it runs under.
 # 5. A setup-terraform or setup-opentofu without an exact version. Terraform
-#    or OpenTofu versions other than TESTING.md's two adjacent releases, a
-#    matrix check name that doesn't show the version, or a job outside the
-#    matrix on the older one.
+#    or OpenTofu versions other than TESTING.md's two current releases and
+#    one pinned Terraform compatibility line, a matrix check name that doesn't
+#    show the version, or a job outside the matrix on an older one.
 #
 # Usage: scripts/check-workflow-actions.sh [repository root]
 set -euo pipefail
@@ -259,12 +259,17 @@ for cli in terraform:hashicorp/setup-terraform tofu:opentofu/setup-opentofu; do
   while IFS= read -r version; do [ -n "$version" ] && versions+=("$version"); done < <(
     printf '%s\n' ${pinned[@]+"${pinned[@]}"} ${listed[@]+"${listed[@]}"} | sort -u -V)
   [ "${#versions[@]}" -gt 1 ] || continue
-  older="${versions[0]}" newer="${versions[${#versions[@]}-1]}"
+  allowed=2
+  [ "$name" != terraform ] || allowed=3
+  if [ "${#versions[@]}" -gt "$allowed" ]; then
+    report "the workflows pin ${#versions[@]} $name versions (${versions[*]}), and TESTING.md allows two current releases and one pinned Terraform release"
+  fi
+  first=0
+  [ "${#versions[@]}" -ne 3 ] || [ "$name" != terraform ] || first=1
+  older="${versions[$first]}" newer="${versions[${#versions[@]}-1]}"
   IFS=. read -r older_major older_minor _ <<< "$older"
   IFS=. read -r newer_major newer_minor _ <<< "$newer"
-  if [ "${#versions[@]}" -gt 2 ]; then
-    report "the workflows pin ${#versions[@]} $name versions (${versions[*]}), and TESTING.md allows two"
-  elif [ "$older_major" != "$newer_major" ] || [ $((10#$newer_minor - 10#$older_minor)) -ne 1 ]; then
+  if [ "$older_major" != "$newer_major" ] || [ $((10#$newer_minor - 10#$older_minor)) -ne 1 ]; then
     report "the workflows pin $name $older and $newer, which aren't two adjacent minor releases"
   fi
   for version in ${pinned[@]+"${pinned[@]}"}; do

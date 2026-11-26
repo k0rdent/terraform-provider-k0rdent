@@ -187,6 +187,154 @@ pool and the allocated VLAN id. Edit it down rather than writing from scratch.
   own, cluster types, machine types, address pools, servers and reservations.
   See the known limitations page.
 
+## Recover a cluster after a lost runner
+
+If a runner dies after the platform accepts a create and before Terraform
+saves state, a normal apply with the same `create_token` adopts the cluster on
+its next readback. A delete flow can adopt before destroy without creating an
+absent cluster, with no query commands, extra workspaces, import commands or
+state edits. Put this module around the managed resource:
+
+```hcl
+terraform {
+  required_providers {
+    k0rdent = { source = "k0rdent/k0rdent" }
+  }
+}
+
+variable "adopt_only" {
+  type    = bool
+  default = false
+}
+
+variable "cluster_id" {
+  type = string
+}
+
+variable "region" {
+  type    = string
+  default = null
+}
+
+variable "project" {
+  type    = string
+  default = null
+}
+
+variable "create_token" {
+  type      = string
+  ephemeral = true
+}
+
+data "k0rdent_kubernetes_clusters" "recovery" {
+  count   = var.adopt_only ? 1 : 0
+  id      = var.cluster_id
+  region  = var.region
+  project = var.project
+}
+
+locals {
+  adoptees = var.adopt_only ? {
+    for cluster in data.k0rdent_kubernetes_clusters.recovery[0].clusters : cluster.id => cluster
+    } : {
+    (var.cluster_id) = {
+      id      = var.cluster_id
+      region  = var.region
+      project = var.project
+    }
+  }
+}
+
+import {
+  for_each = var.adopt_only ? local.adoptees : {}
+  to       = k0rdent_kubernetes_cluster.test[each.key]
+  identity = {
+    id      = each.key
+    region  = each.value.region
+    project = each.value.project
+  }
+}
+
+resource "k0rdent_kubernetes_cluster" "test" {
+  for_each          = local.adoptees
+  id                = each.key
+  region            = each.value.region
+  project           = each.value.project
+  cluster_type      = "/v1/regions/us-texas-1/compute/cluster-types/gpu-training"
+  adopt_only        = var.adopt_only
+  create_token      = var.create_token
+  display_name      = "acceptance"
+  node_pool = {
+    "gpu-workers" = { node_count = 2 }
+  }
+  timeouts {
+    create = "10m"
+  }
+  lifecycle {
+    postcondition {
+      condition     = var.adopt_only || self.state == "active"
+      error_message = "The cluster isn't active."
+    }
+  }
+}
+```
+
+The postcondition requires an active cluster during normal applies and lets
+the adopt apply run during teardown even when the cluster isn't active.
+
+If an existing configuration managed the cluster without `for_each`, add this `moved` block once, using the cluster id as the key:
+
+```hcl
+moved {
+  from = k0rdent_kubernetes_cluster.test
+  to   = k0rdent_kubernetes_cluster.test["ml-training"]
+}
+```
+
+Set `adopt_only = true`, keep the same cluster id, token, region and project,
+then apply once before the normal destroy:
+
+```bash
+terraform init
+terraform plan -out=adopt.tfplan
+terraform apply adopt.tfplan
+terraform plan -destroy -out=destroy.tfplan
+terraform apply destroy.tfplan
+```
+
+The lookup returns at most one cluster. No match means both `for_each` maps
+are empty, so the apply creates nothing and records no managed cluster. An
+exact match imports that cluster with its UID and sends no create request.
+The adopt apply records the cluster's current state without changing it or
+waiting for its operation to settle. The plan keeps the observed values and
+names any configured differences in warnings. For example, pinning an earlier `cluster_type` version doesn't
+block the delete flow. If Terraform can't retain an unset platform value
+because the configuration sets that attribute, omit the attribute for the
+adopt apply. A same-named cluster with a missing or different token fails
+the plan after its import read and before a state write. The recorded UID
+guards the subsequent destroy, which can cancel a create that's still running.
+
+A run interrupted while the create waits, such as by a CI cancel or a job
+timeout, saves the cluster untainted when `create_token` is set. Terraform
+still ends that run with `execution halted`. The next normal apply waits for
+the same cluster. An adopt-only apply records it without waiting. A row
+Terraform holds tainted, such as after a create the platform failed, is
+replaced instead: the adopt-only apply
+deletes the cluster and then fails with no cluster to adopt. Its plan warns
+about this before the apply.
+
+If provenance changes between a saved plan and its apply, the import completes
+before the apply refuses it. No create or delete is sent. The failed apply
+leaves the imported row for the old UID in state. The next plain plan leaves that row in place and
+refuses the changed provenance. `terraform destroy` refuses it too and sends no
+delete or cancel.
+
+The token is checked only by the managed resource, where it's write-only and
+never enters plan or state. Keep it outside those files and use the same
+value when applying the saved plan. Setting `adopt_only` back to `false`
+keeps the same resource address, so it doesn't replace the adopted cluster
+and ordinary creates still work.
+
 ## Adopt many at once
 
 On Terraform 1.14 and later, `terraform query` finds what exists and writes

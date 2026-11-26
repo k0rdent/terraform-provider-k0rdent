@@ -71,7 +71,9 @@ import (
 //     digits made in this call, so finding it is the same proof. A configured
 //     id proves nothing, and a 409 on one is reported with the import command.
 //
-// Nothing is adopted across runs: a token lives only as long as one Create.
+// With no configured token, nothing is adopted across runs: a random token
+// lives only as long as one Create. A cluster can opt into a durable token.
+// Its 409 readback then uses the same proof to recover an interrupted run.
 
 // createTokenTagSuffix follows the provider's name in the token's tag key.
 const createTokenTagSuffix = "/create-token"
@@ -99,6 +101,8 @@ type createKey struct {
 	generated bool
 	// token is empty for a kind that has no tags to carry one.
 	token string
+	// durableToken is a token configuration supplied for recovery across runs.
+	durableToken bool
 }
 
 // newCreateKey takes the configured id, or makes one, and a token when the
@@ -239,6 +243,10 @@ const (
 	// the create landed. Record the id in state, so the next run refreshes it
 	// rather than creating again, and fail.
 	createUnconfirmed
+	// createAdoptAbsent: an adopt-only lookup found no object. The caller
+	// reports it. A configuration can plan no instance through the presence
+	// lookup instead.
+	createAdoptAbsent
 )
 
 // createdAs is the object a converging create ended on.
@@ -268,6 +276,9 @@ type convergingCreate struct {
 	// timeoutID is the id a 504 names in its metadata, if it names one. Nil
 	// for a kind whose 504 names none.
 	timeoutID func(resp *http.Response, body []byte) string
+	// adoptOnly checks the id first and never sends a create. Exact durable
+	// provenance adopts, absence leaves state null, and mismatch is refused.
+	adoptOnly bool
 	// busy waits out a 409 the platform answers while something the create
 	// depends on is mid-change. Nil for a kind whose create has no such 409.
 	busy *busyRetry
@@ -310,6 +321,9 @@ type convergingCreate struct {
 // A resource found by reading it back is done with the uid that read named.
 func (c convergingCreate) run(ctx context.Context) (createOutcome, createdAs, diag.Diagnostics) {
 	var diags diag.Diagnostics
+	if c.adoptOnly {
+		return c.adopt(ctx)
+	}
 	lost, raced := 0, 0
 	for {
 		a := c.send(ctx)
@@ -426,6 +440,30 @@ func (c convergingCreate) run(ctx context.Context) (createOutcome, createdAs, di
 	}
 }
 
+// adopt checks an existing object without sending a create. This is the
+// unattended apply counterpart of import, with a clean exit when it's absent.
+func (c convergingCreate) adopt(ctx context.Context) (createOutcome, createdAs, diag.Diagnostics) {
+	var diags diag.Diagnostics
+	l := c.lookup(ctx, c.key.id)
+	if l.failed() {
+		addLookupError(&diags, c.kind, c.key.id, l)
+		return createFailed, createdAs{}, diags
+	}
+	if !l.found {
+		return createAdoptAbsent, createdAs{}, diags
+	}
+	if c.proof(c.key.id, l) == "" {
+		c.addNotOurs(&diags, c.key.id, l, "was checked by an adopt-only apply", createAnswer{})
+		return createFailed, createdAs{}, diags
+	}
+	diags.AddWarning(
+		fmt.Sprintf("Adopting the existing %s", c.kind),
+		fmt.Sprintf("The platform's %s %q has the exact `create_token` this configuration supplied. "+
+			"No create request was sent. The apply records its UID and state without waiting.",
+			c.kind, c.key.id))
+	return createDone, createdAs{id: c.key.id, uid: l.uid}, diags
+}
+
 // unconfirmed ends a create that a read could not settle. A generated id is
 // returned to be recorded: it was made in this call, so whatever it names is
 // this call's. A configured id is not, since it may name something this state
@@ -504,6 +542,12 @@ func (c convergingCreate) proof(id string, l createLookup) string {
 // the platform answered when it answered. l is the read that found it.
 func (c convergingCreate) addNotOurs(diags *diag.Diagnostics, id string, l createLookup, why string, a createAnswer) {
 	cannot := "it carries no create token from this apply"
+	if c.key.durableToken {
+		cannot = "its create token does not exactly match the `create_token` this configuration supplied"
+		if l.token == "" {
+			cannot = "it carries no create token, so it cannot exactly match the `create_token` this configuration supplied"
+		}
+	}
 	if c.key.token == "" {
 		cannot = aKindMidSentence(c.kind) + " has no tags to carry a create token, and its id was set in configuration"
 	}
@@ -514,6 +558,11 @@ func (c convergingCreate) addNotOurs(diags *diag.Diagnostics, id string, l creat
 		likely = " It carries this provider's create token from another apply, so a Terraform apply made it. " +
 			"Most often that's an apply stopped before it could save state, such as a killed process or a lost " +
 			"CI runner. Another configuration that uses the same `id` leaves one too."
+	}
+	if c.key.durableToken {
+		likely += " To recover a run interrupted while creating this cluster, pass the same `create_token` " +
+			"it used, with the same `id`, `region`, and `project`. If those values don't belong to this " +
+			"interrupted run, don't adopt it."
 	}
 	detail := fmt.Sprintf("The create for %s %q %s. Reading it back found one this apply cannot "+
 		"show it created, since %s, so it is not taken over.%s\n\n"+
@@ -691,6 +740,10 @@ type createFinish[M any] struct {
 	waitSummary string
 	// reportWait reports a failed wait. Nil means the plain addWaitError.
 	reportWait func(diags *diag.Diagnostics, summary string, err error)
+	// keepTimeout records the last observed state without an error on a create
+	// timeout, and keepInterrupt does the same when the run is interrupted. Any
+	// other failure keeps the ordinary error.
+	keepTimeout, keepInterrupt bool
 	// read reads the settled resource back. found is false on a 404.
 	read func(ctx context.Context, id string) (state M, found bool, diags diag.Diagnostics)
 }
@@ -704,6 +757,15 @@ func (f createFinish[M]) run(ctx context.Context, create convergingCreate, plan 
 	var none M
 	outcome, made, createDiags := create.run(ctx)
 	diags.Append(createDiags...)
+	if outcome == createAdoptAbsent {
+		diags.AddError(
+			fmt.Sprintf("No %s to adopt", create.kind),
+			fmt.Sprintf("There is no %s %q in the configured region and project. Nothing was created or "+
+				"recorded. Drive the managed resource's `for_each` from `"+ResourceName(clusterDataSourceSuffix+"s")+
+				"`, as the recovery guide shows, so absence plans no managed instance instead.", create.kind, create.key.id),
+		)
+		return none, false
+	}
 	if outcome == createFailed {
 		return none, false
 	}
@@ -722,6 +784,10 @@ func (f createFinish[M]) run(ctx context.Context, create convergingCreate, plan 
 		// A wait that stopped while the object read `failed` is reported as
 		// the failure, not as a create still running.
 		if stillRunning(err) && !failedWhenStopped(err) {
+			if interrupted := waitInterrupted(err); (interrupted && f.keepInterrupt) || (!interrupted && f.keepTimeout) {
+				keepStoppedCreate(ctx, create.kind, create.resourceName, made.uid, state, err, diags)
+				return none, false
+			}
 			addCreateStillRunning(diags, create.kind, create.resourceName, err, true)
 			return none, false
 		}

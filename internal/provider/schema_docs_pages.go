@@ -246,11 +246,19 @@ func counterpartLinks(page string, registered map[string]docSurface) []relatedLi
 			out = append(out, relatedLink{"resources/" + short, "manages one."})
 		}
 		if _, ok := registered["data-sources/"+short+"s"]; ok {
-			out = append(out, relatedLink{"data-sources/" + short + "s", "lists every one."})
+			lists := "lists every one."
+			if short == clusterDataSourceSuffix {
+				// The recovery lookup, not a list.
+				lists = "finds one by exact id, or none, for adopt-only recovery."
+			}
+			out = append(out, relatedLink{"data-sources/" + short + "s", lists})
 		}
 		if singular, ok := strings.CutSuffix(short, "s"); ok {
 			if _, ok := registered["data-sources/"+singular]; ok {
 				out = append(out, relatedLink{"data-sources/" + singular, "reads one by id."})
+			}
+			if _, ok := registered["resources/"+singular]; ok && singular == clusterDataSourceSuffix {
+				out = append(out, relatedLink{"resources/" + singular, "adopts what this finds, with `adopt_only`."})
 			}
 		}
 	}
@@ -406,9 +414,13 @@ func timeoutsSection(s docSurface) string {
 	if s.kind == "resource" && slices.Contains(ops, "create") {
 		b.WriteString("A wait that runs out, or a run that is interrupted, stops nothing on the platform. " +
 			"A create that stops waiting fails, and Terraform taints the object: run `terraform untaint` on it " +
-			"and then `terraform apply`, which waits for the same object. A delete that stops waiting fails " +
-			"and stays in state, and the next `terraform destroy` waits for the same delete without sending " +
-			"another.\n\n")
+			"and then `terraform apply`, which waits for the same object. ")
+		if s.name == ResourceName(clusterResourceSuffix) {
+			b.WriteString("`on_create_timeout` and `create_token` change that for a cluster, as their " +
+				"descriptions say. ")
+		}
+		b.WriteString("A delete that stops waiting fails and stays in state, and the next `terraform destroy` " +
+			"waits for the same delete without sending another.\n\n")
 	}
 	block, indent := "resource", "  "
 	switch s.kind {

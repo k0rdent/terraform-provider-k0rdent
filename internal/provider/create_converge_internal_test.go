@@ -39,6 +39,8 @@ type clusterAPI struct {
 	// answer, when set, decides the nth create's answer once it has been
 	// carried out. It returns false to give the ordinary one.
 	answer func(n int, id string, w http.ResponseWriter) bool
+	// readAnswer, when set, decides each read's answer.
+	readAnswer func(http.ResponseWriter) bool
 	// readsFail makes every read answer 500.
 	readsFail bool
 }
@@ -82,6 +84,9 @@ func (a *clusterAPI) handle(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusCreated)
 		a.write(w, a.cluster(body.ID))
 	case http.MethodGet:
+		if a.readAnswer != nil && a.readAnswer(w) {
+			return
+		}
 		if a.readsFail {
 			w.WriteHeader(http.StatusInternalServerError)
 			a.write(w, map[string]any{"error": map[string]any{"code": 500, "message": "read failed"}})

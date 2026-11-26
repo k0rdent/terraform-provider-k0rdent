@@ -74,6 +74,8 @@ var notAnIdentifier = map[string]string{
 	"url":                    "an endpoint URL, sent in a request body or compared with a listed one, never part of a path",
 	"event_types":            "event type names, held to the catalog's pattern, sent in a request body",
 	"secret_wo":              "a signing secret, write-only, sent in a request body",
+	"create_token":           "a provenance token, write-only, sent in a tag on the cluster",
+	"on_create_timeout":      "a value from a fixed list, sent nowhere: it decides what a create wait does at its deadline",
 	"on_destroy_busy":        "a value from a fixed list, sent nowhere: it decides what a destroy does",
 	"on_failed":              "a value from a fixed list, sent nowhere: it decides what a plan does with a failed cluster",
 }

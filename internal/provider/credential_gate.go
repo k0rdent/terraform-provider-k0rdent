@@ -307,7 +307,10 @@ func SchemaCredentialFindings(ctx context.Context) (findings []string, surfaces 
 			l.Metadata(ctx, resource.MetadataRequest{ProviderTypeName: ProviderTypeName}, &md)
 			var s list.ListResourceSchemaResponse
 			l.ListResourceConfigSchema(ctx, list.ListResourceSchemaRequest{}, &s)
-			add("list resource", md.TypeName, PersistedSurface, s.Schema)
+			surfaces++
+			for _, v := range ListResourceCredentialViolations(md.TypeName, s.Schema) {
+				findings = append(findings, fmt.Sprintf("list resource %s: %s", md.TypeName, v))
+			}
 		}
 	}
 	if ap, ok := p.(fwprovider.ProviderWithActions); ok {
@@ -321,4 +324,20 @@ func SchemaCredentialFindings(ctx context.Context) (findings []string, surfaces 
 		}
 	}
 	return findings, surfaces
+}
+
+// ListResourceCredentialViolations applies the persisted-surface gate, with
+// the cluster's provenance filter understood. `create_token` is the value the
+// API returns in the cluster's ordinary `tags` field. It proves which apply
+// created an object rather than authorizing an API call. This exception is
+// scoped to that one list filter so another token or another resource stays
+// refused.
+func ListResourceCredentialViolations(typeName string, schema any) []string {
+	violations := CredentialViolations(PersistedSurface, schema)
+	if typeName != ResourceName(clusterResourceSuffix) {
+		return violations
+	}
+	return slices.DeleteFunc(violations, func(v string) bool {
+		return v == "create_token is named like a credential, and this surface is written to state or a plan"
+	})
 }

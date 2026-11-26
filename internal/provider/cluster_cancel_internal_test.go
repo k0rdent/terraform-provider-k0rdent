@@ -728,29 +728,75 @@ func TestPlanWarnsAboutTheDestroyItWillDo(t *testing.T) {
 // mid-create, the commonest one a destroy meets mid-operation, would always be
 // cancelled.
 func TestATimedOutCreateKeepsTheDestroySettings(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	// The POST answers before the second read expires the wait's deadline. A
+	// wall-clock timeout could expire during the POST and test another path.
+	ctx := newTestDeadline(t)
+	var reads atomic.Int32
+	server := resettingServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusCreated)
 			_, _ = fmt.Fprint(w, `{"id":"c1","state":"creating"}`)
 			return
 		}
+		if reads.Add(1) == 2 {
+			ctx.expire()
+		}
 		writeJSON(w, map[string]any{"id": "c1", "state": "creating"})
 	}))
 	t.Cleanup(server.Close)
 
-	r := &clusterResource{meta: testClusterMeta(t, server.URL, 20*time.Millisecond)}
+	r := &clusterResource{meta: testClusterMeta(t, server.URL, time.Hour)}
 	values := clusterValues(verRef(1), "", 2, "")
 	values[onDestroyBusyAttribute] = str(destroyWaits)
 	planRaw, s := testValue(t, r, values)
 	nullRaw := tftypes.NewValue(planRaw.Type(), nil)
 	resp := resource.CreateResponse{State: tfsdk.State{Raw: nullRaw, Schema: s.Schema}}
-	r.Create(context.Background(), resource.CreateRequest{Plan: tfsdk.Plan{Raw: planRaw, Schema: s.Schema}}, &resp)
+	r.Create(ctx, resource.CreateRequest{Plan: tfsdk.Plan{Raw: planRaw, Schema: s.Schema}}, &resp)
 	if !resp.Diagnostics.HasError() {
 		t.Fatal("a create that never settled reported success")
 	}
+	if got := stateAttr(t, resp.State, "id"); got != "c1" {
+		t.Errorf("id in state = %q, want the answered create's id", got)
+	}
 	if got := stateAttr(t, resp.State, onDestroyBusyAttribute); got != destroyWaits {
 		t.Errorf("on_destroy_busy in state = %q, want %q", got, destroyWaits)
+	}
+}
+
+// A configured id isn't enough to record a create whose answer never arrived:
+// it may name a cluster this state has never managed.
+func TestATimeoutBeforeTheCreateAnswerRecordsNothing(t *testing.T) {
+	ctx := newTestDeadline(t)
+	release := make(chan struct{})
+	defer close(release)
+	server := resettingServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("request after the unanswered POST: %s %s", r.Method, r.URL.Path)
+			writeJSON(w, map[string]any{"id": "c1", "state": "creating"})
+			return
+		}
+		ctx.expire()
+		<-release
+	}))
+	t.Cleanup(server.Close)
+
+	r := &clusterResource{meta: testClusterMeta(t, server.URL, time.Hour)}
+	planRaw, s := testValue(t, r, clusterValues(verRef(1), "", 2, ""))
+	nullRaw := tftypes.NewValue(planRaw.Type(), nil)
+	resp := resource.CreateResponse{State: tfsdk.State{Raw: nullRaw, Schema: s.Schema}}
+	r.Create(ctx, resource.CreateRequest{Plan: tfsdk.Plan{Raw: planRaw, Schema: s.Schema}}, &resp)
+	if !resp.Diagnostics.HasError() {
+		t.Fatal("an unanswered create reported success")
+	}
+	if !resp.State.Raw.IsNull() {
+		t.Errorf("id in state = %q, want nothing recorded", stateAttr(t, resp.State, "id"))
+	}
+	text := diagText(resp.Diagnostics)
+	for _, want := range []string{"got no answer", "Nothing is recorded in state", `"c1" was set in configuration`} {
+		if !strings.Contains(text, want) {
+			t.Errorf("diagnostic does not say %q:\n%s", want, text)
+		}
 	}
 }
 

@@ -206,6 +206,13 @@ demo-session: ## Keep a fake and interactive shell together for tool runners
 plan-fake: ## The configuration-layer harness: authentication and error paths only
 	./ci/plan-against-fake.sh
 
+.PHONY: pipeline-check pipeline-check-test
+pipeline-check: ## Run saved-plan recovery with locked HTTP state on Terraform 1.15.5
+	./scripts/pipeline-check.sh $(PIPELINE_CASES)
+
+pipeline-check-test: ## Check the pipeline runner's refusals and create recorder
+	./scripts/tests/test-pipeline-check.sh
+
 .PHONY: walkthrough-test
 walkthrough-test: ## Follow docs/walkthrough-hardware.md against the fake, with the directories in examples/walkthrough
 	./ci/walkthrough-against-fake.sh

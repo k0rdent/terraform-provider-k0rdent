@@ -557,10 +557,13 @@ func TestSettledRead(t *testing.T) {
 // fails TestEveryComputedAttributeIsPlanned until it's decided and listed,
 // so none is left to show "known after apply" on every update by default.
 var computedDecisions = map[string]string{
-	"region":   "modifyScopePlan in ModifyPlan, or planRegion on a project",
-	"project":  "modifyScopePlan in ModifyPlan",
-	"tags_all": "planTagsAll, or planTagsAllAtCreation, in ModifyPlan",
-	"state":    "planSettledState in ModifyPlan",
+	"region":       "modifyScopePlan in ModifyPlan, or planRegion on a project",
+	"project":      "modifyScopePlan in ModifyPlan",
+	"tags_all":     "planTagsAll, or planTagsAllAtCreation, in ModifyPlan",
+	"state":        "planSettledState in ModifyPlan",
+	"description":  "planAdoptedCluster or planUnconfiguredClusterMetadata in ModifyPlan",
+	"display_name": "planAdoptedCluster or planUnconfiguredClusterMetadata in ModifyPlan",
+	"tags":         "planAdoptedCluster or planUnconfiguredClusterMetadata in ModifyPlan",
 }
 
 // The kinds whose `state` is planned in ModifyPlan, as computedDecisions says.

@@ -27,6 +27,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/setplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
+	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
 	"github.com/k0rdent/terraform-provider-k0rdent/internal/k0rdent"
@@ -64,6 +65,8 @@ type clusterModel struct {
 	// OnFailed is what a plan does with a cluster read `failed`. It is never
 	// sent to the platform: see cluster_failed.go.
 	OnFailed types.String `tfsdk:"on_failed"`
+	// OnCreateTimeout is what a create wait does at its deadline.
+	OnCreateTimeout types.String `tfsdk:"on_create_timeout"`
 
 	ID                  types.String   `tfsdk:"id"`
 	UID                 types.String   `tfsdk:"uid"`
@@ -86,6 +89,8 @@ type clusterModel struct {
 	StorageCeilingGiB   types.Int64    `tfsdk:"storage_ceiling_gib"`
 	SSHAccess           types.Set      `tfsdk:"ssh_access"`
 	SSHPublicKeysWO     types.Map      `tfsdk:"ssh_public_keys_wo"`
+	CreateToken         types.String   `tfsdk:"create_token"`
+	AdoptOnly           types.Bool     `tfsdk:"adopt_only"`
 	Timeouts            timeouts.Value `tfsdk:"timeouts"`
 
 	// uid is the platform's uid for the cluster read, which own_object.go
@@ -164,8 +169,12 @@ func (r *clusterResource) Schema(ctx context.Context, _ resource.SchemaRequest, 
 			"each to settle, bounded by its `timeouts` block. Create and delete default to `" +
 			shortDuration(DefaultLongOperationTimeout) + "`, the rest to the provider's `operation_timeout`.\n\n" +
 			"A wait that times out, or a run that is interrupted, does not stop the operation, which keeps " +
-			"running on the platform. A create that stops waiting fails, and Terraform taints the cluster. " +
-			"Run `terraform untaint` on it and then `terraform apply`, which waits for the same cluster. " +
+			"running on the platform. By default a create that stops waiting fails, and Terraform taints " +
+			"the cluster. `on_create_timeout = \"keep\"` instead records a timed-out create untainted with " +
+			"the last lifecycle state it read, usually `creating`. A postcondition on that state can fail " +
+			"the run, and the next apply waits for the same cluster. With `keep` or a `create_token`, an " +
+			"interrupted create is recorded the same way. Otherwise, run `terraform untaint` " +
+			"on it and then `terraform apply`, which waits for the same cluster. " +
 			"A plan that would replace it instead warns before the approval, in whatever state the " +
 			"platform reports, that applying it cancels what's still being built, or deletes the " +
 			"cluster, and creates it again. A failed cluster's delete can fail too. " +
@@ -178,10 +187,11 @@ func (r *clusterResource) Schema(ctx context.Context, _ resource.SchemaRequest, 
 			"A tainted cluster without the token, such as an imported one, refuses `terraform destroy` too, " +
 			"since destroy runs that plan first: run `terraform untaint` on it, then `terraform destroy`. " +
 			"If the state doesn't hold it, `terraform destroy -refresh=false` skips that plan. " +
-			"A run killed before the create returns, such as by `kill -9` or a lost CI runner, saves nothing, " +
-			"so the cluster keeps being built with nothing in state: `terraform destroy` finds nothing to " +
-			"destroy, and the next apply fails with \"already exists\" and gives the `terraform import` " +
-			"that takes it back.\n\n" +
+			"A run killed before the create returns, such as by `kill -9` or a lost CI runner, saves no managed object. " +
+			"The cluster keeps being built with nothing in state: `terraform destroy` finds nothing to " +
+			"destroy. With the same durable `create_token` on the next apply, it adopts that cluster and " +
+			"records its UID. Without a matching token, the next apply fails with \"already exists\" and " +
+			"gives the `terraform import` that takes it back.\n\n" +
 			"The platform deletes a cluster only once nothing is running on it, so destroying one that " +
 			"is still `creating` or `updating` " +
 			"cancels that operation first and warns that it did, all within the delete timeout. A plan " +
@@ -263,14 +273,17 @@ func (r *clusterResource) Schema(ctx context.Context, _ resource.SchemaRequest, 
 			},
 			"display_name": schema.StringAttribute{
 				Optional:            true,
+				Computed:            true,
 				MarkdownDescription: "Human-friendly name. Mutable.",
 			},
 			"description": schema.StringAttribute{
 				Optional:            true,
+				Computed:            true,
 				MarkdownDescription: "Free-form description. Mutable.",
 			},
 			"tags": schema.MapAttribute{
 				Optional:            true,
+				Computed:            true,
 				ElementType:         types.StringType,
 				MarkdownDescription: "User-defined labels. Mutable.",
 				Validators:          []validator.Map{reservedTagKey{}},
@@ -376,9 +389,12 @@ func (r *clusterResource) Schema(ctx context.Context, _ resource.SchemaRequest, 
 					"replaced when it changes, unless state has no record of the nodes' users")},
 				NestedObject: sshUserNestedObject(),
 			},
-			"ssh_public_keys_wo":   sshPublicKeysWOAttribute(),
-			onDestroyBusyAttribute: onDestroyBusySchemaAttribute(),
-			onFailedAttribute:      onFailedSchemaAttribute(),
+			"ssh_public_keys_wo":     sshPublicKeysWOAttribute(),
+			createTokenAttribute:     createTokenSchemaAttribute(),
+			adoptOnlyAttribute:       adoptOnlySchemaAttribute(),
+			onDestroyBusyAttribute:   onDestroyBusySchemaAttribute(),
+			onFailedAttribute:        onFailedSchemaAttribute(),
+			onCreateTimeoutAttribute: onCreateTimeoutSchemaAttribute(),
 		},
 	}
 }
@@ -472,6 +488,15 @@ func (r *clusterResource) Configure(_ context.Context, req resource.ConfigureReq
 func (r *clusterResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
 	// Runs on every plan, create included: the resolved scope has to reach state.
 	modifyScopePlan(ctx, r.meta, req, resp)
+	if !resp.Plan.Raw.IsNull() && isAdoptOnly(ctx, req.Config) {
+		r.checkAdoptOnly(ctx, resp.Plan, req.State, req.Config, &resp.Diagnostics)
+		if !resp.Diagnostics.HasError() {
+			planNoUsersWhenLeftOut(ctx, req, resp)
+			planAdoptedCluster(ctx, req, resp)
+		}
+		return
+	}
+	planUnconfiguredClusterMetadata(ctx, req, resp)
 	// After the scope resolves the region, so a cluster type from another
 	// region is refused here rather than by the create.
 	refuseClusterTypeRegionMove(ctx, resp.Plan, &resp.Diagnostics, "cluster")
@@ -505,6 +530,8 @@ func (r *clusterResource) ModifyPlan(ctx context.Context, req resource.ModifyPla
 		window = r.meta.Wait.ProvisionalFailureWindow
 	}
 	planFailed(ctx, req, resp, window)
+	// A normal resume must not turn omitted metadata into a computed value.
+	planUnconfiguredClusterMetadata(ctx, req, resp)
 	// resp.Plan, not req.Plan: the scope has just been resolved into it.
 	if resp.Plan.Raw.Equal(req.State.Raw) {
 		return // no-op
@@ -542,6 +569,27 @@ func (r *clusterResource) Create(ctx context.Context, req resource.CreateRequest
 	key, err := newCreateKey(plan.ID, true)
 	if err != nil {
 		addCreateKeyError(&resp.Diagnostics, "cluster", err)
+		return
+	}
+	configuredToken := types.StringNull()
+	if !req.Config.Raw.IsNull() {
+		resp.Diagnostics.Append(req.Config.GetAttribute(ctx, path.Root(createTokenAttribute), &configuredToken)...)
+	}
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	if configuredToken.IsUnknown() {
+		resp.Diagnostics.AddError("The create token isn't known yet",
+			"Supply a known `create_token` before applying this saved plan. Nothing was sent, so the next run can't adopt the cluster this create makes.")
+		return
+	}
+	if !configuredToken.IsNull() {
+		key.token = configuredToken.ValueString()
+		key.durableToken = true
+	}
+	if plan.AdoptOnly.ValueBool() && !key.durableToken {
+		resp.Diagnostics.AddError("Adopt-only requires a create token",
+			"Set a non-empty `create_token` to prove which interrupted create this configuration owns. No lookup or create was sent.")
 		return
 	}
 	body := k0rdent.ClusterCreateRequest{
@@ -597,7 +645,7 @@ func (r *clusterResource) Create(ctx context.Context, req resource.CreateRequest
 	// `details[].metadata.clusterId`. That is the service's own answer to this
 	// request, so that cluster is recorded and waited out like a 201.
 	create := convergingCreate{
-		key: key, kind: "cluster", what: "create the cluster",
+		key: key, kind: "cluster", what: "create the cluster", adoptOnly: plan.AdoptOnly.ValueBool(),
 		resourceName: ResourceName(clusterResourceSuffix),
 		importID:     scopedImportID(target),
 		send: func(ctx context.Context) createAnswer {
@@ -626,15 +674,29 @@ func (r *clusterResource) Create(ctx context.Context, req resource.CreateRequest
 		retryOn:   []string{conflictVersion},
 		retryWait: r.meta.Wait,
 	}
+	keep := plan.OnCreateTimeout.ValueString() == createTimeoutKeeps
 	created, found := createFinish[clusterModel]{
-		operation: "createCluster", target: target,
+		operation: "createCluster", target: target, keepTimeout: keep,
+		// A CI cancel or a job timeout interrupts the run. Tainted, the next
+		// apply would cancel and delete the cluster, so an opt-in keeps it.
+		keepInterrupt: keep || key.durableToken,
 		wait: func(ctx context.Context, id string) error {
+			if plan.AdoptOnly.ValueBool() {
+				return nil
+			}
 			return r.waitForSettled(ctx, target, id, "the cluster to finish creating")
 		},
 		read: func(ctx context.Context, id string) (clusterModel, bool, diag.Diagnostics) {
 			m, found, diags := r.read(ctx, target, id, plan)
 			if !found || diags.HasError() {
 				return m, found, diags
+			}
+			if plan.AdoptOnly.ValueBool() {
+				if held, same := heldObject(ctx, resp.Private, m.uid); !same {
+					addAnotherObject(&diags, "cluster", id, held, m.uid)
+					diags.AddError("The cluster changed during adoption", "Plan again before adopting this cluster. Nothing was changed on the platform.")
+					return m, false, diags
+				}
 			}
 			// The platform registers the keys as credentials: read back the
 			// references it made, which state holds from here on.
@@ -728,13 +790,17 @@ func (r *clusterResource) Read(ctx context.Context, req resource.ReadRequest, re
 
 func (r *clusterResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
 	defer syncIdentity(ctx, r.meta, resp.Identity, &resp.Diagnostics, &resp.State)
-	if refuseUncheckedKeys(ctx, req.Private, &resp.Diagnostics) {
-		return
-	}
 	var plan, state clusterModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
+		return
+	}
+	if plan.AdoptOnly.ValueBool() {
+		resp.Diagnostics.Append(resp.State.Set(ctx, planOverPrior(plan, state))...)
+		return
+	}
+	if refuseUncheckedKeys(ctx, req.Private, &resp.Diagnostics) {
 		return
 	}
 	target, ok := resolveScope(r.meta, state.Region, state.Project, &resp.Diagnostics)
@@ -754,6 +820,12 @@ func (r *clusterResource) Update(ctx context.Context, req resource.UpdateRequest
 		},
 		read: func(ctx context.Context) (clusterModel, bool, diag.Diagnostics) {
 			return r.read(ctx, target, id, plan)
+		},
+		errorState: func(ctx context.Context, st *tfsdk.State) diag.Diagnostics {
+			var diags diag.Diagnostics
+			next := planOverPrior(plan, state)
+			diags.Append(st.Set(ctx, &next)...)
+			return diags
 		},
 		waitsOutFailed: plan.OnFailed.ValueString() != failedKept,
 		guardsCreate:   true,
@@ -1177,8 +1249,9 @@ func clusterStateFrom(ctx context.Context, c k0rdent.Cluster, prior clusterModel
 	md := prior.metadata().read(metadataAnswer{DisplayName: c.DisplayName, Description: c.Description, Tags: tags, Defaults: defaults})
 
 	out := clusterModel{
-		OnDestroyBusy: prior.OnDestroyBusy,
-		OnFailed:      prior.OnFailed,
+		OnDestroyBusy:   prior.OnDestroyBusy,
+		OnFailed:        prior.OnFailed,
+		OnCreateTimeout: prior.OnCreateTimeout,
 
 		ID: types.StringValue(c.Id),
 		// From prior state: the response does not echo them.
@@ -1187,6 +1260,8 @@ func clusterStateFrom(ctx context.Context, c k0rdent.Cluster, prior clusterModel
 		SSHAccess: clusterSSHAccessState(prior.SSHAccess),
 		// Write-only: never held in state.
 		SSHPublicKeysWO: types.MapNull(types.ListType{ElemType: types.StringType}),
+		CreateToken:     types.StringNull(),
+		AdoptOnly:       prior.AdoptOnly,
 		Project:         prior.Project,
 		DisplayName:     md.DisplayName,
 		Description:     md.Description,

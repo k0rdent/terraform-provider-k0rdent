@@ -146,9 +146,12 @@ var inputClasses = map[attrRef]inputClass{
 	{"resource", "", "tags"}:         free,
 	// The configuration's own permission to replace a resource holding tenant state.
 	{"resource", "", "allow_replace"}: free,
-	// The configuration's own choice of what a destroy does with a cluster mid-operation.
-	{"resource", "kubernetes_cluster", "on_destroy_busy"}: free,
-	{"resource", "kubernetes_cluster", "on_failed"}:       free,
+	// The configuration's own lifecycle policy choices.
+	{"resource", "kubernetes_cluster", "adopt_only"}:        free,
+	{"resource", "kubernetes_cluster", "create_token"}:      free,
+	{"resource", "kubernetes_cluster", "on_create_timeout"}: free,
+	{"resource", "kubernetes_cluster", "on_destroy_busy"}:   free,
+	{"resource", "kubernetes_cluster", "on_failed"}:         free,
 
 	// Resources. An id of something the tenant made itself is free: the
 	// configuration that made it, or the person who did, already has it.
@@ -232,6 +235,7 @@ var inputClasses = map[attrRef]inputClass{
 	{"data source", "cluster_kubeconfig", "cluster_id"}:         free,
 	{"data source", "cluster_kubeconfig", "id"}:                 free,
 	{"data source", "kubernetes_cluster", "id"}:                 free,
+	{"data source", "kubernetes_clusters", "id"}:                free,
 	{"data source", "instance_group", "id"}:                     free,
 	{"data source", "file_store", "id"}:                         free,
 	{"data source", "effective_security_groups", "object_kind"}: free,
@@ -284,12 +288,14 @@ var inputClasses = map[attrRef]inputClass{
 
 	// A list block's configuration says where to search, and which of what
 	// it finds to show.
-	{"list resource", "", "project"}:                read("projects"),
-	{"list resource", "", "region"}:                 read("regions"),
-	{"list resource", "", "include_platform_owned"}: free,
-	{"list resource", "project", "organization_id"}: read("projects"),
-	{"list resource", "subnet", "network"}:          read("networks"),
-	{"list resource", "vpc_peering", "vpc"}:         read("vpcs"),
+	{"list resource", "", "project"}:                        read("projects"),
+	{"list resource", "", "region"}:                         read("regions"),
+	{"list resource", "", "include_platform_owned"}:         free,
+	{"list resource", "project", "organization_id"}:         read("projects"),
+	{"list resource", "kubernetes_cluster", "id"}:           free,
+	{"list resource", "kubernetes_cluster", "create_token"}: free,
+	{"list resource", "subnet", "network"}:                  read("networks"),
+	{"list resource", "vpc_peering", "vpc"}:                 read("vpcs"),
 
 	// The cancel action's config block names a cluster the tenant made, where
 	// it is, and optionally the operation the cluster data source reports.

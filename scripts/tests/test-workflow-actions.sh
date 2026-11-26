@@ -165,11 +165,11 @@ setup
 edit workflows/ci.yml 's{name: acceptance under Terraform \$\{\{ matrix\.terraform \}\}}{name: acceptance}'
 expect_fail "a matrix check name without its version was accepted" "doesn't show"
 
-# Only the two newest minors, so a third version or a gap between them is
-# testing a release HashiCorp no longer fixes.
+# The newest two stay adjacent. One older Terraform line can stay pinned,
+# and this repository's own matrix proves that case passes at the start.
 setup
-edit workflows/ci.yml 's{terraform: \["1\.16\.\d+",}{terraform: ["1.15.9", "1.16.7",}'
-expect_fail "three terraform versions were accepted" "TESTING.md allows two"
+edit workflows/ci.yml 's{terraform: \["1\.16\.\d+",}{terraform: ["1.14.9", "1.16.7",}'
+expect_fail "four terraform versions were accepted" "TESTING.md allows two current releases and one pinned Terraform release"
 
 setup
 edit workflows/ci.yml 's{terraform: \["1\.16\.\d+"}{terraform: ["1.15.9"}'
