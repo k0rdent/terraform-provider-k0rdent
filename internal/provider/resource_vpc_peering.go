@@ -127,6 +127,11 @@ func (r *vpcPeeringResource) Schema(ctx context.Context, _ resource.SchemaReques
 			"deleted, this object survives, still `active`, naming a VPC that is gone, carrying " +
 			"no traffic. The platform will not remove it on the strength of another project's " +
 			"delete. Destroying it, or destroying the owner of the local VPC, is what clears it.\n\n" +
+			"If a destroy stops after the cluster or instance group that owns `vpc` or `remote_vpc` " +
+			"has taken that VPC with it, a later plan that reads the owner as deleting, or failed " +
+			"after a teardown, warns on each peering it would create against that VPC. If the VPC is " +
+			"still gone when the apply runs, the apply fails with an error naming the VPC. Running " +
+			"`terraform destroy` finishes the teardown.\n\n" +
 			"Requires `region` and `project` on the provider.",
 		Blocks: map[string]schema.Block{
 			// No Update: the API has no operation for one.
@@ -228,6 +233,7 @@ func (r *vpcPeeringResource) Configure(_ context.Context, req resource.Configure
 
 func (r *vpcPeeringResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
 	modifyScopePlan(ctx, r.meta, req, resp)
+	warnHeldVPCWrite(ctx, r.meta, req, resp, "vpc", "remote_vpc")
 	planTagsAllAtCreation(ctx, r.meta, "VPC peering", req, resp)
 	if resp.Diagnostics.HasError() {
 		return
@@ -307,6 +313,9 @@ func (r *vpcPeeringResource) Create(ctx context.Context, req resource.CreateRequ
 			})
 		},
 		busy: newBusyRetry("createVPCPeering", r.meta.Wait, r.dependencies(target, vpc, remote)...),
+		refused: func(diags *diag.Diagnostics, resp *http.Response, body []byte) bool {
+			return addMissingVPCError(diags, "create the VPC peering", target, resp, body, vpc, remote)
+		},
 	}
 	created, ok := createFinish[vpcPeeringModel]{
 		operation: "createVPCPeering", target: target,

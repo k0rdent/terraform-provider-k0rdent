@@ -5,6 +5,7 @@ subcategory: ""
 description: |-
   One VPC, by name.
   Use k0rdent_vpcs when the name is not known ahead of time.
+  After an interrupted destroy has released a VPC, a read in the same run warns instead of failing when id comes from its owner's vpc, or this data source has depends_on for that owner. The held read returns id, region, project, the VPC path in self_link, and an empty security_groups list. Its other attributes are null. A live VPC always has state, so state == null marks a held read. Use it to let preconditions pass while the owner destroys. A literal id without that dependency can be read before the owner and still fails with "No such VPC". In that case, or when a later expression in the plan fails on the held values, such as one(security_groups) feeding a security group's required id, terraform destroy -refresh=false finishes the teardown.
 ---
 
 # k0rdent_vpc (Data Source)
@@ -12,6 +13,8 @@ description: |-
 One VPC, by name.
 
 Use `k0rdent_vpcs` when the name is not known ahead of time.
+
+After an interrupted destroy has released a VPC, a read in the same run warns instead of failing when `id` comes from its owner's `vpc`, or this data source has `depends_on` for that owner. The held read returns `id`, `region`, `project`, the VPC path in `self_link`, and an empty `security_groups` list. Its other attributes are null. A live VPC always has `state`, so `state == null` marks a held read. Use it to let preconditions pass while the owner destroys. A literal `id` without that dependency can be read before the owner and still fails with "No such VPC". In that case, or when a later expression in the plan fails on the held values, such as `one(security_groups)` feeding a security group's required `id`, `terraform destroy -refresh=false` finishes the teardown.
 
 ## Example Usage
 
@@ -44,7 +47,7 @@ output "attached_groups" {
 - `display_name` (String) Human-friendly name, for display only.
 - `owner_id` (String) UID of the owning cluster or instance group.
 - `owner_kind` (String) What created this VPC: a cluster or an instance group. Deleting that owner deletes the VPC.
-- `security_groups` (List of String) Ids of the attached security groups, in the order they were last set. Never empty on a `nico` VPC: clearing the binding reinstates the platform's DEFAULT group rather than leaving none.
+- `security_groups` (List of String) Ids of the attached security groups, in the order they were last set. Never empty on a live `nico` VPC: clearing the binding reinstates the platform's DEFAULT group rather than leaving none.
 - `self_link` (String) Platform-defined reference to this VPC.
 - `state` (String) Lifecycle state. `updating` means a security-group change has been accepted and `security_groups` is what the API will converge on, not necessarily what the fabric enforces yet.
 - `ufo_cr_name` (String) The VPC's fabric name. This is the value a cluster-provisioned `k0rdent_network` reports as `vpc`.

@@ -230,6 +230,7 @@ func newHandler(s *state, secrets runSecrets, port string, shutdown func()) http
 	mux.HandleFunc("POST /_harness/webhooks/{id}/disable", secrets.owner(s.disableWebhook))
 	mux.HandleFunc("POST /_harness/regions/{region}/projects/{project}/credentials/{id}/{action}", secrets.owner(s.sshKeyHarness))
 	mux.HandleFunc("POST /_harness/regions/{region}/projects/{project}/clusters/{id}/endpoint/{action}", secrets.owner(s.clusterEndpointHarness))
+	mux.HandleFunc("POST /_harness/regions/{region}/projects/{project}/vpcs/{id}/drop", secrets.owner(s.dropVPCHarness))
 	counts := newRequestCounts()
 	mux.HandleFunc("GET /_harness/requests", secrets.owner(counts.serve))
 	s.routes(mux, secrets.auth)
@@ -2070,6 +2071,22 @@ func (s *state) clusterEndpointHarness(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "want publish or move", http.StatusBadRequest)
 		return
 	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// dropVPCHarness removes a VPC while its owner remains, as an interrupted
+// platform teardown can. The public API has no VPC delete of its own.
+func (s *state) dropVPCHarness(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	o := s.in(r)
+	id := r.PathValue("id")
+	if _, ok := o.vpcs[at{id: id}]; !ok {
+		http.Error(w, "no such VPC", http.StatusNotFound)
+		return
+	}
+	o.dropOwnerNetwork(id)
+	o.dropVPC(id)
 	w.WriteHeader(http.StatusNoContent)
 }
 

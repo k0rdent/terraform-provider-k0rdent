@@ -36,6 +36,9 @@ check "group_is_ours" {
 
 # A VPC's default group, which the platform owns. Its id is random, so take it
 # off the VPC's binding, which holds only that group until you bind others.
+# A held read after an interrupted destroy has state == null and an empty
+# security_groups list, so one(security_groups) fails. Run
+# terraform destroy -refresh=false to finish the teardown.
 data "k0rdent_vpc" "training" {
   id = "training-vpc"
 }

@@ -503,9 +503,10 @@ resource "k0rdent_vpc_security_groups" "this" {
   security_groups = [k0rdent_security_group.this[0].id, try(one(local.vpc_default_group[each.key]), null)]
 
   lifecycle {
-    # Fail the plan if the VPC can't take security groups.
+    # Fail the plan if the VPC can't take security groups. A held read has
+    # null state and passes so a plan after an interrupted destroy succeeds.
     precondition {
-      condition     = data.k0rdent_vpc.owned[each.key].backend == "nico"
+      condition     = data.k0rdent_vpc.owned[each.key].state == null || data.k0rdent_vpc.owned[each.key].backend == "nico"
       error_message = "The ${each.key} VPC, ${each.value.vpc}, is on ${coalesce(data.k0rdent_vpc.owned[each.key].backend, "no backend")}, and only a nico VPC takes security groups. Set build.vpc_security_groups = false."
     }
 

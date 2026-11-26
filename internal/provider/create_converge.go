@@ -281,6 +281,9 @@ type convergingCreate struct {
 	retryWait waitConfig
 	// sleep is sleepOrCancel, or a test's stand-in.
 	sleep func(context.Context, time.Duration) error
+	// refused reports a refusal it can say more about than the platform's
+	// answer, and whether it did. Nil reports every refusal as it came.
+	refused func(diags *diag.Diagnostics, resp *http.Response, body []byte) bool
 }
 
 // run sends the create until it has an answer it can act on.
@@ -415,7 +418,9 @@ func (c convergingCreate) run(ctx context.Context) (createOutcome, createdAs, di
 			return createFailed, createdAs{}, diags
 
 		default:
-			addAPIError(&diags, c.what, a.resp, a.body, nil)
+			if c.refused == nil || !c.refused(&diags, a.resp, a.body) {
+				addAPIError(&diags, c.what, a.resp, a.body, nil)
+			}
 			return createFailed, createdAs{}, diags
 		}
 	}

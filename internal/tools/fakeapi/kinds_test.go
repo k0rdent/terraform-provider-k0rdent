@@ -465,8 +465,8 @@ func TestAMissingProjectOrOrganizationIsTheGateways403(t *testing.T) {
 
 // A create under a missing parent names the parent as a read does, and also
 // repeats itself under `details` with NOT_FOUND, where the read doesn't. Both
-// recorded on v1.3.0-dev.4, as was a VPC binding on a missing VPC, which
-// answers as a read.
+// recorded on v1.3.0-dev.4. A VPC binding on a missing VPC answered as a read
+// there, and v1.3.0 on kind answers it with the details too.
 func TestACreateUnderAMissingParentCarriesDetails(t *testing.T) {
 	s := newState()
 	for name, c := range map[string]struct {
@@ -480,7 +480,7 @@ func TestACreateUnderAMissingParentCarriesDetails(t *testing.T) {
 		"vpc peering": {s.createVPCPeering, map[string]string{"vpcId": "zz-missing"}, `{"id":"x","remoteVpc":"/v1/regions/r/projects/elsewhere/networking/vpcs/v"}`,
 			`{"error":{"code":404,"message":"not found: vpc \"zz-missing\"","requestId":"fake-request-id","details":[{"reason":"NOT_FOUND","message":"not found: vpc \"zz-missing\""}]}}`},
 		"vpc binding": {s.setVPCSecurityGroups, map[string]string{"id": "zz-missing"}, `{"securityGroups":[]}`,
-			`{"error":{"code":404,"message":"not found: vpc \"zz-missing\"","requestId":"fake-request-id"}}`},
+			`{"error":{"code":404,"message":"not found: vpc \"zz-missing\"","requestId":"fake-request-id","details":[{"reason":"NOT_FOUND","message":"not found: vpc \"zz-missing\""}]}}`},
 	} {
 		if code, body := rawCall(t, c.h, http.MethodPost, "p", c.path, c.body); code != http.StatusNotFound || body != c.want {
 			t.Errorf("%s: %d\n got %s\nwant %s", name, code, body, c.want)
