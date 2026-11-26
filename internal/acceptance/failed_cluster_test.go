@@ -390,11 +390,27 @@ resource %q "test" {
   }
 }
 `, clusterType, name, clusterTypeRef+"/versions/33333333-3333-3333-3333-333333333333", createFails))
-	out, ok = c.run("apply", "-auto-approve")
+	// Save the plan so the refresh reads don't count against the apply.
+	const planFile = "cancel.tfplan"
+	if out, ok = c.run("plan", "-out", planFile); !ok {
+		t.Fatalf("the plan that changes on_destroy_busy failed:\n%s", out)
+	}
+	path := clusterAPIPath(name)
+	before, err := fakeServed(http.MethodGet, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, ok = c.run("apply", planFile)
+	after, err := fakeServed(http.MethodGet, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after != before {
+		t.Errorf("the apply read the failed cluster %d times, want no reads:\n%s", after-before, out)
+	}
 	if !ok {
 		t.Fatalf("the apply that changes on_destroy_busy failed:\n%s", out)
 	}
-	mustSay(t, "the apply", out, "Modifications complete after 0s")
 	shown, _ := c.run("state", "show", addr)
 	mustSay(t, "state", shown, `state = "failed"`, `on_destroy_busy = "cancel"`)
 }
